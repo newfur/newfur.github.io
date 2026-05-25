@@ -1,0 +1,314 @@
+{
+  "extension_name": {
+    "message": "Edge 网页版电子书阅读器"
+  },
+  "extension_description": {
+    "message": "一款专为 Edge 设计的高级电子书阅读器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，并支持微软高质量语音朗读。"
+  },
+  "library_title": {
+    "message": "我的书库"
+  },
+  "import_book": {
+    "message": "导入书籍"
+  },
+  "drag_drop_tip": {
+    "message": "将电子书拖拽到此处导入"
+  },
+  "no_books": {
+    "message": "书库空空如也。请拖拽电子书文件到此处，或点击上方“导入书籍”按钮！"
+  },
+  "settings": {
+    "message": "阅读设置"
+  },
+  "theme": {
+    "message": "背景主题"
+  },
+  "theme_light": {
+    "message": "明亮白"
+  },
+  "theme_dark": {
+    "message": "深雅灰"
+  },
+  "theme_sepia": {
+    "message": "复古纸"
+  },
+  "theme_mint": {
+    "message": "极简绿"
+  },
+  "theme_oled": {
+    "message": "纯黑 (OLED)"
+  },
+  "theme_sakura": {
+    "message": "樱花粉"
+  },
+  "theme_ocean": {
+    "message": "海洋蓝"
+  },
+  "theme_slate": {
+    "message": "石板灰"
+  },
+  "font_size": {
+    "message": "字体大小"
+  },
+  "font_family": {
+    "message": "阅读字体"
+  },
+  "line_height": {
+    "message": "行间距"
+  },
+  "margin_width": {
+    "message": "左右边距"
+  },
+  "margin_top": {
+    "message": "上方留白"
+  },
+  "margin_bottom": {
+    "message": "下方留白"
+  },
+  "page_padding": {
+    "message": "纸张边框留白"
+  },
+  "read_aloud": {
+    "message": "语音朗读 (TTS)"
+  },
+  "tts_voice": {
+    "message": "朗读人声"
+  },
+  "tts_speed": {
+    "message": "播放倍速"
+  },
+  "toc": {
+    "message": "章节目录"
+  },
+  "highlights": {
+    "message": "书签与笔记"
+  },
+  "ai_summary": {
+    "message": "AI 摘要"
+  },
+  "ai_explain": {
+    "message": "AI 释义"
+  },
+  "ai_translate": {
+    "message": "AI 翻译"
+  },
+  "search_placeholder": {
+    "message": "搜索书籍名称或作者..."
+  },
+  "unsupported_format": {
+    "message": "不支持此文件格式！"
+  },
+  "parse_failed": {
+    "message": "书籍解析失败，请确认文件是否损坏。"
+  },
+  "drm_warning": {
+    "message": "此电子书似乎受到 DRM 加密保护，插件无法解析。"
+  },
+  "reading_progress": {
+    "message": "已读 $progress$%",
+    "placeholders": {
+      "progress": {
+        "content": "$1"
+      }
+    }
+  },
+  "font_sans": {
+    "message": "黑体/无衬线 (Inter)"
+  },
+  "font_serif": {
+    "message": "宋体/明体 (Lora)"
+  },
+  "font_lxgw": {
+    "message": "霞鹜文楷 (LXGW WenKai)"
+  },
+  "font_noto_serif": {
+    "message": "思源宋体 (Noto Serif TC)"
+  },
+  "font_playfair": {
+    "message": "Playfair Display (西文衬线)"
+  },
+  "font_fira": {
+    "message": "Fira Code (等宽代码)"
+  },
+  "font_dyslexic": {
+    "message": "易读字体 (OpenDyslexic)"
+  },
+  "font_system": {
+    "message": "系统默认字体"
+  },
+  "layout_scroll": {
+    "message": "上下连续滚动"
+  },
+  "layout_paginated": {
+    "message": "左右模拟翻页"
+  },
+  "layout_mode": {
+    "message": "版面布局"
+  },
+  "close_reader": {
+    "message": "返回书库"
+  },
+  "prev_page": {
+    "message": "上一页"
+  },
+  "next_page": {
+    "message": "下一页"
+  },
+  "note_title": {
+    "message": "笔记"
+  },
+  "highlight_title": {
+    "message": "划线"
+  },
+  "pages_displayed": {
+    "message": "分栏显示页数"
+  },
+  "pages_displayed_auto": {
+    "message": "自动自适应"
+  },
+  "pages_displayed_1": {
+    "message": "单页显示"
+  },
+  "pages_displayed_2": {
+    "message": "双页显示"
+  },
+  "pages_displayed_3": {
+    "message": "三页显示"
+  },
+  "tts_highlight_style": {
+    "message": "朗读高亮样式"
+  },
+  "highlight_style_yellow": {
+    "message": "黄色荧光笔"
+  },
+  "highlight_style_green": {
+    "message": "绿色荧光笔"
+  },
+  "highlight_style_blue": {
+    "message": "蓝色荧光笔"
+  },
+  "highlight_style_underline": {
+    "message": "仅下划线"
+  },
+  "highlight_style_border": {
+    "message": "虚线边框"
+  },
+  "highlight_style_text": {
+    "message": "仅文字着色"
+  },
+  "btn_cancel": {
+    "message": "取消"
+  },
+  "btn_save": {
+    "message": "保存"
+  },
+  "add_bookmark": {
+    "message": "添加书签"
+  },
+  "bookmarks_header": {
+    "message": "书签"
+  },
+  "notes_header": {
+    "message": "笔记与高亮"
+  },
+  "selection_speak": {
+    "message": "朗读"
+  },
+  "selection_delete": {
+    "message": "删除"
+  },
+  "note_placeholder": {
+    "message": "在此输入笔记..."
+  },
+  "ai_assistant_title": {
+    "message": "AI 阅读助手"
+  },
+  "chapter_label": {
+    "message": "第 $num$ 章",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
+  "tts_play": {
+    "message": "播放"
+  },
+  "tts_pause": {
+    "message": "暂停"
+  },
+  "tts_stop": {
+    "message": "停止"
+  },
+  "tts_prev": {
+    "message": "上一句"
+  },
+  "tts_next": {
+    "message": "下一句"
+  },
+  "loading_book": {
+    "message": "正在加载书籍..."
+  },
+  "loading_page": {
+    "message": "正在加载第 $page$ 页...",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "ai_thinking": {
+    "message": "AI 正在思考..."
+  },
+  "error_prefix": {
+    "message": "错误"
+  },
+  "failed_load_book": {
+    "message": "书籍加载失败"
+  },
+  "failed_init_db": {
+    "message": "数据库初始化失败"
+  },
+  "delete_book_title": {
+    "message": "删除书籍"
+  },
+  "confirm_delete_book": {
+    "message": "确定要删除这本书吗？"
+  },
+  "unknown_author": {
+    "message": "未知作者"
+  },
+  "paper_texture": {
+    "message": "纸张底纹"
+  },
+  "texture_none": {
+    "message": "无"
+  },
+  "texture_classic": {
+    "message": "经典纸纹"
+  },
+  "texture_parchment": {
+    "message": "羊皮纸"
+  },
+  "texture_linen": {
+    "message": "亚麻布纹"
+  },
+  "texture_aged": {
+    "message": "仿旧纸"
+  },
+  "texture_wove": {
+    "message": "水纹纸"
+  },
+  "transition_effect": {
+    "message": "翻页动画效果"
+  },
+  "transition_slide": {
+    "message": "滑动效果"
+  },
+  "transition_flip": {
+    "message": "3D 翻页效果"
+  },
+  "transition_none": {
+    "message": "无动画"
+  }
+}

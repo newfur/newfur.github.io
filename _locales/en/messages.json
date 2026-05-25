@@ -1,0 +1,314 @@
+{
+  "extension_name": {
+    "message": "Edge E-Book Reader"
+  },
+  "extension_description": {
+    "message": "A premium web-based reader for EPUB, AZW3, MOBI, TXT, MD, FB2, and CBZ with high-quality Edge TTS Read Aloud support."
+  },
+  "library_title": {
+    "message": "Library"
+  },
+  "import_book": {
+    "message": "Import Book"
+  },
+  "drag_drop_tip": {
+    "message": "Drag & Drop books here to import"
+  },
+  "no_books": {
+    "message": "Your library is empty. Drag and drop files here to add books!"
+  },
+  "settings": {
+    "message": "Settings"
+  },
+  "theme": {
+    "message": "Theme"
+  },
+  "theme_light": {
+    "message": "Light"
+  },
+  "theme_dark": {
+    "message": "Dark"
+  },
+  "theme_sepia": {
+    "message": "Sepia"
+  },
+  "theme_mint": {
+    "message": "Mint"
+  },
+  "theme_oled": {
+    "message": "OLED Black"
+  },
+  "theme_sakura": {
+    "message": "Sakura Pink"
+  },
+  "theme_ocean": {
+    "message": "Ocean Blue"
+  },
+  "theme_slate": {
+    "message": "Slate Gray"
+  },
+  "font_size": {
+    "message": "Font Size"
+  },
+  "font_family": {
+    "message": "Font Family"
+  },
+  "line_height": {
+    "message": "Line Spacing"
+  },
+  "margin_width": {
+    "message": "Margins"
+  },
+  "margin_top": {
+    "message": "Top Spacing"
+  },
+  "margin_bottom": {
+    "message": "Bottom Spacing"
+  },
+  "page_padding": {
+    "message": "Page Padding"
+  },
+  "read_aloud": {
+    "message": "Read Aloud"
+  },
+  "tts_voice": {
+    "message": "Voice"
+  },
+  "tts_speed": {
+    "message": "Speed"
+  },
+  "toc": {
+    "message": "Table of Contents"
+  },
+  "highlights": {
+    "message": "Bookmarks & Notes"
+  },
+  "ai_summary": {
+    "message": "AI Summary"
+  },
+  "ai_explain": {
+    "message": "AI Explain"
+  },
+  "ai_translate": {
+    "message": "AI Translate"
+  },
+  "search_placeholder": {
+    "message": "Search books..."
+  },
+  "unsupported_format": {
+    "message": "Unsupported file format!"
+  },
+  "parse_failed": {
+    "message": "Failed to parse book."
+  },
+  "drm_warning": {
+    "message": "This file is protected by DRM and cannot be read."
+  },
+  "reading_progress": {
+    "message": "Read $progress$%",
+    "placeholders": {
+      "progress": {
+        "content": "$1"
+      }
+    }
+  },
+  "font_sans": {
+    "message": "Sans-serif (Inter)"
+  },
+  "font_serif": {
+    "message": "Serif (Lora)"
+  },
+  "font_lxgw": {
+    "message": "LXGW WenKai (Chinese)"
+  },
+  "font_noto_serif": {
+    "message": "Noto Serif TC (Chinese)"
+  },
+  "font_playfair": {
+    "message": "Playfair Display (Serif)"
+  },
+  "font_fira": {
+    "message": "Fira Code (Monospace)"
+  },
+  "font_dyslexic": {
+    "message": "OpenDyslexic"
+  },
+  "font_system": {
+    "message": "System UI"
+  },
+  "layout_scroll": {
+    "message": "Continuous Scroll"
+  },
+  "layout_paginated": {
+    "message": "Paginated"
+  },
+  "layout_mode": {
+    "message": "Layout"
+  },
+  "close_reader": {
+    "message": "Back to Library"
+  },
+  "prev_page": {
+    "message": "Previous Page"
+  },
+  "next_page": {
+    "message": "Next Page"
+  },
+  "note_title": {
+    "message": "Note"
+  },
+  "highlight_title": {
+    "message": "Highlight"
+  },
+  "pages_displayed": {
+    "message": "Pages Displayed"
+  },
+  "pages_displayed_auto": {
+    "message": "Auto"
+  },
+  "pages_displayed_1": {
+    "message": "1 Page"
+  },
+  "pages_displayed_2": {
+    "message": "2 Pages"
+  },
+  "pages_displayed_3": {
+    "message": "3 Pages"
+  },
+  "tts_highlight_style": {
+    "message": "Speech Highlight Style"
+  },
+  "highlight_style_yellow": {
+    "message": "Yellow Highlight"
+  },
+  "highlight_style_green": {
+    "message": "Green Highlight"
+  },
+  "highlight_style_blue": {
+    "message": "Blue Highlight"
+  },
+  "highlight_style_underline": {
+    "message": "Underline Only"
+  },
+  "highlight_style_border": {
+    "message": "Border Box"
+  },
+  "highlight_style_text": {
+    "message": "Text Color Only"
+  },
+  "btn_cancel": {
+    "message": "Cancel"
+  },
+  "btn_save": {
+    "message": "Save"
+  },
+  "add_bookmark": {
+    "message": "Add Bookmark"
+  },
+  "bookmarks_header": {
+    "message": "Bookmarks"
+  },
+  "notes_header": {
+    "message": "Notes & Highlights"
+  },
+  "selection_speak": {
+    "message": "Speak"
+  },
+  "selection_delete": {
+    "message": "Delete"
+  },
+  "note_placeholder": {
+    "message": "Type your note here..."
+  },
+  "ai_assistant_title": {
+    "message": "AI Reading Assistant"
+  },
+  "chapter_label": {
+    "message": "Chapter $num$",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
+  "tts_play": {
+    "message": "Play"
+  },
+  "tts_pause": {
+    "message": "Pause"
+  },
+  "tts_stop": {
+    "message": "Stop"
+  },
+  "tts_prev": {
+    "message": "Previous Sentence"
+  },
+  "tts_next": {
+    "message": "Next Sentence"
+  },
+  "loading_book": {
+    "message": "Loading Book..."
+  },
+  "loading_page": {
+    "message": "Loading Page $page$...",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "ai_thinking": {
+    "message": "AI is thinking..."
+  },
+  "error_prefix": {
+    "message": "Error"
+  },
+  "failed_load_book": {
+    "message": "Failed to load book"
+  },
+  "failed_init_db": {
+    "message": "Failed to initialize database"
+  },
+  "delete_book_title": {
+    "message": "Delete Book"
+  },
+  "confirm_delete_book": {
+    "message": "Are you sure you want to delete this book?"
+  },
+  "unknown_author": {
+    "message": "Unknown"
+  },
+  "paper_texture": {
+    "message": "Paper Texture"
+  },
+  "texture_none": {
+    "message": "None"
+  },
+  "texture_classic": {
+    "message": "Classic Paper"
+  },
+  "texture_parchment": {
+    "message": "Parchment"
+  },
+  "texture_linen": {
+    "message": "Linen Weave"
+  },
+  "texture_aged": {
+    "message": "Aged Paper"
+  },
+  "texture_wove": {
+    "message": "Wove Paper"
+  },
+  "transition_effect": {
+    "message": "Page Transition"
+  },
+  "transition_slide": {
+    "message": "Slide"
+  },
+  "transition_flip": {
+    "message": "3D Flip"
+  },
+  "transition_none": {
+    "message": "None"
+  }
+}

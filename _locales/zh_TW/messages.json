@@ -1,0 +1,314 @@
+{
+  "extension_name": {
+    "message": "Edge 網頁版電子書閱讀器"
+  },
+  "extension_description": {
+    "message": "一款專為 Edge 設計的高級電子書閱讀器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，並支持微軟高品質語音朗讀。"
+  },
+  "library_title": {
+    "message": "我的書庫"
+  },
+  "import_book": {
+    "message": "導入書籍"
+  },
+  "drag_drop_tip": {
+    "message": "將電子書拖曳到此處導入"
+  },
+  "no_books": {
+    "message": "書庫空空如也。請拖曳電子書檔案到此處，或點擊上方「導入書籍」按鈕！"
+  },
+  "settings": {
+    "message": "閱讀設定"
+  },
+  "theme": {
+    "message": "背景主題"
+  },
+  "theme_light": {
+    "message": "明亮白"
+  },
+  "theme_dark": {
+    "message": "深雅灰"
+  },
+  "theme_sepia": {
+    "message": "復古紙"
+  },
+  "theme_mint": {
+    "message": "極簡綠"
+  },
+  "theme_oled": {
+    "message": "純黑 (OLED)"
+  },
+  "theme_sakura": {
+    "message": "櫻花粉"
+  },
+  "theme_ocean": {
+    "message": "海洋藍"
+  },
+  "theme_slate": {
+    "message": "石板灰"
+  },
+  "font_size": {
+    "message": "字型大小"
+  },
+  "font_family": {
+    "message": "閱讀字型"
+  },
+  "line_height": {
+    "message": "行間距"
+  },
+  "margin_width": {
+    "message": "左右邊距"
+  },
+  "margin_top": {
+    "message": "上方留白"
+  },
+  "margin_bottom": {
+    "message": "下方留白"
+  },
+  "page_padding": {
+    "message": "紙張邊框留白"
+  },
+  "read_aloud": {
+    "message": "語音朗讀 (TTS)"
+  },
+  "tts_voice": {
+    "message": "朗讀人聲"
+  },
+  "tts_speed": {
+    "message": "播放倍速"
+  },
+  "toc": {
+    "message": "章節目錄"
+  },
+  "highlights": {
+    "message": "書籤與筆記"
+  },
+  "ai_summary": {
+    "message": "AI 摘要"
+  },
+  "ai_explain": {
+    "message": "AI 釋義"
+  },
+  "ai_translate": {
+    "message": "AI 翻譯"
+  },
+  "search_placeholder": {
+    "message": "搜尋書籍名稱或作者..."
+  },
+  "unsupported_format": {
+    "message": "不支援此文件格式！"
+  },
+  "parse_failed": {
+    "message": "書籍解析失敗，請確認檔案是否損壞。"
+  },
+  "drm_warning": {
+    "message": "此電子書似乎受到 DRM 加密保護，插件無法解析。"
+  },
+  "reading_progress": {
+    "message": "已讀 $progress$%",
+    "placeholders": {
+      "progress": {
+        "content": "$1"
+      }
+    }
+  },
+  "font_sans": {
+    "message": "黑體/無襯線 (Inter)"
+  },
+  "font_serif": {
+    "message": "宋體/明體 (Lora)"
+  },
+  "font_lxgw": {
+    "message": "霞鶩文楷 (LXGW WenKai)"
+  },
+  "font_noto_serif": {
+    "message": "思源宋體 (Noto Serif TC)"
+  },
+  "font_playfair": {
+    "message": "Playfair Display (西文襯線)"
+  },
+  "font_fira": {
+    "message": "Fira Code (等寬程式碼)"
+  },
+  "font_dyslexic": {
+    "message": "易讀字體 (OpenDyslexic)"
+  },
+  "font_system": {
+    "message": "系統預設字型"
+  },
+  "layout_scroll": {
+    "message": "上下連續滾動"
+  },
+  "layout_paginated": {
+    "message": "左右模擬翻頁"
+  },
+  "layout_mode": {
+    "message": "版面佈局"
+  },
+  "close_reader": {
+    "message": "返回書庫"
+  },
+  "prev_page": {
+    "message": "上一頁"
+  },
+  "next_page": {
+    "message": "下一頁"
+  },
+  "note_title": {
+    "message": "筆記"
+  },
+  "highlight_title": {
+    "message": "劃線"
+  },
+  "pages_displayed": {
+    "message": "分欄顯示頁數"
+  },
+  "pages_displayed_auto": {
+    "message": "自動自適應"
+  },
+  "pages_displayed_1": {
+    "message": "單頁顯示"
+  },
+  "pages_displayed_2": {
+    "message": "雙頁顯示"
+  },
+  "pages_displayed_3": {
+    "message": "三頁顯示"
+  },
+  "tts_highlight_style": {
+    "message": "朗讀高亮樣式"
+  },
+  "highlight_style_yellow": {
+    "message": "黃色螢光筆"
+  },
+  "highlight_style_green": {
+    "message": "綠色螢光筆"
+  },
+  "highlight_style_blue": {
+    "message": "藍色螢光筆"
+  },
+  "highlight_style_underline": {
+    "message": "僅底線"
+  },
+  "highlight_style_border": {
+    "message": "虛線邊框"
+  },
+  "highlight_style_text": {
+    "message": "僅文字著色"
+  },
+  "btn_cancel": {
+    "message": "取消"
+  },
+  "btn_save": {
+    "message": "儲存"
+  },
+  "add_bookmark": {
+    "message": "新增書籤"
+  },
+  "bookmarks_header": {
+    "message": "書籤"
+  },
+  "notes_header": {
+    "message": "筆記與高亮"
+  },
+  "selection_speak": {
+    "message": "朗讀"
+  },
+  "selection_delete": {
+    "message": "刪除"
+  },
+  "note_placeholder": {
+    "message": "在此輸入筆記..."
+  },
+  "ai_assistant_title": {
+    "message": "AI 閱讀助手"
+  },
+  "chapter_label": {
+    "message": "第 $num$ 章",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
+  "tts_play": {
+    "message": "播放"
+  },
+  "tts_pause": {
+    "message": "暫停"
+  },
+  "tts_stop": {
+    "message": "停止"
+  },
+  "tts_prev": {
+    "message": "上一句"
+  },
+  "tts_next": {
+    "message": "下一句"
+  },
+  "loading_book": {
+    "message": "正在載入書籍..."
+  },
+  "loading_page": {
+    "message": "正在載入第 $page$ 頁...",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "ai_thinking": {
+    "message": "AI 正在思考..."
+  },
+  "error_prefix": {
+    "message": "錯誤"
+  },
+  "failed_load_book": {
+    "message": "書籍載入失敗"
+  },
+  "failed_init_db": {
+    "message": "資料庫初始化失敗"
+  },
+  "delete_book_title": {
+    "message": "刪除書籍"
+  },
+  "confirm_delete_book": {
+    "message": "確定要刪除這本書嗎？"
+  },
+  "unknown_author": {
+    "message": "未知作者"
+  },
+  "paper_texture": {
+    "message": "紙張底紋"
+  },
+  "texture_none": {
+    "message": "無"
+  },
+  "texture_classic": {
+    "message": "經典紙紋"
+  },
+  "texture_parchment": {
+    "message": "羊皮紙"
+  },
+  "texture_linen": {
+    "message": "亞麻布紋"
+  },
+  "texture_aged": {
+    "message": "仿舊紙"
+  },
+  "texture_wove": {
+    "message": "水紋紙"
+  },
+  "transition_effect": {
+    "message": "翻頁動畫效果"
+  },
+  "transition_slide": {
+    "message": "滑動效果"
+  },
+  "transition_flip": {
+    "message": "3D 翻頁效果"
+  },
+  "transition_none": {
+    "message": "無動畫"
+  }
+}

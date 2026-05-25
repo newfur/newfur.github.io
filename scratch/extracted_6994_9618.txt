@@ -1,0 +1,1 @@
+I will update the extraction script to dump all matching lines containing `decodeAudioData` (even if they are under 5000 characters) so we can see what code fragments are available.
