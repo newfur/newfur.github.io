@@ -51,14 +51,14 @@ const readerCss = fs.readFileSync(path.join(rootDir, 'reader/reader.css'), 'utf8
 let html = fs.readFileSync(path.join(rootDir, 'reader/reader.html'), 'utf8');
 
 // Inline CSS
-html = html.replace('<link rel="stylesheet" href="reader.css">', `<style>${readerCss}</style>`);
+html = html.replace('<link rel="stylesheet" href="reader.css">', () => `<style>${readerCss}</style>`);
 
 // Inline JSZIP and module scripts
 const scriptJszipRegex = /<script src="libs\/jszip\.min\.js"><\/script>/i;
 const scriptModuleRegex = /<script type="module" src="reader\.js"><\/script>/i;
 
-html = html.replace(scriptJszipRegex, `<script>${jszipJs}</script>`);
-html = html.replace(scriptModuleRegex, `<script>${combinedJs}</script>`);
+html = html.replace(scriptJszipRegex, () => `<script>${jszipJs}</script>`);
+html = html.replace(scriptModuleRegex, () => `<script>${combinedJs}</script>`);
 
 // 6. Write final offline file to root
 fs.writeFileSync(path.join(rootDir, 'reader_offline.html'), html, 'utf8');

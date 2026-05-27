@@ -3731,19 +3731,10 @@ function getFallbackMsg(key, substitutions = []) {
     const placeholders = _fallbackMessages[key].placeholders;
     for (const [name, info] of Object.entries(placeholders)) {
       // content 格式為 "$1", "$2" 等
-      const idx = parseInt(info.content?.replace('
-</body>
-</html>
-, '')) - 1;
+      const idx = parseInt(info.content?.replace('$', '')) - 1;
       if (idx >= 0 && idx < substitutions.length) {
         // 替換 $name$ 格式的佔位符 (不分大小寫)
-        const pattern = '\\
-</body>
-</html>
- + name + '\\
-</body>
-</html>
-;
+        const pattern = '\\$' + name + '\\$';
         const regex = new RegExp(pattern, 'gi');
         msg = msg.replace(regex, substitutions[idx]);
       }
@@ -4306,7 +4297,7 @@ class EpubParser {
       try {
         let navText = await this.zip.file(navItem.href).async('string');
         // Fix self-closing script tags that break DOMParser in text/html mode
-        navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1></script>');
+        navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
         const parser = new DOMParser();
         const doc = parser.parseFromString(navText, 'text/html');
         const navLinks = doc.querySelectorAll('nav a');
@@ -4382,7 +4373,7 @@ class EpubParser {
     
     let htmlText = await file.async('string');
     // Fix self-closing script tags that break DOMParser in text/html mode
-    htmlText = htmlText.replace(/<script([^>]*?)\/>/gi, '<script$1></script>');
+    htmlText = htmlText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
     
     // 解析 DOM
     const parser = new DOMParser();

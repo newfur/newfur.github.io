@@ -191,7 +191,7 @@ export class EpubParser {
       try {
         let navText = await this.zip.file(navItem.href).async('string');
         // Fix self-closing script tags that break DOMParser in text/html mode
-        navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1></script>');
+        navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
         const parser = new DOMParser();
         const doc = parser.parseFromString(navText, 'text/html');
         const navLinks = doc.querySelectorAll('nav a');
@@ -267,7 +267,7 @@ export class EpubParser {
     
     let htmlText = await file.async('string');
     // Fix self-closing script tags that break DOMParser in text/html mode
-    htmlText = htmlText.replace(/<script([^>]*?)\/>/gi, '<script$1></script>');
+    htmlText = htmlText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
     
     // 解析 DOM
     const parser = new DOMParser();
