@@ -768,6 +768,10 @@ export class TTSEngine {
       return;
     }
     
+    const sentence = this.sentences[index];
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+    
     if (useNativeSynth) {
       this._speakNativeSentence(index);
       return;
