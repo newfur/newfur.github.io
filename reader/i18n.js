@@ -34,7 +34,9 @@ async function loadFallbackMessages() {
     }
 
     // 動態載入 JSON
-    const url = chrome.runtime.getURL(`_locales/${localePath}/messages.json`);
+    const url = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+      ? chrome.runtime.getURL(`_locales/${localePath}/messages.json`)
+      : `../_locales/${localePath}/messages.json`;
     const res = await fetch(url);
     if (res.ok) {
       _fallbackMessages = await res.json();

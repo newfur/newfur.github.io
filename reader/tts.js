@@ -151,14 +151,18 @@ export class TTSEngine {
       }
 
       if (!list) {
-        // 退化降級：若無 extension context，嘗試直接 fetch
-        const response = await fetch("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4");
-        if (response.ok) {
+        // 退化降級：若無 extension context，嘗試透過本地 API 或直接 fetch
+        const isWeb = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const url = isWeb 
+          ? "/api/voices" 
+          : "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+        const response = await fetch(url).catch(() => null);
+        if (response && response.ok) {
           list = await response.json();
-          const serverDate = response.headers.get("Date");
+          const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
           if (serverDate) {
             this.clockSkew = new Date(serverDate).getTime() - Date.now();
-            console.log(`TTS Clock synced via direct fetch. Skew: ${this.clockSkew} ms`);
+            console.log(`TTS Clock synced via local web proxy. Skew: ${this.clockSkew} ms`);
           }
         }
       }
@@ -549,11 +553,20 @@ export class TTSEngine {
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
         
-        const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1` +
-                    `?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` +
-                    `&ConnectionId=${connectionId}` +
-                    `&Sec-MS-GEC=${secMsGec}` +
-                    `&Sec-MS-GEC-Version=1-143.0.3650.75`;
+        const isWeb = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        let url;
+        if (isWeb) {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          url = `${wsProtocol}//${window.location.host}/api/tts` +
+                `?ConnectionId=${connectionId}` +
+                `&Sec-MS-GEC=${secMsGec}`;
+        } else {
+          url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1` +
+                `?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` +
+                `&ConnectionId=${connectionId}` +
+                `&Sec-MS-GEC=${secMsGec}` +
+                `&Sec-MS-GEC-Version=1-143.0.3650.75`;
+        }
                     
         const ws = new WebSocket(url);
         const audioChunks = [];

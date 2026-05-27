@@ -1,6 +1,36 @@
 // reader/reader.js
 // 閱讀器核心控制器 - 協調書庫 IndexedDB、五種解析器、TTS 語音朗讀、內置 AI 以及 UI 微交互
 
+// Emulate chrome.storage.local for standalone web version (uses browser localStorage)
+if (typeof chrome === 'undefined') {
+  window.chrome = {};
+}
+if (!chrome.storage) {
+  chrome.storage = {
+    local: {
+      get: (keys, callback) => {
+        const res = {};
+        const keysArray = Array.isArray(keys) ? keys : [keys];
+        keysArray.forEach(k => {
+          const val = localStorage.getItem(k);
+          try {
+            res[k] = val ? JSON.parse(val) : undefined;
+          } catch (e) {
+            res[k] = val;
+          }
+        });
+        setTimeout(() => callback(res), 0);
+      },
+      set: (items, callback) => {
+        Object.entries(items).forEach(([k, v]) => {
+          localStorage.setItem(k, JSON.stringify(v));
+        });
+        if (callback) setTimeout(callback, 0);
+      }
+    }
+  };
+}
+
 import { BookLibrary } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
@@ -2440,10 +2470,10 @@ function updatePlayPauseButtonIcon() {
   const isPlaying = tts.isPlaying && !tts.isPaused;
   if (isPlaying) {
     ttsPlayBtn.innerHTML = `<svg class="svg-icon" style="width: 24px; height: 24px; fill: currentColor;" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
-    ttsPlayBtn.title = chrome.i18n ? chrome.i18n.getMessage('tts_pause') || 'Pause' : 'Pause';
+    ttsPlayBtn.title = getMsg('tts_pause') || 'Pause';
   } else {
     ttsPlayBtn.innerHTML = `<svg class="svg-icon" style="width: 24px; height: 24px; margin-left: 2px; fill: currentColor;" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
-    ttsPlayBtn.title = chrome.i18n ? chrome.i18n.getMessage('tts_play') || 'Play' : 'Play';
+    ttsPlayBtn.title = getMsg('tts_play') || 'Play';
   }
 }
 

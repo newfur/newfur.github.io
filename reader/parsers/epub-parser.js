@@ -1,6 +1,8 @@
 // reader/parsers/epub-parser.js
 // EPUB 電子書解析器，使用 JSZip 解壓並重構章節與資源
 
+import { getMsg } from '../i18n.js';
+
 export class EpubParser {
   constructor(fileBlob) {
     this.fileBlob = fileBlob;
@@ -39,7 +41,7 @@ export class EpubParser {
       const item = this.manifest[idref];
       if (item && item.href && !tocCleanHrefs.has(item.href)) {
         tocChapters.push({
-          title: chrome.i18n ? chrome.i18n.getMessage('notes_chapter_title') || 'Notes/Appendix' : 'Notes/Appendix',
+          title: getMsg('notes_chapter_title') || 'Notes/Appendix',
           href: item.href,
           hash: '',
           cleanHref: item.href,
