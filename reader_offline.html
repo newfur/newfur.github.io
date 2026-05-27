@@ -6470,9 +6470,18 @@ class TTSEngine {
     const voice = this.selectedVoice;
     
     const utterance = new SpeechSynthesisUtterance(sentence.text);
-    if (voice && voice.rawVoice) {
-      utterance.voice = voice.rawVoice;
-      utterance.lang = voice.lang || '';
+    if (voice && this.synth) {
+      const liveVoices = this.synth.getVoices();
+      const liveVoice = liveVoices.find(v => v.name === voice.name);
+      if (liveVoice) {
+        utterance.voice = liveVoice;
+        utterance.lang = liveVoice.lang || '';
+      } else if (voice.rawVoice) {
+        utterance.voice = voice.rawVoice;
+        utterance.lang = voice.lang || '';
+      } else {
+        utterance.lang = voice.lang || '';
+      }
     } else if (voice) {
       utterance.lang = voice.lang || '';
     } else {
