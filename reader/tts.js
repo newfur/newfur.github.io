@@ -79,6 +79,7 @@ export class TTSEngine {
     this.audioCache = new Map(); // index -> { blobUrl, audio, isReady }
     this.fetchingIndices = new Set();
     this.currentAudio = null; // 當前正在播放的 Audio 對象
+    this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -767,59 +768,8 @@ export class TTSEngine {
       return;
     }
     
-    const sentence = this.sentences[index];
-    const voice = this.selectedVoice;
-    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
-
     if (useNativeSynth) {
-      // 跨章節無縫過渡檢測
-      if (sentence.chapterIndex !== this.currentChapterIndex) {
-        this.currentChapterIndex = sentence.chapterIndex;
-        this.prefetchedChapterIndex = null;
-        
-        if (this.onChapterTransition) {
-          this.onChapterTransition(sentence.chapterIndex);
-        }
-        
-        this._prefetchNextChapter();
-      }
-      
-      this._highlightSentence(sentence);
-      if (this.onSentenceStart) {
-        this.onSentenceStart(index);
-      }
-      
-      const utterance = new SpeechSynthesisUtterance(sentence.text);
-      if (voice && voice.rawVoice) {
-        utterance.voice = voice.rawVoice;
-        utterance.lang = voice.lang || '';
-      } else if (voice) {
-        utterance.lang = voice.lang || '';
-      } else {
-        const hasChinese = /[\u4e00-\u9fa5]/.test(sentence.text);
-        utterance.lang = hasChinese ? 'zh-CN' : 'en-US';
-      }
-      
-      utterance.rate = this.rate;
-      utterance.volume = this.volume;
-      
-      utterance.onend = () => {
-        if (!this.isPlaying || this.isPaused) return;
-        this.currentIndex = index + 1;
-        this._playActiveSentence();
-      };
-      
-      utterance.onerror = (err) => {
-        console.error("SpeechSynthesis utterance error:", err);
-        if (!this.isPlaying) return;
-        this.currentIndex = index + 1;
-        this._playActiveSentence();
-      };
-      
-      this.currentUtterance = utterance;
-      this.synth.speak(utterance);
-      this._fillPreFetchBuffer();
-      this._prefetchNextChapter();
+      this._speakNativeSentence(index);
       return;
     }
     
@@ -871,6 +821,83 @@ export class TTSEngine {
       this.currentIndex = index + 1;
       this._playActiveSentence();
     };
+  }
+
+  _speakNativeSentence(index) {
+    if (!this.isPlaying) return;
+    if (index >= this.sentences.length) {
+      this.stop();
+      if (this.onPlaybackEnd) this.onPlaybackEnd();
+      return;
+    }
+
+    const sentence = this.sentences[index];
+    const voice = this.selectedVoice;
+    
+    const utterance = new SpeechSynthesisUtterance(sentence.text);
+    if (voice && voice.rawVoice) {
+      utterance.voice = voice.rawVoice;
+      utterance.lang = voice.lang || '';
+    } else if (voice) {
+      utterance.lang = voice.lang || '';
+    } else {
+      const hasChinese = /[\u4e00-\u9fa5]/.test(sentence.text);
+      utterance.lang = hasChinese ? 'zh-CN' : 'en-US';
+    }
+    
+    utterance.rate = this.rate;
+    utterance.volume = this.volume;
+
+    utterance.onstart = () => {
+      if (!this.isPlaying) return;
+      this.currentIndex = index;
+      
+      // 跨章節無縫過渡檢測
+      if (sentence.chapterIndex !== this.currentChapterIndex) {
+        this.currentChapterIndex = sentence.chapterIndex;
+        this.prefetchedChapterIndex = null;
+        if (this.onChapterTransition) {
+          this.onChapterTransition(sentence.chapterIndex);
+        }
+        this._prefetchNextChapter();
+      }
+      
+      this._highlightSentence(sentence);
+      if (this.onSentenceStart) {
+        this.onSentenceStart(index);
+      }
+
+      // 預先將「下一句」放入瀏覽器的朗讀隊列中，以實現無縫連續過渡
+      const nextIndex = index + 1;
+      if (nextIndex < this.sentences.length && !this.nativeQueue.has(nextIndex)) {
+        this.nativeQueue.add(nextIndex);
+        this._speakNativeSentence(nextIndex);
+      }
+    };
+
+    utterance.onend = () => {
+      this.nativeQueue.delete(index);
+      if (!this.isPlaying) return;
+      
+      // 若下一句因為特殊原因（如暫停後重開）未能自動觸發，手動跳轉播放
+      if (this.currentIndex === index) {
+        this.currentIndex = index + 1;
+        this._playActiveSentence();
+      }
+    };
+
+    utterance.onerror = (err) => {
+      console.error("SpeechSynthesis utterance error:", err);
+      this.nativeQueue.delete(index);
+      if (!this.isPlaying) return;
+      
+      if (this.currentIndex === index) {
+        this.currentIndex = index + 1;
+        this._playActiveSentence();
+      }
+    };
+
+    this.synth.speak(utterance);
   }
 
   play(index = 0) {
@@ -996,6 +1023,7 @@ export class TTSEngine {
       this.synth.cancel();
     }
     this.currentUtterance = null;
+    this.nativeQueue.clear();
     
     if (this.currentAudio) {
       this.currentAudio.pause();
