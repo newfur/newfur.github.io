@@ -688,6 +688,10 @@ export class TTSEngine {
 
   // 4. 預加載控制與播放隊列
   _fetchSentence(index) {
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+    if (useNativeSynth) return;
+
     if (index >= this.sentences.length) return;
     if (this.audioCache.has(index) || this.fetchingIndices.has(index)) return;
     
@@ -736,6 +740,10 @@ export class TTSEngine {
 
   _fillPreFetchBuffer() {
     if (!this.isPlaying) return;
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+    if (useNativeSynth) return;
+
     const bufferSize = 3;
     for (let i = 0; i < bufferSize; i++) {
       const targetIndex = this.currentIndex + i;
@@ -764,10 +772,6 @@ export class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
 
     if (useNativeSynth) {
-      if (this.synth) {
-        this.synth.cancel();
-      }
-      
       // 跨章節無縫過渡檢測
       if (sentence.chapterIndex !== this.currentChapterIndex) {
         this.currentChapterIndex = sentence.chapterIndex;
