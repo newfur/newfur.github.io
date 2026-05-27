@@ -5747,9 +5747,13 @@ class TTSEngine {
 
     const loadVoices = () => {
       const voices = getWebSpeechVoices();
-      if (voices.length > 0 && this.voices.length === 0) {
-        this.voices = voices;
-        if (this.onStateChange) this.onStateChange();
+      if (voices.length > 0) {
+        const existingNames = new Set(this.voices.map(v => v.name));
+        const newVoices = voices.filter(v => !existingNames.has(v.name));
+        if (newVoices.length > 0) {
+          this.voices = [...this.voices, ...newVoices];
+          if (this.onStateChange) this.onStateChange();
+        }
       }
     };
 
@@ -6415,6 +6419,12 @@ class TTSEngine {
       const utterance = new SpeechSynthesisUtterance(sentence.text);
       if (voice && voice.rawVoice) {
         utterance.voice = voice.rawVoice;
+        utterance.lang = voice.lang || '';
+      } else if (voice) {
+        utterance.lang = voice.lang || '';
+      } else {
+        const hasChinese = /[\u4e00-\u9fa5]/.test(sentence.text);
+        utterance.lang = hasChinese ? 'zh-CN' : 'en-US';
       }
       
       utterance.rate = this.rate;
@@ -8926,14 +8936,21 @@ function initThemeAndStyles() {
     setMarginBottom(50); // 強制設定下方留白為 50px
     setPagePadding(40); // 強制設定紙張邊框留白為 40px
     
-    // 是否僅顯示 Edge 語音
-    ttsOnlyEdge = res.ttsOnlyEdge === true;
-    const filterBtn = document.getElementById('tts-filter-edge-btn');
-    if (filterBtn) {
-      if (ttsOnlyEdge) {
-        filterBtn.classList.add('active');
-      } else {
-        filterBtn.classList.remove('active');
+    // 是否僅顯示 Edge 語音 (在 file:// 協議下強制為 false，並隱藏過濾按鈕)
+    const isWebFile = window.location.protocol === 'file:';
+    if (isWebFile) {
+      ttsOnlyEdge = false;
+      const filterBtn = document.getElementById('tts-filter-edge-btn');
+      if (filterBtn) filterBtn.style.display = 'none';
+    } else {
+      ttsOnlyEdge = res.ttsOnlyEdge === true;
+      const filterBtn = document.getElementById('tts-filter-edge-btn');
+      if (filterBtn) {
+        if (ttsOnlyEdge) {
+          filterBtn.classList.add('active');
+        } else {
+          filterBtn.classList.remove('active');
+        }
       }
     }
     
@@ -9430,7 +9447,8 @@ function initTTSPanelVoices(filename) {
   select.innerHTML = '';
 
   let matchedVoices = tts.getVoicesForLanguage(lang);
-  if (ttsOnlyEdge) {
+  const isWebFile = window.location.protocol === 'file:';
+  if (ttsOnlyEdge && !isWebFile) {
     matchedVoices = matchedVoices.filter(v => v.isEdge);
   }
   matchedVoices.forEach(voice => {

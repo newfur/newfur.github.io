@@ -116,9 +116,13 @@ export class TTSEngine {
 
     const loadVoices = () => {
       const voices = getWebSpeechVoices();
-      if (voices.length > 0 && this.voices.length === 0) {
-        this.voices = voices;
-        if (this.onStateChange) this.onStateChange();
+      if (voices.length > 0) {
+        const existingNames = new Set(this.voices.map(v => v.name));
+        const newVoices = voices.filter(v => !existingNames.has(v.name));
+        if (newVoices.length > 0) {
+          this.voices = [...this.voices, ...newVoices];
+          if (this.onStateChange) this.onStateChange();
+        }
       }
     };
 
@@ -784,6 +788,12 @@ export class TTSEngine {
       const utterance = new SpeechSynthesisUtterance(sentence.text);
       if (voice && voice.rawVoice) {
         utterance.voice = voice.rawVoice;
+        utterance.lang = voice.lang || '';
+      } else if (voice) {
+        utterance.lang = voice.lang || '';
+      } else {
+        const hasChinese = /[\u4e00-\u9fa5]/.test(sentence.text);
+        utterance.lang = hasChinese ? 'zh-CN' : 'en-US';
       }
       
       utterance.rate = this.rate;

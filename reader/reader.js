@@ -2072,14 +2072,21 @@ function initThemeAndStyles() {
     setMarginBottom(50); // 強制設定下方留白為 50px
     setPagePadding(40); // 強制設定紙張邊框留白為 40px
     
-    // 是否僅顯示 Edge 語音
-    ttsOnlyEdge = res.ttsOnlyEdge === true;
-    const filterBtn = document.getElementById('tts-filter-edge-btn');
-    if (filterBtn) {
-      if (ttsOnlyEdge) {
-        filterBtn.classList.add('active');
-      } else {
-        filterBtn.classList.remove('active');
+    // 是否僅顯示 Edge 語音 (在 file:// 協議下強制為 false，並隱藏過濾按鈕)
+    const isWebFile = window.location.protocol === 'file:';
+    if (isWebFile) {
+      ttsOnlyEdge = false;
+      const filterBtn = document.getElementById('tts-filter-edge-btn');
+      if (filterBtn) filterBtn.style.display = 'none';
+    } else {
+      ttsOnlyEdge = res.ttsOnlyEdge === true;
+      const filterBtn = document.getElementById('tts-filter-edge-btn');
+      if (filterBtn) {
+        if (ttsOnlyEdge) {
+          filterBtn.classList.add('active');
+        } else {
+          filterBtn.classList.remove('active');
+        }
       }
     }
     
@@ -2576,7 +2583,8 @@ function initTTSPanelVoices(filename) {
   select.innerHTML = '';
 
   let matchedVoices = tts.getVoicesForLanguage(lang);
-  if (ttsOnlyEdge) {
+  const isWebFile = window.location.protocol === 'file:';
+  if (ttsOnlyEdge && !isWebFile) {
     matchedVoices = matchedVoices.filter(v => v.isEdge);
   }
   matchedVoices.forEach(voice => {
