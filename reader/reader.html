@@ -33,6 +33,20 @@
             <span data-i18n="import_book">Import Book</span>
           </button>
           <input type="file" id="file-input" accept=".epub,.azw3,.mobi,.txt,.md,.fb2,.cbz" style="display: none;">
+
+          <button id="backup-btn" class="btn btn-secondary" data-i18n-title="backup_library_tooltip" title="Export Library Backup">
+            <span class="btn-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </span>
+            <span data-i18n="backup_library">Backup</span>
+          </button>
+          <button id="restore-btn" class="btn btn-secondary" data-i18n-title="restore_library_tooltip" title="Restore Library Backup">
+            <span class="btn-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+            </span>
+            <span data-i18n="restore_library">Restore</span>
+          </button>
+          <input type="file" id="restore-file-input" accept=".json" style="display: none;">
         </div>
       </div>
     </header>
@@ -174,19 +188,19 @@
         </div>
         <input type="range" id="margin-width-slider" min="5" max="30" step="1" value="5">
       </div>
-      <div class="setting-item">
+      <div class="setting-item" style="display: none;">
         <div class="slider-header">
           <span data-i18n="margin_top">Top Spacing</span>
-          <span id="margin-top-val">35px</span>
+          <span id="margin-top-val">50px</span>
         </div>
-        <input type="range" id="margin-top-slider" min="10" max="150" step="5" value="35">
+        <input type="range" id="margin-top-slider" min="10" max="150" step="5" value="50">
       </div>
-      <div class="setting-item">
+      <div class="setting-item" style="display: none;">
         <div class="slider-header">
           <span data-i18n="margin_bottom">Bottom Spacing</span>
-          <span id="margin-bottom-val">35px</span>
+          <span id="margin-bottom-val">50px</span>
         </div>
-        <input type="range" id="margin-bottom-slider" min="10" max="150" step="5" value="35">
+        <input type="range" id="margin-bottom-slider" min="10" max="150" step="5" value="50">
       </div>
       <div class="setting-item" id="page-padding-container" style="display: none;">
         <div class="slider-header">
@@ -226,7 +240,6 @@
         <label data-i18n="transition_effect">Page Transition</label>
         <select id="transition-effect-select">
           <option value="slide" data-i18n="transition_slide" selected>Slide</option>
-          <option value="flip" data-i18n="transition_flip">3D Flip</option>
           <option value="none" data-i18n="transition_none">None</option>
         </select>
       </div>
@@ -260,7 +273,12 @@
         </button>
       </div>
       <div class="setting-item">
-        <label data-i18n="tts_voice">Voice</label>
+        <div class="voice-selector-header">
+          <label data-i18n="tts_voice">Voice</label>
+          <button id="tts-filter-edge-btn" class="filter-toggle-btn" data-i18n-title="tts_filter_edge" title="Show Edge Natural Voices Only">
+            <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+          </button>
+        </div>
         <select id="tts-voice-select">
           <!-- 語音引擎將在此動態插入 -->
         </select>

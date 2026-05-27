@@ -1038,6 +1038,42 @@ body.format-cbz .comic-page {
   color: var(--text-muted);
 }
 
+.voice-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filter-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.filter-toggle-btn .svg-icon {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.filter-toggle-btn:hover {
+  background-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.filter-toggle-btn.active {
+  color: var(--primary-color);
+  background-color: var(--selection-color);
+  box-shadow: 0 0 4px var(--selection-color);
+}
+
 /* 主題圓點選取器 */
 .theme-selector {
   display: flex;
@@ -1260,7 +1296,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .sidebar-list-item {
-  padding: 12px;
+  padding: 12px 36px 12px 12px;
   border-radius: 10px;
   border: 1px solid var(--border-color);
   margin-bottom: 10px;
@@ -1268,6 +1304,27 @@ input[type="range"]::-webkit-slider-thumb:hover {
   font-size: 13px;
   position: relative;
   transition: all 0.2s ease;
+}
+
+.book-delete-btn-sidebar {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.book-delete-btn-sidebar:hover {
+  color: #ff4d4f; /* 醒目的刪除紅色 */
+  background-color: var(--border-color);
 }
 
 .sidebar-list-item:hover {
@@ -2093,5 +2150,25 @@ html.transition-none .page-texture-slide {
   letter-spacing: 0.05em;
   font-weight: 500;
   transition: color var(--transition-speed);
+}
+
+/* ==================== 備份與還原按鈕響應式微調 ==================== */
+@media (max-width: 768px) {
+  .header-container {
+    flex-direction: column;
+    gap: 15px;
+    align-items: flex-start;
+  }
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .search-bar {
+    width: 100%;
+  }
+  .search-bar input {
+    width: 100% !important;
+  }
 }
 

@@ -11,6 +11,39 @@
   "import_book": {
     "message": "Import Book"
   },
+  "backup_library": {
+    "message": "Backup"
+  },
+  "restore_library": {
+    "message": "Restore"
+  },
+  "backup_library_tooltip": {
+    "message": "Export a backup file (.json) containing all books, progress, and notes"
+  },
+  "restore_library_tooltip": {
+    "message": "Restore a previously backed up library file"
+  },
+  "backup_success": {
+    "message": "Library backup successful! Backup file downloaded."
+  },
+  "restore_success": {
+    "message": "Library restored successfully! All books and progress recovered."
+  },
+  "backup_failed": {
+    "message": "Error backing up library"
+  },
+  "restore_failed": {
+    "message": "Error restoring library"
+  },
+  "invalid_backup_file": {
+    "message": "Invalid backup file format!"
+  },
+  "backing_up": {
+    "message": "Backing up..."
+  },
+  "restoring": {
+    "message": "Restoring, please wait..."
+  },
   "drag_drop_tip": {
     "message": "Drag & Drop books here to import"
   },
@@ -310,5 +343,11 @@
   },
   "transition_none": {
     "message": "None"
+  },
+  "tts_filter_edge": {
+    "message": "Show Edge Natural Voices Only"
+  },
+  "notes_chapter_title": {
+    "message": "Notes/Appendix"
   }
 }

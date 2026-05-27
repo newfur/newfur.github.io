@@ -11,6 +11,39 @@
   "import_book": {
     "message": "導入書籍"
   },
+  "backup_library": {
+    "message": "備份書庫"
+  },
+  "restore_library": {
+    "message": "還原書庫"
+  },
+  "backup_library_tooltip": {
+    "message": "導出包含所有書籍、閱讀進度、高亮與筆記的備份檔 (.json)"
+  },
+  "restore_library_tooltip": {
+    "message": "導入先前備份的書庫檔案"
+  },
+  "backup_success": {
+    "message": "書庫備份成功！已下載備份檔案。"
+  },
+  "restore_success": {
+    "message": "書庫還原成功！所有書籍與進度已恢復。"
+  },
+  "backup_failed": {
+    "message": "備份書庫時發生錯誤"
+  },
+  "restore_failed": {
+    "message": "還原書庫時發生錯誤"
+  },
+  "invalid_backup_file": {
+    "message": "無效的備份檔案，格式不符！"
+  },
+  "backing_up": {
+    "message": "正在進行備份..."
+  },
+  "restoring": {
+    "message": "正在進行還原，請稍候..."
+  },
   "drag_drop_tip": {
     "message": "將電子書拖曳到此處導入"
   },
@@ -310,5 +343,11 @@
   },
   "transition_none": {
     "message": "無動畫"
+  },
+  "tts_filter_edge": {
+    "message": "僅顯示 Edge 線上高品質語音"
+  },
+  "notes_chapter_title": {
+    "message": "附錄/註釋"
   }
 }

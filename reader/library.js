@@ -13,6 +13,15 @@ export class BookLibrary {
   async open() {
     if (this.db) return this.db;
 
+    // 請求瀏覽器持久化儲存保護，防止因硬碟空間不足被自動清除
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then(persisted => {
+        console.log('[BookLibrary] Storage persisted status:', persisted);
+      }).catch(err => {
+        console.warn('[BookLibrary] Failed to request storage persistence:', err);
+      });
+    }
+
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -78,6 +87,19 @@ export class BookLibrary {
       const request = store.add(book);
 
       request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 導入/還原書籍（直接使用 put 強制覆寫/更新已存在的書籍）
+  async importBook(book) {
+    await this._ensureOpen();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
     });
   }
@@ -235,6 +257,7 @@ export class BookLibrary {
         title: bookmark.title || 'Bookmark',
         chapterIndex: bookmark.chapterIndex || 0,
         elementIndex: bookmark.elementIndex || 0,
+        currentPageIndex: bookmark.currentPageIndex || 0,
         pdfPage: bookmark.pdfPage || 1
       });
     }

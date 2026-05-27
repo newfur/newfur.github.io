@@ -17,7 +17,8 @@
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "*://*.platform.bing.com/*"
+    "*://*.platform.bing.com/*",
+    "wss://*.platform.bing.com/*"
   ],
   "background": {
     "service_worker": "service-worker.js"

@@ -1,74 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <!-- Background Circle Gradient: Deep Royal Blue to Indigo to Violet -->
+    <!-- Background Gradient: Vibrant Modern Indigo to Violet -->
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2563eb" />
-      <stop offset="50%" stop-color="#4f46e5" />
-      <stop offset="100%" stop-color="#7c3aed" />
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#4f46e5" />
     </linearGradient>
     
-    <!-- Glossy Dome Reflection Gradient -->
-    <linearGradient id="glossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35" />
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
-    </linearGradient>
-
-    <!-- Page Shading Gradient (Left Page: Darker at the spine on the right) -->
-    <linearGradient id="leftPageGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="85%" stop-color="#f8fafc" />
-      <stop offset="100%" stop-color="#e2e8f0" />
-    </linearGradient>
-
-    <!-- Page Shading Gradient (Right Page: Darker at the spine on the left) -->
-    <linearGradient id="rightPageGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#e2e8f0" />
-      <stop offset="15%" stop-color="#f8fafc" />
-      <stop offset="100%" stop-color="#ffffff" />
-    </linearGradient>
-
-    <!-- Red Bookmark Gradient -->
+    <!-- Accent Bookmark Ribbon Gradient -->
     <linearGradient id="bookmarkGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ef4444" />
-      <stop offset="100%" stop-color="#b91c1c" />
+      <stop offset="0%" stop-color="#ff4b5c" />
+      <stop offset="100%" stop-color="#e11d48" />
     </linearGradient>
-    
-    <!-- Book Shadow -->
-    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.4" />
-    </filter>
   </defs>
 
-  <!-- Circular Background -->
-  <circle cx="256" cy="256" r="220" fill="url(#bgGrad)" />
+  <!-- Background Rounded Square (Flat and Modern) -->
+  <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="url(#bgGrad)" />
 
-  <!-- Inner Bevel Highlight (Slight ring inside the circle at the top) -->
-  <path d="M 40,256 A 216,216 0 0,1 472,256" fill="none" stroke="#ffffff" stroke-width="3" stroke-opacity="0.25" stroke-linecap="round" />
-
-  <!-- Book Cover Backing (Dark Blue/Grey with Shadow) -->
-  <g filter="url(#dropShadow)">
-    <polygon points="104,168 250,192 250,368 104,344" fill="#0f172a" />
-    <polygon points="262,192 408,168 408,344 262,368" fill="#0f172a" />
-    
-    <!-- Bookmark Ribbon -->
-    <polygon points="248,180 264,180 264,395 256,382 248,395" fill="url(#bookmarkGrad)" />
-    
-    <!-- Left Page -->
-    <polygon points="114,176 246,198 246,360 114,338" fill="url(#leftPageGrad)" />
-    <!-- Right Page -->
-    <polygon points="266,198 398,176 398,338 266,360" fill="url(#rightPageGrad)" />
-    
-    <!-- Left Page Lines (Cyan/Blue Gradient or Solid color) -->
-    <line x1="138" y1="215" x2="222" y2="230" stroke="#3b82f6" stroke-width="7" stroke-linecap="round" />
-    <line x1="138" y1="250" x2="198" y2="260" stroke="#3b82f6" stroke-width="7" stroke-linecap="round" />
-    <line x1="138" y1="285" x2="222" y2="300" stroke="#3b82f6" stroke-width="7" stroke-linecap="round" />
-    
-    <!-- Right Page Lines (Pink/Magenta) -->
-    <line x1="290" y1="230" x2="374" y2="215" stroke="#ec4899" stroke-width="7" stroke-linecap="round" />
-    <line x1="290" y1="260" x2="350" y2="250" stroke="#ec4899" stroke-width="7" stroke-linecap="round" />
-    <line x1="290" y1="290" x2="374" y2="275" stroke="#ec4899" stroke-width="7" stroke-linecap="round" />
+  <!-- Book Cover Backing (Dark Navy/Indigo) -->
+  <g>
+    <!-- Left Cover Backing -->
+    <path d="M 246 166 C 196 151, 134 151, 92 168 L 92 350 C 134 333, 196 333, 246 350 Z" fill="#1e1b4b" />
+    <!-- Right Cover Backing -->
+    <path d="M 266 166 C 316 151, 378 151, 420 168 L 420 350 C 378 333, 316 333, 266 350 Z" fill="#1e1b4b" />
   </g>
 
-  <!-- Glossy Dome Reflection Overlay -->
-  <path d="M 38,230 A 220,220 0 0,1 474,230 C 350,330 150,330 38,230 Z" fill="url(#glossGrad)" />
+  <!-- Bookmark Ribbon (Vibrant Coral Red) -->
+  <path d="M 250 170 L 262 170 L 262 375 L 256 363 L 250 375 Z" fill="url(#bookmarkGrad)" />
+
+  <!-- Book Pages (Pure White) -->
+  <g>
+    <!-- Left Page -->
+    <path d="M 244 176 C 200 161, 140 161, 100 176 L 100 346 C 140 331, 200 331, 244 346 Z" fill="#ffffff" />
+    <!-- Right Page -->
+    <path d="M 268 176 C 312 161, 372 161, 412 176 L 412 346 C 372 331, 312 331, 268 346 Z" fill="#ffffff" />
+  </g>
+
+  <!-- Symmetrical Text Lines (Subtle slate lines simulating text) -->
+  <g stroke="#cbd5e1" stroke-width="8" stroke-linecap="round" fill="none">
+    <!-- Left Page Lines -->
+    <path d="M 130 220 C 160 210, 190 215, 214 226" />
+    <path d="M 130 252 C 160 242, 180 246, 194 251" />
+    <path d="M 130 284 C 160 274, 190 279, 214 290" />
+
+    <!-- Right Page Lines -->
+    <path d="M 298 226 C 322 215, 352 210, 382 220" />
+    <path d="M 298 251 C 322 246, 342 242, 362 247" />
+    <path d="M 298 290 C 322 279, 352 274, 382 284" />
+  </g>
 </svg>

@@ -1,5 +1,61 @@
-// reader/tts.js
-// 文字轉語音 (TTS) 控制引擎，負責語音列表加載、Edge 雲端語音 WebSocket 流式預載、無縫 HTML5 Audio 隊列播放與高亮同步
+// 輔助函式：將文字切分為句子，同時避免在英文縮寫、縮寫首字母（如 J. F.）或小數點（如 3.14）處發生錯誤截斷
+function splitTextIntoSentences(text) {
+  const parts = text.split(/([。！？.!?\r\n]+)/);
+  const sentences = [];
+  let currentSentence = "";
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part === undefined || part === null) continue;
+
+    if (i % 2 === 0) {
+      // 文本段落
+      currentSentence += part;
+    } else {
+      // 定界符段落
+      if (part.includes('.')) {
+        const prevText = currentSentence.trim();
+        const nextPart = parts[i + 1] || "";
+        
+        // 1. 是否為小數點 (前後均為數字)
+        const isDecimal = /\d$/.test(prevText) && /^\d/.test(nextPart.trim());
+        
+        // 2. 是否為英文名字/縮寫首字母 (前一個單字僅包含單個英文字母)
+        const lastWordMatch = prevText.match(/\b([a-zA-Z])$/);
+        const isInitial = lastWordMatch !== null;
+        
+        // 3. 是否為常見英文縮寫
+        const commonAbbrs = /\b(Mr|Mrs|Ms|Dr|Prof|vs|etc|eg|ie|vol|p|pp|Gen|Col|Maj|Capt|Lt|Sgt)\b/i;
+        const isAbbr = commonAbbrs.test(prevText);
+
+        if (isDecimal || isInitial || isAbbr) {
+          // 不視為句子結束：直接拼接到當前句子中並繼續
+          currentSentence += part;
+        } else {
+          // 視為句子結束
+          currentSentence += part;
+          if (currentSentence.trim().length > 0) {
+            sentences.push(currentSentence);
+          }
+          currentSentence = "";
+        }
+      } else {
+        // 其他定界符 (如 。 ！ ？ ! ? \n 等) 必然是句子結束
+        currentSentence += part;
+        if (currentSentence.trim().length > 0) {
+          sentences.push(currentSentence);
+        }
+        currentSentence = "";
+      }
+    }
+  }
+
+  if (currentSentence.trim().length > 0) {
+    sentences.push(currentSentence);
+  }
+
+  return sentences;
+}
 
 export class TTSEngine {
   constructor() {
@@ -36,6 +92,7 @@ export class TTSEngine {
     this.onPlaybackEnd = null;
     this.onStateChange = null;
 
+    this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this._initVoices();
   }
 
@@ -59,7 +116,7 @@ export class TTSEngine {
 
     const loadVoices = () => {
       const voices = getWebSpeechVoices();
-      if (voices.length > 0) {
+      if (voices.length > 0 && this.voices.length === 0) {
         this.voices = voices;
         if (this.onStateChange) this.onStateChange();
       }
@@ -68,6 +125,70 @@ export class TTSEngine {
     loadVoices();
     if (this.synth && this.synth.onvoiceschanged !== undefined) {
       this.synth.onvoiceschanged = loadVoices;
+    }
+
+    // 獲取微軟 Edge 官方線上神經網路語音列表 (使其支援 Chrome 瀏覽器，使用 background-worker 代替 fetch 避免 CORS 限制)
+    try {
+      let list = null;
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: "fetchVoices" }, (res) => {
+            if (chrome.runtime.lastError) {
+              console.warn("Failed to fetch voices via service worker:", chrome.runtime.lastError);
+              resolve({ success: false });
+            } else {
+              resolve(res || { success: false });
+            }
+          });
+        });
+        if (response && response.success) {
+          list = response.data;
+          if (response.serverDate) {
+            this.clockSkew = new Date(response.serverDate).getTime() - Date.now();
+            console.log(`TTS Clock synced via Service Worker. Skew: ${this.clockSkew} ms`);
+          }
+        }
+      }
+
+      if (!list) {
+        // 退化降級：若無 extension context，嘗試直接 fetch
+        const response = await fetch("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4");
+        if (response.ok) {
+          list = await response.json();
+          const serverDate = response.headers.get("Date");
+          if (serverDate) {
+            this.clockSkew = new Date(serverDate).getTime() - Date.now();
+            console.log(`TTS Clock synced via direct fetch. Skew: ${this.clockSkew} ms`);
+          }
+        }
+      }
+
+      if (list) {
+        const edgeVoices = list.map(v => ({
+          name: v.FriendlyName || v.Name,
+          lang: v.Locale,
+          friendlyName: v.FriendlyName || v.Name,
+          shortName: v.ShortName,
+          gender: v.Gender ? v.Gender.toLowerCase() : 'unknown',
+          isEdge: true,
+          isNative: false,
+          type: 'edgeOnline'
+        }));
+        if (edgeVoices.length > 0) {
+          // 合併本地語音，保留微軟語音並剔除重複項目
+          const merged = [...edgeVoices];
+          const local = getWebSpeechVoices();
+          local.forEach(lv => {
+            if (!merged.some(mv => mv.name === lv.name || (mv.shortName && lv.name.includes(mv.shortName)))) {
+              merged.push(lv);
+            }
+          });
+          this.voices = merged;
+          if (this.onStateChange) this.onStateChange();
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch Edge online voice list, fallback to WebSpeech API:", e);
     }
   }
 
@@ -124,18 +245,41 @@ export class TTSEngine {
   }
 
   // 2. 將 DOM 容器中的文字節點安全拆分為句子，並包裹成 SPAN
-  prepareContainer(containerElement) {
+  prepareContainer(containerElement, epubBookData = null) {
     this.container = containerElement;
     this.sentences = [];
     this.currentIndex = 0;
     
     let sentenceId = 0;
 
+    // 找出所有與當前章節共享相同 cleanHref 的子章節及其 hash 對照，以便為每句話分配精確的 chapterIndex
+    const subChapters = [];
+    if (epubBookData && epubBookData.chapters && this.currentChapterIndex !== undefined) {
+      const currentChapter = epubBookData.chapters[this.currentChapterIndex];
+      if (currentChapter) {
+        epubBookData.chapters.forEach((ch, idx) => {
+          if (ch.cleanHref === currentChapter.cleanHref) {
+            subChapters.push({ hash: ch.hash || '', index: idx });
+          }
+        });
+      }
+    }
+    let activeSubChapterIndex = subChapters.length > 0 ? subChapters[0].index : this.currentChapterIndex;
+
     // 遞歸遍歷文字節點
     const traverse = (node) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
+        const nodeId = node.getAttribute('id') || '';
+        const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
+        const matchedSub = subChapters.find(sub => 
+          sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
+        );
+        if (matchedSub) {
+          activeSubChapterIndex = matchedSub.index;
+        }
+
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer')) {
+        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -144,9 +288,8 @@ export class TTSEngine {
         const text = node.nodeValue;
         if (text.trim().length === 0) return;
 
-        // 利用正則切分句子：以句號、問號、感嘆號等中英文標點切分
-        const sentenceRegex = /[^。！？.!?\r\n]+[。！？.!?\r\n]*/g;
-        const matches = text.match(sentenceRegex);
+        // 利用正則與縮寫過濾切分句子，避免名字中的縮寫點或小數點被截斷
+        const matches = splitTextIntoSentences(text);
 
         if (matches && matches.length > 0) {
           const fragment = document.createDocumentFragment();
@@ -162,7 +305,7 @@ export class TTSEngine {
               
               this.sentences.push({
                 index: sentenceId,
-                chapterIndex: this.currentChapterIndex,
+                chapterIndex: activeSubChapterIndex,
                 text: cleanSentence,
                 isHeading: this._isHeadingNode(node),
                 element: span
@@ -185,14 +328,36 @@ export class TTSEngine {
   }
 
   // 無縫切換章節時，將新加載的 DOM element 對應到已預加載的句子對象上
-  syncDOM(containerElement) {
+  syncDOM(containerElement, epubBookData = null) {
     this.container = containerElement;
     let sentenceId = 0;
 
+    const subChapters = [];
+    if (epubBookData && epubBookData.chapters && this.currentChapterIndex !== undefined) {
+      const currentChapter = epubBookData.chapters[this.currentChapterIndex];
+      if (currentChapter) {
+        epubBookData.chapters.forEach((ch, idx) => {
+          if (ch.cleanHref === currentChapter.cleanHref) {
+            subChapters.push({ hash: ch.hash || '', index: idx });
+          }
+        });
+      }
+    }
+    let activeSubChapterIndex = subChapters.length > 0 ? subChapters[0].index : this.currentChapterIndex;
+
     const traverse = (node) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
+        const nodeId = node.getAttribute('id') || '';
+        const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
+        const matchedSub = subChapters.find(sub => 
+          sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
+        );
+        if (matchedSub) {
+          activeSubChapterIndex = matchedSub.index;
+        }
+
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer')) {
+        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -201,8 +366,7 @@ export class TTSEngine {
         const text = node.nodeValue;
         if (text.trim().length === 0) return;
 
-        const sentenceRegex = /[^。！？.!?\r\n]+[。！？.!?\r\n]*/g;
-        const matches = text.match(sentenceRegex);
+        const matches = splitTextIntoSentences(text);
 
         if (matches && matches.length > 0) {
           const fragment = document.createDocumentFragment();
@@ -216,15 +380,18 @@ export class TTSEngine {
               span.textContent = s;
               fragment.appendChild(span);
               
-              const existingSentence = this.sentences.find(sent => sent.chapterIndex === this.currentChapterIndex && sent.text === cleanSentence && !sent.element);
+              const existingSentence = this.sentences.find(sent => sent.chapterIndex === activeSubChapterIndex && sent.text === cleanSentence && !sent.element)
+                || this.sentences.find(sent => sent.text === cleanSentence && !sent.element);
               if (existingSentence) {
                 existingSentence.element = span;
+                existingSentence.chapterIndex = activeSubChapterIndex; // 同步更新為精確子章節索引
                 existingSentence.isHeading = this._isHeadingNode(node);
               } else {
                 // 退化降級：直接按 index 對照
                 const sentByIndex = this.sentences[sentenceId];
                 if (sentByIndex) {
                   sentByIndex.element = span;
+                  sentByIndex.chapterIndex = activeSubChapterIndex; // 同步更新為精確子章節索引
                   sentByIndex.isHeading = this._isHeadingNode(node);
                 }
               }
@@ -256,8 +423,7 @@ export class TTSEngine {
     this.sentences = [];
     this.currentIndex = 0;
     
-    const sentenceRegex = /[^。！？.!?\r\n]+[。！？.!?\r\n]*/g;
-    const matches = text.match(sentenceRegex);
+    const matches = splitTextIntoSentences(text);
     
     if (matches) {
       matches.forEach((s, index) => {
@@ -319,7 +485,7 @@ export class TTSEngine {
     const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
     const WIN_EPOCH = 11644473600;
     
-    let unixSeconds = Math.floor(Date.now() / 1000);
+    let unixSeconds = Math.floor((Date.now() + (this.clockSkew || 0)) / 1000);
     unixSeconds += WIN_EPOCH;
     unixSeconds -= (unixSeconds % 300);
     
@@ -337,6 +503,11 @@ export class TTSEngine {
 
   _getVoiceShortName(voice) {
     if (!voice) return 'zh-CN-XiaoxiaoNeural';
+    
+    // 如果語音物件帶有從 API 載入的 shortName，直接返回
+    if (voice.shortName) {
+      return voice.shortName;
+    }
     
     const name = voice.name;
     const lang = voice.lang || 'zh-CN';
@@ -513,6 +684,17 @@ export class TTSEngine {
       audio.preload = 'auto';
       audio.load();
       
+      audio.addEventListener('pause', () => {
+        if (this.currentAudio === audio && this.isPlaying && !this.isPaused) {
+          this.pause();
+        }
+      });
+      audio.addEventListener('play', () => {
+        if (this.currentAudio === audio && this.isPlaying && this.isPaused) {
+          this.resume();
+        }
+      });
+      
       this.audioCache.set(index, {
         blobUrl,
         audio,
@@ -673,8 +855,7 @@ export class TTSEngine {
         const text = node.nodeValue;
         if (text.trim().length === 0) return;
 
-        const sentenceRegex = /[^。！？.!?\r\n]+[。！？.!?\r\n]*/g;
-        const matches = text.match(sentenceRegex);
+        const matches = splitTextIntoSentences(text);
         
         if (matches) {
           matches.forEach(s => {
@@ -702,20 +883,20 @@ export class TTSEngine {
 
   pause() {
     if (this.isPlaying && !this.isPaused) {
+      this.isPaused = true;
       if (this.currentAudio) {
         this.currentAudio.pause();
       }
-      this.isPaused = true;
       if (this.onStateChange) this.onStateChange();
     }
   }
 
   resume() {
     if (this.isPlaying && this.isPaused) {
+      this.isPaused = false;
       if (this.currentAudio) {
         this.currentAudio.play().catch(err => console.error("Resume error:", err));
       }
-      this.isPaused = false;
       if (this.onStateChange) this.onStateChange();
     }
   }

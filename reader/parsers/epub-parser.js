@@ -33,6 +33,22 @@ export class EpubParser {
     // 5. 解析目錄 (TOC)
     const tocChapters = await this._parseTOC();
     
+    // 6. 找出所有在 spine 中但沒有出現在目錄 (TOC) 中的文件路徑，將其作為追加章節放入，防止導航及進度讀取錯誤
+    const tocCleanHrefs = new Set(tocChapters.map(ch => ch.cleanHref));
+    this.spine.forEach(idref => {
+      const item = this.manifest[idref];
+      if (item && item.href && !tocCleanHrefs.has(item.href)) {
+        tocChapters.push({
+          title: chrome.i18n ? chrome.i18n.getMessage('notes_chapter_title') || 'Notes/Appendix' : 'Notes/Appendix',
+          href: item.href,
+          hash: '',
+          cleanHref: item.href,
+          getContent: async () => this.loadChapterContent(item.href)
+        });
+        tocCleanHrefs.add(item.href);
+      }
+    });
+    
     return {
       metadata: {
         title: this.metadata.title || 'Unknown EPUB',

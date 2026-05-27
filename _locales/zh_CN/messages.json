@@ -11,6 +11,39 @@
   "import_book": {
     "message": "导入书籍"
   },
+  "backup_library": {
+    "message": "备份书库"
+  },
+  "restore_library": {
+    "message": "还原书库"
+  },
+  "backup_library_tooltip": {
+    "message": "导出包含所有书籍、阅读进度、高亮与笔记的备份文件 (.json)"
+  },
+  "restore_library_tooltip": {
+    "message": "导入先前备份的书库文件"
+  },
+  "backup_success": {
+    "message": "书库备份成功！已下载备份文件。"
+  },
+  "restore_success": {
+    "message": "书库还原成功！所有书籍与进度已恢复。"
+  },
+  "backup_failed": {
+    "message": "备份书库时发生错误"
+  },
+  "restore_failed": {
+    "message": "还原书库时发生错误"
+  },
+  "invalid_backup_file": {
+    "message": "无效的备份文件，格式不符！"
+  },
+  "backing_up": {
+    "message": "正在进行备份..."
+  },
+  "restoring": {
+    "message": "正在进行还原，请稍候..."
+  },
   "drag_drop_tip": {
     "message": "将电子书拖拽到此处导入"
   },
@@ -310,5 +343,11 @@
   },
   "transition_none": {
     "message": "无动画"
+  },
+  "tts_filter_edge": {
+    "message": "仅显示 Edge 线上高质量语音"
+  },
+  "notes_chapter_title": {
+    "message": "附录/注释"
   }
 }
