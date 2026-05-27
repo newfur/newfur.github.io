@@ -6466,6 +6466,8 @@ class TTSEngine {
       return;
     }
 
+    this.nativeQueue.add(index);
+
     const sentence = this.sentences[index];
     const voice = this.selectedVoice;
     
@@ -6523,6 +6525,11 @@ class TTSEngine {
       this.nativeQueue.delete(index);
       if (!this.isPlaying) return;
       
+      // 若下一句已在隊列中準備播放，則交由瀏覽器原生隊列切換，防止重複觸發
+      if (this.nativeQueue.has(index + 1)) {
+        return;
+      }
+      
       // 若下一句因為特殊原因（如暫停後重開）未能自動觸發，手動跳轉播放
       if (this.currentIndex === index) {
         this.currentIndex = index + 1;
@@ -6534,6 +6541,10 @@ class TTSEngine {
       console.error("SpeechSynthesis utterance error:", err);
       this.nativeQueue.delete(index);
       if (!this.isPlaying) return;
+      
+      if (this.nativeQueue.has(index + 1)) {
+        return;
+      }
       
       if (this.currentIndex === index) {
         this.currentIndex = index + 1;
