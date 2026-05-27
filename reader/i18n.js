@@ -12,6 +12,24 @@ let _fallbackReady = false;
  */
 async function loadFallbackMessages() {
   try {
+    // Check if offline locales are embedded in the bundle
+    if (typeof _offlineLocales !== 'undefined') {
+      let lang = 'en';
+      if (navigator.language) {
+        lang = navigator.language;
+      }
+      const normalizedLang = lang.replace('-', '_');
+      let localePath = 'en';
+      if (normalizedLang.startsWith('zh_TW') || normalizedLang.startsWith('zh_HK') || normalizedLang.startsWith('zh_MO')) {
+        localePath = 'zh_TW';
+      } else if (normalizedLang.startsWith('zh')) {
+        localePath = 'zh_CN';
+      }
+      _fallbackMessages = _offlineLocales[localePath] || _offlineLocales['en'];
+      _fallbackReady = true;
+      return;
+    }
+
     // 偵測語言
     let lang = 'en';
     if (typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getUILanguage) {

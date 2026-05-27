@@ -755,6 +755,60 @@ export class TTSEngine {
       return;
     }
     
+    const sentence = this.sentences[index];
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+
+    if (useNativeSynth) {
+      if (this.synth) {
+        this.synth.cancel();
+      }
+      
+      // 跨章節無縫過渡檢測
+      if (sentence.chapterIndex !== this.currentChapterIndex) {
+        this.currentChapterIndex = sentence.chapterIndex;
+        this.prefetchedChapterIndex = null;
+        
+        if (this.onChapterTransition) {
+          this.onChapterTransition(sentence.chapterIndex);
+        }
+        
+        this._prefetchNextChapter();
+      }
+      
+      this._highlightSentence(sentence);
+      if (this.onSentenceStart) {
+        this.onSentenceStart(index);
+      }
+      
+      const utterance = new SpeechSynthesisUtterance(sentence.text);
+      if (voice && voice.rawVoice) {
+        utterance.voice = voice.rawVoice;
+      }
+      
+      utterance.rate = this.rate;
+      utterance.volume = this.volume;
+      
+      utterance.onend = () => {
+        if (!this.isPlaying || this.isPaused) return;
+        this.currentIndex = index + 1;
+        this._playActiveSentence();
+      };
+      
+      utterance.onerror = (err) => {
+        console.error("SpeechSynthesis utterance error:", err);
+        if (!this.isPlaying) return;
+        this.currentIndex = index + 1;
+        this._playActiveSentence();
+      };
+      
+      this.currentUtterance = utterance;
+      this.synth.speak(utterance);
+      this._fillPreFetchBuffer();
+      this._prefetchNextChapter();
+      return;
+    }
+    
     const cached = this.audioCache.get(index);
     if (!cached || !cached.isReady) {
       this._fetchSentence(index);
@@ -766,8 +820,6 @@ export class TTSEngine {
     
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
-    
-    const sentence = this.sentences[index];
     
     // 跨章節無縫過渡檢測
     if (sentence.chapterIndex !== this.currentChapterIndex) {
@@ -897,7 +949,11 @@ export class TTSEngine {
   pause() {
     if (this.isPlaying && !this.isPaused) {
       this.isPaused = true;
-      if (this.currentAudio) {
+      const voice = this.selectedVoice;
+      const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+      if (useNativeSynth && this.synth) {
+        this.synth.pause();
+      } else if (this.currentAudio) {
         this.currentAudio.pause();
       }
       if (this.onStateChange) this.onStateChange();
@@ -907,7 +963,11 @@ export class TTSEngine {
   resume() {
     if (this.isPlaying && this.isPaused) {
       this.isPaused = false;
-      if (this.currentAudio) {
+      const voice = this.selectedVoice;
+      const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+      if (useNativeSynth && this.synth) {
+        this.synth.resume();
+      } else if (this.currentAudio) {
         this.currentAudio.play().catch(err => console.error("Resume error:", err));
       }
       if (this.onStateChange) this.onStateChange();
@@ -917,6 +977,11 @@ export class TTSEngine {
   stop() {
     this.isPlaying = false;
     this.isPaused = false;
+    
+    if (this.synth) {
+      this.synth.cancel();
+    }
+    this.currentUtterance = null;
     
     if (this.currentAudio) {
       this.currentAudio.pause();
