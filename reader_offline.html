@@ -5711,6 +5711,7 @@ class TTSEngine {
     this.fetchingIndices = new Set();
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
+    this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -5832,10 +5833,23 @@ class TTSEngine {
     }
   }
 
-  // 獲取適用於指定語言的語音包，優先加載 Edge Natural / Neural 語音
+  // 獲取適用於指定語言的語音包，優先加載 Edge Natural / Neural 語音，且只顯示該語言分類下的語音
   getVoicesForLanguage(langCode) {
     const cleanLang = langCode.toLowerCase().replace('_', '-');
-    const sorted = [...this.voices];
+    const langPrefix = cleanLang.split('-')[0]; // e.g. 'zh' or 'en'
+    
+    // 過濾出與目標語言前綴匹配的語音包，防止下拉選單顯示過多無關語言的語音
+    let matched = this.voices.filter(v => {
+      const vLang = v.lang.toLowerCase().replace('_', '-');
+      return vLang.startsWith(langPrefix);
+    });
+    
+    // 若無任何語音匹配該前綴，退化為顯示所有語音
+    if (matched.length === 0) {
+      matched = [...this.voices];
+    }
+    
+    const sorted = [...matched];
     
     sorted.sort((a, b) => {
       const aLang = a.lang.toLowerCase().replace('_', '-');
@@ -6433,6 +6447,7 @@ class TTSEngine {
     }
     
     this._highlightSentence(sentence);
+    this._updateMediaSession(sentence);
     if (this.onSentenceStart) {
       this.onSentenceStart(index);
     }
@@ -6509,6 +6524,7 @@ class TTSEngine {
       }
       
       this._highlightSentence(sentence);
+      this._updateMediaSession(sentence);
       if (this.onSentenceStart) {
         this.onSentenceStart(index);
       }
@@ -6555,6 +6571,60 @@ class TTSEngine {
     this.synth.speak(utterance);
   }
 
+  _startSilenceKeepAlive() {
+    if (typeof Audio === 'undefined') return;
+    
+    if (!this.silenceAudio) {
+      this.silenceAudio = new Audio();
+      this.silenceAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.loop = true;
+      this.silenceAudio.volume = 0.01;
+    }
+    
+    this.silenceAudio.play().catch(err => {
+      console.warn("Failed to play silence audio keep-alive:", err);
+    });
+  }
+
+  _stopSilenceKeepAlive() {
+    if (this.silenceAudio) {
+      try {
+        this.silenceAudio.pause();
+      } catch (e) {}
+    }
+  }
+
+  _updateMediaSession(sentence) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        const text = sentence ? sentence.text : 'TTS Reading';
+        const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata.title || 'TTS Reading') : 'TTS Reading';
+        const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata.author || 'E-Book Reader') : 'E-Book Reader';
+        
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: text,
+          artist: artist,
+          album: title
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => {
+          this.resume();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          this.pause();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          this.previous();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          this.next();
+        });
+      } catch (e) {
+        console.warn("MediaSession update failed:", e);
+      }
+    }
+  }
+
   play(index = 0) {
     if (this.sentences.length === 0) return;
     
@@ -6564,6 +6634,7 @@ class TTSEngine {
     this.isPaused = false;
     this.currentIndex = Math.max(0, Math.min(index, this.sentences.length - 1));
     
+    this._startSilenceKeepAlive();
     this._playActiveSentence();
     this._fillPreFetchBuffer();
     this._prefetchNextChapter();
@@ -6645,6 +6716,7 @@ class TTSEngine {
   pause() {
     if (this.isPlaying && !this.isPaused) {
       this.isPaused = true;
+      this._stopSilenceKeepAlive();
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
       if (useNativeSynth && this.synth) {
@@ -6659,6 +6731,7 @@ class TTSEngine {
   resume() {
     if (this.isPlaying && this.isPaused) {
       this.isPaused = false;
+      this._startSilenceKeepAlive();
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
       if (useNativeSynth && this.synth) {
@@ -6673,6 +6746,7 @@ class TTSEngine {
   stop() {
     this.isPlaying = false;
     this.isPaused = false;
+    this._stopSilenceKeepAlive();
     
     if (this.synth) {
       this.synth.cancel();
@@ -7237,13 +7311,14 @@ function initUIEventBindings() {
     });
   }
 
+  let lastVoicesCount = 0;
   // TTS 引擎狀態同步
   tts.onStateChange = () => {
     updatePlayPauseButtonIcon();
+    updateEdgeFilterButtonVisibility();
     
-    // 如果語音選單為空且有語音加載成功，則初始化它
-    const voiceSelect = document.getElementById('tts-voice-select');
-    if (voiceSelect && voiceSelect.options.length === 0 && tts.voices.length > 0) {
+    if (tts.voices.length !== lastVoicesCount) {
+      lastVoicesCount = tts.voices.length;
       initTTSPanelVoices(currentBook ? currentBook.file.name : '');
     }
   };
@@ -8992,23 +9067,9 @@ function initThemeAndStyles() {
     setMarginBottom(50); // 強制設定下方留白為 50px
     setPagePadding(40); // 強制設定紙張邊框留白為 40px
     
-    // 是否僅顯示 Edge 語音 (在 file:// 協議下強制為 false，並隱藏過濾按鈕)
-    const isWebFile = window.location.protocol === 'file:';
-    if (isWebFile) {
-      ttsOnlyEdge = false;
-      const filterBtn = document.getElementById('tts-filter-edge-btn');
-      if (filterBtn) filterBtn.style.display = 'none';
-    } else {
-      ttsOnlyEdge = res.ttsOnlyEdge === true;
-      const filterBtn = document.getElementById('tts-filter-edge-btn');
-      if (filterBtn) {
-        if (ttsOnlyEdge) {
-          filterBtn.classList.add('active');
-        } else {
-          filterBtn.classList.remove('active');
-        }
-      }
-    }
+    // 是否僅顯示 Edge 語音
+    ttsOnlyEdge = res.ttsOnlyEdge === true;
+    updateEdgeFilterButtonVisibility();
     
     // 朗讀速度
     const savedRate = res.ttsRate || 1.0;
@@ -9404,6 +9465,35 @@ function updatePlayPauseButtonIcon() {
   }
 }
 
+function updateEdgeFilterButtonVisibility() {
+  const filterBtn = document.getElementById('tts-filter-edge-btn');
+  if (!filterBtn) return;
+
+  const hasEdgeVoices = tts.voices.some(v => v.isEdge);
+  const isWebFile = window.location.protocol === 'file:';
+
+  if (isWebFile) {
+    if (hasEdgeVoices) {
+      filterBtn.style.display = '';
+      if (ttsOnlyEdge) {
+        filterBtn.classList.add('active');
+      } else {
+        filterBtn.classList.remove('active');
+      }
+    } else {
+      filterBtn.style.display = 'none';
+    }
+  } else {
+    // 非 file:// (插件版) 始終顯示
+    filterBtn.style.display = '';
+    if (ttsOnlyEdge) {
+      filterBtn.classList.add('active');
+    } else {
+      filterBtn.classList.remove('active');
+    }
+  }
+}
+
 // 切換左右分欄翻頁 vs 連續上下滾動
 function toggleLayoutMode(mode) {
   const content = document.getElementById('book-content');
@@ -9492,19 +9582,57 @@ function toggleTTSPanel() {
 
 // 初始化播放面板語音下拉選單
 function initTTSPanelVoices(filename) {
-  // 檢測書籍語言（簡單啟發：檔名含中文或系統環境）
+  // 檢測書籍語言
   let lang = 'en';
-  if (filename && (/[\u4e00-\u9fa5]/.test(filename) || navigator.language.startsWith('zh'))) {
-    lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
+  if (currentBook || (tts && tts.sentences && tts.sentences.length > 0)) {
+    // 優先從文件名、書籍標題及當前文本中抽樣檢測
+    let sampleText = filename || '';
+    if (currentBook) {
+      if (currentBook.title) sampleText += ' ' + currentBook.title;
+      if (currentBook.author) sampleText += ' ' + currentBook.author;
+    }
+    if (epubBookData && epubBookData.metadata) {
+      if (epubBookData.metadata.title) sampleText += ' ' + epubBookData.metadata.title;
+      if (epubBookData.metadata.author) sampleText += ' ' + epubBookData.metadata.author;
+    }
+    if (tts && tts.sentences && tts.sentences.length > 0) {
+      sampleText += ' ' + tts.sentences.slice(0, 10).map(s => s.text || '').join('');
+    } else {
+      const bookContent = document.getElementById('book-content');
+      if (bookContent) {
+        sampleText += ' ' + bookContent.textContent.slice(0, 1000);
+      }
+    }
+    
+    if (/[\u4e00-\u9fa5]/.test(sampleText)) {
+      lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
+    } else if (/[\u3040-\u309F\u30A0-\u30FF]/.test(sampleText)) {
+      lang = 'ja';
+    } else if (/[\uAC00-\uD7AF]/.test(sampleText)) {
+      lang = 'ko';
+    } else {
+      lang = 'en';
+    }
+  } else {
+    // 無書籍加載時，默認使用瀏覽器系統語言
+    if (navigator.language.startsWith('zh')) {
+      lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
+    } else if (navigator.language.startsWith('ja')) {
+      lang = 'ja';
+    } else if (navigator.language.startsWith('ko')) {
+      lang = 'ko';
+    } else {
+      lang = 'en';
+    }
   }
 
   const select = document.getElementById('tts-voice-select');
   if (!select) return;
+  const currentSelected = select.value;
   select.innerHTML = '';
 
   let matchedVoices = tts.getVoicesForLanguage(lang);
-  const isWebFile = window.location.protocol === 'file:';
-  if (ttsOnlyEdge && !isWebFile) {
+  if (ttsOnlyEdge && matchedVoices.some(v => v.isEdge)) {
     matchedVoices = matchedVoices.filter(v => v.isEdge);
   }
   matchedVoices.forEach(voice => {
@@ -9514,14 +9642,20 @@ function initTTSPanelVoices(filename) {
     select.appendChild(opt);
   });
 
-  // 默認選中優先語音，或者之前保存的語音
+  // 優先保留當前已選中的語音，其次是之前保存的語音，最後是默認優先語音
   if (matchedVoices.length > 0) {
-    const savedVoice = currentBook?.progress?.ttsVoice;
-    if (savedVoice && matchedVoices.some(v => v.name === savedVoice)) {
-      select.value = savedVoice;
-      tts.setVoice(savedVoice);
+    if (currentSelected && matchedVoices.some(v => v.name === currentSelected)) {
+      select.value = currentSelected;
+      tts.setVoice(currentSelected);
     } else {
-      tts.setVoice(matchedVoices[0].name);
+      const savedVoice = currentBook?.progress?.ttsVoice;
+      if (savedVoice && matchedVoices.some(v => v.name === savedVoice)) {
+        select.value = savedVoice;
+        tts.setVoice(savedVoice);
+      } else {
+        select.value = matchedVoices[0].name;
+        tts.setVoice(matchedVoices[0].name);
+      }
     }
   }
 }

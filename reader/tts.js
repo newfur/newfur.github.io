@@ -80,6 +80,7 @@ export class TTSEngine {
     this.fetchingIndices = new Set();
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
+    this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -201,10 +202,23 @@ export class TTSEngine {
     }
   }
 
-  // 獲取適用於指定語言的語音包，優先加載 Edge Natural / Neural 語音
+  // 獲取適用於指定語言的語音包，優先加載 Edge Natural / Neural 語音，且只顯示該語言分類下的語音
   getVoicesForLanguage(langCode) {
     const cleanLang = langCode.toLowerCase().replace('_', '-');
-    const sorted = [...this.voices];
+    const langPrefix = cleanLang.split('-')[0]; // e.g. 'zh' or 'en'
+    
+    // 過濾出與目標語言前綴匹配的語音包，防止下拉選單顯示過多無關語言的語音
+    let matched = this.voices.filter(v => {
+      const vLang = v.lang.toLowerCase().replace('_', '-');
+      return vLang.startsWith(langPrefix);
+    });
+    
+    // 若無任何語音匹配該前綴，退化為顯示所有語音
+    if (matched.length === 0) {
+      matched = [...this.voices];
+    }
+    
+    const sorted = [...matched];
     
     sorted.sort((a, b) => {
       const aLang = a.lang.toLowerCase().replace('_', '-');
@@ -802,6 +816,7 @@ export class TTSEngine {
     }
     
     this._highlightSentence(sentence);
+    this._updateMediaSession(sentence);
     if (this.onSentenceStart) {
       this.onSentenceStart(index);
     }
@@ -878,6 +893,7 @@ export class TTSEngine {
       }
       
       this._highlightSentence(sentence);
+      this._updateMediaSession(sentence);
       if (this.onSentenceStart) {
         this.onSentenceStart(index);
       }
@@ -924,6 +940,60 @@ export class TTSEngine {
     this.synth.speak(utterance);
   }
 
+  _startSilenceKeepAlive() {
+    if (typeof Audio === 'undefined') return;
+    
+    if (!this.silenceAudio) {
+      this.silenceAudio = new Audio();
+      this.silenceAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.loop = true;
+      this.silenceAudio.volume = 0.01;
+    }
+    
+    this.silenceAudio.play().catch(err => {
+      console.warn("Failed to play silence audio keep-alive:", err);
+    });
+  }
+
+  _stopSilenceKeepAlive() {
+    if (this.silenceAudio) {
+      try {
+        this.silenceAudio.pause();
+      } catch (e) {}
+    }
+  }
+
+  _updateMediaSession(sentence) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        const text = sentence ? sentence.text : 'TTS Reading';
+        const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata.title || 'TTS Reading') : 'TTS Reading';
+        const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata.author || 'E-Book Reader') : 'E-Book Reader';
+        
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: text,
+          artist: artist,
+          album: title
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => {
+          this.resume();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          this.pause();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          this.previous();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          this.next();
+        });
+      } catch (e) {
+        console.warn("MediaSession update failed:", e);
+      }
+    }
+  }
+
   play(index = 0) {
     if (this.sentences.length === 0) return;
     
@@ -933,6 +1003,7 @@ export class TTSEngine {
     this.isPaused = false;
     this.currentIndex = Math.max(0, Math.min(index, this.sentences.length - 1));
     
+    this._startSilenceKeepAlive();
     this._playActiveSentence();
     this._fillPreFetchBuffer();
     this._prefetchNextChapter();
@@ -1014,6 +1085,7 @@ export class TTSEngine {
   pause() {
     if (this.isPlaying && !this.isPaused) {
       this.isPaused = true;
+      this._stopSilenceKeepAlive();
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
       if (useNativeSynth && this.synth) {
@@ -1028,6 +1100,7 @@ export class TTSEngine {
   resume() {
     if (this.isPlaying && this.isPaused) {
       this.isPaused = false;
+      this._startSilenceKeepAlive();
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
       if (useNativeSynth && this.synth) {
@@ -1042,6 +1115,7 @@ export class TTSEngine {
   stop() {
     this.isPlaying = false;
     this.isPaused = false;
+    this._stopSilenceKeepAlive();
     
     if (this.synth) {
       this.synth.cancel();
