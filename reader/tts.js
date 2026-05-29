@@ -187,6 +187,27 @@ export class TTSEngine {
         }
       }
 
+      if (!list) {
+        // 靜態備用列表：若無法透過網路或 background worker 取得列表（例如在 file:// 下受 CORS 限制），
+        // 我們直接硬編碼預置最熱門的高品質 Microsoft Edge Online 語音，使其可在離線版中使用 WebSocket 正常播放。
+        list = [
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)", Locale: "zh-CN", ShortName: "zh-CN-XiaoxiaoNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunxiNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunjianNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoChenNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoYuNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Locale: "zh-TW", ShortName: "zh-TW-YunJheNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-HK, HiuMaanNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-HK, HiuMaanNeural)", Locale: "zh-HK", ShortName: "zh-HK-HiuMaanNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Locale: "en-US", ShortName: "en-US-AriaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Locale: "en-US", ShortName: "en-US-GuyNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)", Locale: "en-US", ShortName: "en-US-JennyNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)", Locale: "ja-JP", ShortName: "ja-JP-NanamiNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ja-JP, KeitaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ja-JP, KeitaNeural)", Locale: "ja-JP", ShortName: "ja-JP-KeitaNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)", Locale: "ko-KR", ShortName: "ko-KR-SunHiNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Locale: "ko-KR", ShortName: "ko-KR-InJoonNeural", Gender: "Male" }
+        ];
+      }
+
       if (list) {
         const edgeVoices = list.map(v => ({
           name: v.FriendlyName || v.Name,
@@ -718,7 +739,7 @@ export class TTSEngine {
   // 4. 預加載控制與播放隊列
   _fetchSentence(index) {
     const voice = this.selectedVoice;
-    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
     if (index >= this.sentences.length) return;
@@ -754,7 +775,7 @@ export class TTSEngine {
   _fillPreFetchBuffer() {
     if (!this.isPlaying) return;
     const voice = this.selectedVoice;
-    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
     const bufferSize = 10;
@@ -782,7 +803,7 @@ export class TTSEngine {
     
     const sentence = this.sentences[index];
     const voice = this.selectedVoice;
-    const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     
     if (useNativeSynth) {
       this._speakNativeSentence(index);
@@ -1093,7 +1114,7 @@ export class TTSEngine {
       }
 
       const voice = this.selectedVoice;
-      const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+      const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
         this.synth.pause();
       } else if (this.currentAudio) {
@@ -1113,7 +1134,7 @@ export class TTSEngine {
       }
 
       const voice = this.selectedVoice;
-      const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
+      const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
         this.synth.resume();
       } else if (this.currentAudio) {
