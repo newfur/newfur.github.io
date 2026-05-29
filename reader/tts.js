@@ -1260,10 +1260,42 @@ export class TTSEngine {
     });
   }
 
+  startPrefetch(startIndex = 0) {
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis');
+    if (useNativeSynth) return;
+
+    if (this.sentences.length === 0) return;
+    const start = Math.max(0, Math.min(startIndex, this.sentences.length - 1));
+    const bufferSize = 10;
+    for (let i = 0; i < bufferSize; i++) {
+      const targetIndex = start + i;
+      if (targetIndex < this.sentences.length) {
+        this._fetchSentence(targetIndex);
+      }
+    }
+  }
+
   setVoice(voiceName) {
-    this.selectedVoice = this.voices.find(v => v.name === voiceName) || null;
+    const newVoice = this.voices.find(v => v.name === voiceName) || null;
+    const isChanged = !this.selectedVoice || !newVoice || this.selectedVoice.name !== newVoice.name;
+    
+    this.selectedVoice = newVoice;
+    
+    if (isChanged) {
+      this.audioCache.forEach(cached => {
+        URL.revokeObjectURL(cached.blobUrl);
+      });
+      this.audioCache.clear();
+      this.fetchingIndices.clear();
+    }
+
     if (this.isPlaying) {
-      this.play(this.currentIndex);
+      if (isChanged) {
+        this.play(this.currentIndex);
+      }
+    } else {
+      this.startPrefetch(this.currentIndex);
     }
   }
 
