@@ -139,11 +139,14 @@
   padding: 0;
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-color);
   color: var(--text-color);
-  overflow-x: hidden;
   transition: background-color var(--transition-speed), color var(--transition-speed);
 }
 
@@ -820,7 +823,7 @@ body.layout-paginated #book-content table {
 
 /* 確保非翻頁模式下頁面能正常垂直滾動，避免內容被裁切 */
 body:not(.layout-paginated) {
-  overflow-y: auto !important;
+  overflow-y: visible !important;
   height: auto !important;
 }
 
