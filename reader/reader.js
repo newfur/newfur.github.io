@@ -100,6 +100,13 @@ function clearResourceUrls() {
 // 不合併：不含標題的短篇正文（詩歌、短篇小說等）
 async function mergeShortChapters(chapters) {
   // 為了保持目錄（TOC）結構的 100% 完整與精確，我們不再主動合併短章節，直接返回原章節清單
+  if (chapters && Array.isArray(chapters)) {
+    chapters.forEach((ch, idx) => {
+      if (!ch.cleanHref) {
+        ch.cleanHref = ch.href ? ch.href.split('#')[0] : `chapter-${idx}`;
+      }
+    });
+  }
   return chapters;
 }
 
