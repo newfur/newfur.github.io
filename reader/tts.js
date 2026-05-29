@@ -78,23 +78,30 @@ export class TTSEngine {
     // HTML5 Audio 播放隊列與快取
     this.audioCache = new Map(); // index -> { blobUrl, isReady }
     this.fetchingIndices = new Set();
-    this.audioPlayer = typeof Audio !== 'undefined' ? new Audio() : null; // 單個持久的 Audio 播放器
-    this.currentAudio = null; // 當前正在播放的 Audio 對象 (指向 this.audioPlayer)
-    this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
-    this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
-
-    if (this.audioPlayer) {
-      this.audioPlayer.addEventListener('pause', () => {
-        if (this.isPlaying && !this.isPaused) {
+    
+    // 建立雙播放器以進行無縫交替播放，消除播放間隙，防止 iOS 後台掛起
+    this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
+    this.activePlayerIdx = 0;
+    this.currentAudio = null; // 當前正在播放的 Audio 對象
+    
+    this.players.forEach(audio => {
+      audio.preload = 'auto';
+      audio.disableRemotePlayback = true; // 停用遠端播放，提高 iOS 穩定性
+      
+      audio.addEventListener('pause', () => {
+        if (this.isPlaying && !this.isPaused && audio === this.currentAudio) {
           this.pause();
         }
       });
-      this.audioPlayer.addEventListener('play', () => {
-        if (this.isPlaying && this.isPaused) {
+      audio.addEventListener('play', () => {
+        if (this.isPlaying && this.isPaused && audio === this.currentAudio) {
           this.resume();
         }
       });
-    }
+    });
+
+    this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
+    this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -788,12 +795,6 @@ export class TTSEngine {
   _playActiveSentence() {
     if (!this.isPlaying) return;
     
-    if (this.currentAudio) {
-      // 停止上一句的播放回調，但不要 pause 它以防造成不必要的音量中斷
-      this.currentAudio.onended = null;
-      this.currentAudio = null;
-    }
-    
     const index = this.currentIndex;
     if (index >= this.sentences.length) {
       this.stop();
@@ -813,10 +814,18 @@ export class TTSEngine {
     const cached = this.audioCache.get(index);
     if (!cached || !cached.isReady) {
       this._fetchSentence(index);
+      
+      // 如果當前沒有任何音訊在播放，為防止 iOS 挂起 JavaScript，應立刻啟動靜音播放器保活
+      if (!this.currentAudio && this.silenceAudio) {
+        this.silenceAudio.play().catch(e => console.warn("Failed to resume silence on cache miss:", e));
+      }
       return;
     }
     
-    const audio = this.audioPlayer;
+    // 獲取下一個閒置的播放器
+    const nextPlayerIdx = 1 - this.activePlayerIdx;
+    const prevAudio = this.currentAudio;
+    const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
     
     audio.src = cached.blobUrl;
@@ -841,24 +850,71 @@ export class TTSEngine {
       this.onSentenceStart(index);
     }
     
-    audio.onended = () => {
+    // 監聽時間更新事件：在當前句子即將結束前，提前預加載並播放下一句，實現完美無縫交替
+    let hasTriggeredNext = false;
+    audio.ontimeupdate = () => {
       if (!this.isPlaying) return;
+      
+      // 計算合理的提前量。若句子極短，則按比例縮短提前量以防迅速跳句
+      const threshold = audio.duration ? Math.min(0.25, audio.duration * 0.25) : 0.25;
+      if (audio.duration && audio.currentTime >= audio.duration - threshold) {
+        if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
+          audio.ontimeupdate = null; // 避免重疊期間重複觸發
+          
+          // 切換至下一個播放器，並播放下一句
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = index + 1;
+          this._playActiveSentence();
+        }
+      }
+    };
+    
+    // 容錯機制：以防 ontimeupdate 由於特殊原因未觸發（例如有些設備或格式的 duration 為空）
+    audio.onended = () => {
+      audio.ontimeupdate = null;
+      audio.onended = null;
       
       URL.revokeObjectURL(cached.blobUrl);
       this.audioCache.delete(index);
       
-      this.currentIndex = index + 1;
-      this._playActiveSentence();
+      if (!this.isPlaying) return;
+      
+      // 若下一句還沒有被觸發播放，則在此手動觸發
+      if (!hasTriggeredNext) {
+        hasTriggeredNext = true;
+        this.activePlayerIdx = nextPlayerIdx;
+        this.currentIndex = index + 1;
+        this._playActiveSentence();
+      }
     };
     
     audio.play().then(() => {
+      // 成功播放後，如果有上一個正在播放的播放器，延遲 100ms 暫停並清理它，給予平滑的音訊重疊
+      if (prevAudio && prevAudio !== audio) {
+        setTimeout(() => {
+          try {
+            prevAudio.pause();
+            prevAudio.ontimeupdate = null;
+            prevAudio.onended = null;
+          } catch (e) {}
+        }, 100);
+      }
+      
       this._fillPreFetchBuffer();
       this._prefetchNextChapter();
     }).catch(err => {
       console.error("Audio play error:", err);
-      // 跳過失敗的句子
-      this.currentIndex = index + 1;
-      this._playActiveSentence();
+      audio.ontimeupdate = null;
+      audio.onended = null;
+      
+      // 若播放失敗，跳過該句子
+      if (!hasTriggeredNext) {
+        hasTriggeredNext = true;
+        this.activePlayerIdx = nextPlayerIdx;
+        this.currentIndex = index + 1;
+        this._playActiveSentence();
+      }
     });
   }
 
@@ -1159,11 +1215,16 @@ export class TTSEngine {
     this.currentUtterance = null;
     this.nativeQueue.clear();
     
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.onended = null;
-      this.currentAudio = null;
-    }
+    // 停止所有播放器並清理，防範 iOS 背景殘留播放
+    this.players.forEach(p => {
+      try {
+        p.pause();
+        p.src = '';
+        p.ontimeupdate = null;
+        p.onended = null;
+      } catch (e) {}
+    });
+    this.currentAudio = null;
     
     this.audioCache.forEach(cached => {
       URL.revokeObjectURL(cached.blobUrl);
@@ -1192,9 +1253,11 @@ export class TTSEngine {
 
   setRate(rate) {
     this.rate = rate;
-    if (this.currentAudio) {
-      this.currentAudio.playbackRate = this.rate;
-    }
+    this.players.forEach(p => {
+      try {
+        p.playbackRate = this.rate;
+      } catch (e) {}
+    });
   }
 
   setVoice(voiceName) {

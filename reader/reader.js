@@ -1122,6 +1122,19 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       tts.prepareContainer(contentEl, epubBookData);
     }
 
+    // 同步 TTS 索引與進行背景預加載，以防切換至後台時快取未熱而中斷播放
+    let targetSentenceIdx = 0;
+    if (targetSentenceIndex !== null) {
+      targetSentenceIdx = targetSentenceIndex;
+    } else if (restoreProgress && currentBook && currentBook.progress && currentBook.progress.chapterIndex === finalIdx) {
+      targetSentenceIdx = currentBook.progress.activeSentenceIndex || 0;
+    }
+    
+    tts.currentIndex = Math.max(0, Math.min(targetSentenceIdx, tts.sentences.length - 1));
+    if (!tts.isPlaying) {
+      tts.startPrefetch(tts.currentIndex);
+    }
+
     // 處理內部跳轉鏈接 (EPUB)
     contentEl.querySelectorAll('[data-epub-href]').forEach(a => {
       a.addEventListener('click', (e) => {
