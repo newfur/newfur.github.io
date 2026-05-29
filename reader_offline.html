@@ -5710,11 +5710,25 @@ class TTSEngine {
     this.highlightStyle = null; // 高亮樣式類別
     
     // HTML5 Audio 播放隊列與快取
-    this.audioCache = new Map(); // index -> { blobUrl, audio, isReady }
+    this.audioCache = new Map(); // index -> { blobUrl, isReady }
     this.fetchingIndices = new Set();
-    this.currentAudio = null; // 當前正在播放的 Audio 對象
+    this.audioPlayer = typeof Audio !== 'undefined' ? new Audio() : null; // 單個持久的 Audio 播放器
+    this.currentAudio = null; // 當前正在播放的 Audio 對象 (指向 this.audioPlayer)
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
     this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
+
+    if (this.audioPlayer) {
+      this.audioPlayer.addEventListener('pause', () => {
+        if (this.isPlaying && !this.isPaused) {
+          this.pause();
+        }
+      });
+      this.audioPlayer.addEventListener('play', () => {
+        if (this.isPlaying && this.isPaused) {
+          this.resume();
+        }
+      });
+    }
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -6349,25 +6363,9 @@ class TTSEngine {
     
     this._downloadSentenceAudio(sentence).then(blob => {
       const blobUrl = URL.createObjectURL(blob);
-      const audio = new Audio();
-      audio.src = blobUrl;
-      audio.preload = 'auto';
-      audio.load();
-      
-      audio.addEventListener('pause', () => {
-        if (this.currentAudio === audio && this.isPlaying && !this.isPaused) {
-          this.pause();
-        }
-      });
-      audio.addEventListener('play', () => {
-        if (this.currentAudio === audio && this.isPlaying && this.isPaused) {
-          this.resume();
-        }
-      });
       
       this.audioCache.set(index, {
         blobUrl,
-        audio,
         isReady: true
       });
       this.fetchingIndices.delete(index);
@@ -6393,7 +6391,7 @@ class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
     if (useNativeSynth) return;
 
-    const bufferSize = 3;
+    const bufferSize = 10;
     for (let i = 0; i < bufferSize; i++) {
       const targetIndex = this.currentIndex + i;
       this._fetchSentence(targetIndex);
@@ -6404,7 +6402,7 @@ class TTSEngine {
     if (!this.isPlaying) return;
     
     if (this.currentAudio) {
-      this.currentAudio.pause();
+      // 停止上一句的播放回調，但不要 pause 它以防造成不必要的音量中斷
       this.currentAudio.onended = null;
       this.currentAudio = null;
     }
@@ -6431,9 +6429,10 @@ class TTSEngine {
       return;
     }
     
-    const audio = cached.audio;
+    const audio = this.audioPlayer;
     this.currentAudio = audio;
     
+    audio.src = cached.blobUrl;
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
     
@@ -6455,16 +6454,6 @@ class TTSEngine {
       this.onSentenceStart(index);
     }
     
-    audio.play().then(() => {
-      this._fillPreFetchBuffer();
-      this._prefetchNextChapter();
-    }).catch(err => {
-      console.error("Audio play error:", err);
-      // 跳過失敗的句子
-      this.currentIndex = index + 1;
-      this._playActiveSentence();
-    });
-    
     audio.onended = () => {
       if (!this.isPlaying) return;
       
@@ -6474,6 +6463,16 @@ class TTSEngine {
       this.currentIndex = index + 1;
       this._playActiveSentence();
     };
+    
+    audio.play().then(() => {
+      this._fillPreFetchBuffer();
+      this._prefetchNextChapter();
+    }).catch(err => {
+      console.error("Audio play error:", err);
+      // 跳過失敗的句子
+      this.currentIndex = index + 1;
+      this._playActiveSentence();
+    });
   }
 
   _speakNativeSentence(index) {
@@ -6610,6 +6609,8 @@ class TTSEngine {
           album: title
         });
 
+        navigator.mediaSession.playbackState = 'playing';
+
         navigator.mediaSession.setActionHandler('play', () => {
           this.resume();
         });
@@ -6720,6 +6721,11 @@ class TTSEngine {
     if (this.isPlaying && !this.isPaused) {
       this.isPaused = true;
       this._stopSilenceKeepAlive();
+      
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
+
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
       if (useNativeSynth && this.synth) {
@@ -6735,6 +6741,11 @@ class TTSEngine {
     if (this.isPlaying && this.isPaused) {
       this.isPaused = false;
       this._startSilenceKeepAlive();
+      
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+      }
+
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis') || (window.location.protocol === 'file:');
       if (useNativeSynth && this.synth) {
@@ -6751,6 +6762,10 @@ class TTSEngine {
     this.isPaused = false;
     this._stopSilenceKeepAlive();
     
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'none';
+    }
+
     if (this.synth) {
       this.synth.cancel();
     }
