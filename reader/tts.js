@@ -832,6 +832,11 @@ export class TTSEngine {
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
     
+    // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
+    audio.onloadedmetadata = () => {
+      audio.playbackRate = this.rate;
+    };
+    
     // 跨章節無縫過渡檢測
     if (sentence.chapterIndex !== this.currentChapterIndex) {
       this.currentChapterIndex = sentence.chapterIndex;
@@ -855,8 +860,8 @@ export class TTSEngine {
     audio.ontimeupdate = () => {
       if (!this.isPlaying) return;
       
-      // 計算合理的提前量。若句子極短，則按比例縮短提前量以防迅速跳句
-      const threshold = audio.duration ? Math.min(0.25, audio.duration * 0.25) : 0.25;
+      // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
+      const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
       if (audio.duration && audio.currentTime >= audio.duration - threshold) {
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
@@ -874,6 +879,7 @@ export class TTSEngine {
     audio.onended = () => {
       audio.ontimeupdate = null;
       audio.onended = null;
+      audio.onloadedmetadata = null;
       
       URL.revokeObjectURL(cached.blobUrl);
       this.audioCache.delete(index);
@@ -890,16 +896,18 @@ export class TTSEngine {
     };
     
     audio.play().then(() => {
-      // 成功播放後，如果有上一個正在播放的播放器，延遲 100ms 暫停並清理它，給予平滑的音訊重疊
+      // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
       if (prevAudio && prevAudio !== audio) {
-        setTimeout(() => {
-          try {
-            prevAudio.pause();
-            prevAudio.ontimeupdate = null;
-            prevAudio.onended = null;
-          } catch (e) {}
-        }, 100);
+        try {
+          prevAudio.pause();
+          prevAudio.ontimeupdate = null;
+          prevAudio.onended = null;
+          prevAudio.onloadedmetadata = null;
+        } catch (e) {}
       }
+      
+      // 再次強制設置播放速度，以防止部分 iOS 瀏覽器在啟動播放時強制將速度重設為 1.0
+      audio.playbackRate = this.rate;
       
       this._fillPreFetchBuffer();
       this._prefetchNextChapter();
@@ -907,6 +915,7 @@ export class TTSEngine {
       console.error("Audio play error:", err);
       audio.ontimeupdate = null;
       audio.onended = null;
+      audio.onloadedmetadata = null;
       
       // 若播放失敗，跳過該句子
       if (!hasTriggeredNext) {
