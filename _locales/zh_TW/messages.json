@@ -355,5 +355,53 @@
   },
   "cover_size_tooltip": {
     "message": "調整封面大小"
+  },
+  "stats_title": {
+    "message": "數據統計"
+  },
+  "stats_btn_tooltip": {
+    "message": "查看閱讀統計"
+  },
+  "stats_modal_title": {
+    "message": "閱讀數據統計"
+  },
+  "stats_tab_overview": {
+    "message": "全局概覽"
+  },
+  "stats_tab_books": {
+    "message": "單本統計"
+  },
+  "stats_total_time": {
+    "message": "總閱讀時長"
+  },
+  "stats_total_books": {
+    "message": "閱讀書籍數"
+  },
+  "stats_total_days": {
+    "message": "閱讀天數"
+  },
+  "stats_hourly_dist_title": {
+    "message": "閱讀時間段分佈"
+  },
+  "stats_select_book": {
+    "message": "選擇書籍:"
+  },
+  "stats_book_time": {
+    "message": "閱讀時間"
+  },
+  "stats_book_days": {
+    "message": "閱讀天數"
+  },
+  "stats_book_daily_avg": {
+    "message": "日均閱讀時長"
+  },
+  "stats_book_hourly_title": {
+    "message": "閱讀時間段分佈"
+  },
+  "stats_reading_history_title": {
+    "message": "每日閱讀明細"
+  },
+  "stats_no_time": {
+    "message": "暫無時長"
   }
 }

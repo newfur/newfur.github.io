@@ -291,4 +291,39 @@ export class BookLibrary {
       request.onerror = () => reject(request.error);
     });
   }
+
+  // 累加閱讀統計資訊
+  async addReadingDuration(id, seconds) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    if (!book.stats) {
+      book.stats = {
+        totalTime: 0,
+        readingDays: {},
+        hourlyDist: {}
+      };
+    }
+
+    const now = new Date();
+    const dateStr = now.getFullYear() + '-' + 
+                    String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(now.getDate()).padStart(2, '0');
+    const hour = now.getHours();
+
+    book.stats.totalTime = (book.stats.totalTime || 0) + seconds;
+    book.stats.readingDays[dateStr] = (book.stats.readingDays[dateStr] || 0) + seconds;
+    book.stats.hourlyDist[hour] = (book.stats.hourlyDist[hour] || 0) + seconds;
+    book.lastReadAt = Date.now();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
 }

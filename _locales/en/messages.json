@@ -355,5 +355,53 @@
   },
   "cover_size_tooltip": {
     "message": "Adjust Cover Size"
+  },
+  "stats_title": {
+    "message": "Stats"
+  },
+  "stats_btn_tooltip": {
+    "message": "View Reading Statistics"
+  },
+  "stats_modal_title": {
+    "message": "Reading Statistics"
+  },
+  "stats_tab_overview": {
+    "message": "Overview"
+  },
+  "stats_tab_books": {
+    "message": "By Book"
+  },
+  "stats_total_time": {
+    "message": "Total Reading Time"
+  },
+  "stats_total_books": {
+    "message": "Books Read"
+  },
+  "stats_total_days": {
+    "message": "Active Days"
+  },
+  "stats_hourly_dist_title": {
+    "message": "Hourly Reading Distribution"
+  },
+  "stats_select_book": {
+    "message": "Select Book:"
+  },
+  "stats_book_time": {
+    "message": "Reading Time"
+  },
+  "stats_book_days": {
+    "message": "Reading Days"
+  },
+  "stats_book_daily_avg": {
+    "message": "Daily Average"
+  },
+  "stats_book_hourly_title": {
+    "message": "Hourly Reading Distribution"
+  },
+  "stats_reading_history_title": {
+    "message": "Reading Days History"
+  },
+  "stats_no_time": {
+    "message": "Not started"
   }
 }

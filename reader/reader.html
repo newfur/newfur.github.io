@@ -56,6 +56,16 @@
             </span>
             <span data-i18n="restore_library">Restore</span>
           </button>
+          <button id="stats-btn" class="btn btn-secondary" data-i18n-title="stats_btn_tooltip" title="View Reading Statistics">
+            <span class="btn-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+            </span>
+            <span data-i18n="stats_title">Stats</span>
+          </button>
           <input type="file" id="restore-file-input" accept=".json" style="display: none;">
         </div>
       </div>
@@ -405,10 +415,111 @@
     </div>
   </div>
 
+  <!-- ==================== 閱讀統計對話框 (Statistics Modal) ==================== -->
+  <div id="stats-modal-backdrop" class="stats-modal-backdrop"></div>
+  <div id="stats-modal" class="stats-modal panel-glass">
+    <div class="stats-modal-header">
+      <h2>
+        <svg class="svg-icon" style="margin-right: 8px; color: var(--primary-color);" viewBox="0 0 24 24">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+        <span data-i18n="stats_modal_title">Reading Statistics</span>
+      </h2>
+      <button id="close-stats-modal" class="btn-icon-only">
+        <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="stats-modal-body">
+      <div class="stats-tabs">
+        <button id="stats-tab-overview" class="stats-tab-btn active" data-i18n="stats_tab_overview">Overview</button>
+        <button id="stats-tab-books" class="stats-tab-btn" data-i18n="stats_tab_books">By Book</button>
+      </div>
+
+      <!-- Overview Content -->
+      <div id="stats-content-overview" class="stats-tab-content active">
+        <div class="stats-summary-cards">
+          <div class="stats-card">
+            <div class="stats-card-value" id="global-total-time">0m</div>
+            <div class="stats-card-label" data-i18n="stats_total_time">Total Reading Time</div>
+          </div>
+          <div class="stats-card">
+            <div class="stats-card-value" id="global-total-books">0</div>
+            <div class="stats-card-label" data-i18n="stats_total_books">Books Read</div>
+          </div>
+          <div class="stats-card">
+            <div class="stats-card-value" id="global-total-days">0</div>
+            <div class="stats-card-label" data-i18n="stats_total_days">Active Days</div>
+          </div>
+        </div>
+
+        <div class="stats-section">
+          <h3 data-i18n="stats_hourly_dist_title">Hourly Reading Distribution</h3>
+          <div class="hourly-chart-container">
+            <div class="chart-y-axis">
+              <span>100%</span>
+              <span>50%</span>
+              <span>0%</span>
+            </div>
+            <div class="hourly-chart" id="global-hourly-chart">
+              <!-- Bars dynamically injected -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- By Book Content -->
+      <div id="stats-content-books" class="stats-tab-content">
+        <div class="book-selector-container">
+          <label for="stats-book-select" data-i18n="stats_select_book">Select Book:</label>
+          <select id="stats-book-select">
+            <!-- Options dynamically populated -->
+          </select>
+        </div>
+
+        <div class="stats-summary-cards" style="margin-top: 15px;">
+          <div class="stats-card">
+            <div class="stats-card-value" id="book-total-time">0m</div>
+            <div class="stats-card-label" data-i18n="stats_book_time">Reading Time</div>
+          </div>
+          <div class="stats-card">
+            <div class="stats-card-value" id="book-total-days">0</div>
+            <div class="stats-card-label" data-i18n="stats_book_days">Reading Days</div>
+          </div>
+          <div class="stats-card">
+            <div class="stats-card-value" id="book-daily-avg">0m</div>
+            <div class="stats-card-label" data-i18n="stats_book_daily_avg">Daily Average</div>
+          </div>
+        </div>
+
+        <div class="stats-section">
+          <h3 data-i18n="stats_book_hourly_title">Hourly Reading Distribution</h3>
+          <div class="hourly-chart-container">
+            <div class="chart-y-axis">
+              <span>100%</span>
+              <span>50%</span>
+              <span>0%</span>
+            </div>
+            <div class="hourly-chart" id="book-hourly-chart">
+              <!-- Bars dynamically injected -->
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-section">
+          <h3 data-i18n="stats_reading_history_title">Reading Days History</h3>
+          <div class="history-list" id="book-history-list">
+            <!-- Dates and durations dynamically injected -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== 引入 JS 庫 ==================== -->
   <script src="libs/jszip.min.js"></script>
 
-  
   <!-- 引入主應用邏輯 (作為 ES Module 載入) -->
   <script type="module" src="reader.js"></script>
 </body>

@@ -66,6 +66,12 @@ let ttsOnlyEdge = false;
 let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
 
+// 閱讀時間統計全局狀態
+let readingSessionTimer = null;
+let lastReadingHeartbeat = 0;
+let lastUserActivityTime = 0;
+const IDLE_TIMEOUT_MS = 60000; // 60秒無操作視為閒置
+
 
 function clearCoverUrls() {
   activeCoverUrls.forEach(url => URL.revokeObjectURL(url));
@@ -135,6 +141,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // UI 事件綁定
 function initUIEventBindings() {
+  // 註冊用戶活動監聽器，用於精確統計閱讀時間，防止掛機刷時長
+  const recordActivity = () => {
+    lastUserActivityTime = Date.now();
+  };
+  window.addEventListener('mousemove', recordActivity, { capture: true, passive: true });
+  window.addEventListener('keydown', recordActivity, { capture: true, passive: true });
+  window.addEventListener('mousedown', recordActivity, { capture: true, passive: true });
+  window.addEventListener('touchstart', recordActivity, { capture: true, passive: true });
+  window.addEventListener('scroll', recordActivity, { capture: true, passive: true });
+
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
@@ -151,6 +167,36 @@ function initUIEventBindings() {
   if (restoreBtn && restoreFileInput) {
     restoreBtn.addEventListener('click', () => restoreFileInput.click());
     restoreFileInput.addEventListener('change', handleImportBackup);
+  }
+
+  // 閱讀統計按鈕與對話框
+  const statsBtn = document.getElementById('stats-btn');
+  if (statsBtn) {
+    statsBtn.addEventListener('click', openGlobalStatsModal);
+  }
+  const closeStatsBtn = document.getElementById('close-stats-modal');
+  const statsBackdrop = document.getElementById('stats-modal-backdrop');
+  if (closeStatsBtn) {
+    closeStatsBtn.addEventListener('click', closeStatsModal);
+  }
+  if (statsBackdrop) {
+    statsBackdrop.addEventListener('click', closeStatsModal);
+  }
+
+  // 統計 Tab 切換
+  const tabOverview = document.getElementById('stats-tab-overview');
+  const tabBooks = document.getElementById('stats-tab-books');
+  if (tabOverview && tabBooks) {
+    tabOverview.addEventListener('click', () => switchStatsTab('overview'));
+    tabBooks.addEventListener('click', () => switchStatsTab('books'));
+  }
+
+  // 統計書籍選擇器變更
+  const statsBookSelect = document.getElementById('stats-book-select');
+  if (statsBookSelect) {
+    statsBookSelect.addEventListener('change', (e) => {
+      renderBookStats(e.target.value);
+    });
   }
 
   // 拖曳導入
@@ -573,10 +619,18 @@ function initUIEventBindings() {
   // 頁面生命週期變更時強制保存
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      saveReadingTime();
       forceSaveCurrentProgress();
+    } else {
+      // 返回頁面時重置計時起點，防止將後台掛起時間計入
+      lastReadingHeartbeat = Date.now();
+      lastUserActivityTime = Date.now();
     }
   });
-  window.addEventListener('beforeunload', forceSaveCurrentProgress);
+  window.addEventListener('beforeunload', () => {
+    saveReadingTime();
+    forceSaveCurrentProgress();
+  });
 
   tts.onPlaybackEnd = async () => {
     updatePlayPauseButtonIcon();
@@ -708,6 +762,13 @@ async function renderBookshelf(searchQuery = '') {
       <button class="book-export-btn" title="${getMsg('export_book_title')}">
         <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
       </button>
+      <button class="book-stats-btn" title="${getMsg('stats_btn_tooltip')}">
+        <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+      </button>
       <div class="book-cover-container">
         <!-- 封面將在此動態注入 -->
       </div>
@@ -717,6 +778,7 @@ async function renderBookshelf(searchQuery = '') {
         <div class="book-progress-wrapper">
           <div class="book-progress-info">
             <span>${getMsg('reading_progress', [percent])}</span>
+            <span class="book-time-badge">${formatDuration(book.stats?.totalTime || 0)}</span>
           </div>
           <div class="book-progress-bar">
             <div class="book-progress-fill" style="width: ${percent}%;"></div>
@@ -768,6 +830,15 @@ async function renderBookshelf(searchQuery = '') {
       await exportBookHandler(book.id);
     });
 
+    // 動態綁定統計事件
+    const statsCardBtn = card.querySelector('.book-stats-btn');
+    if (statsCardBtn) {
+      statsCardBtn.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        await openSingleBookStatsModal(book.id);
+      });
+    }
+
     card.addEventListener('click', () => openBook(book.id));
     shelf.appendChild(card);
   });
@@ -806,6 +877,61 @@ async function exportBookHandler(id) {
   }
 }
 window.exportBookHandler = exportBookHandler;
+
+// ==================== 閱讀時間統計管理邏輯 ====================
+function startReadingTracker(bookId) {
+  stopReadingTracker();
+
+  lastReadingHeartbeat = Date.now();
+  lastUserActivityTime = Date.now();
+
+  readingSessionTimer = setInterval(async () => {
+    if (!currentBook) {
+      stopReadingTracker();
+      return;
+    }
+
+    const now = Date.now();
+    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying);
+
+    if (isUserActive) {
+      const elapsedSeconds = Math.round((now - lastReadingHeartbeat) / 1000);
+      if (elapsedSeconds > 0) {
+        try {
+          await library.addReadingDuration(bookId, elapsedSeconds);
+        } catch (e) {
+          console.warn('[ReadingTracker] Failed to save reading stats:', e);
+        }
+      }
+    }
+    lastReadingHeartbeat = now;
+  }, 10000);
+}
+
+function stopReadingTracker() {
+  if (readingSessionTimer) {
+    clearInterval(readingSessionTimer);
+    readingSessionTimer = null;
+  }
+}
+
+async function saveReadingTime() {
+  if (currentBook) {
+    const now = Date.now();
+    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying);
+    if (isUserActive) {
+      const elapsedSeconds = Math.round((now - lastReadingHeartbeat) / 1000);
+      if (elapsedSeconds > 0) {
+        try {
+          await library.addReadingDuration(currentBook.id, elapsedSeconds);
+        } catch (e) {
+          console.warn('[ReadingTracker] Failed to save final stats:', e);
+        }
+      }
+    }
+    lastReadingHeartbeat = now;
+  }
+}
 
 
 // ==================== 3. 閱讀器渲染與控制 ==================== */
@@ -883,6 +1009,9 @@ async function openBook(id) {
     // 載入高亮標記
     applySavedHighlightsToDOM();
 
+    // 啟動閱讀時間追蹤
+    startReadingTracker(book.id);
+
   } catch (err) {
     console.error('Failed to parse book:', err);
     contentEl.innerHTML = `<p style="color:red; padding:40px; text-align:center;">${getMsg('failed_load_book')}: ${err.message}</p>`;
@@ -894,7 +1023,11 @@ async function closeCurrentBook() {
   // 1. 停止 TTS 播放
   tts.stop();
 
-  // 2. 強制保存進度
+  // 2. 停止閱讀計時並立即保存最後剩餘的時長
+  await saveReadingTime();
+  stopReadingTracker();
+
+  // 3. 強制保存進度
   await forceSaveCurrentProgress();
 
   // 清理舊的資源 Object URL
@@ -3264,3 +3397,225 @@ function handleImportBackup(e) {
 
   reader.readAsText(file);
 }
+
+
+// ==================== 4. 數據統計面板控制邏輯 ====================
+
+// 格式化讀取時間 (例如 "1h 23m" 或 "45m")
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return getMsg('stats_no_time') || 'Not started';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (hrs > 0) {
+    return `${hrs}h ${mins}m`;
+  }
+  if (mins > 0) {
+    return `${mins}m`;
+  }
+  return `${seconds}s`;
+}
+
+// 渲染柱狀圖
+function renderHourlyChart(containerId, hourlyData) {
+  const chart = document.getElementById(containerId);
+  if (!chart) return;
+  chart.innerHTML = '';
+
+  let maxVal = 0;
+  for (let h = 0; h < 24; h++) {
+    const val = hourlyData[h] || 0;
+    if (val > maxVal) maxVal = val;
+  }
+
+  for (let h = 0; h < 24; h++) {
+    const val = hourlyData[h] || 0;
+    const heightPercent = maxVal > 0 ? (val / maxVal) * 100 : 0;
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chart-bar-wrapper';
+
+    const bar = document.createElement('div');
+    bar.className = 'chart-bar';
+    if (val > 0) bar.classList.add('has-value');
+    bar.style.height = `${Math.max(2, heightPercent)}%`;
+
+    const label = document.createElement('span');
+    label.className = 'chart-bar-label';
+    if (h % 4 === 0) {
+      label.textContent = String(h).padStart(2, '0');
+    }
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'chart-bar-tooltip';
+    tooltip.textContent = `${String(h).padStart(2, '0')}:00 - ${formatDuration(val)}`;
+
+    wrapper.appendChild(tooltip);
+    wrapper.appendChild(bar);
+    wrapper.appendChild(label);
+    chart.appendChild(wrapper);
+  }
+}
+
+// 切換統計分頁
+function switchStatsTab(tabName) {
+  const tabOverview = document.getElementById('stats-tab-overview');
+  const tabBooks = document.getElementById('stats-tab-books');
+  const contentOverview = document.getElementById('stats-content-overview');
+  const contentBooks = document.getElementById('stats-content-books');
+
+  if (tabOverview && tabBooks && contentOverview && contentBooks) {
+    if (tabName === 'overview') {
+      tabOverview.classList.add('active');
+      tabBooks.classList.remove('active');
+      contentOverview.classList.add('active');
+      contentBooks.classList.remove('active');
+    } else {
+      tabOverview.classList.remove('active');
+      tabBooks.classList.add('active');
+      contentOverview.classList.remove('active');
+      contentBooks.classList.add('active');
+    }
+  }
+}
+
+// 打開統計彈窗 (全局)
+async function openGlobalStatsModal() {
+  const modal = document.getElementById('stats-modal');
+  const backdrop = document.getElementById('stats-modal-backdrop');
+  if (!modal || !backdrop) return;
+
+  // 1. 獲取所有書籍計算全局統計
+  const books = await library.getAllBooks();
+  
+  let totalSeconds = 0;
+  let readBooksCount = 0;
+  const activeDaysSet = new Set();
+  const globalHourly = Array(24).fill(0);
+
+  // 填充書籍下拉選擇器
+  const bookSelect = document.getElementById('stats-book-select');
+  if (bookSelect) {
+    bookSelect.innerHTML = '';
+    books.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = b.title;
+      bookSelect.appendChild(opt);
+    });
+  }
+
+  books.forEach(b => {
+    const stats = b.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
+    totalSeconds += stats.totalTime || 0;
+    if (stats.totalTime > 0) {
+      readBooksCount++;
+    }
+    
+    // 累加活躍天數
+    if (stats.readingDays) {
+      Object.keys(stats.readingDays).forEach(day => activeDaysSet.add(day));
+    }
+    
+    // 累加小時分佈
+    if (stats.hourlyDist) {
+      for (let h = 0; h < 24; h++) {
+        globalHourly[h] += (stats.hourlyDist[h] || 0);
+      }
+    }
+  });
+
+  // 2. 填充 UI 值
+  document.getElementById('global-total-time').textContent = formatDuration(totalSeconds);
+  document.getElementById('global-total-books').textContent = readBooksCount;
+  document.getElementById('global-total-days').textContent = activeDaysSet.size;
+
+  // 3. 繪製全局圖表
+  renderHourlyChart('global-hourly-chart', globalHourly);
+
+  // 4. 預設選中第一本書（若有）
+  if (books.length > 0) {
+    if (bookSelect) bookSelect.value = books[0].id;
+    await renderBookStats(books[0].id);
+  } else {
+    // 空狀態處理
+    document.getElementById('book-total-time').textContent = '0m';
+    document.getElementById('book-total-days').textContent = '0';
+    document.getElementById('book-daily-avg').textContent = '0m';
+    renderHourlyChart('book-hourly-chart', Array(24).fill(0));
+    document.getElementById('book-history-list').innerHTML = '';
+  }
+
+  // 顯示彈窗
+  switchStatsTab('overview');
+  backdrop.classList.add('active');
+  modal.classList.add('active');
+}
+
+// 關閉統計彈窗
+function closeStatsModal() {
+  const modal = document.getElementById('stats-modal');
+  const backdrop = document.getElementById('stats-modal-backdrop');
+  if (modal && backdrop) {
+    modal.classList.remove('active');
+    backdrop.classList.remove('active');
+  }
+}
+
+// 渲染單本書籍統計
+async function renderBookStats(bookId) {
+  const book = await library.getBook(bookId);
+  if (!book) return;
+
+  const stats = book.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
+  const totalTime = stats.totalTime || 0;
+  const readingDays = stats.readingDays || {};
+  const hourlyDist = stats.hourlyDist || {};
+
+  const daysCount = Object.keys(readingDays).length;
+  const dailyAvg = daysCount > 0 ? Math.round(totalTime / daysCount) : 0;
+
+  // 填充數值
+  document.getElementById('book-total-time').textContent = formatDuration(totalTime);
+  document.getElementById('book-total-days').textContent = daysCount;
+  document.getElementById('book-daily-avg').textContent = formatDuration(dailyAvg);
+
+  // 繪製單本圖表
+  const hourlyData = Array(24).fill(0);
+  for (let h = 0; h < 24; h++) {
+    hourlyData[h] = hourlyDist[h] || 0;
+  }
+  renderHourlyChart('book-hourly-chart', hourlyData);
+
+  // 填充歷史清單
+  const historyList = document.getElementById('book-history-list');
+  if (historyList) {
+    historyList.innerHTML = '';
+    // 按日期降序排列
+    const sortedDays = Object.keys(readingDays).sort((a, b) => b.localeCompare(a));
+    if (sortedDays.length === 0) {
+      historyList.innerHTML = `<div style="text-align:center; padding:20px; font-size:12px; color:var(--text-muted);">${getMsg('stats_no_time')}</div>`;
+    } else {
+      sortedDays.forEach(day => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.innerHTML = `
+          <span class="history-date">${day}</span>
+          <span class="history-duration">${formatDuration(readingDays[day])}</span>
+        `;
+        historyList.appendChild(item);
+      });
+    }
+  }
+}
+
+// 打開單本統計的快捷跳轉
+async function openSingleBookStatsModal(bookId) {
+  await openGlobalStatsModal();
+  const bookSelect = document.getElementById('stats-book-select');
+  if (bookSelect) {
+    bookSelect.value = bookId;
+  }
+  switchStatsTab('books');
+  await renderBookStats(bookId);
+}
+window.openSingleBookStatsModal = openSingleBookStatsModal;

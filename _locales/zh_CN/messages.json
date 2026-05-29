@@ -355,5 +355,53 @@
   },
   "cover_size_tooltip": {
     "message": "调整封面大小"
+  },
+  "stats_title": {
+    "message": "数据统计"
+  },
+  "stats_btn_tooltip": {
+    "message": "查看阅读统计"
+  },
+  "stats_modal_title": {
+    "message": "阅读数据统计"
+  },
+  "stats_tab_overview": {
+    "message": "全局概览"
+  },
+  "stats_tab_books": {
+    "message": "单本统计"
+  },
+  "stats_total_time": {
+    "message": "总阅读时长"
+  },
+  "stats_total_books": {
+    "message": "阅读书籍数"
+  },
+  "stats_total_days": {
+    "message": "阅读天数"
+  },
+  "stats_hourly_dist_title": {
+    "message": "阅读时间段分布"
+  },
+  "stats_select_book": {
+    "message": "选择书籍:"
+  },
+  "stats_book_time": {
+    "message": "阅读时间"
+  },
+  "stats_book_days": {
+    "message": "阅读天数"
+  },
+  "stats_book_daily_avg": {
+    "message": "日均阅读时长"
+  },
+  "stats_book_hourly_title": {
+    "message": "阅读时间段分布"
+  },
+  "stats_reading_history_title": {
+    "message": "每日阅读明细"
+  },
+  "stats_no_time": {
+    "message": "暂无时长"
   }
 }
