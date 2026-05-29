@@ -768,6 +768,11 @@ export class TTSEngine {
       if (this.isPlaying && this.currentIndex === index && !this.currentAudio) {
         this._playActiveSentence();
       }
+      
+      // 如果下載完成的是下一句，主動預熱它
+      if (this.isPlaying && index === this.currentIndex + 1) {
+        this._prewarmNextPlayer();
+      }
     }).catch(err => {
       console.error(`Failed to prefetch sentence ${index}:`, err);
       this.fetchingIndices.delete(index);
@@ -828,14 +833,15 @@ export class TTSEngine {
     const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
     
-    audio.src = cached.blobUrl;
+    if (audio.src !== cached.blobUrl) {
+      audio.src = cached.blobUrl;
+      // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
+      audio.onloadedmetadata = () => {
+        audio.playbackRate = this.rate;
+      };
+    }
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
-    
-    // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
-    audio.onloadedmetadata = () => {
-      audio.playbackRate = this.rate;
-    };
     
     // 跨章節無縫過渡檢測
     if (sentence.chapterIndex !== this.currentChapterIndex) {
@@ -911,6 +917,7 @@ export class TTSEngine {
       
       this._fillPreFetchBuffer();
       this._prefetchNextChapter();
+      this._prewarmNextPlayer();
     }).catch(err => {
       console.error("Audio play error:", err);
       audio.ontimeupdate = null;
@@ -1267,6 +1274,26 @@ export class TTSEngine {
         p.playbackRate = this.rate;
       } catch (e) {}
     });
+  }
+
+  _prewarmNextPlayer() {
+    if (!this.isPlaying) return;
+    const nextIndex = this.currentIndex + 1;
+    if (nextIndex >= this.sentences.length) return;
+
+    const cached = this.audioCache.get(nextIndex);
+    if (cached && cached.isReady) {
+      const nextPlayer = this.players[1 - this.activePlayerIdx];
+      if (nextPlayer.src !== cached.blobUrl) {
+        nextPlayer.src = cached.blobUrl;
+        nextPlayer.load();
+        nextPlayer.playbackRate = this.rate;
+        nextPlayer.volume = this.volume;
+        nextPlayer.onloadedmetadata = () => {
+          nextPlayer.playbackRate = this.rate;
+        };
+      }
+    }
   }
 
   startPrefetch(startIndex = 0) {
