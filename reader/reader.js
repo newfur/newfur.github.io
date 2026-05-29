@@ -99,6 +99,10 @@ async function mergeShortChapters(chapters) {
 
 // ==================== 1. 初始化與事件綁定 ==================== */
 document.addEventListener('DOMContentLoaded', async () => {
+  // 0. 立即套用封面大小設定以防佈局抖動
+  const savedWidth = localStorage.getItem('coverWidth') || '180';
+  document.documentElement.style.setProperty('--cover-width', `${savedWidth}px`);
+
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
 
@@ -179,6 +183,18 @@ function initUIEventBindings() {
   document.getElementById('search-input').addEventListener('input', (e) => {
     renderBookshelf(e.target.value.trim());
   });
+
+  // 封面大小調整
+  const coverSizeSlider = document.getElementById('cover-size-slider');
+  if (coverSizeSlider) {
+    const savedWidth = localStorage.getItem('coverWidth') || '180';
+    coverSizeSlider.value = savedWidth;
+    coverSizeSlider.addEventListener('input', (e) => {
+      const val = e.target.value;
+      document.documentElement.style.setProperty('--cover-width', `${val}px`);
+      localStorage.setItem('coverWidth', val);
+    });
+  }
 
   // 閱讀器頂部導航
   document.getElementById('close-reader-btn').addEventListener('click', closeCurrentBook);
@@ -689,6 +705,9 @@ async function renderBookshelf(searchQuery = '') {
       <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
         <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
       </button>
+      <button class="book-export-btn" title="${getMsg('export_book_title')}">
+        <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      </button>
       <div class="book-cover-container">
         <!-- 封面將在此動態注入 -->
       </div>
@@ -742,6 +761,13 @@ async function renderBookshelf(searchQuery = '') {
       await deleteBookHandler(book.id);
     });
 
+    // 動態綁定匯出事件
+    const exportBtn = card.querySelector('.book-export-btn');
+    exportBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await exportBookHandler(book.id);
+    });
+
     card.addEventListener('click', () => openBook(book.id));
     shelf.appendChild(card);
   });
@@ -755,6 +781,31 @@ async function deleteBookHandler(id) {
   }
 }
 window.deleteBookHandler = deleteBookHandler;
+
+// 匯出書籍（全局函數）
+async function exportBookHandler(id) {
+  try {
+    const book = await library.getBook(id);
+    if (!book || !book.file) {
+      alert('Book file not found.');
+      return;
+    }
+    const blob = book.file;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ext = book.format ? book.format.toLowerCase() : 'epub';
+    a.download = `${book.title}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Export failed:', err);
+    alert(`Failed to export book: ${err.message}`);
+  }
+}
+window.exportBookHandler = exportBookHandler;
 
 
 // ==================== 3. 閱讀器渲染與控制 ==================== */

@@ -349,5 +349,11 @@
   },
   "notes_chapter_title": {
     "message": "附录/注释"
+  },
+  "export_book_title": {
+    "message": "导出书籍"
+  },
+  "cover_size_tooltip": {
+    "message": "调整封面大小"
   }
 }

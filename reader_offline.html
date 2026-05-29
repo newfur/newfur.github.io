@@ -391,7 +391,7 @@ button, select, input {
 /* 書架卡片網格 */
 .bookshelf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--cover-width, 180px), 1fr));
   gap: 30px;
 }
 
@@ -546,6 +546,114 @@ button, select, input {
 .book-delete-btn:hover {
   transform: scale(1.1);
   background-color: rgba(255, 59, 48, 1);
+}
+
+/* 匯出按鈕 */
+.book-export-btn {
+  position: absolute;
+  top: 10px;
+  left: 44px; /* 10 + 28 + 6 = 44px */
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: rgba(10, 132, 255, 0.9);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.book-card:hover .book-export-btn {
+  opacity: 1;
+}
+
+.book-export-btn:hover {
+  transform: scale(1.1);
+  background-color: rgba(10, 132, 255, 1);
+}
+
+.book-export-btn:hover .svg-icon {
+  animation: svg-bounce-down 0.5s ease-in-out infinite;
+}
+
+@keyframes svg-bounce-down {
+  0%, 100% { transform: scale(1.15) translateY(0); }
+  50% { transform: scale(1.15) translateY(2px); }
+}
+
+/* 封面大小調整控制 */
+.cover-size-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 12px;
+  height: 42px;
+  box-sizing: border-box;
+}
+
+.cover-size-control .control-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.cover-slider {
+  -webkit-appearance: none;
+  width: 90px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  outline: none;
+  margin: 0;
+  cursor: pointer;
+  transition: width 0.2s ease;
+}
+
+.cover-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+  border: 2px solid var(--surface-color);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.1s ease;
+}
+
+.cover-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.cover-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--surface-color);
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.1s ease;
+}
+
+.cover-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.cover-size-control:hover .cover-slider,
+.cover-slider:focus {
+  width: 120px;
 }
 
 /* 空白狀態 */
@@ -2203,6 +2311,16 @@ html.transition-none .page-texture-slide {
               <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </span>
           </div>
+          <div class="cover-size-control">
+            <span class="control-icon" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
+              <svg class="svg-icon" viewBox="0 0 24 24">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="9" cy="9" r="2"></circle>
+                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+              </svg>
+            </span>
+            <input type="range" id="cover-size-slider" min="120" max="300" step="10" value="180" class="cover-slider" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
+          </div>
           <button id="import-btn" class="btn btn-primary">
             <span class="btn-icon">
               <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -2941,6 +3059,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "notes_chapter_title": {
       "message": "Notes/Appendix"
+    },
+    "export_book_title": {
+      "message": "Export Book"
+    },
+    "cover_size_tooltip": {
+      "message": "Adjust Cover Size"
     }
   },
   "zh_TW": {
@@ -3294,6 +3418,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "notes_chapter_title": {
       "message": "附錄/註釋"
+    },
+    "export_book_title": {
+      "message": "匯出書籍"
+    },
+    "cover_size_tooltip": {
+      "message": "調整封面大小"
     }
   },
   "zh_CN": {
@@ -3647,6 +3777,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "notes_chapter_title": {
       "message": "附录/注释"
+    },
+    "export_book_title": {
+      "message": "导出书籍"
+    },
+    "cover_size_tooltip": {
+      "message": "调整封面大小"
     }
   }
 };
@@ -7236,6 +7372,10 @@ async function mergeShortChapters(chapters) {
 
 // ==================== 1. 初始化與事件綁定 ==================== */
 document.addEventListener('DOMContentLoaded', async () => {
+  // 0. 立即套用封面大小設定以防佈局抖動
+  const savedWidth = localStorage.getItem('coverWidth') || '180';
+  document.documentElement.style.setProperty('--cover-width', `${savedWidth}px`);
+
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
 
@@ -7316,6 +7456,18 @@ function initUIEventBindings() {
   document.getElementById('search-input').addEventListener('input', (e) => {
     renderBookshelf(e.target.value.trim());
   });
+
+  // 封面大小調整
+  const coverSizeSlider = document.getElementById('cover-size-slider');
+  if (coverSizeSlider) {
+    const savedWidth = localStorage.getItem('coverWidth') || '180';
+    coverSizeSlider.value = savedWidth;
+    coverSizeSlider.addEventListener('input', (e) => {
+      const val = e.target.value;
+      document.documentElement.style.setProperty('--cover-width', `${val}px`);
+      localStorage.setItem('coverWidth', val);
+    });
+  }
 
   // 閱讀器頂部導航
   document.getElementById('close-reader-btn').addEventListener('click', closeCurrentBook);
@@ -7826,6 +7978,9 @@ async function renderBookshelf(searchQuery = '') {
       <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
         <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
       </button>
+      <button class="book-export-btn" title="${getMsg('export_book_title')}">
+        <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      </button>
       <div class="book-cover-container">
         <!-- 封面將在此動態注入 -->
       </div>
@@ -7879,6 +8034,13 @@ async function renderBookshelf(searchQuery = '') {
       await deleteBookHandler(book.id);
     });
 
+    // 動態綁定匯出事件
+    const exportBtn = card.querySelector('.book-export-btn');
+    exportBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await exportBookHandler(book.id);
+    });
+
     card.addEventListener('click', () => openBook(book.id));
     shelf.appendChild(card);
   });
@@ -7892,6 +8054,31 @@ async function deleteBookHandler(id) {
   }
 }
 window.deleteBookHandler = deleteBookHandler;
+
+// 匯出書籍（全局函數）
+async function exportBookHandler(id) {
+  try {
+    const book = await library.getBook(id);
+    if (!book || !book.file) {
+      alert('Book file not found.');
+      return;
+    }
+    const blob = book.file;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ext = book.format ? book.format.toLowerCase() : 'epub';
+    a.download = `${book.title}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Export failed:', err);
+    alert(`Failed to export book: ${err.message}`);
+  }
+}
+window.exportBookHandler = exportBookHandler;
 
 
 // ==================== 3. 閱讀器渲染與控制 ==================== */
