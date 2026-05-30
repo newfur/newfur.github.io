@@ -1407,6 +1407,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background-color: var(--selection-color);
 }
 
+.toc-sub-item {
+  color: var(--text-muted);
+  font-size: 13px !important;
+  border-left: 1.5px dashed var(--border-color);
+  border-radius: 0 10px 10px 0;
+  margin-left: 8px;
+}
+
+.toc-sub-item:hover {
+  border-left-color: var(--primary-color) !important;
+}
+
+.toc-sub-item.active {
+  border-left-color: var(--primary-color) !important;
+  font-weight: 500 !important;
+}
+
 /* 書籤與高亮列表 */
 .sidebar-list {
   list-style: none;
@@ -5365,6 +5382,7 @@ class Azw3Parser {
 
       const decoder = new TextDecoder('utf-8');
       const flowUrls = {};
+      let htmlBytes = combined;
 
       if (fdstRecordIndex !== -1) {
         try {
@@ -5380,7 +5398,7 @@ class Azw3Parser {
 
           // Flow 0 是主要 HTML 內容
           if (flows.length > 0) {
-            const htmlBytes = combined.subarray(flows[0].start, Math.min(combined.length, flows[0].end));
+            htmlBytes = combined.subarray(flows[0].start, Math.min(combined.length, flows[0].end));
             fullHtml = decoder.decode(htmlBytes);
           } else {
             fullHtml = decoder.decode(combined);
@@ -5523,8 +5541,42 @@ class Azw3Parser {
       }
     }
 
-    // 將龐大的 HTML 切分成多個章節段落
-    const chapters = this._splitIntoChapters(fullHtml);
+    // 優先嘗試解析 NCX 索引目錄以獲得完美的章節結構與名稱，否則退回到原有 DOM/字數切分
+    let chapters = null;
+    const tocEntries = this._parseNCXTOC(htmlBytes);
+    
+    if (tocEntries) {
+      // 按字元偏移量排序
+      tocEntries.sort((a, b) => a.charOffset - b.charOffset);
+      
+      const uniqueOffsets = Array.from(new Set(tocEntries.map(e => e.charOffset))).sort((a, b) => a - b);
+      if (uniqueOffsets.length > 0 && uniqueOffsets[0] > 0) {
+        uniqueOffsets.unshift(0);
+        tocEntries.unshift({
+          title: this.title || "Introduction",
+          charOffset: 0,
+          depth: 0
+        });
+      }
+      
+      chapters = [];
+      tocEntries.forEach((entry, idx) => {
+        const start = entry.charOffset;
+        const nextIdx = uniqueOffsets.indexOf(start) + 1;
+        const end = nextIdx < uniqueOffsets.length ? uniqueOffsets[nextIdx] : fullHtml.length;
+        const content = fullHtml.substring(start, end);
+        
+        chapters.push({
+          title: entry.title,
+          href: `chapter-${idx + 1}`,
+          depth: entry.depth || 0,
+          getContent: () => content
+        });
+      });
+      console.log(`Successfully parsed NCX TOC with ${chapters.length} chapters.`);
+    } else {
+      chapters = this._splitIntoChapters(fullHtml);
+    }
     const fragTable = this._parseFragTable();
     resourceUrls.push(...Array.from(uniqueResourceUrls));
 
@@ -5630,6 +5682,140 @@ class Azw3Parser {
     return null;
   }
 
+  // 解析 NCX Table of Contents (INDX 目錄樹)
+  _parseNCXTOC(combined) {
+    if (this.ncxIndex === undefined || this.ncxIndex === 0xffffffff || this.ncxIndex >= this.records.length) {
+      return null;
+    }
+    try {
+      const rootData = this._getRecordData(this.ncxIndex);
+      if (rootData.length < 4 || String.fromCharCode(rootData[0], rootData[1], rootData[2], rootData[3]) !== 'INDX') {
+        return null;
+      }
+      const rootDv = new DataView(rootData.buffer, rootData.byteOffset, rootData.byteLength);
+      const numChildRecords = rootDv.getUint32(24);
+      
+      let tagxOffset = -1;
+      for (let i = 0; i < rootData.length - 4; i++) {
+        if (rootData[i] === 0x54 && rootData[i+1] === 0x41 && rootData[i+2] === 0x47 && rootData[i+3] === 0x58) { // 'TAGX'
+          tagxOffset = i;
+          break;
+        }
+      }
+      if (tagxOffset === -1) return null;
+      
+      const tagxLen = rootDv.getUint32(tagxOffset + 4);
+      const controlByteCount = rootDv.getUint32(tagxOffset + 8);
+      
+      const tags = [];
+      let tagP = tagxOffset + 12;
+      const tagEnd = tagxOffset + tagxLen;
+      while (tagP + 4 <= tagEnd) {
+        const tagId = rootData[tagP];
+        const numValues = rootData[tagP + 1];
+        const mask = rootData[tagP + 2];
+        const endOffset = rootData[tagP + 3];
+        tags.push({ tagId, numValues, mask, endOffset });
+        tagP += 4;
+      }
+      
+      const valRecIdx = this.ncxIndex + numChildRecords + 1;
+      if (valRecIdx >= this.records.length) return null;
+      const labelBytes = this._getRecordData(valRecIdx);
+      const tocEntries = [];
+      const decoder = new TextDecoder('utf-8');
+      
+      for (let i = 1; i <= numChildRecords; i++) {
+        const childIdx = this.ncxIndex + i;
+        if (childIdx >= this.records.length) break;
+        const childData = this._getRecordData(childIdx);
+        if (childData.length < 4 || String.fromCharCode(childData[0], childData[1], childData[2], childData[3]) !== 'INDX') {
+          continue;
+        }
+        const childDv = new DataView(childData.buffer, childData.byteOffset, childData.byteLength);
+        const idxtOffset = childDv.getUint32(20);
+        const numEntries = childDv.getUint32(24);
+        
+        const idxtPositions = [];
+        for (let j = 0; j < numEntries; j++) {
+          idxtPositions.push(childDv.getUint16(idxtOffset + 4 + j * 2));
+        }
+        idxtPositions.push(idxtOffset);
+        
+        for (let j = 0; j < numEntries; j++) {
+          const startPos = idxtPositions[j];
+          const endPos = idxtPositions[j + 1];
+          if (startPos >= childData.length) continue;
+          const entry = childData.subarray(startPos, endPos);
+          const keyLen = entry[0];
+          const key = entry.subarray(1, 1 + keyLen);
+          const controlByte = entry[1 + keyLen];
+          
+          const vwis = [];
+          let p = 1 + keyLen + 1;
+          while (p < entry.length) {
+            let val = 0;
+            let hasVal = false;
+            while (p < entry.length) {
+              const byte = entry[p++];
+              val = (val << 7) | (byte & 0x7F);
+              if (byte & 0x80) {
+                hasVal = true;
+                break;
+              }
+            }
+            if (hasVal) {
+              vwis.push(val);
+            } else {
+              break;
+            }
+          }
+          
+          let vwiIdx = 0;
+          const entryTags = {};
+          for (const tag of tags) {
+            if (controlByte & tag.mask) {
+              const vals = [];
+              for (let k = 0; k < tag.numValues; k++) {
+                if (vwiIdx < vwis.length) {
+                  vals.push(vwis[vwiIdx++]);
+                }
+              }
+              entryTags[tag.tagId] = vals;
+            }
+          }
+          
+          const pos = entryTags[1] ? entryTags[1][0] : undefined;
+          const labelOffset = entryTags[3] ? entryTags[3][0] : undefined;
+          const depth = entryTags[4] ? entryTags[4][0] : 0;
+          
+          if (pos !== undefined && labelOffset !== undefined) {
+            let label = '';
+            if (labelOffset >= 0 && labelOffset < labelBytes.length) {
+              const lenByte = labelBytes[labelOffset];
+              if (lenByte & 0x80) {
+                const labelLen = lenByte & 0x7F;
+                if (labelOffset + 1 + labelLen <= labelBytes.length) {
+                  label = decoder.decode(labelBytes.subarray(labelOffset + 1, labelOffset + 1 + labelLen)).trim();
+                }
+              }
+            }
+            if (label) {
+              // 映射到解碼後的 HTML 字符偏移量
+              const sliceBytes = combined.subarray(0, pos);
+              const charOffset = decoder.decode(sliceBytes).length;
+              tocEntries.push({ title: label, pos, depth, charOffset });
+            }
+          }
+        }
+      }
+      return tocEntries.length > 0 ? tocEntries : null;
+    } catch (e) {
+      console.warn("Failed to parse NCX Table of Contents:", e);
+    }
+    return null;
+  }
+
   // 獲取指定 Record 的二進位數據
   _getRecordData(index) {
     const start = this.records[index].offset;
@@ -5679,12 +5865,14 @@ class Azw3Parser {
 
     // 獲取 EXTH 標記/額外數據標記 (Extra Data Flags)
     this.extraDataFlags = 0;
+    this.ncxIndex = 0xffffffff;
     if (data.length >= this.mobiHeaderOffset + 16) {
       const headerLength = view.getUint32(this.mobiHeaderOffset + 4);
       const mobiVersion = view.getUint32(this.mobiHeaderOffset + 12);
       if (headerLength >= 228 && mobiVersion >= 5 && data.length >= this.mobiHeaderOffset + 228) {
         this.extraDataFlags = view.getUint16(this.mobiHeaderOffset + 226);
-        console.log(`Parsed MOBI Header: version=${mobiVersion}, headerLength=${headerLength}, extraDataFlags=0x${this.extraDataFlags.toString(16)}`);
+        this.ncxIndex = view.getUint32(this.mobiHeaderOffset + 228);
+        console.log(`Parsed MOBI Header: version=${mobiVersion}, headerLength=${headerLength}, extraDataFlags=0x${this.extraDataFlags.toString(16)}, ncxIndex=${this.ncxIndex}`);
       }
     }
   }
@@ -9014,6 +9202,12 @@ function renderTOC(chapters) {
     li.className = 'toc-item';
     li.textContent = ch.title;
     if (idx === currentChapterIndex) li.classList.add('active');
+    
+    // 根據目錄層級（depth）添加縮排與樣式類別
+    if (ch.depth && ch.depth > 0) {
+      li.style.paddingLeft = (15 + ch.depth * 15) + 'px';
+      li.classList.add('toc-sub-item');
+    }
     
     li.addEventListener('click', () => {
       document.getElementById('reader-sidebar').classList.remove('active');

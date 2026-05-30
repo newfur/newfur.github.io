@@ -1065,6 +1065,12 @@ function renderTOC(chapters) {
     li.textContent = ch.title;
     if (idx === currentChapterIndex) li.classList.add('active');
     
+    // 根據目錄層級（depth）添加縮排與樣式類別
+    if (ch.depth && ch.depth > 0) {
+      li.style.paddingLeft = (15 + ch.depth * 15) + 'px';
+      li.classList.add('toc-sub-item');
+    }
+    
     li.addEventListener('click', () => {
       document.getElementById('reader-sidebar').classList.remove('active');
       loadChapter(idx);
