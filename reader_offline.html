@@ -5322,6 +5322,7 @@ class Azw3Parser {
     // MOBI 文本記錄從 Record 1 開始，長度為 numTextRecords
     const numTextRecords = this.textRecordCount;
     let fullHtml = '';
+    let htmlBytes = null;
     const resourceUrls = [];
     const uniqueResourceUrls = new Set();
     
@@ -5382,7 +5383,7 @@ class Azw3Parser {
 
       const decoder = new TextDecoder('utf-8');
       const flowUrls = {};
-      let htmlBytes = combined;
+      htmlBytes = combined;
 
       if (fdstRecordIndex !== -1) {
         try {
@@ -5543,7 +5544,7 @@ class Azw3Parser {
 
     // 優先嘗試解析 NCX 索引目錄以獲得完美的章節結構與名稱，否則退回到原有 DOM/字數切分
     let chapters = null;
-    const tocEntries = this._parseNCXTOC(htmlBytes);
+    const tocEntries = htmlBytes ? this._parseNCXTOC(htmlBytes) : null;
     
     if (tocEntries) {
       // 按字元偏移量排序
