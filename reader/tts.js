@@ -1091,11 +1091,45 @@ export class TTSEngine {
   play(index = 0) {
     if (this.sentences.length === 0) return;
     
-    this.stop();
+    // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
+    this.isPlaying = false;
+    this.isPaused = false;
+    this._stopSilenceKeepAlive();
+    
+    if (this.synth) {
+      this.synth.cancel();
+    }
+    this.currentUtterance = null;
+    this.nativeQueue.clear();
+    
+    this.players.forEach(p => {
+      try {
+        p.pause();
+        p.src = '';
+        p.ontimeupdate = null;
+        p.onended = null;
+        p.onloadedmetadata = null;
+      } catch (e) {}
+    });
+    this.currentAudio = null;
     
     this.isPlaying = true;
-    this.isPaused = false;
     this.currentIndex = Math.max(0, Math.min(index, this.sentences.length - 1));
+    
+    // 智能快取淘汰：僅釋放並刪除與新進度相差較遠（例如小於 currentIndex 或大於 currentIndex + 15）的快取項目
+    const keysToDelete = [];
+    this.audioCache.forEach((cached, idx) => {
+      if (idx < this.currentIndex || idx > this.currentIndex + 15) {
+        keysToDelete.push(idx);
+      }
+    });
+    keysToDelete.forEach(idx => {
+      const cached = this.audioCache.get(idx);
+      if (cached) {
+        URL.revokeObjectURL(cached.blobUrl);
+        this.audioCache.delete(idx);
+      }
+    });
     
     this._startSilenceKeepAlive();
     this._playActiveSentence();

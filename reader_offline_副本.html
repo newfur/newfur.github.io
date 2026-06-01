@@ -141,7 +141,6 @@
 
 html {
   overflow-x: hidden;
-  overscroll-behavior-y: contain;
 }
 
 body {
@@ -149,7 +148,6 @@ body {
   background-color: var(--bg-color);
   color: var(--text-color);
   transition: background-color var(--transition-speed), color var(--transition-speed);
-  overscroll-behavior-y: contain;
 }
 
 /* 按鈕與常用控制項樣式 */
@@ -942,39 +940,16 @@ body:not(.layout-paginated) .reader-container {
   height: auto !important;
 }
 
-/* 插圖與 SVG 容器通用自適應 (防止在連續滾動模式下圖片/SVG 超出螢幕或高度塌陷為 0) */
-.book-content img,
-.book-content svg {
-  max-width: 100% !important;
-  max-height: 80vh !important;
-  height: auto !important;
-  object-fit: contain !important;
-  display: block !important;
-  margin: 15px auto !important;
-}
-
-.book-content svg image {
-  max-width: 100% !important;
-  height: auto !important;
-}
-
-/* 翻頁模式下的插圖與 SVG 自適應 */
-body.layout-paginated .book-content img,
-body.layout-paginated .book-content svg {
+/* 翻頁模式下的插圖自適應 */
+body.layout-paginated .book-content img {
   max-width: 100% !important;
   max-height: 70vh !important;
-  height: auto !important;
   object-fit: contain !important;
   display: block !important;
   margin: 10px auto !important;
   break-inside: avoid !important;
   page-break-inside: avoid !important;
   -webkit-column-break-inside: avoid !important;
-}
-
-body.layout-paginated .book-content svg image {
-  max-width: 100% !important;
-  height: auto !important;
 }
 
 /* 懸浮左右翻頁導航按鈕 */
@@ -1430,23 +1405,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: var(--primary-color);
   font-weight: 600;
   background-color: var(--selection-color);
-}
-
-.toc-sub-item {
-  color: var(--text-muted);
-  font-size: 13px !important;
-  border-left: 1.5px dashed var(--border-color);
-  border-radius: 0 10px 10px 0;
-  margin-left: 8px;
-}
-
-.toc-sub-item:hover {
-  border-left-color: var(--primary-color) !important;
-}
-
-.toc-sub-item.active {
-  border-left-color: var(--primary-color) !important;
-  font-weight: 500 !important;
 }
 
 /* 書籤與高亮列表 */
@@ -2078,37 +2036,6 @@ html.transition-none::view-transition-new(reader-page-transition) {
   opacity: 1 !important;
 }
 
-/* === 連續滾動模式垂直過渡動畫 (Scroll Mode Vertical Transitions) === */
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-forward::view-transition-old(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-forward::view-transition-old(reader-page-transition) {
-  animation-name: slide-to-top;
-}
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-forward::view-transition-new(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-forward::view-transition-new(reader-page-transition) {
-  animation-name: slide-from-bottom;
-}
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-backward::view-transition-old(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-backward::view-transition-old(reader-page-transition) {
-  animation-name: slide-to-bottom;
-}
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-backward::view-transition-new(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-backward::view-transition-new(reader-page-transition) {
-  animation-name: slide-from-top;
-}
-
-@keyframes slide-to-top {
-  to { transform: translateY(-80px); opacity: 0; }
-}
-@keyframes slide-from-bottom {
-  from { transform: translateY(80px); opacity: 0; }
-}
-@keyframes slide-to-bottom {
-  to { transform: translateY(80px); opacity: 0; }
-}
-@keyframes slide-from-top {
-  from { transform: translateY(-80px); opacity: 0; }
-}
-
 /* 尊重使用者減少動畫的系統設定 */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(reader-page-transition) {
@@ -2346,16 +2273,12 @@ html.transition-none .page-texture-slide {
 @media (max-width: 768px) {
   .header-container {
     flex-direction: column;
-    gap: 12px;
+    gap: 15px;
     align-items: flex-start;
-    padding: 15px 10px;
   }
   .header-actions {
     width: 100%;
-    display: flex;
-    flex-direction: row;
     flex-wrap: wrap;
-    gap: 8px;
     justify-content: flex-start;
   }
   .search-bar {
@@ -2363,64 +2286,6 @@ html.transition-none .page-texture-slide {
   }
   .search-bar input {
     width: 100% !important;
-    height: 38px;
-    padding: 8px 12px 8px 34px;
-    font-size: 13px;
-  }
-  .search-icon {
-    left: 10px;
-  }
-
-  /* 封面大小調整自成一行 */
-  .cover-size-control {
-    width: 100%;
-    height: 38px;
-    padding: 4px 12px;
-    border-radius: 8px;
-    display: flex;
-    justify-content: center;
-  }
-  .cover-size-control .cover-slider {
-    flex-grow: 1;
-    width: auto;
-    max-width: 250px;
-  }
-  .cover-size-control:hover .cover-slider,
-  .cover-size-control .cover-slider:focus {
-    width: auto;
-    max-width: 250px;
-  }
-
-  /* 按鈕縮小 */
-  .header-actions .btn {
-    padding: 8px 12px;
-    font-size: 12px;
-    border-radius: 8px;
-    gap: 4px;
-    height: 34px;
-  }
-  .header-actions .btn .svg-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* 書架響應式調整 */
-  .library-main {
-    padding: 20px 10px;
-  }
-  .bookshelf-grid {
-    gap: 15px;
-  }
-  .book-info {
-    padding: 10px;
-  }
-  .book-title {
-    font-size: 12px;
-    height: 34px;
-  }
-  .book-author {
-    font-size: 11px;
-    margin-bottom: 4px;
   }
 }
 
@@ -2663,20 +2528,15 @@ html.transition-none .page-texture-slide {
   padding: 12px 16px;
   border-radius: 12px;
   margin-bottom: 16px;
-  max-width: 100%;
-  box-sizing: border-box;
 }
 
 .book-selector-container label {
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
 }
 
 .book-selector-container select {
   flex: 1;
-  min-width: 0;
-  max-width: 100%;
   padding: 6px 12px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
@@ -2685,9 +2545,6 @@ html.transition-none .page-texture-slide {
   outline: none;
   font-size: 13px;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* History List */
@@ -2791,42 +2648,6 @@ html.transition-none .page-texture-slide {
   font-weight: 500;
 }
 
-/* 閱讀統計對話框移動端響應式優化 */
-@media (max-width: 576px) {
-  .stats-modal {
-    width: 95% !important;
-    max-height: 90vh !important;
-  }
-  .stats-modal-body {
-    padding: 16px !important;
-  }
-  .stats-summary-cards {
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
-    gap: 10px !important;
-    margin-bottom: 16px !important;
-  }
-  .stats-card {
-    padding: 12px 8px !important;
-  }
-  .stats-card-value {
-    font-size: 18px !important;
-  }
-  .stats-section {
-    padding: 14px !important;
-    margin-top: 16px !important;
-  }
-  .hourly-chart-container {
-    gap: 6px !important;
-  }
-  .hourly-chart {
-    gap: 1px !important;
-  }
-  .book-selector-container {
-    padding: 10px 12px !important;
-    gap: 8px !important;
-  }
-}
-
 
 </style>
   
@@ -2858,7 +2679,7 @@ html.transition-none .page-texture-slide {
                 <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
               </svg>
             </span>
-            <input type="range" id="cover-size-slider" min="80" max="300" step="10" value="180" class="cover-slider" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
+            <input type="range" id="cover-size-slider" min="120" max="300" step="10" value="180" class="cover-slider" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
           </div>
           <button id="import-btn" class="btn btn-primary">
             <span class="btn-icon">
@@ -4831,120 +4652,13 @@ class BookLibrary {
     });
   }
 
-  // 導入/還原書籍（如果現有書庫已有相同的書籍，進行合併）
-  async importBook(backupBook) {
+  // 導入/還原書籍（直接使用 put 強制覆寫/更新已存在的書籍）
+  async importBook(book) {
     await this._ensureOpen();
-
-    // 1. 獲取所有現有書籍
-    const existingBooks = await this.getAllBooks();
-
-    // 2. 尋找相同的書籍 (ID 相同，或 書名+作者+格式 相同)
-    const existingBook = existingBooks.find(ex =>
-      ex.id === backupBook.id ||
-      (ex.title && backupBook.title && ex.title.trim() === backupBook.title.trim() &&
-       ex.author && backupBook.author && ex.author.trim() === backupBook.author.trim() &&
-       ex.format && backupBook.format && ex.format.toLowerCase() === backupBook.format.toLowerCase())
-    );
-
-    let mergedBook;
-    if (existingBook) {
-      // 合併記錄
-      // 進度合併 (以 lastReadAt 較新者為準覆寫閱讀位置)
-      const mergedProgress = { ...existingBook.progress, ...backupBook.progress };
-      const existingLastRead = existingBook.lastReadAt || 0;
-      const backupLastRead = backupBook.lastReadAt || 0;
-
-      if (existingLastRead > backupLastRead) {
-        // 保留現有書庫的位置
-        if (existingBook.progress) {
-          mergedProgress.chapterIndex = existingBook.progress.chapterIndex ?? mergedProgress.chapterIndex;
-          mergedProgress.elementIndex = existingBook.progress.elementIndex ?? mergedProgress.elementIndex;
-          mergedProgress.activeSentenceIndex = existingBook.progress.activeSentenceIndex ?? mergedProgress.activeSentenceIndex;
-          mergedProgress.percent = existingBook.progress.percent ?? mergedProgress.percent;
-          mergedProgress.scrollTop = existingBook.progress.scrollTop ?? mergedProgress.scrollTop;
-          mergedProgress.pdfPage = existingBook.progress.pdfPage ?? mergedProgress.pdfPage;
-          mergedProgress.comicImageIndex = existingBook.progress.comicImageIndex ?? mergedProgress.comicImageIndex;
-        }
-      }
-
-      // 合併書籤 (避免重複)
-      const mergedBookmarks = [...(existingBook.bookmarks || [])];
-      if (backupBook.bookmarks) {
-        for (const b of backupBook.bookmarks) {
-          const isDuplicate = mergedBookmarks.some(ex =>
-            ex.bookmarkId === b.bookmarkId ||
-            (ex.chapterIndex === b.chapterIndex &&
-             ex.elementIndex === b.elementIndex &&
-             ex.pdfPage === b.pdfPage &&
-             ex.currentPageIndex === b.currentPageIndex)
-          );
-          if (!isDuplicate) {
-            mergedBookmarks.push(b);
-          }
-        }
-      }
-
-      // 合併劃線筆記 (避免重複)
-      const mergedNotes = [...(existingBook.notes || [])];
-      if (backupBook.notes) {
-        for (const n of backupBook.notes) {
-          const isDuplicate = mergedNotes.some(ex =>
-            ex.noteId === n.noteId ||
-            (ex.chapterIndex === n.chapterIndex &&
-             ex.sentenceIndex === n.sentenceIndex &&
-             ex.text === n.text &&
-             ex.type === n.type &&
-             ex.pdfPage === n.pdfPage &&
-             ex.comicImageIndex === n.comicImageIndex)
-          );
-          if (!isDuplicate) {
-            mergedNotes.push(n);
-          }
-        }
-      }
-
-      // 合併閱讀統計資訊
-      const mergedStats = {
-        totalTime: (existingBook.stats?.totalTime || 0) + (backupBook.stats?.totalTime || 0),
-        readingDays: { ...(existingBook.stats?.readingDays || {}) },
-        hourlyDist: { ...(existingBook.stats?.hourlyDist || {}) }
-      };
-
-      if (backupBook.stats?.readingDays) {
-        for (const [date, sec] of Object.entries(backupBook.stats.readingDays)) {
-          mergedStats.readingDays[date] = (mergedStats.readingDays[date] || 0) + sec;
-        }
-      }
-      if (backupBook.stats?.hourlyDist) {
-        for (const [hour, sec] of Object.entries(backupBook.stats.hourlyDist)) {
-          mergedStats.hourlyDist[hour] = (mergedStats.hourlyDist[hour] || 0) + sec;
-        }
-      }
-
-      mergedBook = {
-        id: existingBook.id, // 使用現有書籍的 ID 以免重複
-        title: existingBook.title,
-        author: existingBook.author,
-        format: existingBook.format,
-        file: existingBook.file || backupBook.file, // 優先使用現有檔案
-        cover: existingBook.cover || backupBook.cover,
-        size: existingBook.size || backupBook.size,
-        addedAt: Math.min(existingBook.addedAt || Date.now(), backupBook.addedAt || Date.now()),
-        lastReadAt: Math.max(existingLastRead, backupLastRead),
-        progress: mergedProgress,
-        bookmarks: mergedBookmarks,
-        notes: mergedNotes,
-        stats: mergedStats
-      };
-    } else {
-      // 沒找到相同的書籍，直接使用導入的書籍
-      mergedBook = backupBook;
-    }
-
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(mergedBook);
+      const request = store.put(book);
 
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
@@ -5195,7 +4909,6 @@ class EpubParser {
     this.spine = [];    // list of manifest ids in reading order
     this.chapters = []; // list of processed chapters: { title, href, content }
     this.cover = null;
-    this.resourceUrls = [];
   }
 
   // 主解析函數
@@ -5219,13 +4932,6 @@ class EpubParser {
     
     // 6. 找出所有在 spine 中但沒有出現在目錄 (TOC) 中的文件路徑，將其作為追加章節放入，防止導航及進度讀取錯誤
     const tocCleanHrefs = new Set(tocChapters.map(ch => ch.cleanHref));
-    
-    // 建立 spineHrefs 映射以供排序和標題繼承
-    const spineHrefs = this.spine.map(id => {
-      const item = this.manifest[id];
-      return item ? item.href : null;
-    }).filter(Boolean);
-
     this.spine.forEach(idref => {
       const item = this.manifest[idref];
       if (item && item.href && !tocCleanHrefs.has(item.href)) {
@@ -5234,30 +4940,11 @@ class EpubParser {
           href: item.href,
           hash: '',
           cleanHref: item.href,
-          hiddenFromTOC: true,
           getContent: async () => this.loadChapterContent(item.href)
         });
         tocCleanHrefs.add(item.href);
       }
     });
-
-    // 7. 依照 spine 順序進行排序，確保閱讀順序完全符合書籍的線性結構
-    tocChapters.sort((a, b) => {
-      const idxA = spineHrefs.indexOf(a.cleanHref);
-      const idxB = spineHrefs.indexOf(b.cleanHref);
-      return idxA - idxB;
-    });
-
-    // 8. 對於隱藏章節，繼承前一個章節的標題，使其在頂部標題列中顯示更自然
-    for (let i = 0; i < tocChapters.length; i++) {
-      if (tocChapters[i].hiddenFromTOC) {
-        if (i > 0) {
-          tocChapters[i].title = tocChapters[i - 1].title;
-        } else {
-          tocChapters[i].title = this.metadata.title || 'Start';
-        }
-      }
-    }
     
     return {
       metadata: {
@@ -5328,11 +5015,10 @@ class EpubParser {
     });
   }
 
-  // 解析相對路徑 (支援 hash 解析)
+  // 解析相對路徑
   _resolvePath(baseDir, relativePath) {
-    const [pathPart, hashPart] = relativePath.split('#');
     // 移除 relativePath 中的 ../ 等路徑，計算出最終的絕對 zip 路徑
-    const absolute = baseDir + pathPart;
+    const absolute = baseDir + relativePath;
     const parts = absolute.split('/');
     const result = [];
     for (const part of parts) {
@@ -5343,8 +5029,7 @@ class EpubParser {
         result.push(part);
       }
     }
-    const resolvedPath = result.join('/');
-    return hashPart !== undefined ? `${resolvedPath}#${hashPart}` : resolvedPath;
+    return result.join('/');
   }
 
   // 獲取封面圖 URL
@@ -5387,6 +5072,7 @@ class EpubParser {
     }
     return null; // 默認返回 null，後續使用占位封面
   }
+
   // 解析 TOC 目錄
   async _parseTOC() {
     // EPUB 3 使用 navigation document (通常在 manifest 中屬性含有 'nav')
@@ -5412,18 +5098,7 @@ class EpubParser {
           const baseDir = this._getDirectory(navItem.href);
           const resolvedHref = this._resolvePath(baseDir, hrefAttr);
           
-          // 計算 depth: 向上尋找導航節點中的 ol/ul 父節點個數
-          let depth = 0;
-          let parent = link.parentElement;
-          while (parent && parent.tagName.toLowerCase() !== 'nav') {
-            const tagName = parent.tagName.toLowerCase();
-            if (tagName === 'ol' || tagName === 'ul') {
-              depth++;
-            }
-            parent = parent.parentElement;
-          }
-          const finalDepth = Math.max(0, depth - 1);
-          tocList.push({ title, href: resolvedHref, depth: finalDepth });
+          tocList.push({ title, href: resolvedHref });
         });
       } catch (e) {
         console.warn('EPUB 3 nav parsing failed, falling back to Ncx:', e);
@@ -5445,17 +5120,7 @@ class EpubParser {
             const src = contentNode.getAttribute('src');
             const baseDir = this._getDirectory(ncxItem.href);
             const resolvedHref = this._resolvePath(baseDir, src);
-            
-            // 計算 depth: 向上尋找 navPoint 父節點個數
-            let depth = 0;
-            let parent = point.parentElement;
-            while (parent) {
-              if (parent.tagName && parent.tagName.toLowerCase() === 'navpoint') {
-                depth++;
-              }
-              parent = parent.parentElement;
-            }
-            tocList.push({ title, href: resolvedHref, depth: depth });
+            tocList.push({ title, href: resolvedHref });
           }
         });
       } catch (e) {
@@ -5485,7 +5150,6 @@ class EpubParser {
         href: ch.href,
         hash: hash || '',
         cleanHref: cleanHref,
-        depth: ch.depth || 0,
         getContent: async () => this.loadChapterContent(cleanHref)
       };
     });
@@ -5493,10 +5157,6 @@ class EpubParser {
 
   // 讀取某個章節內容並替換資源引用為 Object URL
   async loadChapterContent(cleanHref) {
-    if (!this.resourceUrls) {
-      this.resourceUrls = [];
-    }
-
     const file = this.zip.file(cleanHref);
     if (!file) return `<p style="color:red;">Error: Chapter file not found (${cleanHref})</p>`;
     
@@ -5513,7 +5173,7 @@ class EpubParser {
     // 1. 替換圖片 src
     const images = doc.querySelectorAll('img, image');
     for (const img of images) {
-      const srcAttr = img.getAttribute('src') || img.getAttribute('xlink:href') || img.getAttribute('href');
+      const srcAttr = img.getAttribute('src') || img.getAttribute('xlink:href');
       if (srcAttr && !srcAttr.startsWith('data:') && !srcAttr.startsWith('http')) {
         const absoluteImgPath = this._resolvePath(baseDir, srcAttr);
         const imgFile = this.zip.file(absoluteImgPath);
@@ -5521,10 +5181,7 @@ class EpubParser {
           try {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
-            this.resourceUrls.push(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
-              img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', imgUrl);
-              img.setAttribute('href', imgUrl);
               img.setAttribute('xlink:href', imgUrl);
             } else {
               img.setAttribute('src', imgUrl);
@@ -5536,28 +5193,7 @@ class EpubParser {
       }
     }
 
-    // 2. 處理 CSS 樣式表
-    const stylesheets = doc.querySelectorAll('link[rel="stylesheet"]');
-    for (const link of stylesheets) {
-      const href = link.getAttribute('href');
-      if (href && !href.startsWith('data:') && !href.startsWith('http')) {
-        const absoluteCssPath = this._resolvePath(baseDir, href);
-        const cssFile = this.zip.file(absoluteCssPath);
-        if (cssFile) {
-          try {
-            const cssText = await cssFile.async('string');
-            const cssBlob = new Blob([cssText], { type: 'text/css' });
-            const cssUrl = URL.createObjectURL(cssBlob);
-            this.resourceUrls.push(cssUrl);
-            link.setAttribute('href', cssUrl);
-          } catch (e) {
-            console.error('Failed to load stylesheet:', absoluteCssPath, e);
-          }
-        }
-      }
-    }
-
-    // 3. 獲取主體內容
+    // 2. 獲取主體內容
     const body = doc.querySelector('body');
     if (!body) return htmlText;
 
@@ -5567,13 +5203,7 @@ class EpubParser {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('mailto')) {
         // 重寫內部跳轉為 data-epub-href
-        let resolvedLink;
-        if (href.startsWith('#')) {
-          // 如果是純 hash 的內部跳轉，將其解析為相對於當前檔案本身的完整路徑，防止頁面內跳轉失效
-          resolvedLink = cleanHref + href;
-        } else {
-          resolvedLink = this._resolvePath(baseDir, href);
-        }
+        const resolvedLink = this._resolvePath(baseDir, href);
         a.setAttribute('data-epub-href', resolvedLink);
         a.removeAttribute('href'); // 移除 href 屬性以防止瀏覽器默認跳轉
         a.style.cursor = 'pointer';
@@ -5581,14 +5211,7 @@ class EpubParser {
       }
     });
 
-    // 提取 head 中的所有樣式標籤 (link / style) 並前置於 body.innerHTML，以加載書籍原有排版
-    const headStyles = doc.querySelectorAll('head link[rel="stylesheet"], head style');
-    let stylesHtml = '';
-    headStyles.forEach(style => {
-      stylesHtml += style.outerHTML + '\n';
-    });
-
-    return stylesHtml + body.innerHTML;
+    return body.innerHTML;
   }
 }
 
@@ -5681,10 +5304,7 @@ class Azw3Parser {
     // 5. 解壓文本數據
     // MOBI 文本記錄從 Record 1 開始，長度為 numTextRecords
     const numTextRecords = this.textRecordCount;
-    let originalFullHtml = '';
-    let htmlBytes = null;
-    let flowsStart = 0;
-    let applyReplacements = (html) => html;
+    let fullHtml = '';
     const resourceUrls = [];
     const uniqueResourceUrls = new Set();
     
@@ -5745,7 +5365,6 @@ class Azw3Parser {
 
       const decoder = new TextDecoder('utf-8');
       const flowUrls = {};
-      htmlBytes = combined;
 
       if (fdstRecordIndex !== -1) {
         try {
@@ -5761,11 +5380,10 @@ class Azw3Parser {
 
           // Flow 0 是主要 HTML 內容
           if (flows.length > 0) {
-            flowsStart = flows[0].start;
-            htmlBytes = combined.subarray(flows[0].start, Math.min(combined.length, flows[0].end));
-            originalFullHtml = decoder.decode(htmlBytes);
+            const htmlBytes = combined.subarray(flows[0].start, Math.min(combined.length, flows[0].end));
+            fullHtml = decoder.decode(htmlBytes);
           } else {
-            originalFullHtml = decoder.decode(combined);
+            fullHtml = decoder.decode(combined);
           }
 
           // 解析並抽取其它 Flow (如 CSS 樣式表)
@@ -5783,11 +5401,20 @@ class Azw3Parser {
           }
         } catch (e) {
           console.warn('Failed to parse FDST flows, falling back to full combined text decoding:', e);
-          originalFullHtml = decoder.decode(combined);
+          fullHtml = decoder.decode(combined);
         }
       } else {
-        originalFullHtml = decoder.decode(combined);
+        fullHtml = decoder.decode(combined);
       }
+
+      // 替換 kindle:flow: 連結
+      fullHtml = fullHtml.replace(/kindle:flow:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
+        const index = decodeBase32(p1);
+        if (flowUrls[index]) {
+          return flowUrls[index];
+        }
+        return match;
+      });
 
       // 構建獲取內嵌圖片 Object URL 的函數
       const embedUrls = {};
@@ -5818,29 +5445,18 @@ class Azw3Parser {
         return null;
       };
 
-      // 定義連結替換函數，在章節切分後套用以保證字元偏移量的一致性
-      applyReplacements = (html) => {
-        if (!html) return html;
-        let res = html.replace(/kindle:flow:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
-          const index = decodeBase32(p1);
-          if (flowUrls[index]) {
-            return flowUrls[index];
-          }
-          return match;
-        });
-        res = res.replace(/kindle:embed:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
-          const url = getEmbedUrl(p1);
-          if (url) {
-            return url;
-          }
-          return match;
-        });
-        return res;
-      };
+      // 替換 kindle:embed: 連結
+      fullHtml = fullHtml.replace(/kindle:embed:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
+        const url = getEmbedUrl(p1);
+        if (url) {
+          return url;
+        }
+        return match;
+      });
 
     } else {
       // HUFF/CDIC 或其他壓縮暫不完全支持，返回友好提示或原文本
-      originalFullHtml = `
+      fullHtml = `
         <div style="padding: 20px; text-align: center;">
           <h3 style="color: var(--text-color);">此 MOBI/AZW3 檔案採用了進階壓縮 (HUFF/CDIC) 或 DRM 加密</h3>
           <p style="color: var(--text-muted);">暫時無法直接在瀏覽器中完全解壓縮。建議將其轉換為 EPUB 格式後導入閱讀。</p>
@@ -5907,70 +5523,8 @@ class Azw3Parser {
       }
     }
 
-    // 優先嘗試解析 NCX 索引目錄以獲得完美的章節結構與名稱，否則退回到原有 DOM/字數切分
-    let chapters = null;
-    const tocEntries = htmlBytes ? this._parseNCXTOC(htmlBytes) : null;
-    
-    if (tocEntries) {
-      // 按字元偏移量排序
-      tocEntries.sort((a, b) => a.charOffset - b.charOffset);
-      
-      const uniqueOffsets = Array.from(new Set(tocEntries.map(e => e.charOffset))).sort((a, b) => a - b);
-      if (uniqueOffsets.length > 0 && uniqueOffsets[0] > 0) {
-        uniqueOffsets.unshift(0);
-        tocEntries.unshift({
-          title: this.title || "Introduction",
-          charOffset: 0,
-          depth: 0
-        });
-      }
-      
-      chapters = [];
-      tocEntries.forEach((entry, idx) => {
-        const start = entry.charOffset;
-        const nextIdx = uniqueOffsets.indexOf(start) + 1;
-        const end = nextIdx < uniqueOffsets.length ? uniqueOffsets[nextIdx] : originalFullHtml.length;
-        const content = originalFullHtml.substring(start, end);
-        const contentWithOffsets = this._injectOffsets(content, start);
-        const cleanedContent = this._cleanChapterHtml(contentWithOffsets);
-        const finalContent = applyReplacements(cleanedContent);
-        
-        if (!this._isChapterEmpty(finalContent)) {
-          let skeleton = 0;
-          const match = content.match(/aid=["']([0-9A-Z]+)["']/i);
-          if (match) {
-            const val = decodeBase32(match[1]);
-            if (val >= 0) skeleton = Math.floor(val / 1000000);
-          }
-
-          chapters.push({
-            title: entry.title,
-            href: `chapter-${chapters.length + 1}`,
-            depth: entry.depth || 0,
-            pos: entry.pos,
-            skeleton: skeleton,
-            getContent: () => finalContent
-          });
-        }
-      });
-      console.log(`Successfully parsed NCX TOC with ${chapters.length} chapters.`);
-    } else {
-      const splitChapters = this._splitIntoChapters(this._injectOffsets(originalFullHtml, 0));
-      chapters = [];
-      splitChapters.forEach(ch => {
-        const rawContent = ch.getContent();
-        const finalContent = applyReplacements(rawContent);
-        if (!this._isChapterEmpty(finalContent)) {
-          chapters.push({
-            title: ch.title,
-            href: `chapter-${chapters.length + 1}`,
-            skeleton: ch.skeleton,
-            depth: ch.depth || 0,
-            getContent: () => finalContent
-          });
-        }
-      });
-    }
+    // 將龐大的 HTML 切分成多個章節段落
+    const chapters = this._splitIntoChapters(fullHtml);
     const fragTable = this._parseFragTable();
     resourceUrls.push(...Array.from(uniqueResourceUrls));
 
@@ -5983,33 +5537,8 @@ class Azw3Parser {
       },
       chapters,
       fragTable,
-      resourceUrls,
-      rawHtmlBytes: htmlBytes,
-      flowsStart: flowsStart
+      resourceUrls
     };
-  }
-
-  // 注入原始字元偏移量到 HTML 標籤中以支援精確跳转
-  _injectOffsets(content, startOffset) {
-    if (!content) return '';
-    const regex = /<([a-z0-9:-]+)([\s>])/gi;
-    let match;
-    const matches = [];
-    while ((match = regex.exec(content)) !== null) {
-      matches.push({
-        index: match.index,
-        tagName: match[1],
-        afterTag: match[2]
-      });
-    }
-    
-    let result = content;
-    for (let i = matches.length - 1; i >= 0; i--) {
-      const m = matches[i];
-      const insertIdx = m.index + 1 + m.tagName.length;
-      result = result.substring(0, insertIdx) + ` data-char-offset="${startOffset + m.index}"` + result.substring(insertIdx);
-    }
-    return result;
   }
 
   // 解析 MOBI/KF8 檔案位置與 fragment 對照表 (INDX 格式)
@@ -6101,140 +5630,6 @@ class Azw3Parser {
     return null;
   }
 
-  // 解析 NCX Table of Contents (INDX 目錄樹)
-  _parseNCXTOC(combined) {
-    if (this.ncxIndex === undefined || this.ncxIndex === 0xffffffff || this.ncxIndex >= this.records.length) {
-      return null;
-    }
-    try {
-      const rootData = this._getRecordData(this.ncxIndex);
-      if (rootData.length < 4 || String.fromCharCode(rootData[0], rootData[1], rootData[2], rootData[3]) !== 'INDX') {
-        return null;
-      }
-      const rootDv = new DataView(rootData.buffer, rootData.byteOffset, rootData.byteLength);
-      const numChildRecords = rootDv.getUint32(24);
-      
-      let tagxOffset = -1;
-      for (let i = 0; i < rootData.length - 4; i++) {
-        if (rootData[i] === 0x54 && rootData[i+1] === 0x41 && rootData[i+2] === 0x47 && rootData[i+3] === 0x58) { // 'TAGX'
-          tagxOffset = i;
-          break;
-        }
-      }
-      if (tagxOffset === -1) return null;
-      
-      const tagxLen = rootDv.getUint32(tagxOffset + 4);
-      const controlByteCount = rootDv.getUint32(tagxOffset + 8);
-      
-      const tags = [];
-      let tagP = tagxOffset + 12;
-      const tagEnd = tagxOffset + tagxLen;
-      while (tagP + 4 <= tagEnd) {
-        const tagId = rootData[tagP];
-        const numValues = rootData[tagP + 1];
-        const mask = rootData[tagP + 2];
-        const endOffset = rootData[tagP + 3];
-        tags.push({ tagId, numValues, mask, endOffset });
-        tagP += 4;
-      }
-      
-      const valRecIdx = this.ncxIndex + numChildRecords + 1;
-      if (valRecIdx >= this.records.length) return null;
-      const labelBytes = this._getRecordData(valRecIdx);
-      const tocEntries = [];
-      const decoder = new TextDecoder('utf-8');
-      
-      for (let i = 1; i <= numChildRecords; i++) {
-        const childIdx = this.ncxIndex + i;
-        if (childIdx >= this.records.length) break;
-        const childData = this._getRecordData(childIdx);
-        if (childData.length < 4 || String.fromCharCode(childData[0], childData[1], childData[2], childData[3]) !== 'INDX') {
-          continue;
-        }
-        const childDv = new DataView(childData.buffer, childData.byteOffset, childData.byteLength);
-        const idxtOffset = childDv.getUint32(20);
-        const numEntries = childDv.getUint32(24);
-        
-        const idxtPositions = [];
-        for (let j = 0; j < numEntries; j++) {
-          idxtPositions.push(childDv.getUint16(idxtOffset + 4 + j * 2));
-        }
-        idxtPositions.push(idxtOffset);
-        
-        for (let j = 0; j < numEntries; j++) {
-          const startPos = idxtPositions[j];
-          const endPos = idxtPositions[j + 1];
-          if (startPos >= childData.length) continue;
-          const entry = childData.subarray(startPos, endPos);
-          const keyLen = entry[0];
-          const key = entry.subarray(1, 1 + keyLen);
-          const controlByte = entry[1 + keyLen];
-          
-          const vwis = [];
-          let p = 1 + keyLen + 1;
-          while (p < entry.length) {
-            let val = 0;
-            let hasVal = false;
-            while (p < entry.length) {
-              const byte = entry[p++];
-              val = (val << 7) | (byte & 0x7F);
-              if (byte & 0x80) {
-                hasVal = true;
-                break;
-              }
-            }
-            if (hasVal) {
-              vwis.push(val);
-            } else {
-              break;
-            }
-          }
-          
-          let vwiIdx = 0;
-          const entryTags = {};
-          for (const tag of tags) {
-            if (controlByte & tag.mask) {
-              const vals = [];
-              for (let k = 0; k < tag.numValues; k++) {
-                if (vwiIdx < vwis.length) {
-                  vals.push(vwis[vwiIdx++]);
-                }
-              }
-              entryTags[tag.tagId] = vals;
-            }
-          }
-          
-          const pos = entryTags[1] ? entryTags[1][0] : undefined;
-          const labelOffset = entryTags[3] ? entryTags[3][0] : undefined;
-          const depth = entryTags[4] ? entryTags[4][0] : 0;
-          
-          if (pos !== undefined && labelOffset !== undefined) {
-            let label = '';
-            if (labelOffset >= 0 && labelOffset < labelBytes.length) {
-              const lenByte = labelBytes[labelOffset];
-              if (lenByte & 0x80) {
-                const labelLen = lenByte & 0x7F;
-                if (labelOffset + 1 + labelLen <= labelBytes.length) {
-                  label = decoder.decode(labelBytes.subarray(labelOffset + 1, labelOffset + 1 + labelLen)).trim();
-                }
-              }
-            }
-            if (label) {
-              // 映射到解碼後的 HTML 字符偏移量
-              const sliceBytes = combined.subarray(0, pos);
-              const charOffset = decoder.decode(sliceBytes).length;
-              tocEntries.push({ title: label, pos, depth, charOffset });
-            }
-          }
-        }
-      }
-      return tocEntries.length > 0 ? tocEntries : null;
-    } catch (e) {
-      console.warn("Failed to parse NCX Table of Contents:", e);
-    }
-    return null;
-  }
-
   // 獲取指定 Record 的二進位數據
   _getRecordData(index) {
     const start = this.records[index].offset;
@@ -6284,14 +5679,12 @@ class Azw3Parser {
 
     // 獲取 EXTH 標記/額外數據標記 (Extra Data Flags)
     this.extraDataFlags = 0;
-    this.ncxIndex = 0xffffffff;
     if (data.length >= this.mobiHeaderOffset + 16) {
       const headerLength = view.getUint32(this.mobiHeaderOffset + 4);
       const mobiVersion = view.getUint32(this.mobiHeaderOffset + 12);
       if (headerLength >= 228 && mobiVersion >= 5 && data.length >= this.mobiHeaderOffset + 228) {
         this.extraDataFlags = view.getUint16(this.mobiHeaderOffset + 226);
-        this.ncxIndex = view.getUint32(this.mobiHeaderOffset + 228);
-        console.log(`Parsed MOBI Header: version=${mobiVersion}, headerLength=${headerLength}, extraDataFlags=0x${this.extraDataFlags.toString(16)}, ncxIndex=${this.ncxIndex}`);
+        console.log(`Parsed MOBI Header: version=${mobiVersion}, headerLength=${headerLength}, extraDataFlags=0x${this.extraDataFlags.toString(16)}`);
       }
     }
   }
@@ -6434,9 +5827,10 @@ class Azw3Parser {
     return new Uint8Array(output);
   }
 
-  _cleanChapterHtml(html) {
-    if (!html) return '';
-    return html
+  // 將龐大的 HTML 拆分為章節
+  _splitIntoChapters(fullHtml) {
+    // 移除 XML 宣告、DOCTYPE、以及重複的 html, head, body, title, meta 標籤，只保留實質內容與樣式連結
+    const cleanHtml = fullHtml
       .replace(/<\?xml\b[^>]*\?>/gi, '')
       .replace(/<!DOCTYPE\b[^>]*>/gi, '')
       .replace(/<html\b[^>]*>/gi, '')
@@ -6447,20 +5841,6 @@ class Azw3Parser {
       .replace(/<\/body>/gi, '')
       .replace(/<title\b[^>]*>.*?<\/title>/gi, '')
       .replace(/<meta\b[^>]*>/gi, '');
-  }
-
-  _isChapterEmpty(html) {
-    if (!html) return true;
-    const text = html.replace(/<[^>]*>/g, '').trim();
-    if (text.length > 0) return false;
-    const hasMedia = /<img\b|<svg\b|<image\b|<table\b/i.test(html);
-    return !hasMedia;
-  }
-
-  // 將龐大的 HTML 拆分為章節
-  _splitIntoChapters(fullHtml) {
-    // 移除 XML 宣告、DOCTYPE、以及重複的 html, head, body, title, meta 標籤，只保留實質內容與樣式連結
-    const cleanHtml = this._cleanChapterHtml(fullHtml);
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(cleanHtml, 'text/html');
@@ -8131,45 +7511,11 @@ class TTSEngine {
   play(index = 0) {
     if (this.sentences.length === 0) return;
     
-    // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
-    this.isPlaying = false;
-    this.isPaused = false;
-    this._stopSilenceKeepAlive();
-    
-    if (this.synth) {
-      this.synth.cancel();
-    }
-    this.currentUtterance = null;
-    this.nativeQueue.clear();
-    
-    this.players.forEach(p => {
-      try {
-        p.pause();
-        p.src = '';
-        p.ontimeupdate = null;
-        p.onended = null;
-        p.onloadedmetadata = null;
-      } catch (e) {}
-    });
-    this.currentAudio = null;
+    this.stop();
     
     this.isPlaying = true;
+    this.isPaused = false;
     this.currentIndex = Math.max(0, Math.min(index, this.sentences.length - 1));
-    
-    // 智能快取淘汰：僅釋放並刪除與新進度相差較遠（例如小於 currentIndex 或大於 currentIndex + 15）的快取項目
-    const keysToDelete = [];
-    this.audioCache.forEach((cached, idx) => {
-      if (idx < this.currentIndex || idx > this.currentIndex + 15) {
-        keysToDelete.push(idx);
-      }
-    });
-    keysToDelete.forEach(idx => {
-      const cached = this.audioCache.get(idx);
-      if (cached) {
-        URL.revokeObjectURL(cached.blobUrl);
-        this.audioCache.delete(idx);
-      }
-    });
     
     this._startSilenceKeepAlive();
     this._playActiveSentence();
@@ -8669,8 +8015,6 @@ let activeResourceUrls = [];
 let ttsOnlyEdge = false;
 let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
-let isChangingChapter = false;
-let lastChapterChangeTime = 0;
 
 // 閱讀時間統計全局狀態
 let readingSessionTimer = null;
@@ -8718,12 +8062,7 @@ async function mergeShortChapters(chapters) {
 
 // ==================== 1. 初始化與事件綁定 ==================== */
 document.addEventListener('DOMContentLoaded', async () => {
-  // 0. 初始化歷史記錄狀態
-  if (!history.state) {
-    history.replaceState({ bookshelf: true }, '');
-  }
-
-  // 0.5 立即套用封面大小設定以防佈局抖動
+  // 0. 立即套用封面大小設定以防佈局抖動
   const savedWidth = localStorage.getItem('coverWidth') || '180';
   document.documentElement.style.setProperty('--cover-width', `${savedWidth}px`);
 
@@ -8862,13 +8201,6 @@ function initUIEventBindings() {
 
   // 閱讀器頂部導航
   document.getElementById('close-reader-btn').addEventListener('click', closeCurrentBook);
-  window.addEventListener('popstate', (e) => {
-    if (!e.state || !e.state.bookId) {
-      if (currentBook) {
-        closeCurrentBook(false);
-      }
-    }
-  });
   document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
   document.getElementById('tts-toggle').addEventListener('click', toggleTTSPanel);
   document.getElementById('settings-toggle').addEventListener('click', toggleSettingsPanel);
@@ -8964,9 +8296,6 @@ function initUIEventBindings() {
     document.getElementById('tts-speed-val').textContent = `${val.toFixed(1)}x`;
     tts.setRate(val);
     chrome.storage.local.set({ ttsRate: val });
-    if (currentBook) {
-      saveProgressDebounced({ ttsRate: val });
-    }
   });
 
   document.getElementById('tts-voice-select').addEventListener('change', (e) => {
@@ -9036,7 +8365,11 @@ function initUIEventBindings() {
     if (currentChapter && nextChapter && currentChapter.cleanHref === nextChapter.cleanHref) {
       currentChapterIndex = nextChapterIndex;
       tts.currentChapterIndex = nextChapterIndex;
-      syncTOCActiveState(nextChapterIndex);
+      const tocItems = document.querySelectorAll('#toc-list .toc-item');
+      tocItems.forEach((item, idx) => {
+        if (idx === nextChapterIndex) item.classList.add('active');
+        else item.classList.remove('active');
+      });
       updateReaderTitle();
     } else {
       await loadChapter(nextChapterIndex, false, false, false, true);
@@ -9087,12 +8420,6 @@ function initUIEventBindings() {
     document.getElementById('tab-highlights').classList.remove('active');
     document.getElementById('sidebar-toc-container').classList.add('active');
     document.getElementById('sidebar-highlights-container').classList.remove('active');
-    setTimeout(() => {
-      const activeItem = document.querySelector('#toc-list .toc-item.active');
-      if (activeItem) {
-        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 150);
   });
 
   document.getElementById('tab-highlights').addEventListener('click', () => {
@@ -9233,278 +8560,18 @@ function initUIEventBindings() {
     }
   });
 
-  // 滾動自動保存進度與瀑布流加載
+  // 滾動自動保存閱讀進度
+  const readerContainer = document.getElementById('reader-container');
   window.addEventListener('scroll', () => {
-    if (!document.getElementById('reader-view').classList.contains('view-active')) return;
-    if (!currentBook || currentBook.format === 'cbz') return;
-
-    const isPaginated = document.body.classList.contains('layout-paginated');
-    const scrollTop = window.scrollY || window.pageYOffset;
-    
-    // 保存進度
-    saveProgressDebounced({
-      elementIndex: getTopVisibleElementIndex(),
-      scrollTop: scrollTop
-    });
-
-    // 瀑布流模式下的自動載入與活躍章節檢測
-    if (!isPaginated && epubBookData) {
-      // 1. 自動載入下一章
-      const thresholdBottom = 1200; // 距離底部 1200px 時預載
-      const docHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
-      if (docHeight - window.innerHeight - scrollTop < thresholdBottom) {
-        appendNextChapterWaterfall();
-      }
-
-      // 2. 自動載入前一章
-      const thresholdTop = 300; // 距離頂部 300px 且有前一章時開始預載
-      if (scrollTop < thresholdTop) {
-        prependPreviousChapterWaterfall();
-      }
-
-      // 3. 活躍章節檢測 (找出視窗內佔比最顯著的章節)
-      const contentEl = document.getElementById('book-content');
-      const wrappers = contentEl.querySelectorAll('.chapter-wrapper');
-      let dominantWrapper = null;
-      let maxIntersection = -Infinity;
-      const viewportHeight = window.innerHeight;
-      const viewportTop = scrollTop;
-      const viewportBottom = viewportTop + viewportHeight;
-
-      wrappers.forEach(wrapper => {
-        const rect = wrapper.getBoundingClientRect();
-        const top = rect.top + scrollTop;
-        const bottom = rect.bottom + scrollTop;
-
-        const intersectTop = Math.max(top, viewportTop);
-        const intersectBottom = Math.min(bottom, viewportBottom);
-        const intersectHeight = intersectBottom - intersectTop;
-
-        if (intersectHeight > 0 && intersectHeight > maxIntersection) {
-          maxIntersection = intersectHeight;
-          dominantWrapper = wrapper;
-        }
-      });
-
-      if (dominantWrapper) {
-        const chapIdx = parseInt(dominantWrapper.getAttribute('data-chapter-index'), 10);
-        if (chapIdx !== currentChapterIndex && !isChangingChapter) {
-          currentChapterIndex = chapIdx;
-          tts.currentChapterIndex = chapIdx;
-          syncTOCActiveState(chapIdx);
-          updateReaderTitle();
-        }
+    if (document.getElementById('reader-view').classList.contains('view-active')) {
+      if (currentBook && currentBook.format !== 'cbz') {
+        saveProgressDebounced({
+          elementIndex: getTopVisibleElementIndex(),
+          scrollTop: window.scrollY
+        });
       }
     }
-  }, { passive: true });
-
-"  // 滾輪在最頂部/最底部時切換章節 (附帶閾值過濾與 800ms 冷卻時間防抖)\n  window.addEventListener('wheel', (e) => {\n    if (!document.getElementById('reader-view').classList.contains('view-active')) return;\n    if (!currentBook || currentBook.format === 'cbz') return;\n    if (document.body.classList.contains('layout-paginated')) return;\n    if (isChangingChapter) return;\n    if (Date.now() - lastChapterChangeTime < 800) return;\n\n    const scrollTop = window.scrollY;\n    if (scrollTop <= 5 && e.deltaY < -15) {\n      // 在最頂部向上滾動 (加載上一章)\n      if (currentChapterIndex > 0) {\n        loadChapter(currentChapterIndex - 1, true);\n      }\n    } else {\n      const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;\n      const clientHeight = window.innerHeight;\n      if (scrollTop + clientHeight >= scrollHeight - 5 && e.deltaY > 15) {\n        // 在最底部向下滾動 (加載下一章)\n        if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {\n          loadChapter(currentChapterIndex + 1);\n        }\n      }\n    }\n  }, { passive: true });\n\n  // 觸控手勢在最頂部/最底部時切換章節 (適用於移動端，附帶冷卻時間與水平滑動過濾)\n  let touchStartY = 0;\n  let touchStartX = 0;\n  window.addEventListener('touchstart', (e) => {\n    if (!document.getElementById('reader-view').classList.contains('view-active')) return;\n    if (!currentBook || currentBook.format === 'cbz') return;\n    if (document.body.classList.contains('layout-paginated')) return;\n    touchStartY = e.touches[0].clientY;\n    touchStartX = e.touches[0].clientX;\n  }, { passive: true });\n\n  window.addEventListener('touchend', (e) => {\n    if (!document.getElementById('reader-view').classList.contains('view-active')) return;\n    if (!currentBook || currentBook.format === 'cbz') return;\n    if (document.body.classList.contains('layout-paginated')) return;\n    if (isChangingChapter) return;\
-<truncated 2352 bytes>
-
-// 創建一個章節包裹容器
-function createChapterWrapper(index, cleanHref, html) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'chapter-wrapper';
-  wrapper.setAttribute('data-chapter-index', index);
-  wrapper.setAttribute('data-clean-href', cleanHref || '');
-  wrapper.innerHTML = html;
-  
-  // 清理干擾排版的樣式與損壞字符
-  cleanUpBookInlineStyles(wrapper);
-  cleanUpCorruptedCharacters(wrapper);
-  
-  // 對該容器中的文字進行 TTS 句子分段 (以便點擊朗讀，此處只包裝 span 不改變 TTS 播放狀態)
-  tts.segmentContainer(wrapper);
-  
-  // 重新渲染高亮
-  applySavedHighlightsToDOM(wrapper, index);
-  
-  // 處理內部跳轉鏈接 (EPUB)
-  wrapper.querySelectorAll('[data-epub-href]').forEach(a => {
-    a.addEventListener('click', (e) => {
-      const targetHref = a.getAttribute('data-epub-href');
-      const [targetCleanHref, hash] = targetHref.split('#');
-      
-      const targetIdx = epubBookData.chapters.findIndex(ch => ch.cleanHref === targetCleanHref);
-      if (targetIdx > -1) {
-        loadChapter(targetIdx, false, false, true, false, null, null, null, hash || null);
-      }
-    });
   });
-
-  // 處理內部跳轉鏈接 (MOBI/AZW3 Kindle pos links)
-  wrapper.querySelectorAll('a[href^="kindle:pos:fid:"]').forEach(a => {
-    a.style.cursor = 'pointer';
-    a.style.textDecoration = 'underline';
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      const href = a.getAttribute('href');
-      const match = href.match(/kindle:pos:fid:([0-9A-Z]+):off:([0-9A-Z]+)/i);
-      if (match && epubBookData && epubBookData.fragTable) {
-        const fid = decodeBase32(match[1]);
-        const entry = epubBookData.fragTable[fid];
-        if (entry) {
-          const offVal = decodeBase32(match[2]);
-          const absTargetOffset = entry.offset + offVal;
-          const targetSkeleton = entry.skeleton;
-          let targetIdx = -1;
-          
-          const hasPos = epubBookData.chapters.some(ch => ch.pos !== undefined);
-          if (hasPos) {
-            for (let i = 0; i < epubBookData.chapters.length; i++) {
-              const ch = epubBookData.chapters[i];
-              if (ch.pos !== undefined && ch.pos <= absTargetOffset) {
-                targetIdx = i;
-              }
-            }
-          } else {
-            for (let i = 0; i < epubBookData.chapters.length; i++) {
-              const ch = epubBookData.chapters[i];
-              if (ch.skeleton !== undefined && ch.skeleton <= targetSkeleton) {
-                targetIdx = i;
-              }
-            }
-          }
-          if (targetIdx > -1) {
-            if (targetIdx === currentChapterIndex) {
-              const flowsStart = epubBookData.flowsStart || 0;
-              const relativeByteOffset = absTargetOffset - flowsStart;
-              if (relativeByteOffset > 0 && epubBookData.rawHtmlBytes) {
-                const slice = epubBookData.rawHtmlBytes.subarray(0, Math.min(relativeByteOffset, epubBookData.rawHtmlBytes.length));
-                const targetCharOffset = new TextDecoder('utf-8').decode(slice).length;
-                
-                const elements = wrapper.querySelectorAll('[data-char-offset]');
-                let minDiff = Infinity;
-                let bestElem = null;
-                elements.forEach(el => {
-                  const charOffset = parseInt(el.getAttribute('data-char-offset'), 10);
-                  if (!isNaN(charOffset)) {
-                    const diff = Math.abs(charOffset - targetCharOffset);
-                    if (diff < minDiff) {
-                      minDiff = diff;
-                      bestElem = el;
-                    }
-                  }
-                });
-                if (bestElem && minDiff < 500) {
-                  safeRestoreScrollToElementIndex(bestElem);
-                }
-              }
-            } else {
-              loadChapter(targetIdx, false, false, true, false, null, null, null, null, absTargetOffset);
-            }
-          }
-        }
-      }
-    });
-  });
-
-  return wrapper;
-}
-
-// 瀑布流模式：向後載入並追加章節
-async function appendNextChapterWaterfall() {
-  if (isAppendingChapter || !epubBookData || !currentBook) return;
-  const contentEl = document.getElementById('book-content');
-  if (!contentEl) return;
-
-  const wrappers = contentEl.querySelectorAll('.chapter-wrapper');
-  if (wrappers.length === 0) return;
-
-  const lastWrapper = wrappers[wrappers.length - 1];
-  const lastIndex = parseInt(lastWrapper.getAttribute('data-chapter-index'), 10);
-  const nextIndex = lastIndex + 1;
-
-  if (nextIndex >= epubBookData.chapters.length) return;
-
-  isAppendingChapter = true;
-  
-  const loadingPlaceholder = document.createElement('div');
-  loadingPlaceholder.className = 'chapter-wrapper-loading';
-  contentEl.appendChild(loadingPlaceholder);
-
-  try {
-    const nextChapter = epubBookData.chapters[nextIndex];
-    let nextHtml;
-    if (prefetchedChapterCache && prefetchedChapterCache.index === nextIndex) {
-      nextHtml = prefetchedChapterCache.html;
-      prefetchedChapterCache = null;
-    } else {
-      nextHtml = await nextChapter.getContent();
-    }
-
-    const wrapper = createChapterWrapper(nextIndex, nextChapter.cleanHref, nextHtml);
-    
-    if (loadingPlaceholder.parentNode) {
-      loadingPlaceholder.parentNode.removeChild(loadingPlaceholder);
-    }
-    contentEl.appendChild(wrapper);
-
-    // 若 TTS 當前正在播放且預載句子包含此章節，進行 DOM 同步
-    if (tts.isPlaying && tts.sentences.some(s => s.chapterIndex === nextIndex)) {
-      tts.syncDOM(wrapper, epubBookData);
-    }
-  } catch (e) {
-    console.error("Failed to append next chapter in waterfall:", e);
-    if (loadingPlaceholder.parentNode) {
-      loadingPlaceholder.parentNode.removeChild(loadingPlaceholder);
-    }
-  } finally {
-    isAppendingChapter = false;
-  }
-}
-
-// 瀑布流模式：向前載入並插入前一章節，同時修正滾動高度避免跳動
-async function prependPreviousChapterWaterfall() {
-  if (isPrependingChapter || !epubBookData || !currentBook) return;
-  const contentEl = document.getElementById('book-content');
-  if (!contentEl) return;
-
-  const wrappers = contentEl.querySelectorAll('.chapter-wrapper');
-  if (wrappers.length === 0) return;
-
-  const firstWrapper = wrappers[0];
-  const firstIndex = parseInt(firstWrapper.getAttribute('data-chapter-index'), 10);
-  const prevIndex = firstIndex - 1;
-
-  if (prevIndex < 0) return;
-
-  isPrependingChapter = true;
-
-  const oldScrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
-  const oldScrollY = window.scrollY;
-
-  const loadingPlaceholder = document.createElement('div');
-  loadingPlaceholder.className = 'chapter-wrapper-loading';
-  contentEl.insertBefore(loadingPlaceholder, firstWrapper);
-
-  try {
-    const prevChapter = epubBookData.chapters[prevIndex];
-    const prevHtml = await prevChapter.getContent();
-    const wrapper = createChapterWrapper(prevIndex, prevChapter.cleanHref, prevHtml);
-
-    if (loadingPlaceholder.parentNode) {
-      loadingPlaceholder.parentNode.removeChild(loadingPlaceholder);
-    }
-    contentEl.insertBefore(wrapper, firstWrapper);
-
-    const newScrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
-    const heightDifference = newScrollHeight - oldScrollHeight;
-    window.scrollTo(0, oldScrollY + heightDifference);
-
-    // 若 TTS 當前正在播放且預載句子包含此章節，進行 DOM 同步
-    if (tts.isPlaying && tts.sentences.some(s => s.chapterIndex === prevIndex)) {
-      tts.syncDOM(wrapper, epubBookData);
-    }
-  } catch (e) {
-    console.error("Failed to prepend previous chapter in waterfall:", e);
-    if (loadingPlaceholder.parentNode) {
-      loadingPlaceholder.parentNode.removeChild(loadingPlaceholder);
-    }
-  } finally {
-    isPrependingChapter = false;
-  }
-}
 
   // 頁面生命週期變更時強制保存
   document.addEventListener('visibilitychange', () => {
@@ -9831,14 +8898,8 @@ async function openBook(id) {
   const book = await library.getBook(id);
   if (!book) return;
 
-  // Push state to prevent back gesture from leaving the reader app
-  if (!history.state || history.state.bookId !== id) {
-    history.pushState({ bookId: id }, '');
-  }
-
-  // 清理舊的資源 Object URL 與預載快取
+  // 清理舊的資源 Object URL
   clearResourceUrls();
-  prefetchedChapterCache = null;
 
   currentBook = book;
   currentChapterIndex = book.progress?.chapterIndex || 0;
@@ -9915,7 +8976,7 @@ async function openBook(id) {
 }
 
 // 關閉閱讀器，返回書櫃
-async function closeCurrentBook(triggerBack = true) {
+async function closeCurrentBook() {
   // 1. 停止 TTS 播放
   tts.stop();
 
@@ -9938,15 +8999,9 @@ async function closeCurrentBook(triggerBack = true) {
   currentBook = null;
   epubBookData = null;
   comicParserInstance = null;
-  prefetchedChapterCache = null;
 
   // 重新渲染書櫃
   await renderBookshelf();
-
-  // If programmatic close, pop state to match browser history
-  if (triggerBack && history.state && history.state.bookId) {
-    history.back();
-  }
 }
 
 // 渲染目錄
@@ -9955,63 +9010,17 @@ function renderTOC(chapters) {
   tocList.innerHTML = '';
   
   chapters.forEach((ch, idx) => {
-    if (ch.hiddenFromTOC) return;
-
     const li = document.createElement('li');
     li.className = 'toc-item';
-    li.setAttribute('data-chapter-index', idx);
     li.textContent = ch.title;
-    
-    // Check if this visible item is the active one or the closest preceding non-hidden active one
-    let isActive = false;
-    if (idx === currentChapterIndex) {
-      isActive = true;
-    } else if (currentChapterIndex > idx && chapters[currentChapterIndex].hiddenFromTOC) {
-      // Find the closest preceding non-hidden chapter index
-      let targetIndex = currentChapterIndex;
-      while (targetIndex >= 0 && chapters[targetIndex].hiddenFromTOC) {
-        targetIndex--;
-      }
-      if (targetIndex === idx) {
-        isActive = true;
-      }
-    }
-    if (isActive) li.classList.add('active');
-    
-    // 根據目錄層級（depth）添加縮排與樣式類別
-    if (ch.depth && ch.depth > 0) {
-      li.style.paddingLeft = (15 + ch.depth * 15) + 'px';
-      li.classList.add('toc-sub-item');
-    }
+    if (idx === currentChapterIndex) li.classList.add('active');
     
     li.addEventListener('click', () => {
       document.getElementById('reader-sidebar').classList.remove('active');
       loadChapter(idx);
     });
+    
     tocList.appendChild(li);
-  });
-}
-
-function syncTOCActiveState(activeIndex) {
-  let targetIndex = activeIndex;
-  if (epubBookData && epubBookData.chapters) {
-    while (targetIndex >= 0 && epubBookData.chapters[targetIndex].hiddenFromTOC) {
-      targetIndex--;
-    }
-    if (targetIndex < 0) {
-      targetIndex = epubBookData.chapters.findIndex(ch => !ch.hiddenFromTOC);
-    }
-  }
-
-  const tocItems = document.querySelectorAll('#toc-list .toc-item');
-  tocItems.forEach((item) => {
-    const itemIndex = parseInt(item.getAttribute('data-chapter-index'), 10);
-    if (itemIndex === targetIndex) {
-      item.classList.add('active');
-      item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    } else {
-      item.classList.remove('active');
-    }
   });
 }
 
@@ -10198,28 +9207,16 @@ function findCorrectChapterIndexForHash(cleanHref, targetHash) {
 
 // 載入指定章節 (流式文本)
 // 載入指定章節 (流式文本)
-async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null) {
+async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
-
-  const isPaginated = document.body.classList.contains('layout-paginated');
-  const origHtmlOverflow = document.documentElement.style.overflow;
-  const origBodyOverflow = document.body.style.overflow;
-
-  if (!isPaginated) {
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
-  }
   
-  isChangingChapter = true;
-  try {
-    // 停止語音 (如果是無縫過渡，則不停止)
-    if (!isSeamless) {
-      tts.stop();
-    }
+  // 停止語音 (如果是無縫過渡，則不停止)
+  if (!isSeamless) {
+    tts.stop();
+  }
 
   const chapter = epubBookData.chapters[index];
   const contentEl = document.getElementById('book-content');
-  let activeHashElem = null;
   
   // 加載 HTML (優先使用背景預載快取)
   let rawHtml;
@@ -10253,7 +9250,11 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     tts.currentChapterIndex = finalIdx;
     
     // 高亮目錄項目
-    syncTOCActiveState(finalIdx);
+    const tocItems = document.querySelectorAll('#toc-list .toc-item');
+    tocItems.forEach((item, idx) => {
+      if (idx === finalIdx) item.classList.add('active');
+      else item.classList.remove('active');
+    });
 
     // ** 關鍵步驟 **: 將章節內容拆分為句子並包裹為 span (傳入 epubBookData 以處理子章節邊界)
     if (isSeamless) {
@@ -10294,7 +9295,11 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
               if (bestIdx > -1 && bestIdx !== currentChapterIndex) {
                 currentChapterIndex = bestIdx;
                 tts.currentChapterIndex = bestIdx;
-                syncTOCActiveState(bestIdx);
+                const tocItems = document.querySelectorAll('#toc-list .toc-item');
+                tocItems.forEach((item, idx) => {
+                  if (idx === bestIdx) item.classList.add('active');
+                  else item.classList.remove('active');
+                });
                 updateReaderTitle();
               }
             }
@@ -10311,7 +9316,11 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
             if (targetIdx > -1 && targetIdx !== currentChapterIndex) {
               currentChapterIndex = targetIdx;
               tts.currentChapterIndex = targetIdx;
-              syncTOCActiveState(targetIdx);
+              const tocItems = document.querySelectorAll('#toc-list .toc-item');
+              tocItems.forEach((item, idx) => {
+                if (idx === targetIdx) item.classList.add('active');
+                else item.classList.remove('active');
+              });
               updateReaderTitle();
             }
           }
@@ -10337,58 +9346,17 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
           const fid = decodeBase32(match[1]);
           const entry = epubBookData.fragTable[fid];
           if (entry) {
-            const offVal = decodeBase32(match[2]);
-            const absTargetOffset = entry.offset + offVal;
             const targetSkeleton = entry.skeleton;
+            // 尋找目標 skeleton 對應的章節索引 (最大的 ch.skeleton <= targetSkeleton)
             let targetIdx = -1;
-            
-            // 優先使用 pos (字節偏移量) 進行精確匹配章節
-            const hasPos = epubBookData.chapters.some(ch => ch.pos !== undefined);
-            if (hasPos) {
-              for (let i = 0; i < epubBookData.chapters.length; i++) {
-                const ch = epubBookData.chapters[i];
-                if (ch.pos !== undefined && ch.pos <= absTargetOffset) {
-                  targetIdx = i;
-                }
-              }
-            } else {
-              // 退回到原有 skeleton 匹配
-              for (let i = 0; i < epubBookData.chapters.length; i++) {
-                const ch = epubBookData.chapters[i];
-                if (ch.skeleton !== undefined && ch.skeleton <= targetSkeleton) {
-                  targetIdx = i;
-                }
+            for (let i = 0; i < epubBookData.chapters.length; i++) {
+              const ch = epubBookData.chapters[i];
+              if (ch.skeleton !== undefined && ch.skeleton <= targetSkeleton) {
+                targetIdx = i;
               }
             }
             if (targetIdx > -1) {
-              if (targetIdx === currentChapterIndex) {
-                // 若目標章節即為當前章節，直接在頁面內滾動定位，避免重新加載章節
-                const flowsStart = epubBookData.flowsStart || 0;
-                const relativeByteOffset = absTargetOffset - flowsStart;
-                if (relativeByteOffset > 0 && epubBookData.rawHtmlBytes) {
-                  const slice = epubBookData.rawHtmlBytes.subarray(0, Math.min(relativeByteOffset, epubBookData.rawHtmlBytes.length));
-                  const targetCharOffset = new TextDecoder('utf-8').decode(slice).length;
-                  
-                  const elements = contentEl.querySelectorAll('[data-char-offset]');
-                  let minDiff = Infinity;
-                  let bestElem = null;
-                  elements.forEach(el => {
-                    const charOffset = parseInt(el.getAttribute('data-char-offset'), 10);
-                    if (!isNaN(charOffset)) {
-                      const diff = Math.abs(charOffset - targetCharOffset);
-                      if (diff < minDiff) {
-                        minDiff = diff;
-                        bestElem = el;
-                      }
-                    }
-                  });
-                  if (bestElem && minDiff < 500) {
-                    safeRestoreScrollToElementIndex(bestElem);
-                  }
-                }
-              } else {
-                loadChapter(targetIdx, false, false, true, false, null, null, null, null, absTargetOffset);
-              }
+              loadChapter(targetIdx);
             }
           }
         }
@@ -10429,9 +9397,10 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     applyLayoutDimensions();
 
     // 還原章節內的滾動高度或段落定位
+    let hashElem = null;
     const finalHash = targetHash || (chapter && chapter.hash);
     if (finalHash) {
-      activeHashElem = document.getElementById(finalHash) || contentEl.querySelector(`[name="${finalHash.replace(/"/g, '\\"')}"]`);
+      hashElem = document.getElementById(finalHash) || contentEl.querySelector(`[name="${finalHash.replace(/"/g, '\\"')}"]`);
     }
 
     if (pendingGoToLastPageTimeout) {
@@ -10439,33 +9408,6 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       pendingGoToLastPageTimeout = null;
     }
     pendingGoToLastPage = false;
-
-    let kindleTargetElem = null;
-    if (targetKindleOffset !== null && epubBookData && epubBookData.rawHtmlBytes) {
-      const flowsStart = epubBookData.flowsStart || 0;
-      const relativeByteOffset = targetKindleOffset - flowsStart;
-      if (relativeByteOffset > 0) {
-        const slice = epubBookData.rawHtmlBytes.subarray(0, Math.min(relativeByteOffset, epubBookData.rawHtmlBytes.length));
-        const targetCharOffset = new TextDecoder('utf-8').decode(slice).length;
-        
-        const elements = contentEl.querySelectorAll('[data-char-offset]');
-        let minDiff = Infinity;
-        let bestElem = null;
-        elements.forEach(el => {
-          const charOffset = parseInt(el.getAttribute('data-char-offset'), 10);
-          if (!isNaN(charOffset)) {
-            const diff = Math.abs(charOffset - targetCharOffset);
-            if (diff < minDiff) {
-              minDiff = diff;
-              bestElem = el;
-            }
-          }
-        });
-        if (bestElem && minDiff < 500) {
-          kindleTargetElem = bestElem;
-        }
-      }
-    }
 
     if (targetPageIndex !== null || targetElementIndex !== null || targetSentenceIndex !== null) {
       if (targetSentenceIndex !== null) {
@@ -10485,11 +9427,9 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
         const targetIdx = targetElementIndex !== null ? targetElementIndex : 0;
         safeRestoreScrollToElementIndex(targetIdx);
       }
-    } else if (kindleTargetElem) {
-      safeRestoreScrollToElementIndex(kindleTargetElem);
-    } else if (activeHashElem) {
+    } else if (hashElem) {
       // 點擊目錄子標題或章節錨點跳轉時，精確滾動/翻頁到該錨點元素
-      safeRestoreScrollToElementIndex(activeHashElem);
+      safeRestoreScrollToElementIndex(hashElem);
     } else if (restoreProgress && currentBook.progress && currentBook.progress.chapterIndex === index) {
       if (document.body.classList.contains('layout-paginated') && typeof currentBook.progress.currentPageIndex === 'number') {
         currentPageIndex = currentBook.progress.currentPageIndex;
@@ -10512,26 +9452,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
         }
         updatePageTranslate(false);
       } else {
-        if (goToLastPage) {
-          const scrollToBottom = () => {
-            window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
-          };
-          scrollToBottom();
-          setTimeout(scrollToBottom, 30);
-          setTimeout(scrollToBottom, 100);
-          setTimeout(scrollToBottom, 250);
-          setTimeout(scrollToBottom, 500);
-
-          // 監聽圖片載入以持續修正底部高度
-          const imgs = contentEl.querySelectorAll('img');
-          imgs.forEach(img => {
-            if (!img.complete) {
-              img.addEventListener('load', scrollToBottom, { once: true });
-            }
-          });
-        } else {
-          window.scrollTo(0, 0);
-        }
+        window.scrollTo(0, 0);
       }
     }
 
@@ -10568,29 +9489,13 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     });
   };
 
-    // 執行 View Transition
-    if (animate && document.startViewTransition) {
-      await transitionPage(updateDOM, direction);
-    } else {
-      const res = updateDOM();
-      if (res && typeof res.then === 'function') {
-        await res;
-      }
-    }
-  } finally {
-    isChangingChapter = false;
-    lastChapterChangeTime = Date.now();
-    if (!isPaginated) {
-      setTimeout(() => {
-        document.documentElement.style.overflow = origHtmlOverflow;
-        document.body.style.overflow = origBodyOverflow;
-        // 確保在溢出屬性恢復後，滾動目標被正確應用
-        if (goToLastPage) {
-          window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
-        } else if (!restoreProgress && !targetKindleOffset && !targetHash && !activeHashElem && targetElementIndex === null && targetSentenceIndex === null && targetPageIndex === null) {
-          window.scrollTo(0, 0);
-        }
-      }, 150);
+  // 執行 View Transition
+  if (animate && document.startViewTransition) {
+    await transitionPage(updateDOM, direction);
+  } else {
+    const res = updateDOM();
+    if (res && typeof res.then === 'function') {
+      await res;
     }
   }
 }
@@ -11815,18 +10720,9 @@ function handleKeyDown(e) {
 
 // 面板顯示切換
 function toggleSidebar() {
-  const sidebar = document.getElementById('reader-sidebar');
-  sidebar.classList.toggle('active');
+  document.getElementById('reader-sidebar').classList.toggle('active');
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   document.getElementById('tts-panel').classList.remove('dropdown-active');
-  if (sidebar.classList.contains('active')) {
-    setTimeout(() => {
-      const activeItem = document.querySelector('#toc-list .toc-item.active');
-      if (activeItem) {
-        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 150);
-  }
 }
 
 function toggleSettingsPanel() {
@@ -12042,36 +10938,19 @@ async function handleSaveNote() {
   window.getSelection().removeAllRanges();
 }
 
-// 獲取多級章節標題
-function getHierarchicalChapterTitle(chapters, index) {
-  if (!chapters || index < 0 || index >= chapters.length) return "";
-  const path = [];
-  let current = chapters[index];
-  path.unshift(current.title);
-  
-  let currentDepth = current.depth || 0;
-  for (let i = index - 1; i >= 0; i--) {
-    if (currentDepth === 0) break;
-    const ch = chapters[i];
-    const chDepth = ch.depth || 0;
-    if (chDepth < currentDepth) {
-      path.unshift(ch.title);
-      currentDepth = chDepth;
-    }
-  }
-  return path.join(" > ");
-}
 // 書籤添加
 async function handleAddBookmark() {
   if (!currentBook) return;
   
   let chapterTitle = getMsg('chapter_label', [String(currentChapterIndex + 1)]);
-  if (epubBookData && epubBookData.chapters) {
-    chapterTitle = getHierarchicalChapterTitle(epubBookData.chapters, currentChapterIndex);
+  if (epubBookData && epubBookData.chapters[currentChapterIndex]) {
+    chapterTitle = epubBookData.chapters[currentChapterIndex].title;
   }
-  
+
   const topIdx = getTopVisibleElementIndex();
-  let snippet = '';
+  
+  // 獲取目前可見段落的前 15 個字作為預覽片段
+  let snippet = "";
   const contentEl = document.getElementById('book-content');
   if (contentEl) {
     let children = contentEl.querySelectorAll('p, blockquote, pre, h1, h2, h3, h4, h5, h6, li');
@@ -12358,8 +11237,7 @@ async function handleExportBackup() {
         lastReadAt: book.lastReadAt,
         progress: book.progress,
         bookmarks: book.bookmarks || [],
-        notes: book.notes || [],
-        stats: book.stats || null
+        notes: book.notes || []
       });
     }
 
@@ -12452,8 +11330,7 @@ function handleImportBackup(e) {
           lastReadAt: b.lastReadAt,
           progress: b.progress,
           bookmarks: b.bookmarks || [],
-          notes: b.notes || [],
-          stats: b.stats || null
+          notes: b.notes || []
         };
 
         await library.importBook(book);

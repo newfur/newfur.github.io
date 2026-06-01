@@ -14,6 +14,7 @@ export class EpubParser {
     this.spine = [];    // list of manifest ids in reading order
     this.chapters = []; // list of processed chapters: { title, href, content }
     this.cover = null;
+    this.resourceUrls = [];
   }
 
   // 主解析函數
@@ -37,6 +38,13 @@ export class EpubParser {
     
     // 6. 找出所有在 spine 中但沒有出現在目錄 (TOC) 中的文件路徑，將其作為追加章節放入，防止導航及進度讀取錯誤
     const tocCleanHrefs = new Set(tocChapters.map(ch => ch.cleanHref));
+    
+    // 建立 spineHrefs 映射以供排序和標題繼承
+    const spineHrefs = this.spine.map(id => {
+      const item = this.manifest[id];
+      return item ? item.href : null;
+    }).filter(Boolean);
+
     this.spine.forEach(idref => {
       const item = this.manifest[idref];
       if (item && item.href && !tocCleanHrefs.has(item.href)) {
@@ -45,11 +53,30 @@ export class EpubParser {
           href: item.href,
           hash: '',
           cleanHref: item.href,
+          hiddenFromTOC: true,
           getContent: async () => this.loadChapterContent(item.href)
         });
         tocCleanHrefs.add(item.href);
       }
     });
+
+    // 7. 依照 spine 順序進行排序，確保閱讀順序完全符合書籍的線性結構
+    tocChapters.sort((a, b) => {
+      const idxA = spineHrefs.indexOf(a.cleanHref);
+      const idxB = spineHrefs.indexOf(b.cleanHref);
+      return idxA - idxB;
+    });
+
+    // 8. 對於隱藏章節，繼承前一個章節的標題，使其在頂部標題列中顯示更自然
+    for (let i = 0; i < tocChapters.length; i++) {
+      if (tocChapters[i].hiddenFromTOC) {
+        if (i > 0) {
+          tocChapters[i].title = tocChapters[i - 1].title;
+        } else {
+          tocChapters[i].title = this.metadata.title || 'Start';
+        }
+      }
+    }
     
     return {
       metadata: {
@@ -120,10 +147,11 @@ export class EpubParser {
     });
   }
 
-  // 解析相對路徑
+  // 解析相對路徑 (支援 hash 解析)
   _resolvePath(baseDir, relativePath) {
+    const [pathPart, hashPart] = relativePath.split('#');
     // 移除 relativePath 中的 ../ 等路徑，計算出最終的絕對 zip 路徑
-    const absolute = baseDir + relativePath;
+    const absolute = baseDir + pathPart;
     const parts = absolute.split('/');
     const result = [];
     for (const part of parts) {
@@ -134,7 +162,8 @@ export class EpubParser {
         result.push(part);
       }
     }
-    return result.join('/');
+    const resolvedPath = result.join('/');
+    return hashPart !== undefined ? `${resolvedPath}#${hashPart}` : resolvedPath;
   }
 
   // 獲取封面圖 URL
@@ -177,7 +206,6 @@ export class EpubParser {
     }
     return null; // 默認返回 null，後續使用占位封面
   }
-
   // 解析 TOC 目錄
   async _parseTOC() {
     // EPUB 3 使用 navigation document (通常在 manifest 中屬性含有 'nav')
@@ -203,7 +231,18 @@ export class EpubParser {
           const baseDir = this._getDirectory(navItem.href);
           const resolvedHref = this._resolvePath(baseDir, hrefAttr);
           
-          tocList.push({ title, href: resolvedHref });
+          // 計算 depth: 向上尋找導航節點中的 ol/ul 父節點個數
+          let depth = 0;
+          let parent = link.parentElement;
+          while (parent && parent.tagName.toLowerCase() !== 'nav') {
+            const tagName = parent.tagName.toLowerCase();
+            if (tagName === 'ol' || tagName === 'ul') {
+              depth++;
+            }
+            parent = parent.parentElement;
+          }
+          const finalDepth = Math.max(0, depth - 1);
+          tocList.push({ title, href: resolvedHref, depth: finalDepth });
         });
       } catch (e) {
         console.warn('EPUB 3 nav parsing failed, falling back to Ncx:', e);
@@ -225,7 +264,17 @@ export class EpubParser {
             const src = contentNode.getAttribute('src');
             const baseDir = this._getDirectory(ncxItem.href);
             const resolvedHref = this._resolvePath(baseDir, src);
-            tocList.push({ title, href: resolvedHref });
+            
+            // 計算 depth: 向上尋找 navPoint 父節點個數
+            let depth = 0;
+            let parent = point.parentElement;
+            while (parent) {
+              if (parent.tagName && parent.tagName.toLowerCase() === 'navpoint') {
+                depth++;
+              }
+              parent = parent.parentElement;
+            }
+            tocList.push({ title, href: resolvedHref, depth: depth });
           }
         });
       } catch (e) {
@@ -255,6 +304,7 @@ export class EpubParser {
         href: ch.href,
         hash: hash || '',
         cleanHref: cleanHref,
+        depth: ch.depth || 0,
         getContent: async () => this.loadChapterContent(cleanHref)
       };
     });
@@ -262,6 +312,10 @@ export class EpubParser {
 
   // 讀取某個章節內容並替換資源引用為 Object URL
   async loadChapterContent(cleanHref) {
+    if (!this.resourceUrls) {
+      this.resourceUrls = [];
+    }
+
     const file = this.zip.file(cleanHref);
     if (!file) return `<p style="color:red;">Error: Chapter file not found (${cleanHref})</p>`;
     
@@ -278,7 +332,7 @@ export class EpubParser {
     // 1. 替換圖片 src
     const images = doc.querySelectorAll('img, image');
     for (const img of images) {
-      const srcAttr = img.getAttribute('src') || img.getAttribute('xlink:href');
+      const srcAttr = img.getAttribute('src') || img.getAttribute('xlink:href') || img.getAttribute('href');
       if (srcAttr && !srcAttr.startsWith('data:') && !srcAttr.startsWith('http')) {
         const absoluteImgPath = this._resolvePath(baseDir, srcAttr);
         const imgFile = this.zip.file(absoluteImgPath);
@@ -286,7 +340,10 @@ export class EpubParser {
           try {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
+            this.resourceUrls.push(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
+              img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', imgUrl);
+              img.setAttribute('href', imgUrl);
               img.setAttribute('xlink:href', imgUrl);
             } else {
               img.setAttribute('src', imgUrl);
@@ -298,7 +355,28 @@ export class EpubParser {
       }
     }
 
-    // 2. 獲取主體內容
+    // 2. 處理 CSS 樣式表
+    const stylesheets = doc.querySelectorAll('link[rel="stylesheet"]');
+    for (const link of stylesheets) {
+      const href = link.getAttribute('href');
+      if (href && !href.startsWith('data:') && !href.startsWith('http')) {
+        const absoluteCssPath = this._resolvePath(baseDir, href);
+        const cssFile = this.zip.file(absoluteCssPath);
+        if (cssFile) {
+          try {
+            const cssText = await cssFile.async('string');
+            const cssBlob = new Blob([cssText], { type: 'text/css' });
+            const cssUrl = URL.createObjectURL(cssBlob);
+            this.resourceUrls.push(cssUrl);
+            link.setAttribute('href', cssUrl);
+          } catch (e) {
+            console.error('Failed to load stylesheet:', absoluteCssPath, e);
+          }
+        }
+      }
+    }
+
+    // 3. 獲取主體內容
     const body = doc.querySelector('body');
     if (!body) return htmlText;
 
@@ -308,7 +386,13 @@ export class EpubParser {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('mailto')) {
         // 重寫內部跳轉為 data-epub-href
-        const resolvedLink = this._resolvePath(baseDir, href);
+        let resolvedLink;
+        if (href.startsWith('#')) {
+          // 如果是純 hash 的內部跳轉，將其解析為相對於當前檔案本身的完整路徑，防止頁面內跳轉失效
+          resolvedLink = cleanHref + href;
+        } else {
+          resolvedLink = this._resolvePath(baseDir, href);
+        }
         a.setAttribute('data-epub-href', resolvedLink);
         a.removeAttribute('href'); // 移除 href 屬性以防止瀏覽器默認跳轉
         a.style.cursor = 'pointer';
@@ -316,6 +400,13 @@ export class EpubParser {
       }
     });
 
-    return body.innerHTML;
+    // 提取 head 中的所有樣式標籤 (link / style) 並前置於 body.innerHTML，以加載書籍原有排版
+    const headStyles = doc.querySelectorAll('head link[rel="stylesheet"], head style');
+    let stylesHtml = '';
+    headStyles.forEach(style => {
+      stylesHtml += style.outerHTML + '\n';
+    });
+
+    return stylesHtml + body.innerHTML;
   }
 }

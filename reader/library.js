@@ -91,13 +91,120 @@ export class BookLibrary {
     });
   }
 
-  // 導入/還原書籍（直接使用 put 強制覆寫/更新已存在的書籍）
-  async importBook(book) {
+  // 導入/還原書籍（如果現有書庫已有相同的書籍，進行合併）
+  async importBook(backupBook) {
     await this._ensureOpen();
+
+    // 1. 獲取所有現有書籍
+    const existingBooks = await this.getAllBooks();
+
+    // 2. 尋找相同的書籍 (ID 相同，或 書名+作者+格式 相同)
+    const existingBook = existingBooks.find(ex =>
+      ex.id === backupBook.id ||
+      (ex.title && backupBook.title && ex.title.trim() === backupBook.title.trim() &&
+       ex.author && backupBook.author && ex.author.trim() === backupBook.author.trim() &&
+       ex.format && backupBook.format && ex.format.toLowerCase() === backupBook.format.toLowerCase())
+    );
+
+    let mergedBook;
+    if (existingBook) {
+      // 合併記錄
+      // 進度合併 (以 lastReadAt 較新者為準覆寫閱讀位置)
+      const mergedProgress = { ...existingBook.progress, ...backupBook.progress };
+      const existingLastRead = existingBook.lastReadAt || 0;
+      const backupLastRead = backupBook.lastReadAt || 0;
+
+      if (existingLastRead > backupLastRead) {
+        // 保留現有書庫的位置
+        if (existingBook.progress) {
+          mergedProgress.chapterIndex = existingBook.progress.chapterIndex ?? mergedProgress.chapterIndex;
+          mergedProgress.elementIndex = existingBook.progress.elementIndex ?? mergedProgress.elementIndex;
+          mergedProgress.activeSentenceIndex = existingBook.progress.activeSentenceIndex ?? mergedProgress.activeSentenceIndex;
+          mergedProgress.percent = existingBook.progress.percent ?? mergedProgress.percent;
+          mergedProgress.scrollTop = existingBook.progress.scrollTop ?? mergedProgress.scrollTop;
+          mergedProgress.pdfPage = existingBook.progress.pdfPage ?? mergedProgress.pdfPage;
+          mergedProgress.comicImageIndex = existingBook.progress.comicImageIndex ?? mergedProgress.comicImageIndex;
+        }
+      }
+
+      // 合併書籤 (避免重複)
+      const mergedBookmarks = [...(existingBook.bookmarks || [])];
+      if (backupBook.bookmarks) {
+        for (const b of backupBook.bookmarks) {
+          const isDuplicate = mergedBookmarks.some(ex =>
+            ex.bookmarkId === b.bookmarkId ||
+            (ex.chapterIndex === b.chapterIndex &&
+             ex.elementIndex === b.elementIndex &&
+             ex.pdfPage === b.pdfPage &&
+             ex.currentPageIndex === b.currentPageIndex)
+          );
+          if (!isDuplicate) {
+            mergedBookmarks.push(b);
+          }
+        }
+      }
+
+      // 合併劃線筆記 (避免重複)
+      const mergedNotes = [...(existingBook.notes || [])];
+      if (backupBook.notes) {
+        for (const n of backupBook.notes) {
+          const isDuplicate = mergedNotes.some(ex =>
+            ex.noteId === n.noteId ||
+            (ex.chapterIndex === n.chapterIndex &&
+             ex.sentenceIndex === n.sentenceIndex &&
+             ex.text === n.text &&
+             ex.type === n.type &&
+             ex.pdfPage === n.pdfPage &&
+             ex.comicImageIndex === n.comicImageIndex)
+          );
+          if (!isDuplicate) {
+            mergedNotes.push(n);
+          }
+        }
+      }
+
+      // 合併閱讀統計資訊
+      const mergedStats = {
+        totalTime: (existingBook.stats?.totalTime || 0) + (backupBook.stats?.totalTime || 0),
+        readingDays: { ...(existingBook.stats?.readingDays || {}) },
+        hourlyDist: { ...(existingBook.stats?.hourlyDist || {}) }
+      };
+
+      if (backupBook.stats?.readingDays) {
+        for (const [date, sec] of Object.entries(backupBook.stats.readingDays)) {
+          mergedStats.readingDays[date] = (mergedStats.readingDays[date] || 0) + sec;
+        }
+      }
+      if (backupBook.stats?.hourlyDist) {
+        for (const [hour, sec] of Object.entries(backupBook.stats.hourlyDist)) {
+          mergedStats.hourlyDist[hour] = (mergedStats.hourlyDist[hour] || 0) + sec;
+        }
+      }
+
+      mergedBook = {
+        id: existingBook.id, // 使用現有書籍的 ID 以免重複
+        title: existingBook.title,
+        author: existingBook.author,
+        format: existingBook.format,
+        file: existingBook.file || backupBook.file, // 優先使用現有檔案
+        cover: existingBook.cover || backupBook.cover,
+        size: existingBook.size || backupBook.size,
+        addedAt: Math.min(existingBook.addedAt || Date.now(), backupBook.addedAt || Date.now()),
+        lastReadAt: Math.max(existingLastRead, backupLastRead),
+        progress: mergedProgress,
+        bookmarks: mergedBookmarks,
+        notes: mergedNotes,
+        stats: mergedStats
+      };
+    } else {
+      // 沒找到相同的書籍，直接使用導入的書籍
+      mergedBook = backupBook;
+    }
+
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(mergedBook);
 
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);

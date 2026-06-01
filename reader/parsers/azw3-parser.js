@@ -83,8 +83,10 @@ export class Azw3Parser {
     // 5. 解壓文本數據
     // MOBI 文本記錄從 Record 1 開始，長度為 numTextRecords
     const numTextRecords = this.textRecordCount;
-    let fullHtml = '';
+    let originalFullHtml = '';
     let htmlBytes = null;
+    let flowsStart = 0;
+    let applyReplacements = (html) => html;
     const resourceUrls = [];
     const uniqueResourceUrls = new Set();
     
@@ -161,10 +163,11 @@ export class Azw3Parser {
 
           // Flow 0 是主要 HTML 內容
           if (flows.length > 0) {
+            flowsStart = flows[0].start;
             htmlBytes = combined.subarray(flows[0].start, Math.min(combined.length, flows[0].end));
-            fullHtml = decoder.decode(htmlBytes);
+            originalFullHtml = decoder.decode(htmlBytes);
           } else {
-            fullHtml = decoder.decode(combined);
+            originalFullHtml = decoder.decode(combined);
           }
 
           // 解析並抽取其它 Flow (如 CSS 樣式表)
@@ -182,20 +185,11 @@ export class Azw3Parser {
           }
         } catch (e) {
           console.warn('Failed to parse FDST flows, falling back to full combined text decoding:', e);
-          fullHtml = decoder.decode(combined);
+          originalFullHtml = decoder.decode(combined);
         }
       } else {
-        fullHtml = decoder.decode(combined);
+        originalFullHtml = decoder.decode(combined);
       }
-
-      // 替換 kindle:flow: 連結
-      fullHtml = fullHtml.replace(/kindle:flow:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
-        const index = decodeBase32(p1);
-        if (flowUrls[index]) {
-          return flowUrls[index];
-        }
-        return match;
-      });
 
       // 構建獲取內嵌圖片 Object URL 的函數
       const embedUrls = {};
@@ -226,18 +220,29 @@ export class Azw3Parser {
         return null;
       };
 
-      // 替換 kindle:embed: 連結
-      fullHtml = fullHtml.replace(/kindle:embed:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
-        const url = getEmbedUrl(p1);
-        if (url) {
-          return url;
-        }
-        return match;
-      });
+      // 定義連結替換函數，在章節切分後套用以保證字元偏移量的一致性
+      applyReplacements = (html) => {
+        if (!html) return html;
+        let res = html.replace(/kindle:flow:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
+          const index = decodeBase32(p1);
+          if (flowUrls[index]) {
+            return flowUrls[index];
+          }
+          return match;
+        });
+        res = res.replace(/kindle:embed:([0-9A-Z]+)(?:\?[^"'>\s]*)?/gi, (match, p1) => {
+          const url = getEmbedUrl(p1);
+          if (url) {
+            return url;
+          }
+          return match;
+        });
+        return res;
+      };
 
     } else {
       // HUFF/CDIC 或其他壓縮暫不完全支持，返回友好提示或原文本
-      fullHtml = `
+      originalFullHtml = `
         <div style="padding: 20px; text-align: center;">
           <h3 style="color: var(--text-color);">此 MOBI/AZW3 檔案採用了進階壓縮 (HUFF/CDIC) 或 DRM 加密</h3>
           <p style="color: var(--text-muted);">暫時無法直接在瀏覽器中完全解壓縮。建議將其轉換為 EPUB 格式後導入閱讀。</p>
@@ -326,19 +331,47 @@ export class Azw3Parser {
       tocEntries.forEach((entry, idx) => {
         const start = entry.charOffset;
         const nextIdx = uniqueOffsets.indexOf(start) + 1;
-        const end = nextIdx < uniqueOffsets.length ? uniqueOffsets[nextIdx] : fullHtml.length;
-        const content = fullHtml.substring(start, end);
+        const end = nextIdx < uniqueOffsets.length ? uniqueOffsets[nextIdx] : originalFullHtml.length;
+        const content = originalFullHtml.substring(start, end);
+        const contentWithOffsets = this._injectOffsets(content, start);
+        const cleanedContent = this._cleanChapterHtml(contentWithOffsets);
+        const finalContent = applyReplacements(cleanedContent);
         
-        chapters.push({
-          title: entry.title,
-          href: `chapter-${idx + 1}`,
-          depth: entry.depth || 0,
-          getContent: () => content
-        });
+        if (!this._isChapterEmpty(finalContent)) {
+          let skeleton = 0;
+          const match = content.match(/aid=["']([0-9A-Z]+)["']/i);
+          if (match) {
+            const val = decodeBase32(match[1]);
+            if (val >= 0) skeleton = Math.floor(val / 1000000);
+          }
+
+          chapters.push({
+            title: entry.title,
+            href: `chapter-${chapters.length + 1}`,
+            depth: entry.depth || 0,
+            pos: entry.pos,
+            skeleton: skeleton,
+            getContent: () => finalContent
+          });
+        }
       });
       console.log(`Successfully parsed NCX TOC with ${chapters.length} chapters.`);
     } else {
-      chapters = this._splitIntoChapters(fullHtml);
+      const splitChapters = this._splitIntoChapters(this._injectOffsets(originalFullHtml, 0));
+      chapters = [];
+      splitChapters.forEach(ch => {
+        const rawContent = ch.getContent();
+        const finalContent = applyReplacements(rawContent);
+        if (!this._isChapterEmpty(finalContent)) {
+          chapters.push({
+            title: ch.title,
+            href: `chapter-${chapters.length + 1}`,
+            skeleton: ch.skeleton,
+            depth: ch.depth || 0,
+            getContent: () => finalContent
+          });
+        }
+      });
     }
     const fragTable = this._parseFragTable();
     resourceUrls.push(...Array.from(uniqueResourceUrls));
@@ -352,8 +385,33 @@ export class Azw3Parser {
       },
       chapters,
       fragTable,
-      resourceUrls
+      resourceUrls,
+      rawHtmlBytes: htmlBytes,
+      flowsStart: flowsStart
     };
+  }
+
+  // 注入原始字元偏移量到 HTML 標籤中以支援精確跳转
+  _injectOffsets(content, startOffset) {
+    if (!content) return '';
+    const regex = /<([a-z0-9:-]+)([\s>])/gi;
+    let match;
+    const matches = [];
+    while ((match = regex.exec(content)) !== null) {
+      matches.push({
+        index: match.index,
+        tagName: match[1],
+        afterTag: match[2]
+      });
+    }
+    
+    let result = content;
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const m = matches[i];
+      const insertIdx = m.index + 1 + m.tagName.length;
+      result = result.substring(0, insertIdx) + ` data-char-offset="${startOffset + m.index}"` + result.substring(insertIdx);
+    }
+    return result;
   }
 
   // 解析 MOBI/KF8 檔案位置與 fragment 對照表 (INDX 格式)
@@ -778,10 +836,9 @@ export class Azw3Parser {
     return new Uint8Array(output);
   }
 
-  // 將龐大的 HTML 拆分為章節
-  _splitIntoChapters(fullHtml) {
-    // 移除 XML 宣告、DOCTYPE、以及重複的 html, head, body, title, meta 標籤，只保留實質內容與樣式連結
-    const cleanHtml = fullHtml
+  _cleanChapterHtml(html) {
+    if (!html) return '';
+    return html
       .replace(/<\?xml\b[^>]*\?>/gi, '')
       .replace(/<!DOCTYPE\b[^>]*>/gi, '')
       .replace(/<html\b[^>]*>/gi, '')
@@ -792,6 +849,20 @@ export class Azw3Parser {
       .replace(/<\/body>/gi, '')
       .replace(/<title\b[^>]*>.*?<\/title>/gi, '')
       .replace(/<meta\b[^>]*>/gi, '');
+  }
+
+  _isChapterEmpty(html) {
+    if (!html) return true;
+    const text = html.replace(/<[^>]*>/g, '').trim();
+    if (text.length > 0) return false;
+    const hasMedia = /<img\b|<svg\b|<image\b|<table\b/i.test(html);
+    return !hasMedia;
+  }
+
+  // 將龐大的 HTML 拆分為章節
+  _splitIntoChapters(fullHtml) {
+    // 移除 XML 宣告、DOCTYPE、以及重複的 html, head, body, title, meta 標籤，只保留實質內容與樣式連結
+    const cleanHtml = this._cleanChapterHtml(fullHtml);
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(cleanHtml, 'text/html');
