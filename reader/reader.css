@@ -2073,34 +2073,22 @@ html.transition-none::view-transition-new(reader-page-transition) {
 }
 
 /* === 連續滾動模式垂直過渡動畫 (Scroll Mode Vertical Transitions) === */
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-forward::view-transition-old(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-forward::view-transition-old(reader-page-transition) {
-  animation-name: slide-to-top;
+/* 為了徹底解決滾動條瞬移造成的視覺撕裂與跳躍感，在滾動模式下將所有過渡（Slide/Flip/Fade）統一為優雅的淡入淡出 */
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-group(reader-page-transition) {
+  animation: 0.25s ease both;
 }
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-forward::view-transition-new(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-forward::view-transition-new(reader-page-transition) {
-  animation-name: slide-from-bottom;
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-old(reader-page-transition) {
+  animation-name: fade-out;
 }
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-backward::view-transition-old(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-backward::view-transition-old(reader-page-transition) {
-  animation-name: slide-to-bottom;
-}
-html:not(:has(body.layout-paginated)).transition-slide.transition-dir-backward::view-transition-new(reader-page-transition),
-html:not(:has(body.layout-paginated)).transition-flip.transition-dir-backward::view-transition-new(reader-page-transition) {
-  animation-name: slide-from-top;
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-new(reader-page-transition) {
+  animation-name: fade-in;
 }
 
-@keyframes slide-to-top {
-  to { transform: translateY(-80px); opacity: 0; }
+@keyframes fade-out {
+  to { opacity: 0; }
 }
-@keyframes slide-from-bottom {
-  from { transform: translateY(80px); opacity: 0; }
-}
-@keyframes slide-to-bottom {
-  to { transform: translateY(80px); opacity: 0; }
-}
-@keyframes slide-from-top {
-  from { transform: translateY(-80px); opacity: 0; }
+@keyframes fade-in {
+  from { opacity: 0; }
 }
 
 /* 尊重使用者減少動畫的系統設定 */
