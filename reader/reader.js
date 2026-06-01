@@ -1586,9 +1586,6 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     }
     
     tts.currentIndex = Math.max(0, Math.min(targetSentenceIdx, tts.sentences.length - 1));
-    if (!tts.isPlaying) {
-      tts.startPrefetch(tts.currentIndex);
-    }
 
     // 處理內部跳轉鏈接 (EPUB)
     contentEl.querySelectorAll('[data-epub-href]').forEach(a => {

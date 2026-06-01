@@ -1380,8 +1380,6 @@ export class TTSEngine {
       if (isChanged) {
         this.play(this.currentIndex);
       }
-    } else {
-      this.startPrefetch(this.currentIndex);
     }
   }
 
