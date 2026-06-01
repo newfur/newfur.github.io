@@ -344,7 +344,17 @@ export class TTSEngine {
         }
 
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        
+        // 判斷是否為常見的註釋/角標標籤、樣式類名或純角標文字 (例如 [1], ①, 1, [注1] 等)
+        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        const isNoteClass = Array.from(node.classList).some(c => {
+          const cl = c.toLowerCase();
+          return cl.includes('footnote') || cl.includes('note') || cl.includes('ref');
+        });
+        const textContent = node.textContent.trim();
+        const isPureNoteText = /^[\[\(\{〔【]?(?:[0-9]+|注[0-9]*|①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[a-zA-Z]+)[\]\)}〕】]?$/.test(textContent);
+
+        if (isNoteTag || isNoteClass || isPureNoteText || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -422,7 +432,17 @@ export class TTSEngine {
         }
 
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        
+        // 判斷是否為常見的註釋/角標標籤、樣式類名或純角標文字 (例如 [1], ①, 1, [注1] 等)
+        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        const isNoteClass = Array.from(node.classList).some(c => {
+          const cl = c.toLowerCase();
+          return cl.includes('footnote') || cl.includes('note') || cl.includes('ref');
+        });
+        const textContent = node.textContent.trim();
+        const isPureNoteText = /^[\[\(\{〔【]?(?:[0-9]+|注[0-9]*|①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[a-zA-Z]+)[\]\)}〕】]?$/.test(textContent);
+
+        if (isNoteTag || isNoteClass || isPureNoteText || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -655,7 +675,12 @@ export class TTSEngine {
           ws.send(configMsg);
           
           let speakText = sentence.text;
-          if (!/[。！？.!?；;，,：:]\s*$/.test(sentence.text)) {
+          // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+          speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+          speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+          speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+          
+          if (!/[。！？.!?；;，,：:]\s*$/.test(speakText)) {
             if (sentence.isHeading) {
               speakText += "。";
             } else {
@@ -944,10 +969,13 @@ export class TTSEngine {
 
     this.nativeQueue.add(index);
 
-    const sentence = this.sentences[index];
-    const voice = this.selectedVoice;
-    
-    const utterance = new SpeechSynthesisUtterance(sentence.text);
+    let speakText = sentence.text;
+    // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+    speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+    speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+    speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+
+    const utterance = new SpeechSynthesisUtterance(speakText);
     if (voice && this.synth) {
       const liveVoices = this.synth.getVoices();
       const liveVoice = liveVoices.find(v => v.name === voice.name);

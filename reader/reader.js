@@ -2606,7 +2606,13 @@ function updateReaderTitle() {
 }
 
 
-// ==================== 5. 樣式、主題與快捷鍵設定 ==================== */
+// 檢測當前設備是否為移動端
+function isMobileDevice() {
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  return isMobileUA || (isTouch && window.innerWidth <= 1024);
+}
 
 function initThemeAndStyles() {
   // 從 Storage 讀取設定，否則採用預設值
@@ -2656,7 +2662,17 @@ function initThemeAndStyles() {
     setTransitionEffect(transitionEffect);
     document.getElementById('transition-effect-select').value = transitionEffect;
 
-    toggleLayoutMode(res.layoutMode || 'paginated');
+    // 版面排版模式初始化
+    let layoutMode = res.layoutMode || 'paginated';
+    if (isMobileDevice()) {
+      layoutMode = 'scroll';
+      // 隱藏移動端的版面排版模式選擇容器
+      const layoutRow = document.getElementById('layout-mode-container');
+      if (layoutRow) {
+        layoutRow.style.display = 'none';
+      }
+    }
+    toggleLayoutMode(layoutMode, false); // 初始化時不寫入 storage
 
     // 反向初始化 UI 控制器值
     document.getElementById('font-family-select').value = res.fontFamily || 'font-lxgw';
@@ -3051,7 +3067,7 @@ function updateEdgeFilterButtonVisibility() {
 }
 
 // 切換左右分欄翻頁 vs 連續上下滾動
-function toggleLayoutMode(mode) {
+function toggleLayoutMode(mode, saveToStorage = true) {
   const content = document.getElementById('book-content');
   const scrollBtn = document.getElementById('layout-scroll-btn');
   const paginatedBtn = document.getElementById('layout-paginated-btn');
@@ -3082,7 +3098,10 @@ function toggleLayoutMode(mode) {
     const overlay = document.getElementById('page-texture-overlay');
     if (overlay) overlay.innerHTML = '';
   }
-  chrome.storage.local.set({ layoutMode: mode });
+  
+  if (saveToStorage && !isMobileDevice()) {
+    chrome.storage.local.set({ layoutMode: mode });
+  }
 }
 
 // 快捷鍵控制

@@ -7372,7 +7372,17 @@ class TTSEngine {
         }
 
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        
+        // 判斷是否為常見的註釋/角標標籤、樣式類名或純角標文字 (例如 [1], ①, 1, [注1] 等)
+        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        const isNoteClass = Array.from(node.classList).some(c => {
+          const cl = c.toLowerCase();
+          return cl.includes('footnote') || cl.includes('note') || cl.includes('ref');
+        });
+        const textContent = node.textContent.trim();
+        const isPureNoteText = /^[\[\(\{〔【]?(?:[0-9]+|注[0-9]*|①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[a-zA-Z]+)[\]\)}〕】]?$/.test(textContent);
+
+        if (isNoteTag || isNoteClass || isPureNoteText || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -7450,7 +7460,17 @@ class TTSEngine {
         }
 
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        
+        // 判斷是否為常見的註釋/角標標籤、樣式類名或純角標文字 (例如 [1], ①, 1, [注1] 等)
+        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        const isNoteClass = Array.from(node.classList).some(c => {
+          const cl = c.toLowerCase();
+          return cl.includes('footnote') || cl.includes('note') || cl.includes('ref');
+        });
+        const textContent = node.textContent.trim();
+        const isPureNoteText = /^[\[\(\{〔【]?(?:[0-9]+|注[0-9]*|①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[a-zA-Z]+)[\]\)}〕】]?$/.test(textContent);
+
+        if (isNoteTag || isNoteClass || isPureNoteText || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -7683,7 +7703,12 @@ class TTSEngine {
           ws.send(configMsg);
           
           let speakText = sentence.text;
-          if (!/[。！？.!?；;，,：:]\s*$/.test(sentence.text)) {
+          // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+          speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+          speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+          speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+          
+          if (!/[。！？.!?；;，,：:]\s*$/.test(speakText)) {
             if (sentence.isHeading) {
               speakText += "。";
             } else {
@@ -7972,10 +7997,13 @@ class TTSEngine {
 
     this.nativeQueue.add(index);
 
-    const sentence = this.sentences[index];
-    const voice = this.selectedVoice;
-    
-    const utterance = new SpeechSynthesisUtterance(sentence.text);
+    let speakText = sentence.text;
+    // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+    speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+    speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+    speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+
+    const utterance = new SpeechSynthesisUtterance(speakText);
     if (voice && this.synth) {
       const liveVoices = this.synth.getVoices();
       const liveVoice = liveVoices.find(v => v.name === voice.name);
@@ -11198,7 +11226,13 @@ function updateReaderTitle() {
 }
 
 
-// ==================== 5. 樣式、主題與快捷鍵設定 ==================== */
+// 檢測當前設備是否為移動端
+function isMobileDevice() {
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  return isMobileUA || (isTouch && window.innerWidth <= 1024);
+}
 
 function initThemeAndStyles() {
   // 從 Storage 讀取設定，否則採用預設值
@@ -11248,7 +11282,17 @@ function initThemeAndStyles() {
     setTransitionEffect(transitionEffect);
     document.getElementById('transition-effect-select').value = transitionEffect;
 
-    toggleLayoutMode(res.layoutMode || 'paginated');
+    // 版面排版模式初始化
+    let layoutMode = res.layoutMode || 'paginated';
+    if (isMobileDevice()) {
+      layoutMode = 'scroll';
+      // 隱藏移動端的版面排版模式選擇容器
+      const layoutRow = document.getElementById('layout-mode-container');
+      if (layoutRow) {
+        layoutRow.style.display = 'none';
+      }
+    }
+    toggleLayoutMode(layoutMode, false); // 初始化時不寫入 storage
 
     // 反向初始化 UI 控制器值
     document.getElementById('font-family-select').value = res.fontFamily || 'font-lxgw';
@@ -11643,7 +11687,7 @@ function updateEdgeFilterButtonVisibility() {
 }
 
 // 切換左右分欄翻頁 vs 連續上下滾動
-function toggleLayoutMode(mode) {
+function toggleLayoutMode(mode, saveToStorage = true) {
   const content = document.getElementById('book-content');
   const scrollBtn = document.getElementById('layout-scroll-btn');
   const paginatedBtn = document.getElementById('layout-paginated-btn');
@@ -11674,7 +11718,10 @@ function toggleLayoutMode(mode) {
     const overlay = document.getElementById('page-texture-overlay');
     if (overlay) overlay.innerHTML = '';
   }
-  chrome.storage.local.set({ layoutMode: mode });
+  
+  if (saveToStorage && !isMobileDevice()) {
+    chrome.storage.local.set({ layoutMode: mode });
+  }
 }
 
 // 快捷鍵控制
