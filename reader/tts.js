@@ -64,6 +64,8 @@ export class TTSEngine {
     // 播放狀態定義
     this.isPlaying = false;
     this.isPaused = false;
+    this.isInitialPlay = false; // 標記是否為點擊開始的初始播放狀態
+    this.playbackStarted = false; // 標記是否已經成功開始播放
     
     this.sentences = [];      // 當前章節的所有句子 (會隨預加載動態追加)
     this.currentIndex = 0;    // 當前播放的句子索引
@@ -798,15 +800,26 @@ export class TTSEngine {
   }
 
   _fillPreFetchBuffer() {
-    if (!this.isPlaying) return;
+    if (!this.isPlaying || !this.playbackStarted) return;
     const voice = this.selectedVoice;
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    const bufferSize = 10;
-    for (let i = 0; i < bufferSize; i++) {
-      const targetIndex = this.currentIndex + i;
-      this._fetchSentence(targetIndex);
+    if (this.isInitialPlay) {
+      this.isInitialPlay = false;
+      // 播放開始後，給 tts 引擎發送接來的 5 句 (currentIndex + 2 至 currentIndex + 6)
+      for (let i = 2; i <= 6; i++) {
+        const targetIndex = this.currentIndex + i;
+        if (targetIndex < this.sentences.length) {
+          this._fetchSentence(targetIndex);
+        }
+      }
+    } else {
+      // 每朗讀完一句就向快取空間中增加 1 句 (新增 currentIndex + 6 到快取)
+      const targetIndex = this.currentIndex + 6;
+      if (targetIndex < this.sentences.length) {
+        this._fetchSentence(targetIndex);
+      }
     }
   }
 
@@ -928,6 +941,7 @@ export class TTSEngine {
       // 再次強制設置播放速度，以防止部分 iOS 瀏覽器在啟動播放時強制將速度重設為 1.0
       audio.playbackRate = this.rate;
       
+      this.playbackStarted = true;
       this._fillPreFetchBuffer();
       this._prefetchNextChapter();
       this._prewarmNextPlayer();
@@ -1147,9 +1161,15 @@ export class TTSEngine {
       }
     });
     
+    this.isInitialPlay = true; // 標記為點擊開始的初始播放
+    this.playbackStarted = false; // 標記尚未開始播放
+    
+    // 點擊正文後，只向 tts 引擎發送 2 句 (當前句和下一句)
+    this._fetchSentence(this.currentIndex);
+    this._fetchSentence(this.currentIndex + 1);
+
     this._startSilenceKeepAlive();
     this._playActiveSentence();
-    this._fillPreFetchBuffer();
     this._prefetchNextChapter();
     if (this.onStateChange) this.onStateChange();
   }
@@ -1269,6 +1289,7 @@ export class TTSEngine {
   stop() {
     this.isPlaying = false;
     this.isPaused = false;
+    this.playbackStarted = false;
     this._stopSilenceKeepAlive();
     
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
