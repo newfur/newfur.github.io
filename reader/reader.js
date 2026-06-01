@@ -632,6 +632,7 @@ function initUIEventBindings() {
         applyLayoutDimensions();
         updatePageTranslate(false);
       }
+      updateReaderTitle();
     }
   });
 
@@ -1181,8 +1182,17 @@ async function closeCurrentBook(triggerBack = true) {
   clearResourceUrls();
 
   // 3. 切換視圖
+  window.scrollTo(0, 0);
   document.getElementById('reader-view').classList.remove('view-active');
   document.getElementById('library-view').classList.add('view-active');
+  
+  // 觸發強制重繪/Reflow，防止瀏覽器因隱藏切換導致的 Flex 佈局高度崩塌/拉伸 Bug
+  const appHeader = document.querySelector('.app-header');
+  if (appHeader) {
+    appHeader.style.display = 'none';
+    appHeader.offsetHeight; // 讀取以觸發 reflow
+    appHeader.style.display = '';
+  }
   
   // 重置變量與樣式類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
@@ -2619,6 +2629,46 @@ function calculateCurrentProgressPercent() {
   return 0;
 }
 
+// 動態調整標題文字，若超過兩行則進行中間省略，並在結尾保留百分比
+function adjustTitleEllipsis(titleEl, mainText, percentText) {
+  // 先設置為完整內容以測量
+  titleEl.textContent = mainText + percentText;
+  
+  // 如果隱藏（高度為 0），則無法測量溢出，直接保留完整文字並返回
+  if (titleEl.clientHeight === 0) {
+    return;
+  }
+  
+  // 如果沒有溢出，直接返回
+  if (titleEl.scrollHeight <= titleEl.clientHeight) {
+    return;
+  }
+  
+  // 溢出時進行二分搜尋，尋找最長可容納的中間省略文字
+  let left = 0;
+  let right = Math.floor(mainText.length / 2);
+  let bestText = mainText + percentText;
+  
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const prefix = mainText.slice(0, mid);
+    const suffix = mainText.slice(-mid);
+    const candidate = prefix + '...' + suffix + percentText;
+    
+    titleEl.textContent = candidate;
+    
+    // 如果此長度不溢出
+    if (titleEl.scrollHeight <= titleEl.clientHeight) {
+      bestText = candidate;
+      left = mid + 1; // 嘗試保留更多字元
+    } else {
+      right = mid - 1; // 需要移除更多字元
+    }
+  }
+  
+  titleEl.textContent = bestText;
+}
+
 function updateReaderTitle() {
   if (!currentBook) return;
   const titleEl = document.getElementById('reader-book-title');
@@ -2626,11 +2676,13 @@ function updateReaderTitle() {
 
   const percent = calculateCurrentProgressPercent();
   
+  let mainText = currentBook.title;
+  let percentText = ` (${percent}%)`;
+  
   if (currentBook.format === 'cbz') {
     if (comicParserInstance && comicParserInstance.pages.length > 0) {
       const pageIdx = typeof currentBook.progress?.comicImageIndex === 'number' ? currentBook.progress.comicImageIndex : 0;
-      titleEl.textContent = `${currentBook.title} - Page ${pageIdx + 1} / ${comicParserInstance.pages.length} (${percent}%)`;
-      return;
+      mainText = `${currentBook.title} - Page ${pageIdx + 1} / ${comicParserInstance.pages.length}`;
     }
   } else {
     if (epubBookData && epubBookData.chapters && epubBookData.chapters.length > 0) {
@@ -2638,15 +2690,12 @@ function updateReaderTitle() {
       const chapterTitle = chapter && chapter.title ? chapter.title.trim() : '';
       
       if (chapterTitle) {
-        titleEl.textContent = `${currentBook.title} - ${chapterTitle} (${percent}%)`;
-      } else {
-        titleEl.textContent = `${currentBook.title} (${percent}%)`;
+        mainText = `${currentBook.title} - ${chapterTitle}`;
       }
-      return;
     }
   }
   
-  titleEl.textContent = currentBook.title;
+  adjustTitleEllipsis(titleEl, mainText, percentText);
 }
 
 
