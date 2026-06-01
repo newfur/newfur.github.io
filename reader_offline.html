@@ -7373,16 +7373,10 @@ class TTSEngine {
 
         const tagName = node.tagName.toLowerCase();
         
-        // 判斷是否為常見的註釋/角標標籤、樣式類名或純角標文字 (例如 [1], ①, 1, [注1] 等)
+        // 僅跳過上標 (sup)、下標 (sub) 標籤，以及 script, style, textLayer 和 a 標籤，以防誤傷正文中的其他 note 樣式段落或英文單詞
         const isNoteTag = tagName === 'sup' || tagName === 'sub';
-        const isNoteClass = Array.from(node.classList).some(c => {
-          const cl = c.toLowerCase();
-          return cl.includes('footnote') || cl.includes('note') || cl.includes('ref');
-        });
-        const textContent = node.textContent.trim();
-        const isPureNoteText = /^[\[\(\{〔【]?(?:[0-9]+|注[0-9]*|①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[a-zA-Z]+)[\]\)}〕】]?$/.test(textContent);
 
-        if (isNoteTag || isNoteClass || isPureNoteText || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -7461,16 +7455,10 @@ class TTSEngine {
 
         const tagName = node.tagName.toLowerCase();
         
-        // 判斷是否為常見的註釋/角標標籤、樣式類名或純角標文字 (例如 [1], ①, 1, [注1] 等)
+        // 僅跳過上標 (sup)、下標 (sub) 標籤，以及 script, style, textLayer 和 a 標籤，以防誤傷正文中的其他 note 樣式段落或英文單詞
         const isNoteTag = tagName === 'sup' || tagName === 'sub';
-        const isNoteClass = Array.from(node.classList).some(c => {
-          const cl = c.toLowerCase();
-          return cl.includes('footnote') || cl.includes('note') || cl.includes('ref');
-        });
-        const textContent = node.textContent.trim();
-        const isPureNoteText = /^[\[\(\{〔【]?(?:[0-9]+|注[0-9]*|①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[a-zA-Z]+)[\]\)}〕】]?$/.test(textContent);
 
-        if (isNoteTag || isNoteClass || isPureNoteText || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
