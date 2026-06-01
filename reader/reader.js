@@ -643,6 +643,11 @@ function initUIEventBindings() {
           elementIndex: getTopVisibleElementIndex(),
           scrollTop: window.scrollY
         });
+
+        // 在垂直滾動模式下，如果當前物理文件包含多個子章節，滾動時自動校準 currentChapterIndex
+        if (!document.body.classList.contains('layout-paginated') && epubBookData && epubBookData.chapters) {
+          updateActiveSubChapterOnScroll();
+        }
       }
     }
   });
@@ -657,17 +662,31 @@ function initUIEventBindings() {
 
     const scrollTop = window.scrollY;
     if (scrollTop <= 5 && e.deltaY < -15) {
-      // 在最頂部向上滾動 (加載上一章)
+      // 在最頂部向上滾動 (加載上一章物理文件)
       if (currentChapterIndex > 0) {
-        loadChapter(currentChapterIndex - 1, true);
+        const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
+        let prevIdx = currentChapterIndex - 1;
+        while (prevIdx >= 0 && epubBookData.chapters[prevIdx].cleanHref === currentHref) {
+          prevIdx--;
+        }
+        if (prevIdx >= 0) {
+          loadChapter(prevIdx, true);
+        }
       }
     } else {
       const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
       const clientHeight = window.innerHeight;
       if (scrollTop + clientHeight >= scrollHeight - 5 && e.deltaY > 15) {
-        // 在最底部向下滾動 (加載下一章)
+        // 在最底部向下滾動 (加載下一章物理文件)
         if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-          loadChapter(currentChapterIndex + 1);
+          const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
+          let nextIdx = currentChapterIndex + 1;
+          while (nextIdx < epubBookData.chapters.length && epubBookData.chapters[nextIdx].cleanHref === currentHref) {
+            nextIdx++;
+          }
+          if (nextIdx < epubBookData.chapters.length) {
+            loadChapter(nextIdx);
+          }
         }
       }
     }
@@ -701,17 +720,31 @@ function initUIEventBindings() {
 
     const scrollTop = window.scrollY;
     if (scrollTop <= 5 && diffY > 60) {
-      // 在最頂部向下拉（加載上一章）
+      // 在最頂部向下拉（加載上一章物理文件）
       if (currentChapterIndex > 0) {
-        loadChapter(currentChapterIndex - 1, true);
+        const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
+        let prevIdx = currentChapterIndex - 1;
+        while (prevIdx >= 0 && epubBookData.chapters[prevIdx].cleanHref === currentHref) {
+          prevIdx--;
+        }
+        if (prevIdx >= 0) {
+          loadChapter(prevIdx, true);
+        }
       }
     } else {
       const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
       const clientHeight = window.innerHeight;
       if (scrollTop + clientHeight >= scrollHeight - 5 && diffY < -60) {
-        // 在最底部向上拉（加載下一章）
+        // 在最底部向上拉（加載下一章物理文件）
         if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-          loadChapter(currentChapterIndex + 1);
+          const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
+          let nextIdx = currentChapterIndex + 1;
+          while (nextIdx < epubBookData.chapters.length && epubBookData.chapters[nextIdx].cleanHref === currentHref) {
+            nextIdx++;
+          }
+          if (nextIdx < epubBookData.chapters.length) {
+            loadChapter(nextIdx);
+          }
         }
       }
     }
@@ -1405,6 +1438,60 @@ function findCorrectChapterIndexForHash(cleanHref, targetHash) {
   }
 
   return bestIdx;
+}
+
+// 在垂直滾動模式下，如果當前物理文件包含多個子章節，滾動時自動校準 currentChapterIndex
+function updateActiveSubChapterOnScroll() {
+  if (!epubBookData || !epubBookData.chapters || currentChapterIndex < 0) return;
+  const currentChapter = epubBookData.chapters[currentChapterIndex];
+  if (!currentChapter) return;
+
+  const currentHref = currentChapter.cleanHref;
+  // 找出所有物理文件相同的章節
+  const siblingChapters = [];
+  epubBookData.chapters.forEach((ch, idx) => {
+    if (ch.cleanHref === currentHref) {
+      siblingChapters.push({ chapter: ch, index: idx });
+    }
+  });
+
+  if (siblingChapters.length <= 1) return;
+
+  const contentEl = document.getElementById('book-content');
+  if (!contentEl) return;
+
+  let activeIdx = siblingChapters[0].index;
+  let minTop = -Infinity; // 尋找在視口上方最近的元素
+
+  siblingChapters.forEach(({ chapter, index }) => {
+    if (!chapter.hash) {
+      // 沒有 hash 的是整個物理文件的開頭
+      const rect = contentEl.getBoundingClientRect();
+      // 如果文件開頭在視口頂部上方，它是一個候選
+      if (rect.top <= 80 && rect.top > minTop) {
+        minTop = rect.top;
+        activeIdx = index;
+      }
+      return;
+    }
+
+    const el = document.getElementById(chapter.hash) || contentEl.querySelector(`[name="${chapter.hash.replace(/"/g, '\\"')}"]`);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      // 如果元素的 top 小於等於 80px（視口頂部附近），說明用戶已經滾過它或它在當前視口上方
+      if (rect.top <= 80 && rect.top > minTop) {
+        minTop = rect.top;
+        activeIdx = index;
+      }
+    }
+  });
+
+  if (activeIdx !== currentChapterIndex && !isChangingChapter) {
+    currentChapterIndex = activeIdx;
+    tts.currentChapterIndex = activeIdx;
+    syncTOCActiveState(activeIdx);
+    updateReaderTitle();
+  }
 }
 
 // 載入指定章節 (流式文本)
@@ -3025,17 +3112,24 @@ function handleKeyDown(e) {
       loadChapter(currentChapterIndex + 1);
     }
   } else if (e.code === 'ArrowUp') {
-    // 上方向鍵：在最頂部時加載上一章
+    // 上方向鍵：在最頂部時加載上一章物理文件
     if (!document.body.classList.contains('layout-paginated')) {
       if (isChangingChapter) return;
       if (Date.now() - lastChapterChangeTime < 800) return;
       const scrollTop = window.scrollY;
       if (scrollTop <= 5 && currentChapterIndex > 0) {
-        loadChapter(currentChapterIndex - 1, true);
+        const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
+        let prevIdx = currentChapterIndex - 1;
+        while (prevIdx >= 0 && epubBookData.chapters[prevIdx].cleanHref === currentHref) {
+          prevIdx--;
+        }
+        if (prevIdx >= 0) {
+          loadChapter(prevIdx, true);
+        }
       }
     }
   } else if (e.code === 'ArrowDown') {
-    // 下方向鍵：在最底部時加載下一章
+    // 下方向鍵：在最底部時加載下一章物理文件
     if (!document.body.classList.contains('layout-paginated')) {
       if (isChangingChapter) return;
       if (Date.now() - lastChapterChangeTime < 800) return;
@@ -3043,7 +3137,14 @@ function handleKeyDown(e) {
       const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
       const clientHeight = window.innerHeight;
       if (scrollTop + clientHeight >= scrollHeight - 5 && epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-        loadChapter(currentChapterIndex + 1);
+        const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
+        let nextIdx = currentChapterIndex + 1;
+        while (nextIdx < epubBookData.chapters.length && epubBookData.chapters[nextIdx].cleanHref === currentHref) {
+          nextIdx++;
+        }
+        if (nextIdx < epubBookData.chapters.length) {
+          loadChapter(nextIdx);
+        }
       }
     }
   }
