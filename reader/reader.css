@@ -1213,8 +1213,11 @@ body.format-cbz .comic-page {
 
 /* 主題圓點選取器 */
 .theme-selector {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  justify-items: center;
+  padding: 4px 0;
 }
 
 .theme-dot {
@@ -1225,6 +1228,7 @@ body.format-cbz .comic-page {
   cursor: pointer;
   outline: none;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .theme-dot.active {
@@ -2404,6 +2408,22 @@ html.transition-none .page-texture-slide {
   .book-author {
     font-size: 11px;
     margin-bottom: 4px;
+  }
+
+  /* 閱讀器頂部導航欄響應式優化 */
+  .reader-header {
+    padding: 0 8px;
+  }
+  .reader-header .btn-icon-only {
+    width: 36px;
+    height: 36px;
+  }
+  .reader-header-actions {
+    gap: 4px;
+  }
+  .reader-title {
+    max-width: calc(100% - 160px);
+    font-size: 15px;
   }
 }
 
