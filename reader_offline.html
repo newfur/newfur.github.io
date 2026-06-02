@@ -8262,11 +8262,24 @@ class TTSEngine {
     const targetNextIndex = this.currentChapterIndex + 1;
     if (this.prefetchedChapterIndex === targetNextIndex) return;
     
+    // 提前鎖定標記，防範多個異步調用同時並發預加載同一章節，導致句子隊列重複追加
+    this.prefetchedChapterIndex = targetNextIndex;
+    
     try {
       const nextChapter = await this.getNextChapterData(this.currentChapterIndex);
-      if (!nextChapter || !this.isPlaying) return;
+      if (!nextChapter || !this.isPlaying) {
+        if (this.prefetchedChapterIndex === targetNextIndex) {
+          this.prefetchedChapterIndex = null;
+        }
+        return;
+      }
       
-      this.prefetchedChapterIndex = nextChapter.index;
+      if (nextChapter.index !== targetNextIndex) {
+        if (this.prefetchedChapterIndex === targetNextIndex) {
+          this.prefetchedChapterIndex = null;
+        }
+        return;
+      }
       
       const nextSentences = this._extractSentencesFromHtml(nextChapter.html);
       
@@ -8281,6 +8294,9 @@ class TTSEngine {
       this._fillPreFetchBuffer();
     } catch (e) {
       console.error("Failed to prefetch next chapter:", e);
+      if (this.prefetchedChapterIndex === targetNextIndex) {
+        this.prefetchedChapterIndex = null;
+      }
     }
   }
 
