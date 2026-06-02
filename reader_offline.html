@@ -8209,6 +8209,7 @@ class TTSEngine {
     this.onStateChange = null;
 
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
+    this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
     this._initVoices();
   }
 
@@ -8876,6 +8877,7 @@ class TTSEngine {
     const sentence = this.sentences[index];
     
     this._downloadSentenceAudio(sentence).then(blob => {
+      this.consecutiveWsFailures = 0; // 成功加載，重置失敗計數器
       const blobUrl = URL.createObjectURL(blob);
       
       this.audioCache.set(index, {
@@ -8896,6 +8898,45 @@ class TTSEngine {
     }).catch(err => {
       console.error(`Failed to prefetch sentence ${index}:`, err);
       this.fetchingIndices.delete(index);
+      
+      // 增加失敗計數 (任何在這裡捕獲的錯誤都是 WebSocket/網絡加載失敗)
+      this.consecutiveWsFailures = (this.consecutiveWsFailures || 0) + 1;
+      if (this.consecutiveWsFailures >= 3) {
+        console.warn("WebSocket TTS failed 3 times consecutively. Switching to native Web Speech API.");
+        this.consecutiveWsFailures = 0; // 重置
+        
+        // 查找與當前語音（若無則默認中文）語言前綴相匹配的本地系統語音
+        const currentLang = (voice && voice.lang) || 'zh-CN';
+        const cleanLang = currentLang.split('-')[0].toLowerCase();
+        let nativeVoice = this.voices.find(v => v.type === 'speechSynthesis' && v.lang.toLowerCase().startsWith(cleanLang));
+        
+        if (!nativeVoice) {
+          // 找不到具體語音，建立一個虛擬的系統默認語音進行降級
+          nativeVoice = {
+            name: 'System Default',
+            lang: cleanLang === 'zh' ? 'zh-CN' : 'en-US',
+            friendlyName: 'System Default',
+            isEdge: false,
+            isNative: true,
+            type: 'speechSynthesis'
+          };
+          this.voices.push(nativeVoice); // 放入語音列表以便後續 UI 同步
+        }
+        
+        alert("微軟雲端語音連接失敗（可能由於移動端跨域限制或無網絡），已自動為您切換為本地系統語音朗讀。");
+        this.setVoice(nativeVoice.name);
+        
+        const selectEl = document.getElementById('tts-voice-select');
+        if (selectEl) {
+          selectEl.value = nativeVoice.name;
+        }
+        
+        if (this.isPlaying) {
+          this.play(this.currentIndex, true);
+        }
+        return; // 終止當前失敗鏈的傳播，防止重複執行
+      }
+
       if (this.isPlaying && this.currentIndex === index) {
         // 容錯機制：跳過該句子
         this.currentIndex = index + 1;
