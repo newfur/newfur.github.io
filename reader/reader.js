@@ -541,7 +541,7 @@ function initUIEventBindings() {
       const selection = window.getSelection().toString().trim();
       if (selection.length === 0) {
         const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        tts.play(sentenceIdx);
+        tts.play(sentenceIdx, true);
       }
     }, 150);
   });

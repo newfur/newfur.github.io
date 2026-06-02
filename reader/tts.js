@@ -820,18 +820,11 @@ export class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    if (this.isInitialPlay) {
-      this.isInitialPlay = false;
-      // 播放開始後，給 tts 引擎發送接來的 10 句 (currentIndex + 1 至 currentIndex + 10)
-      for (let i = 1; i <= 10; i++) {
-        const targetIndex = this.currentIndex + i;
-        if (targetIndex < this.sentences.length) {
-          this._fetchSentence(targetIndex);
-        }
-      }
-    } else {
-      // 每朗讀完一句就向快取空間中增加 1 句 (保持緩衝長度為 10，即新增 currentIndex + 10 到快取)
-      const targetIndex = this.currentIndex + 10;
+    // 始終保持當前播放位置後方的 10 句處於預載快取狀態。
+    // 這能自動填補因跳轉、跨章節追加新文本產生的快取空洞。
+    const bufferSize = 10;
+    for (let i = 1; i <= bufferSize; i++) {
+      const targetIndex = this.currentIndex + i;
       if (targetIndex < this.sentences.length) {
         this._fetchSentence(targetIndex);
       }
