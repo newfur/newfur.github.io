@@ -60,6 +60,7 @@ const scriptModuleRegex = /<script type="module" src="reader\.js"><\/script>/i;
 html = html.replace(scriptJszipRegex, () => `<script>${jszipJs}</script>`);
 html = html.replace(scriptModuleRegex, () => `<script>${combinedJs}</script>`);
 
-// 6. Write final offline file to root
+// 6. Write final offline files to root
 fs.writeFileSync(path.join(rootDir, 'reader_offline.html'), html, 'utf8');
-console.log('Successfully compiled reader_offline.html!');
+fs.writeFileSync(path.join(rootDir, 'index.html'), html, 'utf8');
+console.log('Successfully compiled reader_offline.html and index.html!');
