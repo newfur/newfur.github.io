@@ -41,6 +41,169 @@ export function decodeBase32(str) {
   return val;
 }
 
+export class HuffCdicDecoder {
+  constructor(huffs) {
+    this.mincode = [];
+    this.maxcode = [];
+    this.dict1 = [];
+    this.dictionary = [];
+    
+    this.load_huff(huffs[0]);
+    for (let i = 1; i < huffs.length; i++) {
+      this.load_cdic(huffs[i]);
+    }
+  }
+
+  load_huff(huff) {
+    const header = String.fromCharCode.apply(null, huff.subarray(0, 8));
+    if (header !== 'HUFF\x00\x00\x00\x18') {
+      throw new Error('Invalid HUFF header');
+    }
+    
+    const dv = new DataView(huff.buffer, huff.byteOffset, huff.byteLength);
+    const off1 = dv.getUint32(8);
+    const off2 = dv.getUint32(12);
+    
+    this.dict1 = [];
+    for (let i = 0; i < 256; i++) {
+      const v = dv.getUint32(off1 + i * 4);
+      const codelen = v & 0x1f;
+      const term = (v & 0x80) !== 0;
+      const maxcode = v >>> 8;
+      
+      if (codelen === 0) {
+        throw new Error('Invalid Huffman code length');
+      }
+      
+      const shift = 32 - codelen;
+      const multiplier = Math.pow(2, shift);
+      const maxcodeVal = ((maxcode + 1) * multiplier - 1) >>> 0;
+      
+      this.dict1.push({ codelen, term, maxcode: maxcodeVal });
+    }
+    
+    const dict2 = [];
+    for (let i = 0; i < 64; i++) {
+      dict2.push(dv.getUint32(off2 + i * 4));
+    }
+    
+    const evenList = [0];
+    const oddList = [0];
+    for (let i = 0; i < 32; i++) {
+      evenList.push(dict2[i * 2]);
+      oddList.push(dict2[i * 2 + 1]);
+    }
+    
+    this.mincode = [];
+    this.maxcode = [];
+    for (let codelen = 0; codelen <= 32; codelen++) {
+      const minVal = evenList[codelen];
+      const maxVal = oddList[codelen];
+      const shift = 32 - codelen;
+      
+      if (shift === 32) {
+        this.mincode.push(0);
+        this.maxcode.push(0xffffffff);
+      } else {
+        const multiplier = Math.pow(2, shift);
+        this.mincode.push((minVal * multiplier) >>> 0);
+        this.maxcode.push(((maxVal + 1) * multiplier - 1) >>> 0);
+      }
+    }
+    
+    this.dictionary = [];
+  }
+
+  load_cdic(cdic) {
+    const header = String.fromCharCode.apply(null, cdic.subarray(0, 8));
+    if (header !== 'CDIC\x00\x00\x00\x10') {
+      throw new Error('Invalid CDIC header');
+    }
+    const dv = new DataView(cdic.buffer, cdic.byteOffset, cdic.byteLength);
+    const phrases = dv.getUint32(8);
+    const bits = dv.getUint32(12);
+    
+    const n = Math.min(1 << bits, phrases - this.dictionary.length);
+    
+    for (let i = 0; i < n; i++) {
+      const off = dv.getUint16(16 + i * 2);
+      const blen = dv.getUint16(16 + off);
+      const sliceBytes = cdic.subarray(18 + off, 18 + off + (blen & 0x7fff));
+      const flag = (blen & 0x8000) !== 0;
+      this.dictionary.push({ slice: sliceBytes, flag: flag });
+    }
+  }
+
+  unpack(data) {
+    let bitsleft = data.length * 8;
+    const paddedData = new Uint8Array(data.length + 8);
+    paddedData.set(data);
+    
+    const view = new DataView(paddedData.buffer, paddedData.byteOffset, paddedData.byteLength);
+    let pos = 0;
+    let x = (BigInt(view.getUint32(pos)) << 32n) | BigInt(view.getUint32(pos + 4));
+    let n = 32;
+    
+    const s = [];
+    while (true) {
+      if (n <= 0) {
+        pos += 4;
+        x = (BigInt(view.getUint32(pos)) << 32n) | BigInt(view.getUint32(pos + 4));
+        n += 32;
+      }
+      
+      const code = Number((x >> BigInt(n)) & 0xffffffffn);
+      
+      const dictEntry = this.dict1[code >>> 24];
+      let codelen = dictEntry.codelen;
+      const term = dictEntry.term;
+      let maxcode = dictEntry.maxcode;
+      
+      if (!term) {
+        while (code < this.mincode[codelen]) {
+          codelen++;
+        }
+        maxcode = this.maxcode[codelen];
+      }
+      
+      n -= codelen;
+      bitsleft -= codelen;
+      if (bitsleft < 0) {
+        break;
+      }
+      
+      const r = (maxcode - code) >>> (32 - codelen);
+      const entry = this.dictionary[r];
+      if (!entry) {
+        break;
+      }
+      
+      let slice = entry.slice;
+      const flag = entry.flag;
+      
+      if (!flag) {
+        this.dictionary[r] = null;
+        const decompressed = this.unpack(slice);
+        this.dictionary[r] = { slice: decompressed, flag: true };
+        slice = decompressed;
+      }
+      s.push(slice);
+    }
+    
+    let totalLength = 0;
+    for (const arr of s) {
+      totalLength += arr.length;
+    }
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const arr of s) {
+      result.set(arr, offset);
+      offset += arr.length;
+    }
+    return result;
+  }
+}
+
 export class Azw3Parser {
   constructor(fileBlob) {
     this.fileBlob = fileBlob;
@@ -110,8 +273,21 @@ export class Azw3Parser {
       }
     }
     
-    if (this.compression === 2 || this.compression === 1) {
-      // PalmDoc 壓縮 或 無壓縮
+    if (this.compression === 2 || this.compression === 1 || this.compression === 17480) {
+      // PalmDoc 壓縮, HUFF/CDIC 壓縮 或 無壓縮
+      let huffDecoder = null;
+      if (this.compression === 17480) {
+        try {
+          const huffs = [];
+          for (let i = 0; i < this.huffmanRecordCount; i++) {
+            huffs.push(this._getRecordData(this.huffmanRecordOffset + i));
+          }
+          huffDecoder = new HuffCdicDecoder(huffs);
+        } catch (e) {
+          console.error('Failed to initialize HUFFCDIC decoder:', e);
+        }
+      }
+
       const textRecords = [];
       for (let i = 1; i <= numTextRecords && i < this.records.length; i++) {
         const recordData = this._getRecordData(i);
@@ -120,7 +296,14 @@ export class Azw3Parser {
         const trailingSize = this._getTrailingBytesSize(recordData, recordData.length);
         const cleanRecordData = trailingSize > 0 ? recordData.subarray(0, recordData.length - trailingSize) : recordData;
         
-        const decompressed = this.compression === 2 ? this._decompressPalmDoc(cleanRecordData) : cleanRecordData;
+        let decompressed;
+        if (this.compression === 17480 && huffDecoder) {
+          decompressed = huffDecoder.unpack(cleanRecordData);
+        } else if (this.compression === 2) {
+          decompressed = this._decompressPalmDoc(cleanRecordData);
+        } else {
+          decompressed = cleanRecordData;
+        }
         textRecords.push(decompressed);
       }
       
@@ -695,6 +878,14 @@ export class Azw3Parser {
         this.ncxIndex = view.getUint32(this.mobiHeaderOffset + 228);
         console.log(`Parsed MOBI Header: version=${mobiVersion}, headerLength=${headerLength}, extraDataFlags=0x${this.extraDataFlags.toString(16)}, ncxIndex=${this.ncxIndex}`);
       }
+    }
+
+    this.huffmanRecordOffset = 0xffffffff;
+    this.huffmanRecordCount = 0;
+    if (this.compression === 17480 && data.length >= this.mobiHeaderOffset + 104) {
+      this.huffmanRecordOffset = view.getUint32(this.mobiHeaderOffset + 96);
+      this.huffmanRecordCount = view.getUint32(this.mobiHeaderOffset + 100);
+      console.log(`Parsed HUFFCDIC info: offset=${this.huffmanRecordOffset}, count=${this.huffmanRecordCount}`);
     }
   }
 

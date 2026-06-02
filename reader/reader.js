@@ -438,7 +438,7 @@ function initUIEventBindings() {
       syncTOCActiveState(nextChapterIndex);
       updateReaderTitle();
     } else {
-      await loadChapter(nextChapterIndex, false, false, false, true);
+      await loadChapter(nextChapterIndex, false, false, false, true, null, null, null, null, null, true);
     }
     updatePlayPauseButtonIcon();
   };
@@ -680,7 +680,7 @@ function initUIEventBindings() {
           prevIdx--;
         }
         if (prevIdx >= 0) {
-          loadChapter(prevIdx, true);
+          loadChapter(prevIdx, true, false, true, false, null, null, null, null, null, true);
         }
       }
     } else {
@@ -695,7 +695,7 @@ function initUIEventBindings() {
             nextIdx++;
           }
           if (nextIdx < epubBookData.chapters.length) {
-            loadChapter(nextIdx);
+            loadChapter(nextIdx, false, false, true, false, null, null, null, null, null, true);
           }
         }
       }
@@ -738,7 +738,7 @@ function initUIEventBindings() {
           prevIdx--;
         }
         if (prevIdx >= 0) {
-          loadChapter(prevIdx, true);
+          loadChapter(prevIdx, true, false, true, false, null, null, null, null, null, true);
         }
       }
     } else {
@@ -753,7 +753,7 @@ function initUIEventBindings() {
             nextIdx++;
           }
           if (nextIdx < epubBookData.chapters.length) {
-            loadChapter(nextIdx);
+            loadChapter(nextIdx, false, false, true, false, null, null, null, null, null, true);
           }
         }
       }
@@ -1183,6 +1183,12 @@ async function closeCurrentBook(triggerBack = true) {
   // 清理舊的資源 Object URL
   clearResourceUrls();
 
+  // 清理書本內容 (避免 CSS 洩漏影響書庫樣式)
+  const contentEl = document.getElementById('book-content');
+  if (contentEl) {
+    contentEl.innerHTML = '';
+  }
+
   // 3. 切換視圖
   window.scrollTo(0, 0);
   document.getElementById('reader-view').classList.remove('view-active');
@@ -1513,9 +1519,63 @@ function updateActiveSubChapterOnScroll() {
   }
 }
 
+// 在左右翻頁模式下，如果當前物理文件包含多個子章節，翻頁時自動校準 currentChapterIndex
+function updateActiveSubChapterOnPage() {
+  if (!epubBookData || !epubBookData.chapters || currentChapterIndex < 0) return;
+  const currentChapter = epubBookData.chapters[currentChapterIndex];
+  if (!currentChapter) return;
+
+  const currentHref = currentChapter.cleanHref;
+  // 找出所有物理文件相同的章節
+  const siblingChapters = [];
+  epubBookData.chapters.forEach((ch, idx) => {
+    if (ch.cleanHref === currentHref) {
+      siblingChapters.push({ chapter: ch, index: idx });
+    }
+  });
+
+  if (siblingChapters.length <= 1) return;
+
+  const container = document.getElementById('reader-container');
+  const contentEl = document.getElementById('book-content');
+  if (!container || !contentEl) return;
+
+  const containerRect = container.getBoundingClientRect();
+  const paddingLeft = parseFloat(window.getComputedStyle(container).paddingLeft) || 0;
+  const { containerWidth } = getPaginatedPagesInfo();
+  
+  // 視口右側邊界值 (在翻頁容器座標系中，即為可見區域的右邊界)
+  const viewportRight = containerRect.left + paddingLeft + containerWidth;
+
+  let activeIdx = siblingChapters[0].index;
+
+  siblingChapters.forEach(({ chapter, index }) => {
+    if (!chapter.hash) {
+      // 沒有 hash 的是整個物理文件的開頭，自然在當前頁或之前
+      return;
+    }
+
+    const el = document.getElementById(chapter.hash) || contentEl.querySelector(`[name="${chapter.hash.replace(/"/g, '\\"')}"]`);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      // 如果元素的 left 小於視口右邊界減去一個微小的容差值 (e.g. 10px)，說明它已經出現在當前頁或更早的頁面中
+      if (rect.left < viewportRight - 10) {
+        activeIdx = index;
+      }
+    }
+  });
+
+  if (activeIdx !== currentChapterIndex && !isChangingChapter) {
+    currentChapterIndex = activeIdx;
+    tts.currentChapterIndex = activeIdx;
+    syncTOCActiveState(activeIdx);
+    updateReaderTitle();
+  }
+}
+
 // 載入指定章節 (流式文本)
 // 載入指定章節 (流式文本)
-async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null) {
+async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
 
   const isPaginated = document.body.classList.contains('layout-paginated');
@@ -1635,7 +1695,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
           // 搜尋目標 cleanHref 對應的章節索引
           const targetIdx = epubBookData.chapters.findIndex(ch => ch.cleanHref === cleanHref);
           if (targetIdx > -1) {
-            loadChapter(targetIdx, false, false, true, false, null, null, null, hash || null);
+            loadChapter(targetIdx, false, false, true, false, null, null, null, hash || null, null, !hash);
           }
         }
       });
@@ -1745,7 +1805,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     applyLayoutDimensions();
 
     // 還原章節內的滾動高度或段落定位
-    const finalHash = targetHash || (chapter && chapter.hash);
+    const finalHash = targetHash || ((chapter && !ignoreChapterHash) ? chapter.hash : null);
     if (finalHash) {
       activeHashElem = document.getElementById(finalHash) || contentEl.querySelector(`[name="${finalHash.replace(/"/g, '\\"')}"]`);
     }
@@ -1803,6 +1863,33 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       }
     } else if (kindleTargetElem) {
       safeRestoreScrollToElementIndex(kindleTargetElem);
+    } else if (goToLastPage) {
+      if (document.body.classList.contains('layout-paginated')) {
+        pendingGoToLastPage = true;
+        currentPageIndex = getLastPageIndex();
+        pendingGoToLastPageTimeout = setTimeout(() => {
+          pendingGoToLastPage = false;
+          pendingGoToLastPageTimeout = null;
+        }, 1000);
+        updatePageTranslate(false);
+      } else {
+        const scrollToBottom = () => {
+          window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
+        };
+        scrollToBottom();
+        setTimeout(scrollToBottom, 30);
+        setTimeout(scrollToBottom, 100);
+        setTimeout(scrollToBottom, 250);
+        setTimeout(scrollToBottom, 500);
+
+        // 監聽圖片載入以持續修正底部高度
+        const imgs = contentEl.querySelectorAll('img');
+        imgs.forEach(img => {
+          if (!img.complete) {
+            img.addEventListener('load', scrollToBottom, { once: true });
+          }
+        });
+      }
     } else if (activeHashElem) {
       // 點擊目錄子標題或章節錨點跳轉時，精確滾動/翻頁到該錨點元素
       safeRestoreScrollToElementIndex(activeHashElem);
@@ -1816,38 +1903,10 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       }
     } else {
       if (document.body.classList.contains('layout-paginated')) {
-        if (goToLastPage) {
-          pendingGoToLastPage = true;
-          currentPageIndex = getLastPageIndex();
-          pendingGoToLastPageTimeout = setTimeout(() => {
-            pendingGoToLastPage = false;
-            pendingGoToLastPageTimeout = null;
-          }, 1000);
-        } else {
-          currentPageIndex = 0;
-        }
+        currentPageIndex = 0;
         updatePageTranslate(false);
       } else {
-        if (goToLastPage) {
-          const scrollToBottom = () => {
-            window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
-          };
-          scrollToBottom();
-          setTimeout(scrollToBottom, 30);
-          setTimeout(scrollToBottom, 100);
-          setTimeout(scrollToBottom, 250);
-          setTimeout(scrollToBottom, 500);
-
-          // 監聽圖片載入以持續修正底部高度
-          const imgs = contentEl.querySelectorAll('img');
-          imgs.forEach(img => {
-            if (!img.complete) {
-              img.addEventListener('load', scrollToBottom, { once: true });
-            }
-          });
-        } else {
-          window.scrollTo(0, 0);
-        }
+        window.scrollTo(0, 0);
       }
     }
 
@@ -2467,17 +2526,20 @@ function updatePageTranslate(animate = true) {
   if (!animate || oldIndex === currentPageIndex) {
     content.style.transform = `translateX(-${offset}px)`;
     updatePageTextureTranslate();
+    updateActiveSubChapterOnPage();
   } else {
     const isFlip = document.documentElement.classList.contains('transition-flip');
     const cols = content ? (parseInt(content.style.columnCount) || 1) : 1;
     
     if (isFlip && cols <= 2) {
       runCustom3DFlip(oldIndex, currentPageIndex);
+      updateActiveSubChapterOnPage();
     } else {
       const direction = (currentPageIndex > oldIndex) ? 'forward' : 'backward';
       transitionPage(() => {
         content.style.transform = `translateX(-${offset}px)`;
         updatePageTextureTranslate();
+        updateActiveSubChapterOnPage();
       }, direction);
     }
   }
@@ -2522,7 +2584,7 @@ function navigatePage(direction) {
     } else {
       // 載入下一章
       if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-        loadChapter(currentChapterIndex + 1);
+        loadChapter(currentChapterIndex + 1, false, false, true, false, null, null, null, null, null, true);
       }
     }
   } else if (direction === 'prev') {
@@ -2532,7 +2594,7 @@ function navigatePage(direction) {
     } else {
       // 載入前一章的最後一頁
       if (currentChapterIndex > 0) {
-        loadChapter(currentChapterIndex - 1, true);
+        loadChapter(currentChapterIndex - 1, true, false, true, false, null, null, null, null, null, true);
       }
     }
   }
@@ -3237,7 +3299,7 @@ function handleKeyDown(e) {
           prevIdx--;
         }
         if (prevIdx >= 0) {
-          loadChapter(prevIdx, true);
+          loadChapter(prevIdx, true, false, true, false, null, null, null, null, null, true);
         }
       }
     }
@@ -3256,7 +3318,7 @@ function handleKeyDown(e) {
           nextIdx++;
         }
         if (nextIdx < epubBookData.chapters.length) {
-          loadChapter(nextIdx);
+          loadChapter(nextIdx, false, false, true, false, null, null, null, null, null, true);
         }
       }
     }
