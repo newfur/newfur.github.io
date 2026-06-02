@@ -188,6 +188,7 @@ export class BookLibrary {
         format: existingBook.format,
         file: existingBook.file || backupBook.file, // 優先使用現有檔案
         cover: existingBook.cover || backupBook.cover,
+        folder: existingBook.folder || backupBook.folder, // 優先使用現有資料夾
         size: existingBook.size || backupBook.size,
         addedAt: Math.min(existingBook.addedAt || Date.now(), backupBook.addedAt || Date.now()),
         lastReadAt: Math.max(existingLastRead, backupLastRead),
@@ -286,6 +287,24 @@ export class BookLibrary {
     if (!book) throw new Error('Book not found');
 
     book.cover = cover;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 更新書籍資料夾
+  async updateBookFolder(id, folder) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.folder = folder;
 
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');

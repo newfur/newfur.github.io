@@ -74,6 +74,11 @@ let lastReadingHeartbeat = 0;
 let lastUserActivityTime = 0;
 const IDLE_TIMEOUT_MS = 60000; // 60秒無操作視為閒置
 
+// 書庫資料夾與批量管理狀態
+let currentFolder = null;
+let isSelectMode = false;
+const selectedBookIds = new Set();
+
 
 function clearCoverUrls() {
   activeCoverUrls.forEach(url => URL.revokeObjectURL(url));
@@ -165,6 +170,123 @@ function initUIEventBindings() {
   window.addEventListener('touchstart', recordActivity, { capture: true, passive: true });
   window.addEventListener('scroll', recordActivity, { capture: true, passive: true });
 
+  // 資料夾與批量管理事件
+  const createFolderBtn = document.getElementById('create-folder-btn');
+  if (createFolderBtn) {
+    createFolderBtn.addEventListener('click', () => {
+      openFolderDialog();
+    });
+  }
+
+  const batchManageBtn = document.getElementById('batch-manage-btn');
+  if (batchManageBtn) {
+    batchManageBtn.addEventListener('click', () => {
+      toggleSelectMode(!isSelectMode);
+    });
+  }
+
+  const batchCancelBtn = document.getElementById('batch-cancel-btn');
+  if (batchCancelBtn) {
+    batchCancelBtn.addEventListener('click', () => {
+      toggleSelectMode(false);
+    });
+  }
+
+  const batchMoveBtn = document.getElementById('batch-move-btn');
+  if (batchMoveBtn) {
+    batchMoveBtn.addEventListener('click', () => {
+      if (selectedBookIds.size === 0) return;
+      openFolderSelectDialog(async (folderName) => {
+        for (const bookId of selectedBookIds) {
+          await library.updateBookFolder(bookId, folderName);
+        }
+        toggleSelectMode(false);
+        await renderBookshelf();
+      });
+    });
+  }
+
+  const batchDeleteBtn = document.getElementById('batch-delete-btn');
+  if (batchDeleteBtn) {
+    batchDeleteBtn.addEventListener('click', async () => {
+      if (selectedBookIds.size === 0) return;
+      if (confirm(`確定要刪除選中的 ${selectedBookIds.size} 本書籍嗎？`)) {
+        for (const bookId of selectedBookIds) {
+          await library.deleteBook(bookId);
+        }
+        toggleSelectMode(false);
+        await renderBookshelf();
+      }
+    });
+  }
+
+  const breadcrumbBack = document.getElementById('breadcrumb-back-btn');
+  if (breadcrumbBack) {
+    breadcrumbBack.addEventListener('click', async () => {
+      currentFolder = null;
+      await renderBookshelf();
+    });
+    breadcrumbBack.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      breadcrumbBack.classList.add('drag-over');
+    });
+    breadcrumbBack.addEventListener('dragleave', () => {
+      breadcrumbBack.classList.remove('drag-over');
+    });
+    breadcrumbBack.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      breadcrumbBack.classList.remove('drag-over');
+      const bookId = e.dataTransfer.getData('text/plain');
+      if (bookId) {
+        await library.updateBookFolder(bookId, null);
+        await renderBookshelf();
+      }
+    });
+  }
+
+  // 註冊新建/重命名資料夾對話框事件
+  const folderDialogCancel = document.getElementById('folder-dialog-cancel');
+  if (folderDialogCancel) {
+    folderDialogCancel.addEventListener('click', () => {
+      document.getElementById('folder-dialog').close();
+    });
+  }
+
+  const folderDialog = document.getElementById('folder-dialog');
+  if (folderDialog) {
+    folderDialog.addEventListener('submit', (e) => {
+      const input = document.getElementById('folder-name-input');
+      const name = input.value.trim();
+      if (name && folderDialogCallback) {
+        folderDialogCallback(name);
+      }
+    });
+  }
+
+  // 註冊資料夾選擇對話框取消事件
+  const folderSelectCancel = document.getElementById('folder-select-cancel');
+  if (folderSelectCancel) {
+    folderSelectCancel.addEventListener('click', () => {
+      document.getElementById('folder-select-dialog').close();
+    });
+  }
+ 
+  // 閱讀統計按鈕與對話框
+  const statsBtn = document.getElementById('stats-btn');
+  if (statsBtn) {
+    statsBtn.addEventListener('click', openGlobalStatsModal);
+  }
+
+  const closeStatsBtn = document.getElementById('close-stats-modal');
+  if (closeStatsBtn) {
+    closeStatsBtn.addEventListener('click', closeStatsModal);
+  }
+
+  const statsBackdrop = document.getElementById('stats-modal-backdrop');
+  if (statsBackdrop) {
+    statsBackdrop.addEventListener('click', closeStatsModal);
+  }
+
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
@@ -183,18 +305,24 @@ function initUIEventBindings() {
     restoreFileInput.addEventListener('change', handleImportBackup);
   }
 
-  // 閱讀統計按鈕與對話框
-  const statsBtn = document.getElementById('stats-btn');
-  if (statsBtn) {
-    statsBtn.addEventListener('click', openGlobalStatsModal);
-  }
-  const closeStatsBtn = document.getElementById('close-stats-modal');
-  const statsBackdrop = document.getElementById('stats-modal-backdrop');
-  if (closeStatsBtn) {
-    closeStatsBtn.addEventListener('click', closeStatsModal);
-  }
-  if (statsBackdrop) {
-    statsBackdrop.addEventListener('click', closeStatsModal);
+  // 更多操作下拉選單
+  const moreActionsBtn = document.getElementById('more-actions-btn');
+  const moreActionsDropdown = document.getElementById('more-actions-dropdown');
+  if (moreActionsBtn && moreActionsDropdown) {
+    moreActionsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      moreActionsDropdown.classList.toggle('active');
+    });
+    document.addEventListener('click', (e) => {
+      if (!moreActionsDropdown.contains(e.target)) {
+        moreActionsDropdown.classList.remove('active');
+      }
+    });
+    moreActionsDropdown.querySelectorAll('.dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        moreActionsDropdown.classList.remove('active');
+      });
+    });
   }
 
   // 統計 Tab 切換
@@ -874,18 +1002,178 @@ async function renderBookshelf(searchQuery = '') {
   // 清理舊的封面 Object URL，防記憶體洩漏
   clearCoverUrls();
 
+  // 更新麵包屑與標題 UI 顯示
+  const titleMain = document.getElementById('library-title-main');
+  const breadcrumb = document.getElementById('library-breadcrumb');
+  const breadcrumbCurrent = document.getElementById('breadcrumb-current-folder');
+
+  // 如果正在搜尋，不展示資料夾與麵包屑，直接顯示所有匹配書籍
+  const isSearching = searchQuery.trim() !== '';
+
+  if (currentFolder && !isSearching) {
+    if (titleMain) titleMain.style.display = 'none';
+    if (breadcrumb) {
+      breadcrumb.style.display = 'flex';
+      if (breadcrumbCurrent) breadcrumbCurrent.textContent = currentFolder;
+    }
+  } else {
+    if (titleMain) titleMain.style.display = 'block';
+    if (breadcrumb) breadcrumb.style.display = 'none';
+  }
+
   const books = await library.getAllBooks();
   
-  // 過濾搜尋
-  const filteredBooks = books.filter(b => {
-    const q = searchQuery.toLowerCase();
-    return b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q);
+  // 1. 計算每個資料夾內書籍的個數
+  const folderCounts = {};
+  books.forEach(b => {
+    if (b.folder) {
+      folderCounts[b.folder] = (folderCounts[b.folder] || 0) + 1;
+    }
   });
 
-  if (filteredBooks.length === 0) {
-    emptyState.style.display = 'flex';
-    shelf.style.display = 'none';
-    return;
+  // 2. 獲取所有有效的自定義與包含書籍的資料夾
+  const customFolders = getCustomFolders();
+  const activeFolders = Array.from(new Set([...customFolders, ...Object.keys(folderCounts)]));
+
+  // 3. 渲染資料夾卡片 (僅在根目錄且沒有搜尋時渲染)
+  if (!currentFolder && !isSearching) {
+    activeFolders.forEach(folderName => {
+      const folderCard = document.createElement('div');
+      folderCard.className = 'folder-card';
+      folderCard.setAttribute('data-folder-name', folderName);
+      
+      // 設置為拖曳釋放目標
+      folderCard.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        folderCard.classList.add('drag-over');
+      });
+      folderCard.addEventListener('dragleave', () => {
+        folderCard.classList.remove('drag-over');
+      });
+      folderCard.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        folderCard.classList.remove('drag-over');
+        const bookId = e.dataTransfer.getData('text/plain');
+        if (bookId) {
+          await library.updateBookFolder(bookId, folderName);
+          await renderBookshelf();
+        }
+      });
+
+      const count = folderCounts[folderName] || 0;
+      const folderBooks = books.filter(b => b.folder === folderName);
+      
+      const percentSum = folderBooks.reduce((sum, b) => sum + (b.progress?.percent || 0), 0);
+      const avgPercent = folderBooks.length > 0 ? Math.round(percentSum / folderBooks.length) : 0;
+      const booksCountText = getMsg('folder_books_count', [count]) || `${count} books`;
+      
+      let coverGridHtml = '';
+      if (folderBooks.length > 0) {
+        const topBooks = folderBooks.slice(0, 4);
+        coverGridHtml = `<div class="folder-covers-grid">`;
+        for (let i = 0; i < 4; i++) {
+          if (i < topBooks.length) {
+            const book = topBooks[i];
+            let bookCoverUrl = '';
+            if (book.cover) {
+              if (book.cover instanceof Blob) {
+                bookCoverUrl = URL.createObjectURL(book.cover);
+                activeCoverUrls.push(bookCoverUrl);
+              } else if (typeof book.cover === 'string') {
+                bookCoverUrl = book.cover;
+              }
+            }
+            if (bookCoverUrl) {
+              coverGridHtml += `<img class="folder-cover-item" src="${bookCoverUrl}" alt="${book.title}">`;
+            } else {
+              coverGridHtml += `
+                <div class="folder-cover-placeholder">
+                  <span>${book.format.toUpperCase()}</span>
+                </div>
+              `;
+            }
+          } else {
+            coverGridHtml += `<div class="folder-cover-placeholder empty-cell"></div>`;
+          }
+        }
+        coverGridHtml += `</div>`;
+      } else {
+        coverGridHtml = `
+          <svg class="folder-icon-large" viewBox="0 0 24 24">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        `;
+      }
+      
+      folderCard.innerHTML = `
+        <button class="folder-action-btn folder-rename-btn" title="${getMsg('rename_folder') || '重命名'}">
+          <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        </button>
+        <button class="folder-action-btn folder-delete-btn" title="${getMsg('delete_book_title') || '刪除'}">
+          <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        </button>
+        <div class="folder-icon-container">
+          ${coverGridHtml}
+          <span class="folder-count-badge">${count}</span>
+        </div>
+        <div class="folder-info">
+          <h3 class="folder-title" title="${folderName}">${folderName}</h3>
+          <p class="folder-books-count">${booksCountText}</p>
+          <div class="book-progress-wrapper">
+            <div class="book-progress-info">
+              <span>${getMsg('reading_progress', [avgPercent])}</span>
+            </div>
+            <div class="book-progress-bar">
+              <div class="book-progress-fill" style="width: ${avgPercent}%;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 點擊進入資料夾
+      folderCard.addEventListener('click', async (e) => {
+        if (e.target.closest('.folder-action-btn')) return;
+        currentFolder = folderName;
+        await renderBookshelf();
+      });
+
+      // 重命名事件
+      folderCard.querySelector('.folder-rename-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openFolderDialog(folderName);
+      });
+
+      // 刪除事件
+      folderCard.querySelector('.folder-delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteFolder(folderName);
+      });
+
+      shelf.appendChild(folderCard);
+    });
+  }
+
+  // 4. 依照搜尋條件和當前資料夾篩選書籍
+  const filteredBooks = books.filter(b => {
+    if (isSearching) {
+      const q = searchQuery.toLowerCase();
+      return b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q);
+    } else {
+      if (currentFolder) {
+        return b.folder === currentFolder;
+      } else {
+        return !b.folder; // 根目錄僅展示未分類書籍
+      }
+    }
+  });
+
+  if (filteredBooks.length === 0 && (!currentFolder || isSearching)) {
+    // 根目錄無內容或搜尋無內容
+    if (shelf.children.length === 0) {
+      emptyState.style.display = 'flex';
+      shelf.style.display = 'none';
+      return;
+    }
   }
 
   emptyState.style.display = 'none';
@@ -895,11 +1183,17 @@ async function renderBookshelf(searchQuery = '') {
     const card = document.createElement('div');
     card.className = 'book-card';
     card.setAttribute('data-id', book.id);
+    if (isSelectMode && selectedBookIds.has(book.id)) {
+      card.classList.add('selected');
+    }
     
     // 計算進度
     const percent = Math.round(book.progress?.percent || 0);
 
     card.innerHTML = `
+      <div class="book-card-checkbox-overlay">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
       <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
         <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
       </button>
@@ -931,6 +1225,20 @@ async function renderBookshelf(searchQuery = '') {
       </div>
     `;
 
+    // 拖曳事件綁定
+    card.setAttribute('draggable', 'true');
+    card.addEventListener('dragstart', (e) => {
+      if (isSelectMode) {
+        e.preventDefault();
+        return;
+      }
+      card.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', book.id);
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+    });
+
     // 動態加載封面
     const coverContainer = card.querySelector('.book-cover-container');
     let coverUrl = '';
@@ -960,7 +1268,7 @@ async function renderBookshelf(searchQuery = '') {
       `;
     }
 
-    // 動態綁定刪除事件 (遵循 CSP 安全政策，不使用 inline onclick)
+    // 動態綁定刪除事件
     const deleteBtn = card.querySelector('.book-delete-btn');
     deleteBtn.addEventListener('click', async (event) => {
       event.stopPropagation();
@@ -983,7 +1291,15 @@ async function renderBookshelf(searchQuery = '') {
       });
     }
 
-    card.addEventListener('click', () => openBook(book.id));
+    // 點擊事件：多選模式下為選中切換，正常模式下打開書籍
+    card.addEventListener('click', () => {
+      if (isSelectMode) {
+        toggleBookSelection(book.id, card);
+      } else {
+        openBook(book.id);
+      }
+    });
+    
     shelf.appendChild(card);
   });
 }
@@ -2773,24 +3089,35 @@ function isMobileDevice() {
 function initThemeAndStyles() {
   // 從 Storage 讀取設定，否則採用預設值
   chrome.storage.local.get(['theme', 'fontSize', 'fontFamily', 'lineHeight', 'marginWidth', 'marginTop', 'marginBottom', 'layoutMode', 'pagesDisplayed', 'ttsHighlightStyle', 'ttsRate', 'paperTexture', 'pagePadding', 'transitionEffect', 'ttsOnlyEdge'], (res) => {
-    setTheme(res.theme || 'sepia');
-    setFontFamily(res.fontFamily || 'font-lxgw');
-    setFontSize(res.fontSize || 19);
-    setLineHeight(res.lineHeight || 1.5);
-    setMargins(res.marginWidth || 5);
-    setMarginTop(50); // 強制設定上方留白為 50px
-    setMarginBottom(50); // 強制設定下方留白為 50px
-    setPagePadding(40); // 強制設定紙張邊框留白為 40px
+    // 優先使用當前書籍個別的設定，其次使用全局設定，最後使用系統預設
+    const getPref = (key, defaultVal) => {
+      if (currentBook && currentBook.progress && currentBook.progress[key] !== undefined) {
+        return currentBook.progress[key];
+      }
+      return res[key] !== undefined ? res[key] : defaultVal;
+    };
+
+    const resolvedTheme = getPref('theme', 'sepia');
+    const resolvedFontFamily = getPref('fontFamily', 'font-lxgw');
+    const resolvedFontSize = getPref('fontSize', 19);
+    const resolvedLineHeight = getPref('lineHeight', 1.5);
+    const resolvedMarginWidth = getPref('marginWidth', 5);
+
+    setTheme(resolvedTheme, false);
+    setFontFamily(resolvedFontFamily, false);
+    setFontSize(resolvedFontSize, false);
+    setLineHeight(resolvedLineHeight, false);
+    setMargins(resolvedMarginWidth, false);
+    setMarginTop(50, false); // 強制設定上方留白為 50px
+    setMarginBottom(50, false); // 強制設定下方留白為 50px
+    setPagePadding(40, false); // 強制設定紙張邊框留白為 40px
     
     // 是否僅顯示 Edge 語音
     ttsOnlyEdge = res.ttsOnlyEdge === true;
     updateEdgeFilterButtonVisibility();
     
     // 朗讀速度
-    let savedRate = res.ttsRate || 1.0;
-    if (currentBook && currentBook.progress && typeof currentBook.progress.ttsRate === 'number') {
-      savedRate = currentBook.progress.ttsRate;
-    }
+    let savedRate = getPref('ttsRate', 1.0);
     tts.setRate(savedRate);
     document.getElementById('tts-speed-slider').value = savedRate;
     document.getElementById('tts-speed-val').textContent = `${savedRate.toFixed(1)}x`;
@@ -2801,25 +3128,25 @@ function initThemeAndStyles() {
     document.getElementById('tts-highlight-style-select').value = highlightStyle;
     
     // 顯示頁數
-    const pagesDisplayed = res.pagesDisplayed || '2';
-    setPagesDisplayed(pagesDisplayed);
+    const pagesDisplayed = getPref('pagesDisplayed', '2');
+    setPagesDisplayed(pagesDisplayed, false);
     document.getElementById('pages-displayed-select').value = pagesDisplayed;
 
     // 紙張底紋
-    const savedTexture = res.paperTexture || 'texture-aged';
-    setPaperTexture(savedTexture);
+    const savedTexture = getPref('paperTexture', 'texture-aged');
+    setPaperTexture(savedTexture, false);
     document.getElementById('paper-texture-select').value = savedTexture;
 
     // 翻頁動畫效果 (移除 3D Flip，若舊設定為 flip 則降級為 slide)
-    let transitionEffect = res.transitionEffect || 'slide';
+    let transitionEffect = getPref('transitionEffect', 'slide');
     if (transitionEffect === 'flip') {
       transitionEffect = 'slide';
     }
-    setTransitionEffect(transitionEffect);
+    setTransitionEffect(transitionEffect, false);
     document.getElementById('transition-effect-select').value = transitionEffect;
 
     // 版面排版模式初始化
-    let layoutMode = res.layoutMode || 'paginated';
+    let layoutMode = getPref('layoutMode', 'paginated');
     if (isMobileDevice()) {
       layoutMode = 'scroll';
       // 隱藏移動端的版面排版模式選擇容器
@@ -2831,39 +3158,54 @@ function initThemeAndStyles() {
     toggleLayoutMode(layoutMode, false); // 初始化時不寫入 storage
 
     // 反向初始化 UI 控制器值
-    document.getElementById('font-family-select').value = res.fontFamily || 'font-lxgw';
-    document.getElementById('font-size-slider').value = res.fontSize || 19;
-    document.getElementById('line-height-slider').value = res.lineHeight || 1.5;
-    document.getElementById('margin-width-slider').value = res.marginWidth || 5;
+    document.getElementById('font-family-select').value = resolvedFontFamily;
+    document.getElementById('font-size-slider').value = resolvedFontSize;
+    document.getElementById('line-height-slider').value = resolvedLineHeight;
+    document.getElementById('margin-width-slider').value = resolvedMarginWidth;
     document.getElementById('margin-top-slider').value = 50;
     document.getElementById('margin-bottom-slider').value = 50;
     document.getElementById('page-padding-slider').value = 40;
     
     document.querySelectorAll('.theme-dot').forEach(dot => {
-      if (dot.getAttribute('data-theme') === (res.theme || 'sepia')) dot.classList.add('active');
+      if (dot.getAttribute('data-theme') === resolvedTheme) dot.classList.add('active');
       else dot.classList.remove('active');
     });
   });
 }
 
-function setTheme(theme) {
+function setTheme(theme, writeToStorage = true) {
   const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
   classesToRemove.forEach(c => document.body.classList.remove(c));
   document.body.classList.add(`theme-${theme}`);
-  chrome.storage.local.set({ theme });
+  if (writeToStorage) {
+    chrome.storage.local.set({ theme });
+    if (currentBook) {
+      saveProgressDebounced({ theme });
+    }
+  }
 }
 
-function setFontFamily(fontFamily) {
+function setFontFamily(fontFamily, writeToStorage = true) {
   const container = document.getElementById('reader-container');
   container.className = `reader-container ${fontFamily}`;
-  chrome.storage.local.set({ fontFamily });
+  if (writeToStorage) {
+    chrome.storage.local.set({ fontFamily });
+    if (currentBook) {
+      saveProgressDebounced({ fontFamily });
+    }
+  }
 }
 
-function setFontSize(size) {
+function setFontSize(size, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   document.getElementById('book-content').style.fontSize = `${size}px`;
   document.getElementById('font-size-val').textContent = `${size}px`;
-  chrome.storage.local.set({ fontSize: size });
+  if (writeToStorage) {
+    chrome.storage.local.set({ fontSize: size });
+    if (currentBook) {
+      saveProgressDebounced({ fontSize: size });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
@@ -2871,92 +3213,132 @@ function setFontSize(size) {
 }
 
 // 變更行距樣式並重算佈局
-function setLineHeight(val) {
+function setLineHeight(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   document.getElementById('book-content').style.lineHeight = val;
   document.getElementById('line-height-val').textContent = val;
-  chrome.storage.local.set({ lineHeight: val });
+  if (writeToStorage) {
+    chrome.storage.local.set({ lineHeight: val });
+    if (currentBook) {
+      saveProgressDebounced({ lineHeight: val });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
   }
 }
 
-function setMargins(val) {
+function setMargins(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   const container = document.getElementById('reader-container');
   container.style.paddingLeft = `${val}%`;
   container.style.paddingRight = `${val}%`;
   document.getElementById('margin-width-val').textContent = `${val}%`;
-  chrome.storage.local.set({ marginWidth: val });
+  if (writeToStorage) {
+    chrome.storage.local.set({ marginWidth: val });
+    if (currentBook) {
+      saveProgressDebounced({ marginWidth: val });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
   }
 }
 
-function setMarginTop(val) {
+function setMarginTop(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   const intVal = parseInt(val) || 40;
   document.getElementById('margin-top-val').textContent = `${intVal}px`;
-  chrome.storage.local.set({ marginTop: intVal });
+  if (writeToStorage) {
+    chrome.storage.local.set({ marginTop: intVal });
+    if (currentBook) {
+      saveProgressDebounced({ marginTop: intVal });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
   }
 }
 
-function setMarginBottom(val) {
+function setMarginBottom(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   const intVal = parseInt(val) || 40;
   document.getElementById('margin-bottom-val').textContent = `${intVal}px`;
-  chrome.storage.local.set({ marginBottom: intVal });
+  if (writeToStorage) {
+    chrome.storage.local.set({ marginBottom: intVal });
+    if (currentBook) {
+      saveProgressDebounced({ marginBottom: intVal });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
   }
 }
 
-function setPagePadding(val) {
+function setPagePadding(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   const intVal = parseInt(val);
   const valEl = document.getElementById('page-padding-val');
   if (valEl) {
     valEl.textContent = `${intVal}px`;
   }
-  chrome.storage.local.set({ pagePadding: intVal });
+  if (writeToStorage) {
+    chrome.storage.local.set({ pagePadding: intVal });
+    if (currentBook) {
+      saveProgressDebounced({ pagePadding: intVal });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
   }
 }
 
-function setPagesDisplayed(val) {
+function setPagesDisplayed(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
   currentPagesDisplayed = val || 'auto';
-  chrome.storage.local.set({ pagesDisplayed: currentPagesDisplayed });
+  if (writeToStorage) {
+    chrome.storage.local.set({ pagesDisplayed: currentPagesDisplayed });
+    if (currentBook) {
+      saveProgressDebounced({ pagesDisplayed: currentPagesDisplayed });
+    }
+  }
   applyLayoutDimensions();
   if (document.body.classList.contains('layout-paginated')) {
     restoreScrollToElementIndex(topIdx);
   }
 }
 
-function setPaperTexture(texture) {
+function setPaperTexture(texture, writeToStorage = true) {
   currentPaperTexture = texture || 'texture-classic';
   // 移除所有 texture-* 類別
   const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('texture-'));
   classesToRemove.forEach(c => document.body.classList.remove(c));
   document.body.classList.add(currentPaperTexture);
-  chrome.storage.local.set({ paperTexture: currentPaperTexture });
+  if (writeToStorage) {
+    chrome.storage.local.set({ paperTexture: currentPaperTexture });
+    if (currentBook) {
+      saveProgressDebounced({ paperTexture: currentPaperTexture });
+    }
+  }
 }
 
-function setTransitionEffect(effect) {
+function setTransitionEffect(effect, writeToStorage = true) {
   const html = document.documentElement;
   // 移除所有 transition- 類別
   const classesToRemove = Array.from(html.classList).filter(c => c.startsWith('transition-'));
   classesToRemove.forEach(c => html.classList.remove(c));
   html.classList.add(`transition-${effect}`);
-  chrome.storage.local.set({ transitionEffect: effect });
+  if (writeToStorage) {
+    chrome.storage.local.set({ transitionEffect: effect });
+    if (currentBook) {
+      saveProgressDebounced({ transitionEffect: effect });
+    }
+  }
 }
 
 // 動態生成每頁紙張底紋覆蓋卡片，與 CSS 多欄分頁對齊
@@ -3257,6 +3639,9 @@ function toggleLayoutMode(mode, saveToStorage = true) {
   
   if (saveToStorage && !isMobileDevice()) {
     chrome.storage.local.set({ layoutMode: mode });
+    if (currentBook) {
+      saveProgressDebounced({ layoutMode: mode });
+    }
   }
 }
 
@@ -3844,47 +4229,62 @@ async function handleExportBackup() {
       return;
     }
 
-    // 2. 將書籍的 Blob 檔案與 Cover 轉換成 Base64
+    // 2. 使用 JSZip 構造壓縮包
+    if (typeof window.JSZip === 'undefined') {
+      throw new Error('JSZip 庫未載入，無法進行備份！');
+    }
+    const zip = new window.JSZip();
     const serializedBooks = [];
-    for (const book of books) {
-      let fileDataUrl = '';
-      if (book.file instanceof Blob) {
-        fileDataUrl = await blobToDataUrl(book.file);
-      }
-      
-      let coverDataUrl = '';
-      if (book.cover instanceof Blob) {
-        coverDataUrl = await blobToDataUrl(book.cover);
-      } else if (typeof book.cover === 'string') {
-        coverDataUrl = book.cover;
-      }
 
-      serializedBooks.push({
+    for (const book of books) {
+      const meta = {
         id: book.id,
         title: book.title,
         author: book.author,
         format: book.format,
-        fileDataUrl,
-        cover: coverDataUrl,
         size: book.size,
         addedAt: book.addedAt,
         lastReadAt: book.lastReadAt,
         progress: book.progress,
         bookmarks: book.bookmarks || [],
         notes: book.notes || [],
-        stats: book.stats || null
-      });
+        stats: book.stats || null,
+        folder: book.folder || null,
+        hasFile: false,
+        coverType: 'none',
+        coverValue: ''
+      };
+
+      if (book.file instanceof Blob) {
+        meta.hasFile = true;
+        // 添加書籍二進制檔案
+        zip.file(`books/${book.id}.bin`, book.file);
+      }
+
+      if (book.cover instanceof Blob) {
+        meta.coverType = 'blob';
+        // 添加封面二進制檔案
+        zip.file(`covers/${book.id}.bin`, book.cover);
+      } else if (typeof book.cover === 'string') {
+        meta.coverType = 'string';
+        meta.coverValue = book.cover;
+      }
+
+      serializedBooks.push(meta);
     }
 
-    // 3. 構造備份 JSON
+    // 3. 構造備份 JSON 并加入 zip
     const backupPayload = {
-      version: '1.0',
+      version: '2.0',
       backupAt: Date.now(),
-      books: serializedBooks
+      books: serializedBooks,
+      customFolders: getCustomFolders()
     };
 
-    const jsonString = JSON.stringify(backupPayload);
-    const backupBlob = new Blob([jsonString], { type: 'application/json' });
+    zip.file('metadata.json', JSON.stringify(backupPayload));
+    
+    // 生成 zip 的 Blob 檔
+    const backupBlob = await zip.generateAsync({ type: 'blob' });
     const downloadUrl = URL.createObjectURL(backupBlob);
 
     // 4. 觸發下載
@@ -3895,7 +4295,7 @@ async function handleExportBackup() {
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
-    const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.json`;
+    const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
     
     const a = document.createElement('a');
     a.href = downloadUrl;
@@ -3924,52 +4324,134 @@ function handleImportBackup(e) {
   if (!restoreBtn) return;
   const originalHtml = restoreBtn.innerHTML;
 
-  const reader = new FileReader();
-  reader.onload = async (event) => {
-    try {
-      restoreBtn.disabled = true;
-      restoreBtn.innerHTML = `
-        <span class="btn-icon">
-          <svg class="svg-icon" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-        </span>
-        <span>${getMsg('restoring')}</span>
-      `;
+  restoreBtn.disabled = true;
+  restoreBtn.innerHTML = `
+    <span class="btn-icon">
+      <svg class="svg-icon" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+    </span>
+    <span>${getMsg('restoring')}</span>
+  `;
 
-      const data = JSON.parse(event.target.result);
-      if (!data || data.version !== '1.0' || !Array.isArray(data.books)) {
-        alert(getMsg('invalid_backup_file'));
-        return;
+  const performRestore = async () => {
+    try {
+      let isZip = false;
+      let zip;
+      
+      if (typeof window.JSZip !== 'undefined') {
+        try {
+          zip = await window.JSZip.loadAsync(file);
+          isZip = true;
+        } catch (zipErr) {
+          isZip = false;
+        }
       }
 
-      // 還原每一本書
-      for (const b of data.books) {
-        let fileBlob = null;
-        if (b.fileDataUrl) {
-          fileBlob = dataURLtoBlob(b.fileDataUrl);
+      if (isZip) {
+        // 使用 JSZip 載入備份 (v2.0)
+        const metaFile = zip.file('metadata.json');
+        if (!metaFile) {
+          throw new Error('無效的備份檔案，ZIP 內找不到 metadata.json！');
         }
 
-        let coverBlobOrString = b.cover;
-        if (b.cover && b.cover.startsWith('data:')) {
-          coverBlobOrString = dataURLtoBlob(b.cover);
+        const metaText = await metaFile.async('string');
+        const data = JSON.parse(metaText);
+
+        if (!data || (data.version !== '2.0' && data.version !== '1.0') || !Array.isArray(data.books)) {
+          alert(getMsg('invalid_backup_file'));
+          return;
         }
 
-        const book = {
-          id: b.id,
-          title: b.title,
-          author: b.author,
-          format: b.format,
-          file: fileBlob,
-          cover: coverBlobOrString,
-          size: b.size,
-          addedAt: b.addedAt,
-          lastReadAt: b.lastReadAt,
-          progress: b.progress,
-          bookmarks: b.bookmarks || [],
-          notes: b.notes || [],
-          stats: b.stats || null
-        };
+        // 還原每一本書
+        for (const b of data.books) {
+          let fileBlob = null;
+          if (b.hasFile) {
+            const fileEntry = zip.file(`books/${b.id}.bin`);
+            if (fileEntry) {
+              fileBlob = await fileEntry.async('blob');
+            }
+          }
 
-        await library.importBook(book);
+          let coverBlobOrString = '';
+          if (b.coverType === 'blob') {
+            const coverEntry = zip.file(`covers/${b.id}.bin`);
+            if (coverEntry) {
+              coverBlobOrString = await coverEntry.async('blob');
+            }
+          } else if (b.coverType === 'string') {
+            coverBlobOrString = b.coverValue;
+          }
+
+          const book = {
+            id: b.id,
+            title: b.title,
+            author: b.author,
+            format: b.format,
+            file: fileBlob,
+            cover: coverBlobOrString,
+            folder: b.folder || null,
+            size: b.size,
+            addedAt: b.addedAt,
+            lastReadAt: b.lastReadAt,
+            progress: b.progress,
+            bookmarks: b.bookmarks || [],
+            notes: b.notes || [],
+            stats: b.stats || null
+          };
+
+          await library.importBook(book);
+        }
+
+        // 合併並還原自定義資料夾列表
+        if (data.customFolders && Array.isArray(data.customFolders)) {
+          const existingFolders = getCustomFolders();
+          const mergedFolders = Array.from(new Set([...existingFolders, ...data.customFolders]));
+          saveCustomFolders(mergedFolders);
+        }
+      } else {
+        // 否則為舊版 JSON 備份 (v1.0)
+        const jsonText = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => resolve(event.target.result);
+          reader.onerror = () => reject(new Error('讀取 JSON 檔案失敗'));
+          reader.readAsText(file);
+        });
+
+        const data = JSON.parse(jsonText);
+        if (!data || data.version !== '1.0' || !Array.isArray(data.books)) {
+          alert(getMsg('invalid_backup_file'));
+          return;
+        }
+
+        // 還原每一本書
+        for (const b of data.books) {
+          let fileBlob = null;
+          if (b.fileDataUrl) {
+            fileBlob = dataURLtoBlob(b.fileDataUrl);
+          }
+
+          let coverBlobOrString = b.cover;
+          if (b.cover && b.cover.startsWith('data:')) {
+            coverBlobOrString = dataURLtoBlob(b.cover);
+          }
+
+          const book = {
+            id: b.id,
+            title: b.title,
+            author: b.author,
+            format: b.format,
+            file: fileBlob,
+            cover: coverBlobOrString,
+            size: b.size,
+            addedAt: b.addedAt,
+            lastReadAt: b.lastReadAt,
+            progress: b.progress,
+            bookmarks: b.bookmarks || [],
+            notes: b.notes || [],
+            stats: b.stats || null
+          };
+
+          await library.importBook(book);
+        }
       }
 
       await renderBookshelf();
@@ -3984,11 +4466,7 @@ function handleImportBackup(e) {
     }
   };
 
-  reader.onerror = () => {
-    alert(getMsg('restore_failed'));
-  };
-
-  reader.readAsText(file);
+  performRestore();
 }
 
 
@@ -4212,3 +4690,231 @@ async function openSingleBookStatsModal(bookId) {
   await renderBookStats(bookId);
 }
 window.openSingleBookStatsModal = openSingleBookStatsModal;
+
+
+// ==================== 15. 書庫資料夾與批量管理邏輯 ====================
+
+// 獲取自定義資料夾列表
+function getCustomFolders() {
+  const foldersJson = localStorage.getItem('edgereader_custom_folders');
+  return foldersJson ? JSON.parse(foldersJson) : [];
+}
+
+// 保存自定義資料夾列表
+function saveCustomFolders(folders) {
+  localStorage.setItem('edgereader_custom_folders', JSON.stringify(folders));
+}
+
+// 創建新資料夾
+async function createFolder(folderName) {
+  if (!folderName) return;
+  const folders = getCustomFolders();
+  if (folders.includes(folderName)) {
+    alert('資料夾已存在！');
+    return;
+  }
+  folders.push(folderName);
+  saveCustomFolders(folders);
+  document.getElementById('folder-dialog').close();
+  await renderBookshelf();
+}
+
+// 重命名資料夾
+async function renameFolder(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return;
+  const folders = getCustomFolders();
+  
+  // 更新 localStorage 列表
+  const idx = folders.indexOf(oldName);
+  if (idx > -1) {
+    folders[idx] = newName;
+  } else {
+    folders.push(newName);
+  }
+  saveCustomFolders(folders);
+
+  // 更新所有屬於該資料夾的書籍
+  const books = await library.getAllBooks();
+  for (const book of books) {
+    if (book.folder === oldName) {
+      await library.updateBookFolder(book.id, newName);
+    }
+  }
+
+  if (currentFolder === oldName) {
+    currentFolder = newName;
+  }
+  
+  document.getElementById('folder-dialog').close();
+  await renderBookshelf();
+}
+
+// 刪除資料夾
+async function deleteFolder(folderName) {
+  if (!folderName) return;
+  if (confirm(getMsg('confirm_delete_folder') || '確定要刪除此資料夾嗎？資料夾內的書籍將被移至根目錄。')) {
+    const folders = getCustomFolders();
+    const idx = folders.indexOf(folderName);
+    if (idx > -1) {
+      folders.splice(idx, 1);
+      saveCustomFolders(folders);
+    }
+
+    // 將資料夾內的所有書籍移至根目錄 (null)
+    const books = await library.getAllBooks();
+    for (const book of books) {
+      if (book.folder === folderName) {
+        await library.updateBookFolder(book.id, null);
+      }
+    }
+
+    if (currentFolder === folderName) {
+      currentFolder = null;
+    }
+
+    await renderBookshelf();
+  }
+}
+
+// 切換批量選擇模式
+function toggleSelectMode(active) {
+  isSelectMode = active;
+  const shelf = document.getElementById('bookshelf-grid');
+  const batchBar = document.getElementById('batch-action-bar');
+  const manageBtn = document.getElementById('batch-manage-btn');
+
+  if (isSelectMode) {
+    if (shelf) shelf.classList.add('select-mode-active');
+    if (batchBar) batchBar.classList.add('active');
+    selectedBookIds.clear();
+    updateBatchActionBar();
+    if (manageBtn) manageBtn.classList.add('active');
+  } else {
+    if (shelf) shelf.classList.remove('select-mode-active');
+    if (batchBar) batchBar.classList.remove('active');
+    selectedBookIds.clear();
+    document.querySelectorAll('.book-card.selected').forEach(card => card.classList.remove('selected'));
+    if (manageBtn) manageBtn.classList.remove('active');
+  }
+}
+
+// 切換單本書籍選中狀態
+function toggleBookSelection(bookId, card) {
+  if (selectedBookIds.has(bookId)) {
+    selectedBookIds.delete(bookId);
+    card.classList.remove('selected');
+  } else {
+    selectedBookIds.add(bookId);
+    card.classList.add('selected');
+  }
+  updateBatchActionBar();
+}
+
+// 更新批量操作欄狀態
+function updateBatchActionBar() {
+  const count = selectedBookIds.size;
+  const countSpan = document.getElementById('batch-selected-count');
+  if (countSpan) {
+    countSpan.textContent = getMsg('batch_selected_count', [count]) || `Selected: ${count} books`;
+  }
+
+  const moveBtn = document.getElementById('batch-move-btn');
+  const deleteBtn = document.getElementById('batch-delete-btn');
+
+  if (moveBtn && deleteBtn) {
+    if (count > 0) {
+      moveBtn.disabled = false;
+      deleteBtn.disabled = false;
+    } else {
+      moveBtn.disabled = true;
+      deleteBtn.disabled = true;
+    }
+  }
+}
+
+// 打開新建/重命名資料夾對話框
+let folderDialogCallback = null;
+function openFolderDialog(editingFolder = null) {
+  const dialog = document.getElementById('folder-dialog');
+  const title = document.getElementById('folder-dialog-title');
+  const input = document.getElementById('folder-name-input');
+  
+  if (editingFolder) {
+    if (title) title.textContent = getMsg('rename_folder') || '重命名資料夾';
+    if (input) input.value = editingFolder;
+    folderDialogCallback = (newName) => renameFolder(editingFolder, newName);
+  } else {
+    if (title) title.textContent = getMsg('create_folder') || '新建資料夾';
+    if (input) input.value = '';
+    folderDialogCallback = (newName) => createFolder(newName);
+  }
+
+  if (dialog) dialog.showModal();
+}
+
+// 打開資料夾選擇對話框 (用於批量移動)
+function openFolderSelectDialog(onSelected) {
+  const dialog = document.getElementById('folder-select-dialog');
+  const list = document.getElementById('folder-select-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const folders = getCustomFolders();
+  const allFolders = Array.from(new Set([...folders]));
+
+  // 移出到根目錄選項
+  const rootLi = document.createElement('li');
+  rootLi.className = 'folder-select-item';
+  rootLi.innerHTML = `
+    <svg class="folder-select-item-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+    <span>${getMsg('move_to_root') || '移出資料夾 (根目錄)'}</span>
+  `;
+  rootLi.addEventListener('click', () => {
+    onSelected(null);
+    if (dialog) dialog.close();
+  });
+  list.appendChild(rootLi);
+
+  // 現有資料夾選項
+  allFolders.forEach(folderName => {
+    const li = document.createElement('li');
+    li.className = 'folder-select-item';
+    li.innerHTML = `
+      <svg class="folder-select-item-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      <span>${folderName}</span>
+    `;
+    li.addEventListener('click', () => {
+      onSelected(folderName);
+      if (dialog) dialog.close();
+    });
+    list.appendChild(li);
+  });
+
+  // 新建資料夾並移動選項
+  const newLi = document.createElement('li');
+  newLi.className = 'folder-select-item';
+  newLi.style.borderStyle = 'dashed';
+  newLi.style.color = 'var(--primary-color)';
+  newLi.innerHTML = `
+    <svg class="folder-select-item-icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    <span style="font-weight: 600;">+ ${getMsg('create_folder') || '新建資料夾'}</span>
+  `;
+  newLi.addEventListener('click', () => {
+    if (dialog) dialog.close();
+    setTimeout(() => {
+      const newName = prompt('請輸入新建資料夾名稱:');
+      if (newName && newName.trim()) {
+        const trimmed = newName.trim();
+        const custom = getCustomFolders();
+        if (!custom.includes(trimmed)) {
+          custom.push(trimmed);
+          saveCustomFolders(custom);
+        }
+        onSelected(trimmed);
+      }
+    }, 200);
+  });
+  list.appendChild(newLi);
+
+  if (dialog) dialog.showModal();
+}

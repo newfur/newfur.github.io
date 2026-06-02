@@ -18,24 +18,32 @@
   <div id="library-view" class="view-active">
     <header class="app-header">
       <div class="header-container">
-        <h1 class="logo" data-i18n="library_title">Library</h1>
+        <div class="library-title-container">
+          <h1 class="logo" id="library-title-main" data-i18n="library_title">Library</h1>
+          <div id="library-breadcrumb" class="library-breadcrumb" style="display: none;">
+            <button class="breadcrumb-back-btn" id="breadcrumb-back-btn" title="Back to Library">
+              <svg class="svg-icon" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <span class="breadcrumb-current" id="breadcrumb-current-folder"></span>
+          </div>
+        </div>
+        <div class="search-bar">
+          <input type="search" id="search-input" data-i18n-placeholder="search_placeholder" placeholder="Search books...">
+          <span class="search-icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </span>
+        </div>
+        <div class="cover-size-control">
+          <span class="control-icon" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="9" cy="9" r="2"></circle>
+              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+            </svg>
+          </span>
+          <input type="range" id="cover-size-slider" min="80" max="300" step="10" value="180" class="cover-slider" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
+        </div>
         <div class="header-actions">
-          <div class="search-bar">
-            <input type="search" id="search-input" data-i18n-placeholder="search_placeholder" placeholder="Search books...">
-            <span class="search-icon">
-              <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            </span>
-          </div>
-          <div class="cover-size-control">
-            <span class="control-icon" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
-              <svg class="svg-icon" viewBox="0 0 24 24">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <circle cx="9" cy="9" r="2"></circle>
-                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
-              </svg>
-            </span>
-            <input type="range" id="cover-size-slider" min="80" max="300" step="10" value="180" class="cover-slider" data-i18n-title="cover_size_tooltip" title="Adjust Cover Size">
-          </div>
           <button id="import-btn" class="btn btn-primary">
             <span class="btn-icon">
               <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -44,29 +52,52 @@
           </button>
           <input type="file" id="file-input" accept=".epub,.azw3,.mobi,.txt,.md,.fb2,.cbz" style="display: none;">
 
-          <button id="backup-btn" class="btn btn-secondary" data-i18n-title="backup_library_tooltip" title="Export Library Backup">
+          <button id="create-folder-btn" class="btn btn-secondary" title="Create Folder">
             <span class="btn-icon">
-              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
             </span>
-            <span data-i18n="backup_library">Backup</span>
+            <span data-i18n="create_folder">New Folder</span>
           </button>
-          <button id="restore-btn" class="btn btn-secondary" data-i18n-title="restore_library_tooltip" title="Restore Library Backup">
+          <button id="batch-manage-btn" class="btn btn-secondary" title="Batch Manage">
             <span class="btn-icon">
-              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+              <svg class="svg-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><polyline points="9 11 12 14 22 4"></polyline></svg>
             </span>
-            <span data-i18n="restore_library">Restore</span>
+            <span data-i18n="batch_manage">Manage</span>
           </button>
-          <button id="stats-btn" class="btn btn-secondary" data-i18n-title="stats_btn_tooltip" title="View Reading Statistics">
-            <span class="btn-icon">
-              <svg class="svg-icon" viewBox="0 0 24 24">
-                <line x1="18" y1="20" x2="18" y2="10"></line>
-                <line x1="12" y1="20" x2="12" y2="4"></line>
-                <line x1="6" y1="20" x2="6" y2="14"></line>
-              </svg>
-            </span>
-            <span data-i18n="stats_title">Stats</span>
-          </button>
-          <input type="file" id="restore-file-input" accept=".json" style="display: none;">
+
+          <div class="dropdown" id="more-actions-dropdown">
+            <button id="more-actions-btn" class="btn btn-secondary" title="More Actions">
+              <span class="btn-icon">
+                <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="12" r="1.5"></circle><circle cx="5" cy="12" r="1.5"></circle></svg>
+              </span>
+              <span data-i18n="more_actions">More</span>
+            </button>
+            <div class="dropdown-menu panel-glass">
+              <button id="backup-btn" class="dropdown-item" data-i18n-title="backup_library_tooltip" title="Export Library Backup">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </span>
+                <span data-i18n="backup_library">Backup</span>
+              </button>
+              <button id="restore-btn" class="dropdown-item" data-i18n-title="restore_library_tooltip" title="Restore Library Backup">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                </span>
+                <span data-i18n="restore_library">Restore</span>
+              </button>
+              <button id="stats-btn" class="dropdown-item" data-i18n-title="stats_btn_tooltip" title="View Reading Statistics">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                  </svg>
+                </span>
+                <span data-i18n="stats_title">Stats</span>
+              </button>
+            </div>
+          </div>
+          <input type="file" id="restore-file-input" accept=".zip,.json" style="display: none;">
         </div>
       </div>
     </header>
@@ -95,6 +126,24 @@
         <p data-i18n="no_books">Your library is empty. Drag and drop files here to add books!</p>
       </div>
     </main>
+
+    <!-- 批量管理底部操作欄 -->
+    <div id="batch-action-bar" class="batch-action-bar panel-glass">
+      <div class="batch-action-info">
+        <span id="batch-selected-count">Selected: 0 books</span>
+      </div>
+      <div class="batch-action-buttons">
+        <button id="batch-move-btn" class="btn btn-secondary" disabled>
+          <span data-i18n="batch_move">Move to Folder</span>
+        </button>
+        <button id="batch-delete-btn" class="btn btn-danger" style="background-color: var(--danger-color, #dc3545); color: white;" disabled>
+          <span data-i18n="batch_delete">Delete</span>
+        </button>
+        <button id="batch-cancel-btn" class="btn btn-secondary">
+          <span data-i18n="btn_cancel">Cancel</span>
+        </button>
+      </div>
+    </div>
   </div>
 
 
@@ -516,6 +565,36 @@
       </div>
     </div>
   </div>
+
+  <!-- ==================== 彈窗與對話框 (Dialogs) ==================== -->
+  <!-- 新建/重命名資料夾對話框 -->
+  <dialog id="folder-dialog" class="custom-dialog panel-glass">
+    <form method="dialog" class="dialog-form">
+      <h3 id="folder-dialog-title" data-i18n="create_folder">New Folder</h3>
+      <div class="dialog-body">
+        <input type="text" id="folder-name-input" data-i18n-placeholder="folder_name_placeholder" placeholder="Folder Name" required autocomplete="off" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); background:rgba(255,255,255,0.05); color:inherit; outline:none; margin-top:10px;">
+      </div>
+      <div class="dialog-actions" style="margin-top:15px; display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" id="folder-dialog-cancel" class="btn" data-i18n="btn_cancel">Cancel</button>
+        <button type="submit" id="folder-dialog-submit" class="btn btn-primary" data-i18n="btn_save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 選擇移動目標資料夾對話框 -->
+  <dialog id="folder-select-dialog" class="custom-dialog panel-glass" style="max-height:80vh; width:350px;">
+    <form method="dialog" class="dialog-form">
+      <h3 data-i18n="batch_move">Move to Folder</h3>
+      <div class="dialog-body" style="max-height:300px; overflow-y:auto; margin:15px 0;">
+        <ul id="folder-select-list" class="folder-select-list" style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+          <!-- 載入的資料夾列表 -->
+        </ul>
+      </div>
+      <div class="dialog-actions" style="display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" id="folder-select-cancel" class="btn" data-i18n="btn_cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- ==================== 引入 JS 庫 ==================== -->
   <script src="libs/jszip.min.js"></script>

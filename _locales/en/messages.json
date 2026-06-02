@@ -11,6 +11,46 @@
   "import_book": {
     "message": "Import Book"
   },
+  "create_folder": {
+    "message": "New Folder"
+  },
+  "batch_manage": {
+    "message": "Manage"
+  },
+  "batch_move": {
+    "message": "Move to Folder"
+  },
+  "batch_delete": {
+    "message": "Delete Selected"
+  },
+  "move_to_root": {
+    "message": "Move out of Folder"
+  },
+  "rename_folder": {
+    "message": "Rename Folder"
+  },
+  "confirm_delete_folder": {
+    "message": "Are you sure you want to delete this folder? The books inside will not be deleted."
+  },
+  "folder_books_count": {
+    "message": "$count$ books",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "folder_name_placeholder": {
+    "message": "Folder Name"
+  },
+  "batch_selected_count": {
+    "message": "Selected: $count$ books",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "backup_library": {
     "message": "Backup"
   },
@@ -18,10 +58,13 @@
     "message": "Restore"
   },
   "backup_library_tooltip": {
-    "message": "Export a backup file (.json) containing all books, progress, and notes"
+    "message": "Export a backup file (.zip) containing all books, progress, and notes"
   },
   "restore_library_tooltip": {
     "message": "Restore a previously backed up library file"
+  },
+  "more_actions": {
+    "message": "More"
   },
   "backup_success": {
     "message": "Library backup successful! Backup file downloaded."

@@ -166,6 +166,7 @@ button, select, input {
   background-color: var(--surface-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
+  white-space: nowrap;
 }
 
 .btn:hover {
@@ -284,10 +285,13 @@ button, select, input {
 .app-header {
   position: sticky;
   top: 0;
-  background-color: var(--bg-color);
-  border-bottom: 1px solid var(--border-color);
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--glass-border);
   z-index: 100;
-  transition: background-color var(--transition-speed);
+  box-shadow: 0 4px 20px var(--glass-shadow);
+  transition: all var(--transition-speed) ease;
 }
 
 .header-container {
@@ -303,6 +307,10 @@ button, select, input {
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .header-actions {
@@ -315,6 +323,8 @@ button, select, input {
   position: relative;
   display: flex;
   align-items: center;
+  margin-left: auto;
+  margin-right: 15px;
 }
 
 .search-bar input {
@@ -595,6 +605,7 @@ button, select, input {
   border-radius: 12px;
   height: 42px;
   box-sizing: border-box;
+  margin-right: 15px;
 }
 
 .cover-size-control .control-icon {
@@ -2329,66 +2340,157 @@ html.transition-none .page-texture-slide {
   transition: color var(--transition-speed);
 }
 
+
 /* ==================== 備份與還原按鈕響應式微調 ==================== */
 @media (max-width: 768px) {
   .header-container {
-    flex-direction: column;
-    gap: 12px;
-    align-items: flex-start;
-    padding: 15px 10px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "title actions"
+      "search cover";
+    gap: 10px;
+    align-items: center;
+    padding: 12px 10px;
   }
+  
+  .library-title-container {
+    grid-area: title;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    max-width: 100%;
+  }
+  
+  .logo {
+    font-size: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+  }
+  
+  .library-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    overflow: hidden;
+    margin: 0;
+  }
+  
+  .library-breadcrumb .breadcrumb-back-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+  }
+  
+  .library-breadcrumb .breadcrumb-back-btn .svg-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .breadcrumb-current {
+    font-size: 16px;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
   .header-actions {
-    width: 100%;
+    grid-area: actions;
+    width: auto;
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-end;
   }
+  
+  /* Hide button labels on mobile, making them compact icon buttons */
+  .header-actions .btn span:not(.btn-icon) {
+    display: none;
+  }
+  
+  .header-actions .btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 0;
+  }
+  
+  .header-actions .btn .btn-icon {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .header-actions .btn .svg-icon {
+    width: 18px;
+    height: 18px;
+  }
+
   .search-bar {
+    grid-area: search;
     width: 100%;
+    margin-left: 0;
+    margin-right: 0;
   }
+  
   .search-bar input {
     width: 100% !important;
     height: 38px;
     padding: 8px 12px 8px 34px;
     font-size: 13px;
+    border-radius: 10px;
   }
+  
   .search-icon {
     left: 10px;
   }
 
-  /* 封面大小調整自成一行 */
+  /* 封面大小調整在移動端放置於第二行右側 */
   .cover-size-control {
-    width: 100%;
+    grid-area: cover;
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    padding: 6px 10px;
+    border-radius: 10px;
     height: 38px;
-    padding: 4px 12px;
-    border-radius: 8px;
-    display: flex;
-    justify-content: center;
-  }
-  .cover-size-control .cover-slider {
-    flex-grow: 1;
-    width: auto;
-    max-width: 250px;
-  }
-  .cover-size-control:hover .cover-slider,
-  .cover-size-control .cover-slider:focus {
-    width: auto;
-    max-width: 250px;
+    box-sizing: border-box;
+    margin-left: 4px;
+    margin-right: 0;
   }
 
-  /* 按鈕縮小 */
-  .header-actions .btn {
-    padding: 8px 12px;
-    font-size: 12px;
-    border-radius: 8px;
-    gap: 4px;
-    height: 34px;
+  .cover-size-control .control-icon {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
   }
-  .header-actions .btn .svg-icon {
-    width: 14px;
-    height: 14px;
+
+  .cover-size-control .cover-slider {
+    flex: 1 !important;
+    width: auto !important;
+    display: block !important;
+    height: 4px;
+    margin: 0;
+  }
+
+  .cover-size-control:hover .cover-slider,
+  .cover-size-control .cover-slider:focus {
+    flex: 1 !important;
+    width: auto !important;
   }
 
   /* 書架響應式調整 */
@@ -2424,6 +2526,34 @@ html.transition-none .page-texture-slide {
   .reader-title {
     max-width: calc(100% - 160px);
     font-size: 15px;
+  }
+
+  /* 批量操作欄移動端佈局優化 */
+  .batch-action-bar {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+    align-items: center;
+    bottom: 16px;
+    transform: translateX(-50%) translateY(180px);
+  }
+  .batch-action-bar.active {
+    transform: translateX(-50%) translateY(0);
+  }
+  .batch-action-info {
+    text-align: center;
+    width: 100%;
+  }
+  .batch-action-buttons {
+    width: 100%;
+    justify-content: center;
+    gap: 8px;
+  }
+  .batch-action-buttons .btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 13px;
+    min-width: 0;
   }
 }
 
@@ -2829,5 +2959,497 @@ html.transition-none .page-texture-slide {
     gap: 8px !important;
   }
 }
+
+/* ==================== 15. 書庫資料夾與批量管理 ==================== */
+
+.library-title-container {
+  display: flex;
+  align-items: center;
+  max-width: 320px;
+  width: 100%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.library-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-color);
+  width: 100%;
+  overflow: hidden;
+}
+
+.breadcrumb-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.breadcrumb-back-btn:hover {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+.breadcrumb-back-btn.drag-over {
+  background-color: var(--selection-color) !important;
+  color: var(--primary-color) !important;
+  outline: 2px dashed var(--primary-color);
+}
+
+.breadcrumb-back-btn .svg-icon {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  fill: none;
+}
+
+.breadcrumb-current {
+  cursor: default;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+  min-width: 50px;
+  font-size: 18px;
+}
+
+.breadcrumb-current:hover {
+  background-color: transparent;
+  color: var(--text-muted);
+}
+
+/* 資料夾卡片樣式 - 保持與單本書 card 一致 */
+.folder-card {
+  position: relative;
+  background-color: var(--surface-color);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.folder-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 12px 24px var(--glass-shadow);
+  border-color: var(--primary-color);
+}
+
+.folder-card.drag-over {
+  background-color: var(--selection-color);
+  border-color: var(--primary-color);
+  transform: scale(1.02);
+  outline: 2px dashed var(--primary-color);
+}
+
+.folder-icon-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: linear-gradient(135deg, var(--border-color), var(--bg-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.folder-icon-large {
+  width: 64px;
+  height: 64px;
+  fill: none;
+  stroke: var(--primary-color);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 4px 8px rgba(10, 132, 255, 0.15));
+  transition: transform 0.2s ease;
+}
+
+.folder-card:hover .folder-icon-large {
+  transform: scale(1.08);
+}
+
+.folder-count-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: var(--primary-color);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(10, 132, 255, 0.3);
+  z-index: 10;
+}
+
+.folder-info {
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  box-sizing: border-box;
+}
+
+.folder-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin: 0 0 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.folder-books-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 重命名與刪除按鈕，顯示在 hover 上 */
+.folder-card .folder-rename-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: rgba(10, 132, 255, 0.9);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 20;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.folder-card .folder-delete-btn {
+  position: absolute;
+  top: 10px;
+  left: 44px; /* 10 + 28 + 6 = 44px */
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: rgba(255, 59, 48, 0.9);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 20;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.folder-card:hover .folder-rename-btn,
+.folder-card:hover .folder-delete-btn {
+  opacity: 1;
+}
+
+.folder-card .folder-rename-btn:hover,
+.folder-card .folder-delete-btn:hover {
+  transform: scale(1.1);
+}
+
+.folder-card .folder-rename-btn:hover {
+  background-color: rgba(10, 132, 255, 1);
+}
+
+.folder-card .folder-delete-btn:hover {
+  background-color: rgba(255, 59, 48, 1);
+}
+
+/* 批量管理底部操作欄 */
+.batch-action-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(120px);
+  width: 90%;
+  max-width: 600px;
+  padding: 16px 24px;
+  border-radius: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 99;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  border: 1px solid var(--border-color);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.batch-action-bar.active {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.batch-action-info {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.batch-action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+/* 選擇多選狀態的書籍卡片 */
+.bookshelf-grid.select-mode-active .book-card {
+  cursor: pointer;
+}
+
+.bookshelf-grid.select-mode-active .book-card .book-delete-btn,
+.bookshelf-grid.select-mode-active .book-card .book-export-btn,
+.bookshelf-grid.select-mode-active .book-card .book-stats-btn {
+  display: none !important;
+}
+
+.book-card-checkbox-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.4);
+  border: 2px solid #ffffff;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.bookshelf-grid.select-mode-active .book-card .book-card-checkbox-overlay {
+  display: flex;
+}
+
+.book-card.selected .book-card-checkbox-overlay {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.book-card-checkbox-overlay svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.book-card.selected .book-card-checkbox-overlay svg {
+  opacity: 1;
+}
+
+.book-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.95);
+}
+
+/* HTML <dialog> 樣式 */
+.custom-dialog {
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 24px;
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  width: 90%;
+  max-width: 400px;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  z-index: 700;
+}
+
+.custom-dialog::backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.custom-dialog[open] {
+  animation: dialog-show 0.25s ease-out;
+  display: block;
+}
+
+@keyframes dialog-show {
+  from { transform: translate(-50%, -45%); opacity: 0; }
+  to { transform: translate(-50%, -50%); opacity: 1; }
+}
+
+.folder-select-list {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.folder-select-item {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background-color: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+  color: var(--text-color);
+}
+
+.folder-select-item:hover {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+}
+
+.folder-select-item-icon {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+/* 下拉選單樣式 (Dropdown Menu Styles) */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px var(--glass-shadow);
+  padding: 6px;
+  min-width: 160px;
+  z-index: 1000;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dropdown.active .dropdown-menu {
+  display: flex;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+}
+
+.dropdown-item .btn-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+}
+
+.dropdown-item:hover .btn-icon {
+  color: var(--primary-color);
+}
+
+/* 資料夾封面網格預覽樣式 (Folder Covers Grid) */
+.folder-covers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 1.5px;
+  width: 100%;
+  height: 100%;
+  background-color: var(--border-color);
+  overflow: hidden;
+  transition: transform 0.3s ease;
+}
+
+.folder-card:hover .folder-covers-grid {
+  transform: scale(1.05);
+}
+
+.folder-cover-item {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background-color: var(--bg-color);
+  border-radius: 0;
+}
+
+.folder-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--border-color);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 0;
+}
+
+.folder-cover-placeholder.empty-cell {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
 
 

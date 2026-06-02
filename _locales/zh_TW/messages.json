@@ -11,6 +11,46 @@
   "import_book": {
     "message": "導入書籍"
   },
+  "create_folder": {
+    "message": "新建資料夾"
+  },
+  "batch_manage": {
+    "message": "批量管理"
+  },
+  "batch_move": {
+    "message": "移動到資料夾"
+  },
+  "batch_delete": {
+    "message": "刪除所選"
+  },
+  "move_to_root": {
+    "message": "移出資料夾"
+  },
+  "rename_folder": {
+    "message": "重命名資料夾"
+  },
+  "confirm_delete_folder": {
+    "message": "確定要刪除這個資料夾嗎？其中的書籍不會被刪除。"
+  },
+  "folder_books_count": {
+    "message": "$count$ 本書籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "folder_name_placeholder": {
+    "message": "資料夾名稱"
+  },
+  "batch_selected_count": {
+    "message": "已選擇 $count$ 本書籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "backup_library": {
     "message": "備份書庫"
   },
@@ -18,10 +58,13 @@
     "message": "還原書庫"
   },
   "backup_library_tooltip": {
-    "message": "導出包含所有書籍、閱讀進度、高亮與筆記的備份檔 (.json)"
+    "message": "導出包含所有書籍、閱讀進度、高亮與筆記的備份檔 (.zip)"
   },
   "restore_library_tooltip": {
     "message": "導入先前備份的書庫檔案"
+  },
+  "more_actions": {
+    "message": "更多"
   },
   "backup_success": {
     "message": "書庫備份成功！已下載備份檔案。"

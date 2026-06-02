@@ -11,6 +11,46 @@
   "import_book": {
     "message": "导入书籍"
   },
+  "create_folder": {
+    "message": "新建文件夹"
+  },
+  "batch_manage": {
+    "message": "批量管理"
+  },
+  "batch_move": {
+    "message": "移动到文件夹"
+  },
+  "batch_delete": {
+    "message": "删除所选"
+  },
+  "move_to_root": {
+    "message": "移出文件夹"
+  },
+  "rename_folder": {
+    "message": "重命名文件夹"
+  },
+  "confirm_delete_folder": {
+    "message": "确定要删除这个文件夹吗？其中的书籍不会被删除。"
+  },
+  "folder_books_count": {
+    "message": "$count$ 本书籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "folder_name_placeholder": {
+    "message": "文件夹名称"
+  },
+  "batch_selected_count": {
+    "message": "已选择 $count$ 本书籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "backup_library": {
     "message": "备份书库"
   },
@@ -18,10 +58,13 @@
     "message": "还原书库"
   },
   "backup_library_tooltip": {
-    "message": "导出包含所有书籍、阅读进度、高亮与笔记的备份文件 (.json)"
+    "message": "导出包含所有书籍、阅读进度、高亮与笔记的备份文件 (.zip)"
   },
   "restore_library_tooltip": {
     "message": "导入先前备份的书库文件"
+  },
+  "more_actions": {
+    "message": "更多"
   },
   "backup_success": {
     "message": "书库备份成功！已下载备份文件。"
