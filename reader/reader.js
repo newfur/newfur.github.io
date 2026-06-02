@@ -449,8 +449,10 @@ function initUIEventBindings() {
 
     // 朗讀句子時更新進度
     if (currentBook) {
+      const sentence = tts.sentences[index];
+      const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : index) : index;
       saveProgressDebounced({ 
-        activeSentenceIndex: index,
+        activeSentenceIndex: relativeIdx,
         chapterIndex: currentChapterIndex
       });
     }
@@ -1585,7 +1587,9 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       targetSentenceIdx = currentBook.progress.activeSentenceIndex || 0;
     }
     
-    tts.currentIndex = Math.max(0, Math.min(targetSentenceIdx, tts.sentences.length - 1));
+    if (!isSeamless) {
+      tts.currentIndex = Math.max(0, Math.min(targetSentenceIdx, tts.sentences.length - 1));
+    }
 
     // 處理內部跳轉鏈接 (EPUB)
     contentEl.querySelectorAll('[data-epub-href]').forEach(a => {

@@ -66,6 +66,7 @@ export class TTSEngine {
     this.isPaused = false;
     this.isInitialPlay = false; // 標記是否為點擊開始的初始播放狀態
     this.playbackStarted = false; // 標記是否已經成功開始播放
+    this.currentlyPlayingIndex = -1; // 標記當前實際播放的句子絕對索引
     
     this.sentences = [];      // 當前章節的所有句子 (會隨預加載動態追加)
     this.currentIndex = 0;    // 當前播放的句子索引
@@ -376,6 +377,7 @@ export class TTSEngine {
               
               this.sentences.push({
                 index: sentenceId,
+                relativeIndex: sentenceId,
                 chapterIndex: activeSubChapterIndex,
                 text: cleanSentence,
                 isHeading: this._isHeadingNode(node),
@@ -416,6 +418,14 @@ export class TTSEngine {
     }
     let activeSubChapterIndex = subChapters.length > 0 ? subChapters[0].index : this.currentChapterIndex;
 
+    let startSentenceIndex = this.sentences.findIndex(sent => sent.chapterIndex === activeSubChapterIndex);
+    if (startSentenceIndex === -1) {
+      startSentenceIndex = this.sentences.findIndex(sent => !sent.element);
+    }
+    if (startSentenceIndex === -1) {
+      startSentenceIndex = 0;
+    }
+
     const traverse = (node) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const nodeId = node.getAttribute('id') || '';
@@ -451,9 +461,11 @@ export class TTSEngine {
             if (cleanSentence.length > 0) {
               const span = document.createElement('span');
               span.className = 'tts-sentence';
-              span.setAttribute('data-sentence-index', sentenceId);
               span.textContent = s;
               fragment.appendChild(span);
+              
+              const targetSentIdx = startSentenceIndex + sentenceId;
+              let finalSentIdx = targetSentIdx;
               
               const existingSentence = this.sentences.find(sent => sent.chapterIndex === activeSubChapterIndex && sent.text === cleanSentence && !sent.element)
                 || this.sentences.find(sent => sent.text === cleanSentence && !sent.element);
@@ -461,15 +473,18 @@ export class TTSEngine {
                 existingSentence.element = span;
                 existingSentence.chapterIndex = activeSubChapterIndex; // 同步更新為精確子章節索引
                 existingSentence.isHeading = this._isHeadingNode(node);
+                finalSentIdx = existingSentence.index;
               } else {
                 // 退化降級：直接按 index 對照
-                const sentByIndex = this.sentences[sentenceId];
+                const sentByIndex = this.sentences[targetSentIdx];
                 if (sentByIndex) {
                   sentByIndex.element = span;
                   sentByIndex.chapterIndex = activeSubChapterIndex; // 同步更新為精確子章節索引
                   sentByIndex.isHeading = this._isHeadingNode(node);
+                  finalSentIdx = sentByIndex.index;
                 }
               }
+              span.setAttribute('data-sentence-index', finalSentIdx);
               sentenceId++;
             } else {
               fragment.appendChild(document.createTextNode(s));
@@ -780,7 +795,7 @@ export class TTSEngine {
       this.fetchingIndices.delete(index);
       
       // 若當前正在播放且等待加載此句子，立即觸發播放
-      if (this.isPlaying && this.currentIndex === index && !this.currentAudio) {
+      if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
         this._playActiveSentence();
       }
       
@@ -852,6 +867,8 @@ export class TTSEngine {
       }
       return;
     }
+    
+    this.currentlyPlayingIndex = index;
     
     // 獲取下一個閒置的播放器
     const nextPlayerIdx = 1 - this.activePlayerIdx;
@@ -969,6 +986,8 @@ export class TTSEngine {
       return;
     }
 
+    const sentence = this.sentences[index];
+    const voice = this.selectedVoice;
     this.nativeQueue.add(index);
 
     let speakText = sentence.text;
@@ -1118,7 +1137,7 @@ export class TTSEngine {
     }
   }
 
-  play(index = 0) {
+  play(index = 0, isAbsolute = false) {
     if (this.sentences.length === 0) return;
     
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
@@ -1144,7 +1163,21 @@ export class TTSEngine {
     this.currentAudio = null;
     
     this.isPlaying = true;
-    this.currentIndex = Math.max(0, Math.min(index, this.sentences.length - 1));
+    this.currentlyPlayingIndex = -1;
+    
+    let absoluteIndex = index;
+    if (!isAbsolute) {
+      const match = this.sentences.find(sent => sent.chapterIndex === this.currentChapterIndex && sent.relativeIndex === index);
+      if (match) {
+        absoluteIndex = match.index;
+      } else {
+        const fallbackMatch = this.sentences.find(sent => sent.relativeIndex === index);
+        if (fallbackMatch) {
+          absoluteIndex = fallbackMatch.index;
+        }
+      }
+    }
+    this.currentIndex = Math.max(0, Math.min(absoluteIndex, this.sentences.length - 1));
     
     // 智能快取淘汰：僅釋放並刪除與新進度相差較遠（例如小於 currentIndex 或大於 currentIndex + 15）的快取項目
     const keysToDelete = [];
@@ -1192,6 +1225,7 @@ export class TTSEngine {
       const startIdx = this.sentences.length;
       nextSentences.forEach((s, i) => {
         s.index = startIdx + i;
+        s.relativeIndex = i;
         s.chapterIndex = nextChapter.index;
         this.sentences.push(s);
       });
@@ -1211,7 +1245,8 @@ export class TTSEngine {
     const traverse = (node) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tagName = node.tagName.toLowerCase();
-        if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer')) {
+        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
       }
@@ -1290,6 +1325,7 @@ export class TTSEngine {
     this.isPlaying = false;
     this.isPaused = false;
     this.playbackStarted = false;
+    this.currentlyPlayingIndex = -1;
     this._stopSilenceKeepAlive();
     
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
@@ -1327,14 +1363,14 @@ export class TTSEngine {
   next() {
     if (this.isPlaying) {
       const nextIndex = Math.min(this.currentIndex + 1, this.sentences.length - 1);
-      this.play(nextIndex);
+      this.play(nextIndex, true);
     }
   }
 
   previous() {
     if (this.isPlaying) {
       const prevIndex = Math.max(this.currentIndex - 1, 0);
-      this.play(prevIndex);
+      this.play(prevIndex, true);
     }
   }
 
@@ -1399,7 +1435,7 @@ export class TTSEngine {
 
     if (this.isPlaying) {
       if (isChanged) {
-        this.play(this.currentIndex);
+        this.play(this.currentIndex, true);
       }
     }
   }
