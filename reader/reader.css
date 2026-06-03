@@ -2440,6 +2440,34 @@ html.transition-none .page-texture-slide {
 }
 
 
+/* 中等螢幕（如平板、半屏桌面端）下，隱藏按鈕文字、縮小搜尋框以防標頭超出螢幕邊界 */
+@media (max-width: 1150px) {
+  .header-actions .btn span:not(.btn-icon) {
+    display: none;
+  }
+  .header-actions .btn {
+    width: 38px;
+    height: 38px;
+    padding: 0 !important;
+    border-radius: 10px;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 0 !important;
+  }
+  .header-actions .btn .btn-icon {
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .search-bar input {
+    width: 160px;
+  }
+  .search-bar input:focus {
+    width: 200px;
+  }
+}
+
 /* ==================== 備份與還原按鈕響應式微調 ==================== */
 @media (max-width: 768px) {
   .header-container {
