@@ -1660,7 +1660,7 @@ function renderTOC(chapters) {
     const li = document.createElement('li');
     li.className = 'toc-item';
     li.setAttribute('data-chapter-index', idx);
-    li.textContent = ch.title;
+    li.textContent = ch.title ? ch.title.replace(/^[\s\u3000]+|[\s\u3000]+$/g, '') : '';
     
     // Check if this visible item is the active one or the closest preceding non-hidden active one
     let isActive = false;

@@ -1429,6 +1429,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: start !important; /* 強制左對齊，防止書籍內聯/全域 CSS 洩漏造成目錄文字居中 */
 }
 
 .toc-item:hover {

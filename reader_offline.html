@@ -1435,6 +1435,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: start !important; /* 強制左對齊，防止書籍內聯/全域 CSS 洩漏造成目錄文字居中 */
 }
 
 .toc-item:hover {
@@ -11477,7 +11478,7 @@ function renderTOC(chapters) {
     const li = document.createElement('li');
     li.className = 'toc-item';
     li.setAttribute('data-chapter-index', idx);
-    li.textContent = ch.title;
+    li.textContent = ch.title ? ch.title.replace(/^[\s\u3000]+|[\s\u3000]+$/g, '') : '';
     
     // Check if this visible item is the active one or the closest preceding non-hidden active one
     let isActive = false;
