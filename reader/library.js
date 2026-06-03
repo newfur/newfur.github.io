@@ -452,4 +452,66 @@ export class BookLibrary {
       request.onerror = () => reject(request.error);
     });
   }
+
+  // 清理單本書籍的閱讀統計
+  async clearBookStats(id) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.stats = {
+      totalTime: 0,
+      readingDays: {},
+      hourlyDist: {}
+    };
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 清理所有書籍的閱讀統計
+  async clearAllStats() {
+    await this._ensureOpen();
+    const books = await this.getAllBooks();
+
+    return new Promise((resolve, reject) => {
+      if (books.length === 0) {
+        resolve(true);
+        return;
+      }
+
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+
+      let completed = 0;
+      let hasError = false;
+
+      books.forEach(book => {
+        book.stats = {
+          totalTime: 0,
+          readingDays: {},
+          hourlyDist: {}
+        };
+        const request = store.put(book);
+        request.onsuccess = () => {
+          completed++;
+          if (completed === books.length && !hasError) {
+            resolve(true);
+          }
+        };
+        request.onerror = () => {
+          if (!hasError) {
+            hasError = true;
+            reject(request.error);
+          }
+        };
+      });
+    });
+  }
 }

@@ -372,6 +372,76 @@ function initUIEventBindings() {
     });
   }
 
+  // 清理所有統計數據按鈕
+  const clearAllStatsBtn = document.getElementById('clear-all-stats-btn');
+  if (clearAllStatsBtn) {
+    clearAllStatsBtn.addEventListener('click', async () => {
+      if (confirm(getMsg('confirm_clear_all_stats') || '確定要清除所有書籍的閱讀統計數據嗎？此操作無法撤銷。')) {
+        try {
+          await library.clearAllStats();
+          await openGlobalStatsModal();
+        } catch (e) {
+          console.error('Failed to clear all stats:', e);
+          alert('清除統計數據失敗: ' + e.message);
+        }
+      }
+    });
+  }
+
+  // 清理單本書統計按鈕
+  const clearBookStatsBtn = document.getElementById('clear-book-stats-btn');
+  if (clearBookStatsBtn) {
+    clearBookStatsBtn.addEventListener('click', async () => {
+      const statsBookSelect = document.getElementById('stats-book-select');
+      if (!statsBookSelect) return;
+      const selectedBookId = statsBookSelect.value;
+      if (!selectedBookId) return;
+
+      if (confirm(getMsg('confirm_clear_book_stats') || '確定要清除本書的閱讀統計數據吗？此操作無法撤銷。')) {
+        try {
+          await library.clearBookStats(selectedBookId);
+          // 重新整理當前書籍統計
+          await renderBookStats(selectedBookId);
+          
+          // 同步重新讀取並刷新全局統計
+          const books = await library.getAllBooks();
+          let totalSeconds = 0;
+          let readBooksCount = 0;
+          const activeDaysSet = new Set();
+          const globalHourly = Array(24).fill(0);
+
+          books.forEach(b => {
+            const stats = b.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
+            totalSeconds += stats.totalTime || 0;
+            if (stats.totalTime > 0) {
+              readBooksCount++;
+            }
+            if (stats.readingDays) {
+              Object.keys(stats.readingDays).forEach(day => activeDaysSet.add(day));
+            }
+            if (stats.hourlyDist) {
+              for (let h = 0; h < 24; h++) {
+                globalHourly[h] += (stats.hourlyDist[h] || 0);
+              }
+            }
+          });
+
+          const gTime = document.getElementById('global-total-time');
+          const gBooks = document.getElementById('global-total-books');
+          const gDays = document.getElementById('global-total-days');
+          if (gTime) gTime.textContent = formatDuration(totalSeconds);
+          if (gBooks) gBooks.textContent = readBooksCount;
+          if (gDays) gDays.textContent = activeDaysSet.size;
+
+          renderHourlyChart('global-hourly-chart', globalHourly);
+        } catch (e) {
+          console.error('Failed to clear book stats:', e);
+          alert('清除統計數據失敗: ' + e.message);
+        }
+      }
+    });
+  }
+
   // 拖曳導入
   const dragOverlay = document.getElementById('drag-overlay');
   const libraryView = document.getElementById('library-view');

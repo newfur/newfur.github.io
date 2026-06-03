@@ -506,5 +506,17 @@
   },
   "btn_close": {
     "message": "Close"
+  },
+  "clear_all_stats": {
+    "message": "Clear All Stats"
+  },
+  "clear_book_stats": {
+    "message": "Clear Stats"
+  },
+  "confirm_clear_all_stats": {
+    "message": "Are you sure you want to clear all reading statistics? This cannot be undone."
+  },
+  "confirm_clear_book_stats": {
+    "message": "Are you sure you want to clear statistics for this book? This cannot be undone."
   }
 }

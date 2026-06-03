@@ -521,15 +521,21 @@
             </div>
           </div>
         </div>
+        <div style="margin-top: 15px; display: flex; justify-content: flex-end;">
+          <button id="clear-all-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_all_stats">Clear All Stats</button>
+        </div>
       </div>
 
       <!-- By Book Content -->
       <div id="stats-content-books" class="stats-tab-content">
-        <div class="book-selector-container">
-          <label for="stats-book-select" data-i18n="stats_select_book">Select Book:</label>
-          <select id="stats-book-select">
-            <!-- Options dynamically populated -->
-          </select>
+        <div class="book-selector-container" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <label for="stats-book-select" data-i18n="stats_select_book">Select Book:</label>
+            <select id="stats-book-select">
+              <!-- Options dynamically populated -->
+            </select>
+          </div>
+          <button id="clear-book-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_book_stats">Clear Stats</button>
         </div>
 
         <div class="stats-summary-cards" style="margin-top: 15px;">
