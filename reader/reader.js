@@ -3317,7 +3317,7 @@ function initThemeAndStyles() {
       return res[key] !== undefined ? res[key] : defaultVal;
     };
 
-    const resolvedTheme = getPref('theme', 'sepia');
+    const resolvedTheme = getPref('theme', 'mint');
     const resolvedFontFamily = getPref('fontFamily', 'font-lxgw');
     const resolvedFontSize = getPref('fontSize', 19);
     const resolvedLineHeight = getPref('lineHeight', 1.5);
