@@ -758,7 +758,7 @@ export class TTSEngine {
         
         ws.onclose = () => {
           if (audioChunks.length > 0) {
-            const blob = new Blob(audioChunks, { type: 'audio/mp3' });
+            const blob = new Blob(audioChunks, { type: 'audio/mpeg' });
             resolve(blob);
           } else {
             reject(new Error("No audio data received"));
@@ -929,8 +929,9 @@ export class TTSEngine {
     const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
     
-    if (audio.src !== cached.blobUrl) {
+    if (audio.dataset.srcUrl !== cached.blobUrl) {
       audio.src = cached.blobUrl;
+      audio.dataset.srcUrl = cached.blobUrl;
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
@@ -1141,7 +1142,7 @@ export class TTSEngine {
     
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
-      this.silenceAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
       this.silenceAudio.loop = true;
       this.silenceAudio.volume = 0.01;
     }
@@ -1210,6 +1211,7 @@ export class TTSEngine {
       try {
         p.pause();
         p.src = '';
+        if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;
         p.onloadedmetadata = null;
@@ -1415,6 +1417,7 @@ export class TTSEngine {
       try {
         p.pause();
         p.src = '';
+        if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;
       } catch (e) {}
@@ -1465,8 +1468,9 @@ export class TTSEngine {
     const cached = this.audioCache.get(nextIndex);
     if (cached && cached.isReady) {
       const nextPlayer = this.players[1 - this.activePlayerIdx];
-      if (nextPlayer.src !== cached.blobUrl) {
+      if (nextPlayer.dataset.srcUrl !== cached.blobUrl) {
         nextPlayer.src = cached.blobUrl;
+        nextPlayer.dataset.srcUrl = cached.blobUrl;
         nextPlayer.load();
         nextPlayer.playbackRate = this.rate;
         nextPlayer.volume = this.volume;

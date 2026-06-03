@@ -4961,11 +4961,19 @@ function openFolderSelectDialog(onSelected) {
   if (dialog) dialog.showModal();
 }
 
-// Register PWA Service Worker for Web Version
-if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
-      .then(reg => console.log('[PWA] Service Worker registered successfully', reg.scope))
-      .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
-  });
+// Register PWA Service Worker & Manifest for Web Version
+if (window.location.protocol.startsWith('http')) {
+  // Inject Web App Manifest dynamically to prevent local file CORS errors on file://
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = 'manifest.webmanifest';
+  document.head.appendChild(link);
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log('[PWA] Service Worker registered successfully', reg.scope))
+        .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
+    });
+  }
 }

@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="extension_name">Edge E-Book Reader</title>
-  <link rel="manifest" href="manifest.webmanifest">
   <style>/* reader/reader.css */
 /* 網頁版電子書閱讀器樣式表 - 採用現代毛玻璃 (Glassmorphism) 設計與微交互動畫 */
 
@@ -8874,7 +8873,7 @@ class TTSEngine {
         
         ws.onclose = () => {
           if (audioChunks.length > 0) {
-            const blob = new Blob(audioChunks, { type: 'audio/mp3' });
+            const blob = new Blob(audioChunks, { type: 'audio/mpeg' });
             resolve(blob);
           } else {
             reject(new Error("No audio data received"));
@@ -9045,8 +9044,9 @@ class TTSEngine {
     const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
     
-    if (audio.src !== cached.blobUrl) {
+    if (audio.dataset.srcUrl !== cached.blobUrl) {
       audio.src = cached.blobUrl;
+      audio.dataset.srcUrl = cached.blobUrl;
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
@@ -9257,7 +9257,7 @@ class TTSEngine {
     
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
-      this.silenceAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
       this.silenceAudio.loop = true;
       this.silenceAudio.volume = 0.01;
     }
@@ -9326,6 +9326,7 @@ class TTSEngine {
       try {
         p.pause();
         p.src = '';
+        if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;
         p.onloadedmetadata = null;
@@ -9531,6 +9532,7 @@ class TTSEngine {
       try {
         p.pause();
         p.src = '';
+        if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;
       } catch (e) {}
@@ -9581,8 +9583,9 @@ class TTSEngine {
     const cached = this.audioCache.get(nextIndex);
     if (cached && cached.isReady) {
       const nextPlayer = this.players[1 - this.activePlayerIdx];
-      if (nextPlayer.src !== cached.blobUrl) {
+      if (nextPlayer.dataset.srcUrl !== cached.blobUrl) {
         nextPlayer.src = cached.blobUrl;
+        nextPlayer.dataset.srcUrl = cached.blobUrl;
         nextPlayer.load();
         nextPlayer.playbackRate = this.rate;
         nextPlayer.volume = this.volume;
@@ -14788,13 +14791,21 @@ function openFolderSelectDialog(onSelected) {
   if (dialog) dialog.showModal();
 }
 
-// Register PWA Service Worker for Web Version
-if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
-      .then(reg => console.log('[PWA] Service Worker registered successfully', reg.scope))
-      .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
-  });
+// Register PWA Service Worker & Manifest for Web Version
+if (window.location.protocol.startsWith('http')) {
+  // Inject Web App Manifest dynamically to prevent local file CORS errors on file://
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = 'manifest.webmanifest';
+  document.head.appendChild(link);
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log('[PWA] Service Worker registered successfully', reg.scope))
+        .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
+    });
+  }
 }
 
 
