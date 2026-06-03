@@ -66,6 +66,15 @@
   "more_actions": {
     "message": "More"
   },
+  "download_offline": {
+    "message": "Download Offline Version"
+  },
+  "download_offline_tooltip": {
+    "message": "Download standalone single-file HTML version (runs locally, fully supports Edge TTS)"
+  },
+  "already_offline": {
+    "message": "You are already running in the offline/local environment!"
+  },
   "backup_success": {
     "message": "Library backup successful! Backup file downloaded."
   },

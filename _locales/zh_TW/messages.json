@@ -66,6 +66,15 @@
   "more_actions": {
     "message": "更多"
   },
+  "download_offline": {
+    "message": "下載離線單檔案版"
+  },
+  "download_offline_tooltip": {
+    "message": "下載獨立的單檔案 HTML 版（可在手機本地運行，直接支持微軟 Edge 在線語音）"
+  },
+  "already_offline": {
+    "message": "您目前已經處於離線版或本地執行環境中！"
+  },
   "backup_success": {
     "message": "書庫備份成功！已下載備份檔案。"
   },

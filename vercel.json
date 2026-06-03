@@ -7,6 +7,10 @@
       "use": "@vercel/static"
     },
     {
+      "src": "reader_offline.html",
+      "use": "@vercel/static"
+    },
+    {
       "src": "manifest.webmanifest",
       "use": "@vercel/static"
     },

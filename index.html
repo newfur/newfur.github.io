@@ -3551,6 +3551,12 @@ html.transition-none .page-texture-slide {
                 </span>
                 <span data-i18n="stats_title">Stats</span>
               </button>
+              <button id="download-offline-btn" class="dropdown-item" data-i18n-title="download_offline_tooltip" title="Download Standalone Offline Version">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </span>
+                <span data-i18n="download_offline">Download Offline Version</span>
+              </button>
             </div>
           </div>
           <input type="file" id="restore-file-input" accept=".zip,.json" style="display: none;">
@@ -4137,6 +4143,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "more_actions": {
       "message": "More"
     },
+    "download_offline": {
+      "message": "Download Offline Version"
+    },
+    "download_offline_tooltip": {
+      "message": "Download standalone single-file HTML version (runs locally, fully supports Edge TTS)"
+    },
+    "already_offline": {
+      "message": "You are already running in the offline/local environment!"
+    },
     "backup_success": {
       "message": "Library backup successful! Backup file downloaded."
     },
@@ -4587,6 +4602,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "more_actions": {
       "message": "更多"
     },
+    "download_offline": {
+      "message": "下載離線單檔案版"
+    },
+    "download_offline_tooltip": {
+      "message": "下載獨立的單檔案 HTML 版（可在手機本地運行，直接支持微軟 Edge 在線語音）"
+    },
+    "already_offline": {
+      "message": "您目前已經處於離線版或本地執行環境中！"
+    },
     "backup_success": {
       "message": "書庫備份成功！已下載備份檔案。"
     },
@@ -5036,6 +5060,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "more_actions": {
       "message": "更多"
+    },
+    "download_offline": {
+      "message": "下载离线单文件版"
+    },
+    "download_offline_tooltip": {
+      "message": "下载独立的单文件 HTML 版（可在手机本地运行，直接支持微软 Edge 在线语音）"
+    },
+    "already_offline": {
+      "message": "您当前已经处于离线版或本地运行环境中！"
     },
     "backup_success": {
       "message": "书库备份成功！已下载备份文件。"
@@ -10059,6 +10092,37 @@ function initUIEventBindings() {
   const statsBackdrop = document.getElementById('stats-modal-backdrop');
   if (statsBackdrop) {
     statsBackdrop.addEventListener('click', closeStatsModal);
+  }
+
+  // 下载离线版单文件
+  const downloadOfflineBtn = document.getElementById('download-offline-btn');
+  if (downloadOfflineBtn) {
+    downloadOfflineBtn.addEventListener('click', () => {
+      if (window.location.protocol.startsWith('http')) {
+        const fileUrl = '/reader_offline.html';
+        fetch(fileUrl)
+          .then(response => {
+            if (!response.ok) throw new Error('Offline file not found on server.');
+            return response.blob();
+          })
+          .then(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'reader_offline.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          })
+          .catch(err => {
+            console.error('Failed to download offline reader:', err);
+            alert('下載離線版檔案失敗：' + err.message);
+          });
+      } else {
+        alert(getMsg('already_offline') || '您目前已經處於離線版或本地執行環境中！');
+      }
+    });
   }
 
   // 書庫行為

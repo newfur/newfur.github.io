@@ -66,6 +66,15 @@
   "more_actions": {
     "message": "更多"
   },
+  "download_offline": {
+    "message": "下载离线单文件版"
+  },
+  "download_offline_tooltip": {
+    "message": "下载独立的单文件 HTML 版（可在手机本地运行，直接支持微软 Edge 在线语音）"
+  },
+  "already_offline": {
+    "message": "您当前已经处于离线版或本地运行环境中！"
+  },
   "backup_success": {
     "message": "书库备份成功！已下载备份文件。"
   },
