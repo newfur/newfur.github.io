@@ -478,10 +478,6 @@ function initUIEventBindings() {
     setPaperTexture(e.target.value);
   });
 
-  document.getElementById('transition-effect-select').addEventListener('change', (e) => {
-    setTransitionEffect(e.target.value);
-  });
-
   // 版面排版模式切換
   document.getElementById('layout-scroll-btn').addEventListener('click', () => {
     toggleLayoutMode('scroll');
@@ -3159,7 +3155,7 @@ function initThemeAndStyles() {
     document.getElementById('tts-highlight-style-select').value = highlightStyle;
     
     // 顯示頁數
-    const pagesDisplayed = getPref('pagesDisplayed', '2');
+    const pagesDisplayed = getPref('pagesDisplayed', 'auto');
     setPagesDisplayed(pagesDisplayed, false);
     document.getElementById('pages-displayed-select').value = pagesDisplayed;
 
@@ -3168,13 +3164,9 @@ function initThemeAndStyles() {
     setPaperTexture(savedTexture, false);
     document.getElementById('paper-texture-select').value = savedTexture;
 
-    // 翻頁動畫效果 (移除 3D Flip，若舊設定為 flip 則降級為 slide)
-    let transitionEffect = getPref('transitionEffect', 'slide');
-    if (transitionEffect === 'flip') {
-      transitionEffect = 'slide';
-    }
+    // 翻頁動畫效果 (固定使用 slide 滑動效果)
+    let transitionEffect = 'slide';
     setTransitionEffect(transitionEffect, false);
-    document.getElementById('transition-effect-select').value = transitionEffect;
 
     // 版面排版模式初始化
     let layoutMode = getPref('layoutMode', 'paginated');
