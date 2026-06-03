@@ -508,10 +508,10 @@
     "message": "关闭"
   },
   "clear_all_stats": {
-    "message": "清理所有统计数据"
+    "message": "清理阅读记录"
   },
   "clear_book_stats": {
-    "message": "清理本书统计"
+    "message": "清理阅读记录"
   },
   "confirm_clear_all_stats": {
     "message": "确定要清除所有书籍的阅读统计数据吗？此操作无法撤销。"

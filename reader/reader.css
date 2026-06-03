@@ -3105,7 +3105,7 @@ html.transition-none .page-texture-slide {
 .library-title-container {
   display: flex;
   align-items: center;
-  max-width: 320px;
+  max-width: 45%;
   width: 100%;
   overflow: hidden;
   flex-shrink: 0;

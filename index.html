@@ -3111,7 +3111,7 @@ html.transition-none .page-texture-slide {
 .library-title-container {
   display: flex;
   align-items: center;
-  max-width: 320px;
+  max-width: 45%;
   width: 100%;
   overflow: hidden;
   flex-shrink: 0;
@@ -4116,21 +4116,18 @@ html.transition-none .page-texture-slide {
             </div>
           </div>
         </div>
-        <div style="margin-top: 15px; display: flex; justify-content: flex-end;">
+        <div style="margin-top: 15px; display: flex; justify-content: flex-start;">
           <button id="clear-all-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_all_stats">Clear All Stats</button>
         </div>
       </div>
 
       <!-- By Book Content -->
       <div id="stats-content-books" class="stats-tab-content">
-        <div class="book-selector-container" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <label for="stats-book-select" data-i18n="stats_select_book">Select Book:</label>
-            <select id="stats-book-select">
-              <!-- Options dynamically populated -->
-            </select>
-          </div>
-          <button id="clear-book-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_book_stats">Clear Stats</button>
+        <div class="book-selector-container">
+          <label for="stats-book-select" data-i18n="stats_select_book">Select Book:</label>
+          <select id="stats-book-select">
+            <!-- Options dynamically populated -->
+          </select>
         </div>
 
         <div class="stats-summary-cards" style="margin-top: 15px;">
@@ -4167,6 +4164,9 @@ html.transition-none .page-texture-slide {
           <div class="history-list" id="book-history-list">
             <!-- Dates and durations dynamically injected -->
           </div>
+        </div>
+        <div style="margin-top: 15px; display: flex; justify-content: flex-start;">
+          <button id="clear-book-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_book_stats">Clear Stats</button>
         </div>
       </div>
     </div>
@@ -4773,10 +4773,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "Close"
     },
     "clear_all_stats": {
-      "message": "Clear All Stats"
+      "message": "Clear Reading Records"
     },
     "clear_book_stats": {
-      "message": "Clear Stats"
+      "message": "Clear Reading Records"
     },
     "confirm_clear_all_stats": {
       "message": "Are you sure you want to clear all reading statistics? This cannot be undone."
@@ -5295,10 +5295,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "關閉"
     },
     "clear_all_stats": {
-      "message": "清理所有統計數據"
+      "message": "清理閱讀記錄"
     },
     "clear_book_stats": {
-      "message": "清理本書統計"
+      "message": "清理閱讀記錄"
     },
     "confirm_clear_all_stats": {
       "message": "確定要清除所有書籍的閱讀統計數據嗎？此操作無法撤銷。"
@@ -5817,10 +5817,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "关闭"
     },
     "clear_all_stats": {
-      "message": "清理所有统计数据"
+      "message": "清理阅读记录"
     },
     "clear_book_stats": {
-      "message": "清理本书统计"
+      "message": "清理阅读记录"
     },
     "confirm_clear_all_stats": {
       "message": "确定要清除所有书籍的阅读统计数据吗？此操作无法撤销。"

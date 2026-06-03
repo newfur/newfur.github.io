@@ -508,10 +508,10 @@
     "message": "Close"
   },
   "clear_all_stats": {
-    "message": "Clear All Stats"
+    "message": "Clear Reading Records"
   },
   "clear_book_stats": {
-    "message": "Clear Stats"
+    "message": "Clear Reading Records"
   },
   "confirm_clear_all_stats": {
     "message": "Are you sure you want to clear all reading statistics? This cannot be undone."
