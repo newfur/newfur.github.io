@@ -932,6 +932,7 @@ export class TTSEngine {
     if (audio.dataset.srcUrl !== cached.blobUrl) {
       audio.src = cached.blobUrl;
       audio.dataset.srcUrl = cached.blobUrl;
+      audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
@@ -1210,7 +1211,8 @@ export class TTSEngine {
     this.players.forEach(p => {
       try {
         p.pause();
-        p.src = '';
+        p.removeAttribute('src'); // 移除 src 屬性以防止在 file:// 協議下瀏覽器將空字串解析為當前 HTML 路徑而拋出 CORS 錯誤
+        p.load(); // 徹底重置播放器狀態
         if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;
@@ -1416,7 +1418,8 @@ export class TTSEngine {
     this.players.forEach(p => {
       try {
         p.pause();
-        p.src = '';
+        p.removeAttribute('src'); // 移除 src 屬性以防止在 file:// 協議下瀏覽器將空字串解析為當前 HTML 路徑而拋出 CORS 錯誤
+        p.load(); // 徹底重置播放器狀態
         if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;
