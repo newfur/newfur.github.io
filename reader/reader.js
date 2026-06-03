@@ -1942,6 +1942,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   const isPaginated = document.body.classList.contains('layout-paginated');
   const origHtmlOverflow = document.documentElement.style.overflow;
   const origBodyOverflow = document.body.style.overflow;
+  let activeHashElem = null;
 
   if (!isPaginated) {
     document.documentElement.style.overflow = 'hidden';
@@ -1957,7 +1958,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
 
   const chapter = epubBookData.chapters[index];
   const contentEl = document.getElementById('book-content');
-  let activeHashElem = null;
+  activeHashElem = null;
   
   // 加載 HTML (優先使用背景預載快取)
   let rawHtml;

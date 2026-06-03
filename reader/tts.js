@@ -788,22 +788,41 @@ export class TTSEngine {
     
     this._downloadSentenceAudio(sentence).then(blob => {
       this.consecutiveWsFailures = 0; // 成功加載，重置失敗計數器
-      const blobUrl = URL.createObjectURL(blob);
       
-      this.audioCache.set(index, {
-        blobUrl,
-        isReady: true
-      });
-      this.fetchingIndices.delete(index);
-      
-      // 若當前正在播放且等待加載此句子，立即觸發播放
-      if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
-        this._playActiveSentence();
-      }
-      
-      // 如果下載完成的是下一句，主動預熱它
-      if (this.isPlaying && index === this.currentIndex + 1) {
-        this._prewarmNextPlayer();
+      // 在本地 file:// 協議下使用 Base64 Data URL 替代 Blob URL，
+      // 以避免 Chrome 底層對 null origin 拋出 ERR_REQUEST_RANGE_NOT_SATISFIABLE 錯誤
+      if (window.location.protocol === 'file:') {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Url = reader.result;
+          this.audioCache.set(index, {
+            blobUrl: base64Url,
+            isReady: true
+          });
+          this.fetchingIndices.delete(index);
+          
+          if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
+            this._playActiveSentence();
+          }
+          if (this.isPlaying && index === this.currentIndex + 1) {
+            this._prewarmNextPlayer();
+          }
+        };
+        reader.readAsDataURL(blob);
+      } else {
+        const blobUrl = URL.createObjectURL(blob);
+        this.audioCache.set(index, {
+          blobUrl,
+          isReady: true
+        });
+        this.fetchingIndices.delete(index);
+        
+        if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
+          this._playActiveSentence();
+        }
+        if (this.isPlaying && index === this.currentIndex + 1) {
+          this._prewarmNextPlayer();
+        }
       }
     }).catch(err => {
       console.error(`Failed to prefetch sentence ${index}:`, err);
@@ -964,7 +983,9 @@ export class TTSEngine {
       audio.onended = null;
       audio.onloadedmetadata = null;
       
-      URL.revokeObjectURL(cached.blobUrl);
+      if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(cached.blobUrl);
+      }
       this.audioCache.delete(index);
       
       if (!this.isPlaying) return;
@@ -1142,8 +1163,8 @@ export class TTSEngine {
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const text = sentence ? sentence.text : 'TTS Reading';
-        const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata.title || 'TTS Reading') : 'TTS Reading';
-        const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata.author || 'E-Book Reader') : 'E-Book Reader';
+        const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
+        const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
         
         navigator.mediaSession.metadata = new MediaMetadata({
           title: text,
@@ -1223,7 +1244,9 @@ export class TTSEngine {
     keysToDelete.forEach(idx => {
       const cached = this.audioCache.get(idx);
       if (cached) {
-        URL.revokeObjectURL(cached.blobUrl);
+        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(cached.blobUrl);
+        }
         this.audioCache.delete(idx);
       }
     });
@@ -1399,7 +1422,9 @@ export class TTSEngine {
     this.currentAudio = null;
     
     this.audioCache.forEach(cached => {
-      URL.revokeObjectURL(cached.blobUrl);
+      if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(cached.blobUrl);
+      }
     });
     this.audioCache.clear();
     this.fetchingIndices.clear();
@@ -1476,7 +1501,9 @@ export class TTSEngine {
     
     if (isChanged) {
       this.audioCache.forEach(cached => {
-        URL.revokeObjectURL(cached.blobUrl);
+        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(cached.blobUrl);
+        }
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
