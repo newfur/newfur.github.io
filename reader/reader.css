@@ -1436,6 +1436,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   padding: 8px 16px;
   border-radius: 8px;
   transition: all 0.2s ease;
+  white-space: nowrap !important; /* 確保按鈕文字在任何情況下都不換行，防止撐高標題欄 */
 }
 
 .reader-sidebar .tab-btn.active {
@@ -2577,6 +2578,19 @@ html.transition-none .page-texture-slide {
   .reader-title {
     max-width: calc(100% - 160px);
     font-size: 15px;
+  }
+
+  /* 側邊欄標題欄與按鈕在移動端的響應式對齊優化 */
+  .sidebar-header {
+    padding: 0 12px !important;
+  }
+  .sidebar-header .btn-icon-only {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  .reader-sidebar .tab-btn {
+    font-size: 14px !important;
+    padding: 6px 10px !important;
   }
 
   /* 批量操作欄移動端佈局優化 */
