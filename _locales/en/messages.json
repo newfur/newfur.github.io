@@ -503,5 +503,8 @@
   },
   "about_tip_content": {
     "message": "We strongly recommend downloading the offline single-file HTML version! Running it locally by double-clicking bypasses CORS and server proxy restrictions, letting you fully leverage Microsoft Edge's high-quality online Natural TTS Engine."
+  },
+  "btn_close": {
+    "message": "Close"
   }
 }
