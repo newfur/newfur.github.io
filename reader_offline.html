@@ -10901,17 +10901,44 @@ async function renderBookshelf(searchQuery = '') {
 
   const books = await library.getAllBooks();
   
-  // 1. 計算每個資料夾內書籍的個數
+  // 1. 計算每個資料夾內書籍的個數以及最近打開/添加時間
   const folderCounts = {};
+  const folderMaxRead = {};
+  const folderMaxAdded = {};
+
   books.forEach(b => {
     if (b.folder) {
       folderCounts[b.folder] = (folderCounts[b.folder] || 0) + 1;
+      
+      const lastRead = b.lastReadAt || 0;
+      const added = b.addedAt || 0;
+      
+      if (!folderMaxRead[b.folder] || lastRead > folderMaxRead[b.folder]) {
+        folderMaxRead[b.folder] = lastRead;
+      }
+      if (!folderMaxAdded[b.folder] || added > folderMaxAdded[b.folder]) {
+        folderMaxAdded[b.folder] = added;
+      }
     }
   });
 
-  // 2. 獲取所有有效的自定義與包含書籍的資料夾
+  // 2. 獲取所有有效的自定義與包含書籍的資料夾，並按最近閱讀/添加時間排序
   const customFolders = getCustomFolders();
   const activeFolders = Array.from(new Set([...customFolders, ...Object.keys(folderCounts)]));
+  
+  activeFolders.sort((a, b) => {
+    const readA = folderMaxRead[a] || 0;
+    const readB = folderMaxRead[b] || 0;
+    if (readB !== readA) {
+      return readB - readA;
+    }
+    const addedA = folderMaxAdded[a] || 0;
+    const addedB = folderMaxAdded[b] || 0;
+    if (addedB !== addedA) {
+      return addedB - addedA;
+    }
+    return a.localeCompare(b);
+  });
 
   // 3. 渲染資料夾卡片 (僅在根目錄且沒有搜尋時渲染)
   if (!currentFolder && !isSearching) {
