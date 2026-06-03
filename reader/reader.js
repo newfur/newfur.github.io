@@ -3953,10 +3953,20 @@ function handleTextSelection(e) {
     selectedTextState = selectedText;
     selectedTextRange = selection.getRangeAt(0).cloneRange();
 
-    // 獲取選取文字坐標以顯示選單
-    const rect = selectedTextRange.getBoundingClientRect();
-    menu.style.top = `${rect.top + window.scrollY - 55}px`;
-    menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
+    // 檢測是否為行動端，以便將選單渲染至底部
+    const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window);
+
+    if (isMobile) {
+      menu.classList.add('mobile-bottom-menu');
+      menu.style.top = '';
+      menu.style.left = '';
+    } else {
+      menu.classList.remove('mobile-bottom-menu');
+      // 獲取選取文字坐標以顯示選單
+      const rect = selectedTextRange.getBoundingClientRect();
+      menu.style.top = `${rect.top + window.scrollY - 55}px`;
+      menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
+    }
     menu.style.display = 'flex';
   } else {
     // 點擊空白處隱藏選單

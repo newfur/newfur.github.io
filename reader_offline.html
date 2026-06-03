@@ -1046,6 +1046,7 @@ body.format-cbz .nav-arrow-btn {
   text-align: justify;
   word-wrap: break-word;
   padding-bottom: 60px; /* 底部留白，避免最後一行文字被遮蓋 */
+  -webkit-touch-callout: none; /* 禁用 iOS 預設的長按選取彈出選單，保留選取句柄以配合自定義選單 */
 }
 
 /* 網頁正文排版 */
@@ -1597,6 +1598,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
   align-items: center;
   gap: 10px;
   animation: popScale 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 行動端將選單固定在螢幕底部，避免與系統原生選取選單（尤其 Android）重疊 */
+.selection-menu.mobile-bottom-menu {
+  position: fixed !important;
+  bottom: 24px !important;
+  top: auto !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  display: flex !important;
+  animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-shadow: 0 10px 40px var(--glass-shadow) !important;
+}
+
+@keyframes slideUpMobile {
+  from { transform: translate(-50%, 120%); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
 }
 
 @keyframes popScale {
@@ -13852,10 +13870,20 @@ function handleTextSelection(e) {
     selectedTextState = selectedText;
     selectedTextRange = selection.getRangeAt(0).cloneRange();
 
-    // 獲取選取文字坐標以顯示選單
-    const rect = selectedTextRange.getBoundingClientRect();
-    menu.style.top = `${rect.top + window.scrollY - 55}px`;
-    menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
+    // 檢測是否為行動端，以便將選單渲染至底部
+    const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window);
+
+    if (isMobile) {
+      menu.classList.add('mobile-bottom-menu');
+      menu.style.top = '';
+      menu.style.left = '';
+    } else {
+      menu.classList.remove('mobile-bottom-menu');
+      // 獲取選取文字坐標以顯示選單
+      const rect = selectedTextRange.getBoundingClientRect();
+      menu.style.top = `${rect.top + window.scrollY - 55}px`;
+      menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
+    }
     menu.style.display = 'flex';
   } else {
     // 點擊空白處隱藏選單
