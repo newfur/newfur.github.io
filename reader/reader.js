@@ -840,6 +840,13 @@ function initUIEventBindings() {
       aboutDialog.close();
     });
   }
+  if (aboutDialog) {
+    aboutDialog.addEventListener('click', (event) => {
+      if (event.target === aboutDialog) {
+        aboutDialog.close();
+      }
+    });
+  }
 
   // 點擊空白處關閉所有下拉面板與選取菜單
   document.addEventListener('click', (e) => {
