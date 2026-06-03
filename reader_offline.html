@@ -1423,6 +1423,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   align-items: center;
   border-bottom: 1px solid var(--border-color);
   box-sizing: border-box;
+  flex-shrink: 0 !important; /* 強制防止彈性佈局壓縮標題欄高度 */
 }
 
 .sidebar-tabs {
