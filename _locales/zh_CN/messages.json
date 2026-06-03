@@ -518,5 +518,14 @@
   },
   "confirm_clear_book_stats": {
     "message": "确定要清除本书的阅读统计数据吗？此操作无法撤销。"
+  },
+  "texture_kraft": {
+    "message": "牛皮纸"
+  },
+  "texture_bamboo": {
+    "message": "竹木纤维"
+  },
+  "texture_grid": {
+    "message": "复古格子"
   }
 }

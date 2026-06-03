@@ -1930,76 +1930,118 @@ body.theme-oled .page-texture-card {
 }
 
 /* ---- 底紋：無 (texture-none) ---- */
+body.texture-none:not(.layout-paginated) .reader-container,
 body.texture-none .page-texture-card {
   background-image: none;
 }
 
 /* ---- 底紋：經典紙紋 (texture-classic) ---- */
+body.texture-classic:not(.layout-paginated) .reader-container,
 body.texture-classic .page-texture-card {
   background-image:
     repeating-linear-gradient(
       0deg,
       transparent,
       transparent 28px,
-      rgba(0, 0, 0, 0.016) 28px,
-      rgba(0, 0, 0, 0.016) 29px
+      rgba(0, 0, 0, 0.035) 28px,
+      rgba(0, 0, 0, 0.035) 29px
     ),
     repeating-linear-gradient(
       90deg,
       transparent,
       transparent 40px,
-      rgba(0, 0, 0, 0.008) 40px,
-      rgba(0, 0, 0, 0.008) 41px
+      rgba(0, 0, 0, 0.02) 40px,
+      rgba(0, 0, 0, 0.02) 41px
     );
 }
 
 /* ---- 底紋：羊皮紙 (texture-parchment) ---- */
+body.texture-parchment:not(.layout-paginated) .reader-container,
 body.texture-parchment .page-texture-card {
   background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(139, 115, 85, 0.05) 0%, transparent 70%),
-    radial-gradient(ellipse at 80% 20%, rgba(139, 115, 85, 0.03) 0%, transparent 60%),
-    radial-gradient(ellipse at 60% 80%, rgba(139, 115, 85, 0.04) 0%, transparent 65%);
+    radial-gradient(ellipse at 20% 50%, rgba(139, 115, 85, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse at 80% 20%, rgba(139, 115, 85, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 60% 80%, rgba(139, 115, 85, 0.1) 0%, transparent 65%);
 }
 
 /* ---- 底紋：亞麻布紋 (texture-linen) ---- */
+body.texture-linen:not(.layout-paginated) .reader-container,
 body.texture-linen .page-texture-card {
   background-image:
     repeating-linear-gradient(
       0deg,
       transparent,
       transparent 2px,
-      rgba(0, 0, 0, 0.012) 2px,
-      rgba(0, 0, 0, 0.012) 4px
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
     ),
     repeating-linear-gradient(
       90deg,
       transparent,
       transparent 2px,
-      rgba(0, 0, 0, 0.012) 2px,
-      rgba(0, 0, 0, 0.012) 4px
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
     );
 }
 
 /* ---- 底紋：仿舊紙 (texture-aged) ---- */
+body.texture-aged:not(.layout-paginated) .reader-container,
 body.texture-aged .page-texture-card {
   background-image:
-    radial-gradient(ellipse at 10% 10%, rgba(100, 80, 50, 0.07) 0%, transparent 50%),
-    radial-gradient(ellipse at 90% 90%, rgba(100, 80, 50, 0.05) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(100, 80, 50, 0.02) 0%, transparent 70%);
+    radial-gradient(ellipse at 10% 10%, rgba(100, 80, 50, 0.14) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 90%, rgba(100, 80, 50, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(100, 80, 50, 0.06) 0%, transparent 70%);
 }
 
 /* ---- 底紋：水紋紙 (texture-wove) ---- */
+body.texture-wove:not(.layout-paginated) .reader-container,
 body.texture-wove .page-texture-card {
   background-image:
-    radial-gradient(circle at 25% 25%, rgba(0, 0, 0, 0.015) 1px, transparent 1px),
-    radial-gradient(circle at 75% 75%, rgba(0, 0, 0, 0.015) 1px, transparent 1px);
+    radial-gradient(circle at 25% 25%, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 75% 75%, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+}
+body.texture-wove:not(.layout-paginated) .reader-container,
+body.texture-wove .page-texture-card {
   background-size: 10px 10px;
+}
+
+/* ---- 底紋：牛皮紙 (texture-kraft) ---- */
+body.texture-kraft:not(.layout-paginated) .reader-container,
+body.texture-kraft .page-texture-card {
+  background-image:
+    repeating-linear-gradient(4deg, rgba(139, 105, 50, 0.08) 0px, rgba(139, 105, 50, 0.08) 1px, transparent 1px, transparent 15px),
+    repeating-linear-gradient(-3deg, rgba(100, 70, 30, 0.06) 0px, rgba(100, 70, 30, 0.06) 1px, transparent 1px, transparent 20px),
+    linear-gradient(to right, rgba(139, 105, 50, 0.07) 0%, rgba(200, 160, 100, 0.04) 50%, rgba(139, 105, 50, 0.07) 100%);
+}
+
+/* ---- 底紋：竹木纖維 (texture-bamboo) ---- */
+body.texture-bamboo:not(.layout-paginated) .reader-container,
+body.texture-bamboo .page-texture-card {
+  background-image:
+    repeating-linear-gradient(90deg, rgba(80, 120, 70, 0.08) 0px, rgba(80, 120, 70, 0.08) 2px, transparent 2px, transparent 30px),
+    repeating-linear-gradient(90deg, rgba(120, 140, 90, 0.05) 0px, rgba(120, 140, 90, 0.05) 1px, transparent 1px, transparent 8px),
+    radial-gradient(ellipse at 50% 10%, rgba(80, 120, 70, 0.04) 0%, transparent 80%);
+}
+
+/* ---- 底紋：復古格子 (texture-grid) ---- */
+body.texture-grid:not(.layout-paginated) .reader-container,
+body.texture-grid .page-texture-card {
+  background-image:
+    linear-gradient(rgba(100, 150, 220, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 150, 220, 0.22) 1px, transparent 1px);
+}
+body.texture-grid:not(.layout-paginated) .reader-container,
+body.texture-grid .page-texture-card {
+  background-size: 24px 24px;
 }
 
 /* 暗色主題下降低底紋圖案對比度 */
 body.theme-dark .page-texture-card,
 body.theme-oled .page-texture-card,
-body.theme-slate .page-texture-card {
+body.theme-slate .page-texture-card,
+body.theme-dark .reader-container,
+body.theme-oled .reader-container,
+body.theme-slate .reader-container {
   background-image: none !important;
 }
 
@@ -3930,6 +3972,9 @@ html.transition-none .page-texture-slide {
           <option value="texture-linen" data-i18n="texture_linen">Linen Weave</option>
           <option value="texture-aged" data-i18n="texture_aged" selected>Aged Paper</option>
           <option value="texture-wove" data-i18n="texture_wove">Wove Paper</option>
+          <option value="texture-kraft" data-i18n="texture_kraft">Kraft Paper</option>
+          <option value="texture-bamboo" data-i18n="texture_bamboo">Bamboo Fiber</option>
+          <option value="texture-grid" data-i18n="texture_grid">Retro Grid</option>
         </select>
       </div>
     </div>
@@ -4792,6 +4837,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "confirm_clear_book_stats": {
       "message": "Are you sure you want to clear statistics for this book? This cannot be undone."
+    },
+    "texture_kraft": {
+      "message": "Kraft Paper"
+    },
+    "texture_bamboo": {
+      "message": "Bamboo Fiber"
+    },
+    "texture_grid": {
+      "message": "Retro Grid"
     }
   },
   "zh_TW": {
@@ -5314,6 +5368,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "confirm_clear_book_stats": {
       "message": "確定要清除本書的閱讀統計數據嗎？此操作無法撤销。"
+    },
+    "texture_kraft": {
+      "message": "牛皮紙"
+    },
+    "texture_bamboo": {
+      "message": "竹木纖維"
+    },
+    "texture_grid": {
+      "message": "復古格子"
     }
   },
   "zh_CN": {
@@ -5836,6 +5899,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "confirm_clear_book_stats": {
       "message": "确定要清除本书的阅读统计数据吗？此操作无法撤销。"
+    },
+    "texture_kraft": {
+      "message": "牛皮纸"
+    },
+    "texture_bamboo": {
+      "message": "竹木纤维"
+    },
+    "texture_grid": {
+      "message": "复古格子"
     }
   }
 };
