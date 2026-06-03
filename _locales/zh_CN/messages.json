@@ -455,5 +455,47 @@
   },
   "stats_no_time": {
     "message": "暂无时长"
+  },
+  "about_title": {
+    "message": "关于"
+  },
+  "about_dialog_title": {
+    "message": "关于阅读器"
+  },
+  "about_dialog_desc": {
+    "message": "一款专为网页和浏览器设计的高级电子书阅读器。支持多种电子书格式以及微软高质量云端神经网络语音朗读（TTS）。"
+  },
+  "about_features_title": {
+    "message": "核心特性:"
+  },
+  "about_feature_1": {
+    "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等"
+  },
+  "about_feature_2": {
+    "message": "朗读引擎：微软云端神经网络高品质语音 (TTS)，支持双播放器无缝切换"
+  },
+  "about_feature_3": {
+    "message": "个性排版：支持连续滚动与翻页布局，内置多种阅读字体与纸张纹理底纹"
+  },
+  "about_feature_4": {
+    "message": "AI 助手：对接浏览器内置 Gemini Nano API，提供本地划词翻译、释义和摘要"
+  },
+  "about_feature_5": {
+    "message": "数据分析：深度阅读时长统计、频次分布与每日阅读明细历史"
+  },
+  "about_usage_title": {
+    "message": "基本用法:"
+  },
+  "about_usage_1": {
+    "message": "导入：点击书架上的“导入书籍”按钮或直接拖拽电子书文件到书架中。"
+  },
+  "about_usage_2": {
+    "message": "阅读与朗读：点击书籍开始阅读。点击顶部喇叭图标可开启语音朗读面板，点击句子可直接从该句开始朗读。"
+  },
+  "about_usage_3": {
+    "message": "高亮标注：在阅读时选中文本即可弹出菜单进行划线、记笔记和发起本地 AI 交互。"
+  },
+  "about_usage_4": {
+    "message": "备份：点击“更多” -> “备份书库”可一键导出包含书籍和阅读进度的 .zip 压缩包。"
   }
 }

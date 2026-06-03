@@ -101,6 +101,12 @@
                 </span>
                 <span data-i18n="download_offline">Download Offline Version</span>
               </button>
+              <button id="about-btn" class="dropdown-item" title="About Reader">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                </span>
+                <span data-i18n="about_title">About</span>
+              </button>
             </div>
           </div>
           <input type="file" id="restore-file-input" accept=".zip,.json" style="display: none;">
@@ -593,6 +599,42 @@
         <button type="button" id="folder-select-cancel" class="btn" data-i18n="btn_cancel">Cancel</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- 關於閱讀器對話框 -->
+  <dialog id="about-dialog" class="custom-dialog panel-glass" style="max-height:85vh; width:450px; border-radius: 20px;">
+    <div class="dialog-form" style="display: flex; flex-direction: column; gap: 12px; color: var(--text-color);">
+      <div style="display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <svg class="svg-icon" style="width: 28px; height: 28px; color: var(--primary-color);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        <h3 style="margin: 0; font-size: 20px;" data-i18n="about_dialog_title">About E-Book Reader</h3>
+      </div>
+      <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v1.1.0</span></div>
+        
+        <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
+        
+        <div style="font-weight: 600; margin-bottom: 5px;" data-i18n="about_features_title">核心特性:</div>
+        <ul style="margin: 0 0 15px 0; padding-left: 20px;">
+          <li data-i18n="about_feature_1">支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ</li>
+          <li data-i18n="about_feature_2">朗讀引擎：微軟雲端神經網路高品質語音 (TTS)，支持雙播放器無縫切換</li>
+          <li data-i18n="about_feature_3">個性排版：支持連續滾動與翻頁佈局，內置多種閱讀字型與紙張紋理底紋</li>
+          <li data-i18n="about_feature_4">AI 助手：對接瀏覽器內置 Gemini Nano API，提供本地劃詞翻譯、釋義和摘要</li>
+          <li data-i18n="about_feature_5">數據分析：深度閱讀時長統計、頻次分佈與每日閱讀明細歷史</li>
+        </ul>
+
+        <div style="font-weight: 600; margin-bottom: 5px;" data-i18n="about_usage_title">基本用法:</div>
+        <ol style="margin: 0; padding-left: 20px;">
+          <li data-i18n="about_usage_1">導入：點擊書架上的「導入書籍」按鈕或直接拖拽電子書檔案到書架中。</li>
+          <li data-i18n="about_usage_2">閱讀與朗讀：點擊書籍開始閱讀。點擊頂部喇叭圖標可開啟語音朗讀面板，點擊句子可直接從該句開始朗讀。</li>
+          <li data-i18n="about_usage_3">高亮標註：在閱讀時選中文本即可彈出選單進行劃線、記筆記和發起本地 AI 交互。</li>
+          <li data-i18n="about_usage_4">備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。</li>
+        </ol>
+      </div>
+      <div class="dialog-actions" style="display: flex; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 5px;">
+        <button type="button" id="about-dialog-close" class="btn btn-primary" data-i18n="btn_save">Close</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- ==================== 引入 JS 庫 ==================== -->

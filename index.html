@@ -3668,6 +3668,12 @@ html.transition-none .page-texture-slide {
                 </span>
                 <span data-i18n="download_offline">Download Offline Version</span>
               </button>
+              <button id="about-btn" class="dropdown-item" title="About Reader">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                </span>
+                <span data-i18n="about_title">About</span>
+              </button>
             </div>
           </div>
           <input type="file" id="restore-file-input" accept=".zip,.json" style="display: none;">
@@ -4162,6 +4168,42 @@ html.transition-none .page-texture-slide {
     </form>
   </dialog>
 
+  <!-- 關於閱讀器對話框 -->
+  <dialog id="about-dialog" class="custom-dialog panel-glass" style="max-height:85vh; width:450px; border-radius: 20px;">
+    <div class="dialog-form" style="display: flex; flex-direction: column; gap: 12px; color: var(--text-color);">
+      <div style="display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <svg class="svg-icon" style="width: 28px; height: 28px; color: var(--primary-color);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        <h3 style="margin: 0; font-size: 20px;" data-i18n="about_dialog_title">About E-Book Reader</h3>
+      </div>
+      <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v1.1.0</span></div>
+        
+        <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
+        
+        <div style="font-weight: 600; margin-bottom: 5px;" data-i18n="about_features_title">核心特性:</div>
+        <ul style="margin: 0 0 15px 0; padding-left: 20px;">
+          <li data-i18n="about_feature_1">支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ</li>
+          <li data-i18n="about_feature_2">朗讀引擎：微軟雲端神經網路高品質語音 (TTS)，支持雙播放器無縫切換</li>
+          <li data-i18n="about_feature_3">個性排版：支持連續滾動與翻頁佈局，內置多種閱讀字型與紙張紋理底紋</li>
+          <li data-i18n="about_feature_4">AI 助手：對接瀏覽器內置 Gemini Nano API，提供本地劃詞翻譯、釋義和摘要</li>
+          <li data-i18n="about_feature_5">數據分析：深度閱讀時長統計、頻次分佈與每日閱讀明細歷史</li>
+        </ul>
+
+        <div style="font-weight: 600; margin-bottom: 5px;" data-i18n="about_usage_title">基本用法:</div>
+        <ol style="margin: 0; padding-left: 20px;">
+          <li data-i18n="about_usage_1">導入：點擊書架上的「導入書籍」按鈕或直接拖拽電子書檔案到書架中。</li>
+          <li data-i18n="about_usage_2">閱讀與朗讀：點擊書籍開始閱讀。點擊頂部喇叭圖標可開啟語音朗讀面板，點擊句子可直接從該句開始朗讀。</li>
+          <li data-i18n="about_usage_3">高亮標註：在閱讀時選中文本即可彈出選單進行劃線、記筆記和發起本地 AI 交互。</li>
+          <li data-i18n="about_usage_4">備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。</li>
+        </ol>
+      </div>
+      <div class="dialog-actions" style="display: flex; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 5px;">
+        <button type="button" id="about-dialog-close" class="btn btn-primary" data-i18n="btn_save">Close</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ==================== 引入 JS 庫 ==================== -->
   <script>/*!
 
@@ -4636,6 +4678,48 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "stats_no_time": {
       "message": "Not started"
+    },
+    "about_title": {
+      "message": "About"
+    },
+    "about_dialog_title": {
+      "message": "About Reader"
+    },
+    "about_dialog_desc": {
+      "message": "A premium web-based reader for EPUB, AZW3, MOBI, TXT, MD, FB2, and CBZ with high-quality Edge TTS Read Aloud support."
+    },
+    "about_features_title": {
+      "message": "Core Features:"
+    },
+    "about_feature_1": {
+      "message": "Format support: EPUB, AZW3, MOBI, TXT, MD, FB2, CBZ"
+    },
+    "about_feature_2": {
+      "message": "Speech Engine: High-quality Microsoft Edge online Neural TTS with dual-buffer seamless audio"
+    },
+    "about_feature_3": {
+      "message": "Typography: Continuous scroll & paginated layouts, custom fonts and texture overlays"
+    },
+    "about_feature_4": {
+      "message": "AI Assistant: Integrates Chrome local Gemini Nano API for summaries, explanations, and translate"
+    },
+    "about_feature_5": {
+      "message": "Data Statistics: Deep analytics tracking duration, frequency, and reading history logs"
+    },
+    "about_usage_title": {
+      "message": "Basic Usage:"
+    },
+    "about_usage_1": {
+      "message": "Import: Click the 'Import Book' button or drag and drop book files onto the library bookshelf."
+    },
+    "about_usage_2": {
+      "message": "Reading & TTS: Click a book to read. Click the speaker icon to open the TTS controls; click any sentence to read from it."
+    },
+    "about_usage_3": {
+      "message": "Highlights: Select any text while reading to launch the annotation toolbar for highlights, notes, and AI features."
+    },
+    "about_usage_4": {
+      "message": "Backup: Click 'More' -> 'Backup' to export all books and progress into a single .zip file."
     }
   },
   "zh_TW": {
@@ -5095,6 +5179,48 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "stats_no_time": {
       "message": "暫無時長"
+    },
+    "about_title": {
+      "message": "關於"
+    },
+    "about_dialog_title": {
+      "message": "關於閱讀器"
+    },
+    "about_dialog_desc": {
+      "message": "一款專為網頁和瀏覽器設計的高級電子书閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗讀（TTS）。"
+    },
+    "about_features_title": {
+      "message": "核心特性:"
+    },
+    "about_feature_1": {
+      "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等"
+    },
+    "about_feature_2": {
+      "message": "朗讀引擎：微軟雲端神經網路高品質語音 (TTS)，支持雙播放器無縫切換"
+    },
+    "about_feature_3": {
+      "message": "個性排版：支持連續滾動與翻頁佈局，內置多種閱讀字型與紙張紋理底紋"
+    },
+    "about_feature_4": {
+      "message": "AI 助手：對接瀏覽器內置 Gemini Nano API，提供本地劃詞翻譯、釋義和摘要"
+    },
+    "about_feature_5": {
+      "message": "數據分析：深度閱讀時長統計、頻次分佈與每日閱讀明细歷史"
+    },
+    "about_usage_title": {
+      "message": "基本用法:"
+    },
+    "about_usage_1": {
+      "message": "導入：點擊書架上的「導入書籍」按鈕或直接拖拽電子書檔案到書架中。"
+    },
+    "about_usage_2": {
+      "message": "閱讀與朗讀：點擊書籍開始閱讀。點擊頂部喇叭圖標可開啟語音朗讀面板，點擊句子可直接從該句開始朗讀。"
+    },
+    "about_usage_3": {
+      "message": "高亮標註：在閱讀時選中文本即可彈出選單進行劃線、記筆記和發起本地 AI 交互。"
+    },
+    "about_usage_4": {
+      "message": "備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。"
     }
   },
   "zh_CN": {
@@ -5554,6 +5680,48 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "stats_no_time": {
       "message": "暂无时长"
+    },
+    "about_title": {
+      "message": "关于"
+    },
+    "about_dialog_title": {
+      "message": "关于阅读器"
+    },
+    "about_dialog_desc": {
+      "message": "一款专为网页和浏览器设计的高级电子书阅读器。支持多种电子书格式以及微软高质量云端神经网络语音朗读（TTS）。"
+    },
+    "about_features_title": {
+      "message": "核心特性:"
+    },
+    "about_feature_1": {
+      "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等"
+    },
+    "about_feature_2": {
+      "message": "朗读引擎：微软云端神经网络高品质语音 (TTS)，支持双播放器无缝切换"
+    },
+    "about_feature_3": {
+      "message": "个性排版：支持连续滚动与翻页布局，内置多种阅读字体与纸张纹理底纹"
+    },
+    "about_feature_4": {
+      "message": "AI 助手：对接浏览器内置 Gemini Nano API，提供本地划词翻译、释义和摘要"
+    },
+    "about_feature_5": {
+      "message": "数据分析：深度阅读时长统计、频次分布与每日阅读明细历史"
+    },
+    "about_usage_title": {
+      "message": "基本用法:"
+    },
+    "about_usage_1": {
+      "message": "导入：点击书架上的“导入书籍”按钮或直接拖拽电子书文件到书架中。"
+    },
+    "about_usage_2": {
+      "message": "阅读与朗读：点击书籍开始阅读。点击顶部喇叭图标可开启语音朗读面板，点击句子可直接从该句开始朗读。"
+    },
+    "about_usage_3": {
+      "message": "高亮标注：在阅读时选中文本即可弹出菜单进行划线、记笔记和发起本地 AI 交互。"
+    },
+    "about_usage_4": {
+      "message": "备份：点击“更多” -> “备份书库”可一键导出包含书籍和阅读进度的 .zip 压缩包。"
     }
   }
 };
@@ -10688,6 +10856,33 @@ function initUIEventBindings() {
   document.getElementById('close-ai-panel').addEventListener('click', () => {
     document.getElementById('ai-panel').style.display = 'none';
   });
+
+  // 關於對話框
+  const aboutBtn = document.getElementById('about-btn');
+  const aboutDialog = document.getElementById('about-dialog');
+  const aboutCloseBtn = document.getElementById('about-dialog-close');
+  if (aboutBtn && aboutDialog) {
+    aboutBtn.addEventListener('click', () => {
+      const versionDisplay = document.getElementById('about-version-display');
+      if (versionDisplay) {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+          try {
+            versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
+          } catch (e) {
+            versionDisplay.textContent = 'v1.1.0';
+          }
+        } else {
+          versionDisplay.textContent = 'v1.1.0';
+        }
+      }
+      aboutDialog.showModal();
+    });
+  }
+  if (aboutCloseBtn && aboutDialog) {
+    aboutCloseBtn.addEventListener('click', () => {
+      aboutDialog.close();
+    });
+  }
 
   // 點擊空白處關閉所有下拉面板與選取菜單
   document.addEventListener('click', (e) => {

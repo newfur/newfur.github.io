@@ -744,6 +744,33 @@ function initUIEventBindings() {
     document.getElementById('ai-panel').style.display = 'none';
   });
 
+  // 關於對話框
+  const aboutBtn = document.getElementById('about-btn');
+  const aboutDialog = document.getElementById('about-dialog');
+  const aboutCloseBtn = document.getElementById('about-dialog-close');
+  if (aboutBtn && aboutDialog) {
+    aboutBtn.addEventListener('click', () => {
+      const versionDisplay = document.getElementById('about-version-display');
+      if (versionDisplay) {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+          try {
+            versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
+          } catch (e) {
+            versionDisplay.textContent = 'v1.1.0';
+          }
+        } else {
+          versionDisplay.textContent = 'v1.1.0';
+        }
+      }
+      aboutDialog.showModal();
+    });
+  }
+  if (aboutCloseBtn && aboutDialog) {
+    aboutCloseBtn.addEventListener('click', () => {
+      aboutDialog.close();
+    });
+  }
+
   // 點擊空白處關閉所有下拉面板與選取菜單
   document.addEventListener('click', (e) => {
     const target = e.target;

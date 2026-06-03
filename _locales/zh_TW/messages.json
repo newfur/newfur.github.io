@@ -455,5 +455,47 @@
   },
   "stats_no_time": {
     "message": "暫無時長"
+  },
+  "about_title": {
+    "message": "關於"
+  },
+  "about_dialog_title": {
+    "message": "關於閱讀器"
+  },
+  "about_dialog_desc": {
+    "message": "一款專為網頁和瀏覽器設計的高級電子书閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗讀（TTS）。"
+  },
+  "about_features_title": {
+    "message": "核心特性:"
+  },
+  "about_feature_1": {
+    "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等"
+  },
+  "about_feature_2": {
+    "message": "朗讀引擎：微軟雲端神經網路高品質語音 (TTS)，支持雙播放器無縫切換"
+  },
+  "about_feature_3": {
+    "message": "個性排版：支持連續滾動與翻頁佈局，內置多種閱讀字型與紙張紋理底紋"
+  },
+  "about_feature_4": {
+    "message": "AI 助手：對接瀏覽器內置 Gemini Nano API，提供本地劃詞翻譯、釋義和摘要"
+  },
+  "about_feature_5": {
+    "message": "數據分析：深度閱讀時長統計、頻次分佈與每日閱讀明细歷史"
+  },
+  "about_usage_title": {
+    "message": "基本用法:"
+  },
+  "about_usage_1": {
+    "message": "導入：點擊書架上的「導入書籍」按鈕或直接拖拽電子書檔案到書架中。"
+  },
+  "about_usage_2": {
+    "message": "閱讀與朗讀：點擊書籍開始閱讀。點擊頂部喇叭圖標可開啟語音朗讀面板，點擊句子可直接從該句開始朗讀。"
+  },
+  "about_usage_3": {
+    "message": "高亮標註：在閱讀時選中文本即可彈出選單進行劃線、記筆記和發起本地 AI 交互。"
+  },
+  "about_usage_4": {
+    "message": "備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。"
   }
 }

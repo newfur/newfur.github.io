@@ -455,5 +455,47 @@
   },
   "stats_no_time": {
     "message": "Not started"
+  },
+  "about_title": {
+    "message": "About"
+  },
+  "about_dialog_title": {
+    "message": "About Reader"
+  },
+  "about_dialog_desc": {
+    "message": "A premium web-based reader for EPUB, AZW3, MOBI, TXT, MD, FB2, and CBZ with high-quality Edge TTS Read Aloud support."
+  },
+  "about_features_title": {
+    "message": "Core Features:"
+  },
+  "about_feature_1": {
+    "message": "Format support: EPUB, AZW3, MOBI, TXT, MD, FB2, CBZ"
+  },
+  "about_feature_2": {
+    "message": "Speech Engine: High-quality Microsoft Edge online Neural TTS with dual-buffer seamless audio"
+  },
+  "about_feature_3": {
+    "message": "Typography: Continuous scroll & paginated layouts, custom fonts and texture overlays"
+  },
+  "about_feature_4": {
+    "message": "AI Assistant: Integrates Chrome local Gemini Nano API for summaries, explanations, and translate"
+  },
+  "about_feature_5": {
+    "message": "Data Statistics: Deep analytics tracking duration, frequency, and reading history logs"
+  },
+  "about_usage_title": {
+    "message": "Basic Usage:"
+  },
+  "about_usage_1": {
+    "message": "Import: Click the 'Import Book' button or drag and drop book files onto the library bookshelf."
+  },
+  "about_usage_2": {
+    "message": "Reading & TTS: Click a book to read. Click the speaker icon to open the TTS controls; click any sentence to read from it."
+  },
+  "about_usage_3": {
+    "message": "Highlights: Select any text while reading to launch the annotation toolbar for highlights, notes, and AI features."
+  },
+  "about_usage_4": {
+    "message": "Backup: Click 'More' -> 'Backup' to export all books and progress into a single .zip file."
   }
 }
