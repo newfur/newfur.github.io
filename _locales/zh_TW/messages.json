@@ -67,7 +67,7 @@
     "message": "更多"
   },
   "download_offline": {
-    "message": "下載離線單檔案版"
+    "message": "下載離線版"
   },
   "download_offline_tooltip": {
     "message": "下載獨立的單檔案 HTML 版（可在手機本地運行，直接支持微軟 Edge 在線語音）"

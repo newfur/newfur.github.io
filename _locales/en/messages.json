@@ -67,7 +67,7 @@
     "message": "More"
   },
   "download_offline": {
-    "message": "Download Offline Version"
+    "message": "Download Offline"
   },
   "download_offline_tooltip": {
     "message": "Download standalone single-file HTML version (runs locally, fully supports Edge TTS)"

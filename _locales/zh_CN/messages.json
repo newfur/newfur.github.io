@@ -67,7 +67,7 @@
     "message": "更多"
   },
   "download_offline": {
-    "message": "下载离线单文件版"
+    "message": "下载离线版"
   },
   "download_offline_tooltip": {
     "message": "下载独立的单文件 HTML 版（可在手机本地运行，直接支持微软 Edge 在线语音）"
