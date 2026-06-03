@@ -1416,6 +1416,7 @@ async function renderBookshelf(searchQuery = '') {
       
       shelf.appendChild(card);
     }
+  });
 }
 
 // 刪除書籍（全局函數，便於 HTML 觸發）
