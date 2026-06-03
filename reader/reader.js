@@ -1107,9 +1107,79 @@ async function renderBookshelf(searchQuery = '') {
     return a.localeCompare(b);
   });
 
-  // 3. 渲染資料夾卡片 (僅在根目錄且沒有搜尋時渲染)
+  // 3. 依照搜尋條件和當前資料夾篩選書籍
+  const filteredBooks = books.filter(b => {
+    if (isSearching) {
+      const q = searchQuery.toLowerCase();
+      return b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q);
+    } else {
+      if (currentFolder) {
+        return b.folder === currentFolder;
+      } else {
+        return !b.folder; // 根目錄僅展示未分類書籍
+      }
+    }
+  });
+
+  // 4. 建立混合的展示項目列表 (在根目錄且非搜尋狀態下混合資料夾與未分類書籍)
+  const displayItems = [];
   if (!currentFolder && !isSearching) {
     activeFolders.forEach(folderName => {
+      displayItems.push({
+        type: 'folder',
+        name: folderName,
+        lastReadAt: folderMaxRead[folderName] || 0,
+        addedAt: folderMaxAdded[folderName] || 0
+      });
+    });
+    filteredBooks.forEach(book => {
+      displayItems.push({
+        type: 'book',
+        data: book,
+        lastReadAt: book.lastReadAt || 0,
+        addedAt: book.addedAt || 0
+      });
+    });
+
+    // 混合排序：按最後打開時間降序，再按添加時間降序
+    displayItems.sort((a, b) => {
+      if (b.lastReadAt !== a.lastReadAt) {
+        return b.lastReadAt - a.lastReadAt;
+      }
+      if (b.addedAt !== a.addedAt) {
+        return b.addedAt - a.addedAt;
+      }
+      const nameA = a.type === 'folder' ? a.name : a.data.title;
+      const nameB = b.type === 'folder' ? b.name : b.data.title;
+      return nameA.localeCompare(nameB);
+    });
+  } else {
+    // 子目錄或搜尋狀態：僅展示篩選後的書籍
+    filteredBooks.forEach(book => {
+      displayItems.push({
+        type: 'book',
+        data: book,
+        lastReadAt: book.lastReadAt || 0,
+        addedAt: book.addedAt || 0
+      });
+    });
+  }
+
+  if (displayItems.length === 0 && (!currentFolder || isSearching)) {
+    // 根目錄無內容或搜尋無內容
+    if (shelf.children.length === 0) {
+      emptyState.style.display = 'flex';
+      shelf.style.display = 'none';
+      return;
+    }
+  }
+
+  emptyState.style.display = 'none';
+  shelf.style.display = 'grid';
+
+  displayItems.forEach(item => {
+    if (item.type === 'folder') {
+      const folderName = item.name;
       const folderCard = document.createElement('div');
       folderCard.className = 'folder-card';
       folderCard.setAttribute('data-folder-name', folderName);
@@ -1222,158 +1292,130 @@ async function renderBookshelf(searchQuery = '') {
       });
 
       shelf.appendChild(folderCard);
-    });
-  }
-
-  // 4. 依照搜尋條件和當前資料夾篩選書籍
-  const filteredBooks = books.filter(b => {
-    if (isSearching) {
-      const q = searchQuery.toLowerCase();
-      return b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q);
-    } else {
-      if (currentFolder) {
-        return b.folder === currentFolder;
-      } else {
-        return !b.folder; // 根目錄僅展示未分類書籍
+    } else if (item.type === 'book') {
+      const book = item.data;
+      const card = document.createElement('div');
+      card.className = 'book-card';
+      card.setAttribute('data-id', book.id);
+      if (isSelectMode && selectedBookIds.has(book.id)) {
+        card.classList.add('selected');
       }
-    }
-  });
+      
+      // 計算進度
+      const percent = Math.round(book.progress?.percent || 0);
 
-  if (filteredBooks.length === 0 && (!currentFolder || isSearching)) {
-    // 根目錄無內容或搜尋無內容
-    if (shelf.children.length === 0) {
-      emptyState.style.display = 'flex';
-      shelf.style.display = 'none';
-      return;
-    }
-  }
-
-  emptyState.style.display = 'none';
-  shelf.style.display = 'grid';
-
-  filteredBooks.forEach(book => {
-    const card = document.createElement('div');
-    card.className = 'book-card';
-    card.setAttribute('data-id', book.id);
-    if (isSelectMode && selectedBookIds.has(book.id)) {
-      card.classList.add('selected');
-    }
-    
-    // 計算進度
-    const percent = Math.round(book.progress?.percent || 0);
-
-    card.innerHTML = `
-      <div class="book-card-checkbox-overlay">
-        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
-      </div>
-      <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
-        <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-      </button>
-      <button class="book-export-btn" title="${getMsg('export_book_title')}">
-        <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-      </button>
-      <button class="book-stats-btn" title="${getMsg('stats_btn_tooltip')}">
-        <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
-          <line x1="18" y1="20" x2="18" y2="10"></line>
-          <line x1="12" y1="20" x2="12" y2="4"></line>
-          <line x1="6" y1="20" x2="6" y2="14"></line>
-        </svg>
-      </button>
-      <div class="book-cover-container">
-        <!-- 封面將在此動態注入 -->
-      </div>
-      <div class="book-info">
-        <h3 class="book-title" title="${book.title}">${book.title}</h3>
-        <p class="book-author" title="${book.author}">${book.author}</p>
-        <div class="book-progress-wrapper">
-          <div class="book-progress-info">
-            <span>${getMsg('reading_progress', [percent])}</span>
-            <span class="book-time-badge">${formatDuration(book.stats?.totalTime || 0)}</span>
-          </div>
-          <div class="book-progress-bar">
-            <div class="book-progress-fill" style="width: ${percent}%;"></div>
+      card.innerHTML = `
+        <div class="book-card-checkbox-overlay">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
+          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        </button>
+        <button class="book-export-btn" title="${getMsg('export_book_title')}">
+          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
+        <button class="book-stats-btn" title="${getMsg('stats_btn_tooltip')}">
+          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </button>
+        <div class="book-cover-container">
+          <!-- 封面將在此動態注入 -->
+        </div>
+        <div class="book-info">
+          <h3 class="book-title" title="${book.title}">${book.title}</h3>
+          <p class="book-author" title="${book.author}">${book.author}</p>
+          <div class="book-progress-wrapper">
+            <div class="book-progress-info">
+              <span>${getMsg('reading_progress', [percent])}</span>
+              <span class="book-time-badge">${formatDuration(book.stats?.totalTime || 0)}</span>
+            </div>
+            <div class="book-progress-bar">
+              <div class="book-progress-fill" style="width: ${percent}%;"></div>
+            </div>
           </div>
         </div>
-      </div>
-    `;
-
-    // 拖曳事件綁定
-    card.setAttribute('draggable', 'true');
-    card.addEventListener('dragstart', (e) => {
-      if (isSelectMode) {
-        e.preventDefault();
-        return;
-      }
-      card.classList.add('dragging');
-      e.dataTransfer.setData('text/plain', book.id);
-    });
-    card.addEventListener('dragend', () => {
-      card.classList.remove('dragging');
-    });
-
-    // 動態加載封面
-    const coverContainer = card.querySelector('.book-cover-container');
-    let coverUrl = '';
-    if (book.cover) {
-      if (book.cover instanceof Blob) {
-        coverUrl = URL.createObjectURL(book.cover);
-        activeCoverUrls.push(coverUrl);
-      } else if (typeof book.cover === 'string') {
-        coverUrl = book.cover;
-      }
-    }
-
-    if (coverUrl) {
-      coverContainer.innerHTML = `
-        <img class="book-cover" src="${coverUrl}" alt="${book.title}">
-        <span class="book-format-badge">${book.format}</span>
       `;
-    } else {
-      coverContainer.innerHTML = `
-        <div class="book-cover-placeholder">
-          <div class="book-cover-placeholder-icon">
-            <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-          </div>
-          <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
-        </div>
-        <span class="book-format-badge">${book.format}</span>
-      `;
-    }
 
-    // 動態綁定刪除事件
-    const deleteBtn = card.querySelector('.book-delete-btn');
-    deleteBtn.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      await deleteBookHandler(book.id);
-    });
-
-    // 動態綁定匯出事件
-    const exportBtn = card.querySelector('.book-export-btn');
-    exportBtn.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      await exportBookHandler(book.id);
-    });
-
-    // 動態綁定統計事件
-    const statsCardBtn = card.querySelector('.book-stats-btn');
-    if (statsCardBtn) {
-      statsCardBtn.addEventListener('click', async (event) => {
-        event.stopPropagation();
-        await openSingleBookStatsModal(book.id);
+      // 拖曳事件綁定
+      card.setAttribute('draggable', 'true');
+      card.addEventListener('dragstart', (e) => {
+        if (isSelectMode) {
+          e.preventDefault();
+          return;
+        }
+        card.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', book.id);
       });
-    }
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+      });
 
-    // 點擊事件：多選模式下為選中切換，正常模式下打開書籍
-    card.addEventListener('click', () => {
-      if (isSelectMode) {
-        toggleBookSelection(book.id, card);
-      } else {
-        openBook(book.id);
+      // 動態加載封面
+      const coverContainer = card.querySelector('.book-cover-container');
+      let coverUrl = '';
+      if (book.cover) {
+        if (book.cover instanceof Blob) {
+          coverUrl = URL.createObjectURL(book.cover);
+          activeCoverUrls.push(coverUrl);
+        } else if (typeof book.cover === 'string') {
+          coverUrl = book.cover;
+        }
       }
-    });
-    
-    shelf.appendChild(card);
-  });
+
+      if (coverUrl) {
+        coverContainer.innerHTML = `
+          <img class="book-cover" src="${coverUrl}" alt="${book.title}">
+          <span class="book-format-badge">${book.format}</span>
+        `;
+      } else {
+        coverContainer.innerHTML = `
+          <div class="book-cover-placeholder">
+            <div class="book-cover-placeholder-icon">
+              <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            </div>
+            <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
+          </div>
+          <span class="book-format-badge">${book.format}</span>
+        `;
+      }
+
+      // 動態綁定刪除事件
+      const deleteBtn = card.querySelector('.book-delete-btn');
+      deleteBtn.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        await deleteBookHandler(book.id);
+      });
+
+      // 動態綁定匯出事件
+      const exportBtn = card.querySelector('.book-export-btn');
+      exportBtn.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        await exportBookHandler(book.id);
+      });
+
+      // 動態綁定統計事件
+      const statsCardBtn = card.querySelector('.book-stats-btn');
+      if (statsCardBtn) {
+        statsCardBtn.addEventListener('click', async (event) => {
+          event.stopPropagation();
+          await openSingleBookStatsModal(book.id);
+        });
+      }
+
+      // 點擊事件：多選模式下為選中切換，正常模式下打開書籍
+      card.addEventListener('click', () => {
+        if (isSelectMode) {
+          toggleBookSelection(book.id, card);
+        } else {
+          openBook(book.id);
+        }
+      });
+      
+      shelf.appendChild(card);
+    }
 }
 
 // 刪除書籍（全局函數，便於 HTML 觸發）
