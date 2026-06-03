@@ -10262,29 +10262,47 @@ function initUIEventBindings() {
     setMarginBottom(e.target.value);
   });
 
-  document.getElementById('page-padding-slider').addEventListener('input', (e) => {
-    setPagePadding(e.target.value);
-  });
+  const pagePaddingSlider = document.getElementById('page-padding-slider');
+  if (pagePaddingSlider) {
+    pagePaddingSlider.addEventListener('input', (e) => {
+      setPagePadding(e.target.value);
+    });
+  }
 
-  document.getElementById('pages-displayed-select').addEventListener('change', (e) => {
-    setPagesDisplayed(e.target.value);
-  });
+  const pagesDisplayedSelect = document.getElementById('pages-displayed-select');
+  if (pagesDisplayedSelect) {
+    pagesDisplayedSelect.addEventListener('change', (e) => {
+      setPagesDisplayed(e.target.value);
+    });
+  }
 
-  document.getElementById('tts-highlight-style-select').addEventListener('change', (e) => {
-    setTtsHighlightStyle(e.target.value);
-  });
+  const ttsHighlightStyleSelect = document.getElementById('tts-highlight-style-select');
+  if (ttsHighlightStyleSelect) {
+    ttsHighlightStyleSelect.addEventListener('change', (e) => {
+      setTtsHighlightStyle(e.target.value);
+    });
+  }
 
-  document.getElementById('paper-texture-select').addEventListener('change', (e) => {
-    setPaperTexture(e.target.value);
-  });
+  const paperTextureSelect = document.getElementById('paper-texture-select');
+  if (paperTextureSelect) {
+    paperTextureSelect.addEventListener('change', (e) => {
+      setPaperTexture(e.target.value);
+    });
+  }
 
   // 版面排版模式切換
-  document.getElementById('layout-scroll-btn').addEventListener('click', () => {
-    toggleLayoutMode('scroll');
-  });
-  document.getElementById('layout-paginated-btn').addEventListener('click', () => {
-    toggleLayoutMode('paginated');
-  });
+  const layoutScrollBtn = document.getElementById('layout-scroll-btn');
+  if (layoutScrollBtn) {
+    layoutScrollBtn.addEventListener('click', () => {
+      toggleLayoutMode('scroll');
+    });
+  }
+  const layoutPaginatedBtn = document.getElementById('layout-paginated-btn');
+  if (layoutPaginatedBtn) {
+    layoutPaginatedBtn.addEventListener('click', () => {
+      toggleLayoutMode('paginated');
+    });
+  }
 
   // TTS 語音朗讀控制
   const ttsPlayBtn = document.getElementById('tts-play-btn');
