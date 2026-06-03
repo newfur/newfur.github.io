@@ -1463,7 +1463,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   padding: 8px 16px !important;
   margin: 0 !important;
   border-radius: 8px;
-  font-size: 19px !important;
+  font-size: 18px !important;
   line-height: 1.5 !important;
   color: var(--text-color) !important;
   cursor: pointer;
