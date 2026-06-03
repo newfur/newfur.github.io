@@ -1594,14 +1594,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   animation: popScale 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* 行動端將選單固定在螢幕底部，避免與系統原生選取選單（尤其 Android）重疊 */
+/* 行動端將選單固定在螢幕底部，避免與系統原生選取選單（尤其 Android）重疊，且高度增加防擋 */
 .selection-menu.mobile-bottom-menu {
   position: fixed !important;
-  bottom: 24px !important;
+  bottom: 120px !important; /* 向上移動，防止被手機瀏覽器的底部地址栏/導航欄遮擋，更靠近屏幕中央 */
   top: auto !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   display: flex !important;
+  padding: 10px 16px !important;
+  border-radius: 20px !important;
   animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
   box-shadow: 0 10px 40px var(--glass-shadow) !important;
 }
@@ -1609,6 +1611,32 @@ input[type="range"]::-webkit-slider-thumb:hover {
 @keyframes slideUpMobile {
   from { transform: translate(-50%, 120%); opacity: 0; }
   to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+/* 行動端選單排版微調：隱藏文字、放大圖標與色點，使佈局精簡且易於觸控 */
+@media (max-width: 768px) {
+  .selection-menu .menu-btn span {
+    display: none !important;
+  }
+  .selection-menu .menu-btn .svg-icon {
+    margin-right: 0 !important;
+    width: 22px !important;
+    height: 22px !important;
+  }
+  .selection-menu .menu-btn {
+    padding: 8px !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px !important;
+  }
+  .selection-menu .color-dot {
+    width: 24px !important;
+    height: 24px !important;
+  }
+  .selection-menu .highlight-colors {
+    gap: 8px !important;
+  }
 }
 
 @keyframes popScale {
