@@ -4761,6 +4761,8 @@ function switchStatsTab(tabName) {
   const tabBooks = document.getElementById('stats-tab-books');
   const contentOverview = document.getElementById('stats-content-overview');
   const contentBooks = document.getElementById('stats-content-books');
+  const clearAllBtn = document.getElementById('clear-all-stats-btn');
+  const clearBookBtn = document.getElementById('clear-book-stats-btn');
 
   if (tabOverview && tabBooks && contentOverview && contentBooks) {
     if (tabName === 'overview') {
@@ -4768,11 +4770,15 @@ function switchStatsTab(tabName) {
       tabBooks.classList.remove('active');
       contentOverview.classList.add('active');
       contentBooks.classList.remove('active');
+      if (clearAllBtn) clearAllBtn.style.display = 'block';
+      if (clearBookBtn) clearBookBtn.style.display = 'none';
     } else {
       tabOverview.classList.remove('active');
       tabBooks.classList.add('active');
       contentOverview.classList.remove('active');
       contentBooks.classList.add('active');
+      if (clearAllBtn) clearAllBtn.style.display = 'none';
+      if (clearBookBtn) clearBookBtn.style.display = 'block';
     }
   }
 }

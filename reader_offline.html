@@ -2751,6 +2751,15 @@ html.transition-none .page-texture-slide {
   flex: 1;
 }
 
+.stats-modal-footer {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
 /* Tabs */
 .stats-tabs {
   display: flex;
@@ -4116,9 +4125,6 @@ html.transition-none .page-texture-slide {
             </div>
           </div>
         </div>
-        <div style="margin-top: 15px; display: flex; justify-content: flex-start;">
-          <button id="clear-all-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_all_stats">Clear All Stats</button>
-        </div>
       </div>
 
       <!-- By Book Content -->
@@ -4165,10 +4171,11 @@ html.transition-none .page-texture-slide {
             <!-- Dates and durations dynamically injected -->
           </div>
         </div>
-        <div style="margin-top: 15px; display: flex; justify-content: flex-start;">
-          <button id="clear-book-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_book_stats">Clear Stats</button>
-        </div>
       </div>
+    </div>
+    <div class="stats-modal-footer">
+      <button id="clear-all-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_all_stats">Clear Reading Records</button>
+      <button id="clear-book-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15); display: none;" data-i18n="clear_book_stats">Clear Reading Records</button>
     </div>
   </div>
 
@@ -15041,6 +15048,8 @@ function switchStatsTab(tabName) {
   const tabBooks = document.getElementById('stats-tab-books');
   const contentOverview = document.getElementById('stats-content-overview');
   const contentBooks = document.getElementById('stats-content-books');
+  const clearAllBtn = document.getElementById('clear-all-stats-btn');
+  const clearBookBtn = document.getElementById('clear-book-stats-btn');
 
   if (tabOverview && tabBooks && contentOverview && contentBooks) {
     if (tabName === 'overview') {
@@ -15048,11 +15057,15 @@ function switchStatsTab(tabName) {
       tabBooks.classList.remove('active');
       contentOverview.classList.add('active');
       contentBooks.classList.remove('active');
+      if (clearAllBtn) clearAllBtn.style.display = 'block';
+      if (clearBookBtn) clearBookBtn.style.display = 'none';
     } else {
       tabOverview.classList.remove('active');
       tabBooks.classList.add('active');
       contentOverview.classList.remove('active');
       contentBooks.classList.add('active');
+      if (clearAllBtn) clearAllBtn.style.display = 'none';
+      if (clearBookBtn) clearBookBtn.style.display = 'block';
     }
   }
 }
