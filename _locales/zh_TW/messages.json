@@ -497,5 +497,11 @@
   },
   "about_usage_4": {
     "message": "備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。"
+  },
+  "about_tip_title": {
+    "message": "重要提示"
+  },
+  "about_tip_content": {
+    "message": "強烈推薦下載離線單檔案版！本地雙擊打開運行離線版，可以直接免除各種跨域（CORS）與服務代理限制，完美利用微軟 Edge 原生高品質在線神經網路語音朗讀（Natural TTS Engine）。"
   }
 }

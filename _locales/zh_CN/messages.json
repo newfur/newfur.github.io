@@ -497,5 +497,11 @@
   },
   "about_usage_4": {
     "message": "备份：点击“更多” -> “备份书库”可一键导出包含书籍和阅读进度的 .zip 压缩包。"
+  },
+  "about_tip_title": {
+    "message": "重要提示"
+  },
+  "about_tip_content": {
+    "message": "强烈推荐下载离线单文件版！本地双击打开运行离线版，可以直接免除各种跨域（CORS）与服务代理限制，完美利用微软 Edge 原生高品质在线神经网络语音朗读（Natural TTS Engine）。"
   }
 }
