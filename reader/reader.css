@@ -1422,19 +1422,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
   gap: 10px;
 }
 
-.tab-btn {
+.reader-sidebar .tab-btn {
   background: transparent;
   border: none;
-  font-size: 14px !important;
+  font-size: 20px !important;
   font-weight: 600 !important;
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.5px !important;
   color: var(--text-muted) !important;
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 8px 16px;
   border-radius: 8px;
   transition: all 0.2s ease;
 }
 
-.tab-btn.active {
+.reader-sidebar .tab-btn.active {
   color: var(--primary-color) !important;
   background-color: var(--border-color);
 }
