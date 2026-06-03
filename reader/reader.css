@@ -1425,11 +1425,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .tab-btn {
   background: transparent;
   border: none;
-  font-size: 14px !important;
-  font-weight: 500 !important;
+  font-size: 20px !important;
+  font-weight: bold !important;
   color: var(--text-muted) !important;
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 8px 16px;
   border-radius: 8px;
   transition: all 0.2s ease;
 }
@@ -1461,7 +1461,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   padding: 8px 16px !important;
   margin: 0 !important;
   border-radius: 8px;
-  font-size: 17px !important;
+  font-size: 19px !important;
   line-height: 1.5 !important;
   color: var(--text-color) !important;
   cursor: pointer;
@@ -1485,7 +1485,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 /* 子目錄專屬樣式，縮小上下間距和字型以突顯層級關係 */
 .toc-sub-item {
-  font-size: 15px !important;
+  font-size: 17px !important;
   padding-top: 6px !important;
   padding-bottom: 6px !important;
   opacity: 0.85;
