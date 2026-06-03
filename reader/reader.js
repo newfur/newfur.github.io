@@ -3300,6 +3300,15 @@ function setTheme(theme, writeToStorage = true) {
 function setFontFamily(fontFamily, writeToStorage = true) {
   const container = document.getElementById('reader-container');
   container.className = `reader-container ${fontFamily}`;
+  
+  // 同步更新側邊欄的字型類別，使其與閱讀介面字型保持一致
+  const sidebar = document.getElementById('reader-sidebar');
+  if (sidebar) {
+    const classesToRemove = Array.from(sidebar.classList).filter(c => c.startsWith('font-'));
+    classesToRemove.forEach(c => sidebar.classList.remove(c));
+    sidebar.classList.add(fontFamily);
+  }
+
   if (writeToStorage) {
     chrome.storage.local.set({ fontFamily });
     if (currentBook) {

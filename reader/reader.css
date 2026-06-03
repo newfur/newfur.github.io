@@ -1352,10 +1352,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 /* ==================== 8. 可折疊側邊欄 ==================== */
-/* 防禦性樣式：強制側邊欄內所有元素使用默認無襯線字型，防範書籍 CSS 洩漏污染 */
+/* 防禦性樣式：強制側邊欄內所有元素使用指定閱讀字型，防範書籍 CSS 洩漏污染 */
+.reader-sidebar {
+  --sidebar-font-family: var(--font-sans);
+}
+
+.reader-sidebar.font-sans { --sidebar-font-family: var(--font-sans); }
+.reader-sidebar.font-serif { --sidebar-font-family: var(--font-serif); }
+.reader-sidebar.font-lxgw { --sidebar-font-family: var(--font-lxgw); }
+.reader-sidebar.font-noto-serif { --sidebar-font-family: var(--font-noto-serif); }
+.reader-sidebar.font-playfair { --sidebar-font-family: var(--font-playfair); }
+.reader-sidebar.font-fira { --sidebar-font-family: var(--font-fira); }
+.reader-sidebar.font-dyslexic { --sidebar-font-family: var(--font-dyslexic); }
+.reader-sidebar.font-system { --sidebar-font-family: system-ui, -apple-system, sans-serif; }
+
 .reader-sidebar,
 .reader-sidebar * {
-  font-family: var(--font-sans) !important;
+  font-family: var(--sidebar-font-family) !important;
 }
 
 .reader-sidebar h4 {
@@ -1371,7 +1384,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .reader-sidebar button,
 .reader-sidebar .btn {
-  font-family: var(--font-sans) !important;
+  font-family: var(--sidebar-font-family) !important;
 }
 
 .reader-sidebar {
