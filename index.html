@@ -1420,12 +1420,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .reader-sidebar h4 {
   border: none !important;
   padding: 0 !important;
-  margin: 15px 0 10px 0 !important;
-  font-size: 13px !important;
+  margin: 20px 0 10px 0 !important;
+  font-size: 17px !important;
   font-weight: 600 !important;
+  font-family: var(--font-sans) !important;
   color: var(--text-muted) !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.5px !important;
+  text-transform: none !important;
+  letter-spacing: -0.5px !important;
+}
+
+#add-bookmark-btn {
+  font-family: var(--font-sans) !important;
+  font-weight: 600 !important;
+  font-size: 17px !important;
+  letter-spacing: -0.5px !important;
+  padding: 10px 16px !important;
 }
 
 .reader-sidebar button,
@@ -2791,6 +2800,13 @@ html.transition-none .page-texture-slide {
   .reader-sidebar .tab-btn {
     font-size: 14px !important;
     padding: 6px 10px !important;
+  }
+  .reader-sidebar h4 {
+    font-size: 14px !important;
+  }
+  #add-bookmark-btn {
+    font-size: 14px !important;
+    padding: 8px 12px !important;
   }
 
   /* 批量操作欄移動端佈局優化 */
