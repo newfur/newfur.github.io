@@ -1417,14 +1417,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
   margin: 20px 0 10px 0 !important;
   font-size: 17px !important;
   font-weight: 600 !important;
-  font-family: var(--sidebar-font-family) !important;
+  font-family: var(--font-sans) !important;
   color: var(--text-muted) !important;
   text-transform: none !important;
   letter-spacing: -0.5px !important;
 }
 
 #add-bookmark-btn {
-  font-family: var(--sidebar-font-family) !important;
+  font-family: var(--font-sans) !important;
   font-weight: 600 !important;
   font-size: 17px !important;
   letter-spacing: -0.5px !important;
@@ -1479,7 +1479,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border: none;
   font-size: 17px !important;
   font-weight: 600 !important;
-  font-family: var(--sidebar-font-family) !important;
+  font-family: var(--font-sans) !important;
   letter-spacing: -0.5px !important;
   color: var(--text-muted) !important;
   cursor: pointer;
