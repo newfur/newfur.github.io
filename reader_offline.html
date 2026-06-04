@@ -11585,6 +11585,8 @@ let currentBook = null;
 let currentChapterIndex = 0;
 let prefetchedChapterCache = null; // 緩存背景預載的下一章 HTML 內容，避免重複讀取數據庫
 let epubBookData = null; // 存儲 EPUB 解析後的對象
+let bookChunksCache = []; // 緩存整本書的文本切片以供 RAG 檢索
+let isIndexingBook = false; // 標記是否正在背景建立書本索引
 let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
@@ -13573,6 +13575,8 @@ async function openBook(id) {
     // 啟動閱讀時間追蹤
     startReadingTracker(book.id);
 
+    // 異步在背景建立全文檢索索引
+    buildBookSearchIndex();
   } catch (err) {
     console.error('Failed to parse book:', err);
     contentEl.innerHTML = `<p style="color:red; padding:40px; text-align:center;">${getMsg('failed_load_book')}: ${err.message}</p>`;
@@ -13609,6 +13613,8 @@ async function closeCurrentBook(triggerBack = true) {
   document.getElementById('selection-menu').style.display = 'none';
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
+  bookChunksCache = [];
+  isIndexingBook = false;
   updateHeaderActiveStates();
   
   // 觸發強制重繪/Reflow，防止瀏覽器因隱藏切換導致的 Flex 佈局高度崩塌/拉伸 Bug
@@ -16786,10 +16792,37 @@ async function sendCustomAIQuery() {
   try {
     const bookTitle = document.getElementById('reader-book-title')?.textContent?.trim() || '';
     const bookContentEl = document.getElementById('book-content');
+
+    // 如果索引正在建立，等待其完成以獲取全書上下文
+    if (bookChunksCache.length === 0 && isIndexingBook) {
+      let waitCount = 0;
+      while (isIndexingBook && waitCount < 30) { // 最多等待 3 秒
+        await new Promise(resolve => setTimeout(resolve, 100));
+        waitCount++;
+      }
+    }
     
-    // 獲取目前章節/頁面內容並截斷到合理長度（15,000 字符，約 5,000-8,000 字），以防超出模型上下文限制
+    // 如果快取為空且未處於建立狀態，嘗試主動建立索引
+    if (bookChunksCache.length === 0 && !isIndexingBook && epubBookData && epubBookData.chapters) {
+      await buildBookSearchIndex();
+    }
+
     let bookContext = '';
-    if (bookContentEl) {
+    let isFullBookContext = false;
+    
+    if (bookChunksCache.length > 0) {
+      // 進行全書檢索
+      const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
+      if (relevantChunks.length > 0) {
+        bookContext = relevantChunks.map((chunk, idx) => 
+          `[Source Context ${idx + 1}] (Chapter: "${chunk.chapterTitle}"):\n${chunk.text}\n`
+        ).join('\n');
+        isFullBookContext = true;
+      }
+    }
+    
+    if (!bookContext && bookContentEl) {
+      // 退回局部章節上下文
       bookContext = bookContentEl.textContent.trim().substring(0, 15000);
     }
 
@@ -16801,7 +16834,11 @@ async function sendCustomAIQuery() {
       systemPrompt += `\n[User's Highlighted/Selected Text Focus]\n"${activeSelectedTextContext}"\n[End of Highlighted Text]\n\nThe user has selected the specific portion of text above. Please focus your answer specifically on this selected text if the user's question relates to it.\n`;
     }
     if (bookContext) {
-      systemPrompt += `\n[Current Chapter/Page Content Context]\n${bookContext}\n[End of Context]\n\nPlease use the above book context to answer any questions related to the book, this chapter, or this page. If the user\'s question is unrelated to the book, you can ignore the book context and answer generally.\n`;
+      if (isFullBookContext) {
+        systemPrompt += `\n[Relevant Paragraphs from the Entire Book]\n${bookContext}\n[End of Full Book Context]\n\nThe paragraphs above have been retrieved from the entire book using a TF-IDF semantic search for the user's query. Use them as the factual context to answer the user's question accurately and prevent hallucinations. Keep your answers grounded in these source texts.\n`;
+      } else {
+        systemPrompt += `\n[Current Chapter/Page Content Context]\n${bookContext}\n[End of Context]\n\nPlease use the above book context to answer any questions related to the book, this chapter, or this page. If the user\'s question is unrelated to the book, you can ignore the book context and answer generally.\n`;
+      }
     }
 
     // 發送後清除針對性選取上下文並隱藏提示欄
@@ -16944,6 +16981,133 @@ function triggerAIAsk() {
   if (inputEl) {
     inputEl.focus();
   }
+}
+
+// 將純文本進行滑動窗口切片
+function chunkText(text, size = 800, overlap = 150) {
+  const chunks = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = start + size;
+    if (end > text.length) end = text.length;
+    chunks.push(text.substring(start, end));
+    if (end === text.length) break;
+    start = end - overlap;
+  }
+  return chunks;
+}
+
+// 建立整本書籍內容的輕量級全文檢索倒排/詞頻索引
+async function buildBookSearchIndex() {
+  if (!epubBookData || !epubBookData.chapters) {
+    bookChunksCache = [];
+    return;
+  }
+  
+  isIndexingBook = true;
+  bookChunksCache = [];
+  console.log('Building client-side RAG search index for the entire book...');
+  
+  try {
+    const chapters = epubBookData.chapters;
+    const tempParser = new DOMParser();
+    
+    for (let i = 0; i < chapters.length; i++) {
+      const ch = chapters[i];
+      if (typeof ch.getContent !== 'function') continue;
+      
+      try {
+        const html = await ch.getContent();
+        const doc = tempParser.parseFromString(html, 'text/html');
+        // 清理無效標籤
+        doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+        const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
+        
+        if (plainText.length > 50) {
+          const chunkTexts = chunkText(plainText, 800, 150);
+          for (let j = 0; j < chunkTexts.length; j++) {
+            bookChunksCache.push({
+              chapterTitle: ch.title,
+              chapterIndex: i,
+              chunkIndex: j,
+              text: chunkTexts[j]
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to index chapter ${i} (${ch.title}):`, err);
+      }
+    }
+    console.log(`Index built successfully! Total chunks: ${bookChunksCache.length}`);
+  } catch (err) {
+    console.error('Failed to build book search index:', err);
+  } finally {
+    isIndexingBook = false;
+  }
+}
+
+// 基於 TF-IDF 與中英文混合分詞的輕量級檢索器
+function retrieveRelevantChunks(query, chunks, topK = 4) {
+  if (!chunks || chunks.length === 0) return [];
+
+  const terms = [];
+  const rawTerms = query.toLowerCase().split(/[\s,.\/\\?!@#￥%……&*（）()_+\-=\[\]{}：；“”‘’'\"：；。，？！、]/).filter(t => t.trim().length >= 2);
+  
+  for (const t of rawTerms) {
+    terms.push(t);
+    // 針對中文，提取單字及雙字以提升召回率
+    if (/[\u4e00-\u9fa5]/.test(t)) {
+      for (let i = 0; i < t.length; i++) {
+        terms.push(t[i]);
+        if (i < t.length - 1) {
+          terms.push(t.substring(i, i + 2));
+        }
+      }
+    }
+  }
+
+  const uniqueTerms = [...new Set(terms)].filter(t => t.length > 0);
+  if (uniqueTerms.length === 0) return chunks.slice(0, topK);
+
+  const idfs = {};
+  const totalChunks = chunks.length;
+  for (const term of uniqueTerms) {
+    let containingCount = 0;
+    for (const chunk of chunks) {
+      if (chunk.text.toLowerCase().includes(term)) {
+        containingCount++;
+      }
+    }
+    idfs[term] = Math.log(totalChunks / (containingCount + 1)) + 1;
+  }
+
+  const scoredChunks = chunks.map(chunk => {
+    let score = 0;
+    const chunkTextLower = chunk.text.toLowerCase();
+    for (const term of uniqueTerms) {
+      const index = chunkTextLower.indexOf(term);
+      if (index !== -1) {
+        let count = 0;
+        let pos = index;
+        while (pos !== -1) {
+          count++;
+          pos = chunkTextLower.indexOf(term, pos + term.length);
+        }
+        
+        const tf = count / chunk.text.length;
+        const idf = idfs[term];
+        const termWeight = term.length >= 3 ? 1.5 : (term.length === 2 ? 1.0 : 0.5);
+        score += tf * idf * termWeight;
+      }
+    }
+    return { chunk, score };
+  });
+
+  scoredChunks.sort((a, b) => b.score - a.score);
+  return scoredChunks
+    .filter(x => x.score > 0)
+    .slice(0, topK)
+    .map(x => x.chunk);
 }
 
 // 初始化 AI 伴侶面板拖曳調整大小功能
