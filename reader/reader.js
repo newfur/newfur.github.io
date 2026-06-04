@@ -4148,47 +4148,78 @@ function handleTextSelection(e) {
 }
 
 // 輔助函式：獲取選取範圍在句子文字內容中的起止偏移量
-function getSelectionOffsets(parent, range) {
-  let startOffset = 0;
-  let endOffset = 0;
-  let foundStart = false;
-  let foundEnd = false;
-  let currentOffset = 0;
+// 輔助函式：獲取選取範圍在句子文字內容中的起止偏移量
+function getSelectionOffsets(elements, range) {
+  const getBoundaryOffset = (container, offset) => {
+    let found = false;
+    let charOffset = 0;
+    let currentOffset = 0;
 
-  const traverse = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (!foundStart && node === range.startContainer) {
-        startOffset = currentOffset + range.startOffset;
-        foundStart = true;
+    const traverse = (node) => {
+      if (found) return;
+
+      if (node === container) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          charOffset = currentOffset + offset;
+          found = true;
+          return;
+        } else {
+          if (offset === 0) {
+            charOffset = currentOffset;
+            found = true;
+            return;
+          }
+        }
       }
-      if (!foundEnd && node === range.endContainer) {
-        endOffset = currentOffset + range.endOffset;
-        foundEnd = true;
+
+      if (node.parentNode === container && container.nodeType === Node.ELEMENT_NODE) {
+        const idx = Array.from(container.childNodes).indexOf(node);
+        if (idx === offset) {
+          charOffset = currentOffset;
+          found = true;
+          return;
+        }
       }
-      currentOffset += node.nodeValue.length;
-    } else {
-      const children = Array.from(node.childNodes);
-      for (let child of children) {
-        traverse(child);
-        if (foundStart && foundEnd) break;
+
+      if (node.nodeType === Node.TEXT_NODE) {
+        currentOffset += node.nodeValue.length;
+      } else {
+        const children = Array.from(node.childNodes);
+        for (let child of children) {
+          traverse(child);
+          if (found) return;
+        }
+        if (node === container && offset >= node.childNodes.length) {
+          charOffset = currentOffset;
+          found = true;
+          return;
+        }
       }
+    };
+
+    for (let el of elements) {
+      traverse(el);
+      if (found) break;
     }
+    return found ? charOffset : currentOffset;
   };
 
-  traverse(parent);
+  const startOffset = getBoundaryOffset(range.startContainer, range.startOffset);
+  const endOffset = getBoundaryOffset(range.endContainer, range.endOffset);
   return { startOffset, endOffset };
 }
 
 // 輔助函式：在 DOM 子樹中精確高亮指定起止偏移量（或子字串）的文字節點
-function applyHighlightToDOMRange(element, startOffset, endOffset, color, noteId, textFallback = '') {
+function applyHighlightToDOMRange(elementsOrElement, startOffset, endOffset, color, noteId, textFallback = '') {
+  const elements = Array.isArray(elementsOrElement) ? elementsOrElement : [elementsOrElement];
   let start = startOffset;
   let end = endOffset;
 
   // 如果起止位置無效、相同或為空，則使用 textFallback 在純文字中進行子字串搜尋
   if (start === undefined || end === undefined || start === null || end === null || start >= end) {
     if (!textFallback) return;
-    const txt = element.textContent;
-    const idx = txt.indexOf(textFallback);
+    const totalText = elements.map(el => el.textContent).join('');
+    const idx = totalText.indexOf(textFallback);
     if (idx !== -1) {
       start = idx;
       end = idx + textFallback.length;
@@ -4225,7 +4256,9 @@ function applyHighlightToDOMRange(element, startOffset, endOffset, color, noteId
     }
   };
 
-  traverse(element);
+  for (let el of elements) {
+    traverse(el);
+  }
 
   // 從後往前處理節點，避免 splitText 影響前面的 node 索引
   for (let i = nodesToWrap.length - 1; i >= 0; i--) {
@@ -4256,17 +4289,32 @@ function applyHighlightToDOMRange(element, startOffset, endOffset, color, noteId
 async function handleAddHighlight(color) {
   if (!currentBook || !selectedTextState) return;
 
-  const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
+  const startSentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
     ? selectedTextRange.startContainer.closest('.tts-sentence') 
     : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
-  const sentenceIndex = sentenceEl ? parseInt(sentenceEl.getAttribute('data-sentence-index')) : 0;
+  
+  const endSentenceEl = selectedTextRange.endContainer.nodeType === Node.ELEMENT_NODE 
+    ? selectedTextRange.endContainer.closest('.tts-sentence') 
+    : selectedTextRange.endContainer.parentNode.closest('.tts-sentence');
+
+  const sentenceIndex = startSentenceEl ? parseInt(startSentenceEl.getAttribute('data-sentence-index')) : 0;
+  const rawEndIndex = endSentenceEl ? parseInt(endSentenceEl.getAttribute('data-sentence-index')) : sentenceIndex;
+  const endSentenceIndex = Math.max(sentenceIndex, rawEndIndex);
 
   let startOffset = 0;
   let endOffset = 0;
-  if (sentenceEl && selectedTextRange) {
-    const offsets = getSelectionOffsets(sentenceEl, selectedTextRange);
-    startOffset = offsets.startOffset;
-    endOffset = offsets.endOffset;
+  if (startSentenceEl && selectedTextRange) {
+    const container = document.getElementById('book-content');
+    const sentenceElements = [];
+    for (let idx = sentenceIndex; idx <= endSentenceIndex; idx++) {
+      const spans = Array.from(container.querySelectorAll(`[data-sentence-index="${idx}"]`));
+      sentenceElements.push(...spans);
+    }
+    if (sentenceElements.length > 0) {
+      const offsets = getSelectionOffsets(sentenceElements, selectedTextRange);
+      startOffset = offsets.startOffset;
+      endOffset = offsets.endOffset;
+    }
   }
 
   const note = {
@@ -4275,6 +4323,7 @@ async function handleAddHighlight(color) {
     text: selectedTextState,
     chapterIndex: currentChapterIndex,
     sentenceIndex,
+    endSentenceIndex,
     startOffset,
     endOffset
   };
@@ -4283,7 +4332,7 @@ async function handleAddHighlight(color) {
   currentBook.notes = updatedNotes;
 
   let savedNoteId = null;
-  if (sentenceEl && updatedNotes) {
+  if (startSentenceEl && updatedNotes) {
     const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'highlight' && n.color === color);
     if (savedNote) {
       savedNoteId = savedNote.noteId;
@@ -4301,12 +4350,30 @@ async function handleAddHighlight(color) {
 // 在 DOM 中包裹高亮標籤
 function highlightSelectionInDOM(color, noteId) {
   if (!selectedTextRange) return;
-  const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
+  const startSentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
     ? selectedTextRange.startContainer.closest('.tts-sentence') 
     : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
-  if (sentenceEl) {
-    const { startOffset, endOffset } = getSelectionOffsets(sentenceEl, selectedTextRange);
-    applyHighlightToDOMRange(sentenceEl, startOffset, endOffset, color, noteId, selectedTextState);
+  
+  const endSentenceEl = selectedTextRange.endContainer.nodeType === Node.ELEMENT_NODE 
+    ? selectedTextRange.endContainer.closest('.tts-sentence') 
+    : selectedTextRange.endContainer.parentNode.closest('.tts-sentence');
+
+  if (startSentenceEl) {
+    const sentenceIndex = parseInt(startSentenceEl.getAttribute('data-sentence-index'));
+    const rawEndIndex = endSentenceEl ? parseInt(endSentenceEl.getAttribute('data-sentence-index')) : sentenceIndex;
+    const endSentenceIndex = Math.max(sentenceIndex, rawEndIndex);
+
+    const container = document.getElementById('book-content');
+    const sentenceElements = [];
+    for (let idx = sentenceIndex; idx <= endSentenceIndex; idx++) {
+      const spans = Array.from(container.querySelectorAll(`[data-sentence-index="${idx}"]`));
+      sentenceElements.push(...spans);
+    }
+
+    if (sentenceElements.length > 0) {
+      const { startOffset, endOffset } = getSelectionOffsets(sentenceElements, selectedTextRange);
+      applyHighlightToDOMRange(sentenceElements, startOffset, endOffset, color, noteId, selectedTextState);
+    }
   }
 }
 
@@ -4319,12 +4386,20 @@ function applySavedHighlightsToDOM(targetWrapper = null, targetChapterIndex = nu
 
   currentBook.notes.forEach(note => {
     if (note.chapterIndex === chIndex) {
+      const startIdx = note.sentenceIndex;
+      const endIdx = note.endSentenceIndex !== undefined ? note.endSentenceIndex : startIdx;
+
       // 尋找對應的句子元素
-      const sentenceEl = container.querySelector(`[data-sentence-index="${note.sentenceIndex}"]`);
-      if (sentenceEl) {
+      const sentenceElements = [];
+      for (let idx = startIdx; idx <= endIdx; idx++) {
+        const spans = Array.from(container.querySelectorAll(`[data-sentence-index="${idx}"]`));
+        sentenceElements.push(...spans);
+      }
+
+      if (sentenceElements.length > 0) {
         const color = note.color || 'yellow';
         // 套用精確高亮範圍
-        applyHighlightToDOMRange(sentenceEl, note.startOffset, note.endOffset, color, note.noteId, note.text);
+        applyHighlightToDOMRange(sentenceElements, note.startOffset, note.endOffset, color, note.noteId, note.text);
       }
     }
   });
@@ -4525,11 +4600,6 @@ window.deleteBookmarkHandler = deleteBookmarkHandler;
 
 async function deleteNoteHandler(noteId) {
   if (currentBook) {
-    // Find the note before deletion to get its chapterIndex and sentenceIndex
-    const note = currentBook.notes ? currentBook.notes.find(n => n.noteId === noteId) : null;
-    const chapterIndex = note ? note.chapterIndex : null;
-    const sentenceIndex = note ? note.sentenceIndex : null;
-
     // Delete from DB and update the in-memory array
     const updatedNotes = await library.deleteNote(currentBook.id, noteId);
     currentBook.notes = updatedNotes;
@@ -4537,23 +4607,13 @@ async function deleteNoteHandler(noteId) {
     // Update the sidebar list
     await renderHighlightsList();
 
-    // Immediately remove highlight from DOM if it is the current chapter
-    if (chapterIndex === currentChapterIndex && sentenceIndex !== null) {
-      const container = document.getElementById('book-content');
-      if (container) {
-        const sentenceEl = container.querySelector(`[data-sentence-index="${sentenceIndex}"]`);
-        if (sentenceEl) {
-          // Remove highlight styles and data-note-id attribute
-          sentenceEl.classList.remove('highlight-yellow', 'highlight-green', 'highlight-blue', 'highlight-pink');
-          sentenceEl.removeAttribute('data-note-id');
-          
-          // Unwrap any inline span wrappers (from surroundContents)
-          const inlineSpans = sentenceEl.querySelectorAll('span[class^="highlight-"]');
-          inlineSpans.forEach(span => {
-            span.replaceWith(...span.childNodes);
-          });
-        }
-      }
+    // Immediately remove highlight from DOM by unwrapping matching span elements
+    const container = document.getElementById('book-content');
+    if (container) {
+      const highlightSpans = container.querySelectorAll(`span[data-note-id="${noteId}"]`);
+      highlightSpans.forEach(span => {
+        span.replaceWith(...span.childNodes);
+      });
     }
   }
 }
