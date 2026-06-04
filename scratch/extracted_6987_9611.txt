@@ -1,8 +1,0 @@
-Created At: 2026-05-25T07:13:12Z
-Completed At: 2026-05-25T07:13:13Z
-
-				The command completed successfully.
-				Output:
-				Found decodeAudioData in content at line 9241, step 6663
-Wrote to scratch/extracted_tts_6663.js
-
