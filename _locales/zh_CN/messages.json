@@ -623,5 +623,11 @@
   },
   "ai_api_key_optional": {
     "message": "可选 (例如本地代理认证)"
+  },
+  "ai_ask": {
+    "message": "提问"
+  },
+  "ai_focus": {
+    "message": "聚焦于:"
   }
 }

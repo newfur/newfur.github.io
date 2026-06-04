@@ -4326,6 +4326,10 @@ html.transition-none .page-texture-slide {
           <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
           <span data-i18n="ai_translate">Translate</span>
         </button>
+        <button id="selection-ai-ask" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span data-i18n="ai_ask">Ask</span>
+        </button>
       </div>
     </div>
 
@@ -4352,6 +4356,14 @@ html.transition-none .page-texture-slide {
       </div>
       <div id="ai-content" class="ai-panel-body">
         <!-- AI 生成結果將在此輸出 -->
+      </div>
+      <div id="ai-selection-context" style="display: none; padding: 6px 12px; background-color: var(--surface-color); border-top: 1px solid var(--border-color); font-size: 12px; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border-color);">
+        <span style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; text-align: left;">
+          <span data-i18n="ai_focus">Focus on:</span> <span id="ai-selection-context-text" style="color: var(--text-color); font-weight: 500;"></span>
+        </span>
+        <button id="ai-clear-context-btn" style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; padding: 2px;">
+          <svg class="svg-icon svg-icon-sm" style="width: 12px; height: 12px;" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
       <div class="ai-panel-footer">
         <textarea id="ai-input" data-i18n-placeholder="ai_input_placeholder" placeholder="Ask AI anything..."></textarea>
@@ -5249,6 +5261,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_api_key_optional": {
       "message": "Optional (e.g. for proxy auth)"
+    },
+    "ai_ask": {
+      "message": "Ask AI"
+    },
+    "ai_focus": {
+      "message": "Focus on:"
     }
   },
   "zh_TW": {
@@ -5876,6 +5894,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_api_key_optional": {
       "message": "可選 (例如本地代理認證)"
+    },
+    "ai_ask": {
+      "message": "提問"
+    },
+    "ai_focus": {
+      "message": "聚焦於:"
     }
   },
   "zh_CN": {
@@ -6503,6 +6527,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_api_key_optional": {
       "message": "可选 (例如本地代理认证)"
+    },
+    "ai_ask": {
+      "message": "提问"
+    },
+    "ai_focus": {
+      "message": "聚焦于:"
     }
   }
 };
@@ -11392,6 +11422,7 @@ let epubBookData = null; // 存儲 EPUB 解析後的對象
 let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
+let activeSelectedTextContext = '';
 let selectedTextRange = null;
 let selectedNoteIdState = null; // 儲存當前選取的高亮/筆記的 ID
 let currentPageIndex = 0;
@@ -12379,6 +12410,17 @@ function initUIEventBindings() {
   document.getElementById('selection-ai-summary').addEventListener('click', triggerAISummary);
   document.getElementById('selection-ai-explain').addEventListener('click', triggerAIExplain);
   document.getElementById('selection-ai-translate').addEventListener('click', triggerAITranslate);
+  document.getElementById('selection-ai-ask').addEventListener('click', triggerAIAsk);
+
+  // 清除選取上下文按鈕
+  const aiClearContextBtn = document.getElementById('ai-clear-context-btn');
+  if (aiClearContextBtn) {
+    aiClearContextBtn.addEventListener('click', () => {
+      activeSelectedTextContext = '';
+      const badge = document.getElementById('ai-selection-context');
+      if (badge) badge.style.display = 'none';
+    });
+  }
   document.getElementById('selection-delete-btn').addEventListener('click', async () => {
     if (selectedNoteIdState) {
       await deleteNoteHandler(selectedNoteIdState);
@@ -16434,9 +16476,17 @@ async function sendCustomAIQuery() {
     if (bookTitle) {
       systemPrompt += `Current Book: "${bookTitle}"\n`;
     }
+    if (activeSelectedTextContext) {
+      systemPrompt += `\n[User's Highlighted/Selected Text Focus]\n"${activeSelectedTextContext}"\n[End of Highlighted Text]\n\nThe user has selected the specific portion of text above. Please focus your answer specifically on this selected text if the user's question relates to it.\n`;
+    }
     if (bookContext) {
       systemPrompt += `\n[Current Chapter/Page Content Context]\n${bookContext}\n[End of Context]\n\nPlease use the above book context to answer any questions related to the book, this chapter, or this page. If the user\'s question is unrelated to the book, you can ignore the book context and answer generally.\n`;
     }
+
+    // 發送後清除針對性選取上下文並隱藏提示欄
+    activeSelectedTextContext = '';
+    const badge = document.getElementById('ai-selection-context');
+    if (badge) badge.style.display = 'none';
 
     await ai._chat(systemPrompt, query, (chunk) => {
       assistantBubble.textContent = chunk;
@@ -16534,6 +16584,39 @@ async function triggerAITranslate() {
     if (bubble) {
       bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
     }
+  }
+}
+
+// 觸發 AI 針對性提問
+function triggerAIAsk() {
+  if (!selectedTextState) return;
+  document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
+
+  // 設置選取的文本為當前的針對性提問上下文
+  activeSelectedTextContext = selectedTextState;
+  
+  // 顯示聚焦狀態欄，並更新文字
+  const badge = document.getElementById('ai-selection-context');
+  const badgeText = document.getElementById('ai-selection-context-text');
+  if (badge && badgeText) {
+    const preview = selectedTextState.length > 40 ? selectedTextState.substring(0, 40) + '...' : selectedTextState;
+    badgeText.textContent = `"${preview}"`;
+    badge.style.display = 'flex';
+  }
+
+  // 打開 AI 面板並聚焦輸入框
+  const aiPanel = document.getElementById('ai-panel');
+  if (aiPanel) {
+    aiPanel.style.display = 'flex';
+    const contentEl = document.getElementById('ai-content');
+    if (contentEl && !contentEl.querySelector('.ai-chat-bubble')) {
+      contentEl.innerHTML = '';
+    }
+  }
+  const inputEl = document.getElementById('ai-input');
+  if (inputEl) {
+    inputEl.focus();
   }
 }
 

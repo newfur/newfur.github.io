@@ -55,6 +55,7 @@ let epubBookData = null; // 存儲 EPUB 解析後的對象
 let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
+let activeSelectedTextContext = '';
 let selectedTextRange = null;
 let selectedNoteIdState = null; // 儲存當前選取的高亮/筆記的 ID
 let currentPageIndex = 0;
@@ -1042,6 +1043,17 @@ function initUIEventBindings() {
   document.getElementById('selection-ai-summary').addEventListener('click', triggerAISummary);
   document.getElementById('selection-ai-explain').addEventListener('click', triggerAIExplain);
   document.getElementById('selection-ai-translate').addEventListener('click', triggerAITranslate);
+  document.getElementById('selection-ai-ask').addEventListener('click', triggerAIAsk);
+
+  // 清除選取上下文按鈕
+  const aiClearContextBtn = document.getElementById('ai-clear-context-btn');
+  if (aiClearContextBtn) {
+    aiClearContextBtn.addEventListener('click', () => {
+      activeSelectedTextContext = '';
+      const badge = document.getElementById('ai-selection-context');
+      if (badge) badge.style.display = 'none';
+    });
+  }
   document.getElementById('selection-delete-btn').addEventListener('click', async () => {
     if (selectedNoteIdState) {
       await deleteNoteHandler(selectedNoteIdState);
@@ -5097,9 +5109,17 @@ async function sendCustomAIQuery() {
     if (bookTitle) {
       systemPrompt += `Current Book: "${bookTitle}"\n`;
     }
+    if (activeSelectedTextContext) {
+      systemPrompt += `\n[User's Highlighted/Selected Text Focus]\n"${activeSelectedTextContext}"\n[End of Highlighted Text]\n\nThe user has selected the specific portion of text above. Please focus your answer specifically on this selected text if the user's question relates to it.\n`;
+    }
     if (bookContext) {
       systemPrompt += `\n[Current Chapter/Page Content Context]\n${bookContext}\n[End of Context]\n\nPlease use the above book context to answer any questions related to the book, this chapter, or this page. If the user\'s question is unrelated to the book, you can ignore the book context and answer generally.\n`;
     }
+
+    // 發送後清除針對性選取上下文並隱藏提示欄
+    activeSelectedTextContext = '';
+    const badge = document.getElementById('ai-selection-context');
+    if (badge) badge.style.display = 'none';
 
     await ai._chat(systemPrompt, query, (chunk) => {
       assistantBubble.textContent = chunk;
@@ -5197,6 +5217,39 @@ async function triggerAITranslate() {
     if (bubble) {
       bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
     }
+  }
+}
+
+// 觸發 AI 針對性提問
+function triggerAIAsk() {
+  if (!selectedTextState) return;
+  document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
+
+  // 設置選取的文本為當前的針對性提問上下文
+  activeSelectedTextContext = selectedTextState;
+  
+  // 顯示聚焦狀態欄，並更新文字
+  const badge = document.getElementById('ai-selection-context');
+  const badgeText = document.getElementById('ai-selection-context-text');
+  if (badge && badgeText) {
+    const preview = selectedTextState.length > 40 ? selectedTextState.substring(0, 40) + '...' : selectedTextState;
+    badgeText.textContent = `"${preview}"`;
+    badge.style.display = 'flex';
+  }
+
+  // 打開 AI 面板並聚焦輸入框
+  const aiPanel = document.getElementById('ai-panel');
+  if (aiPanel) {
+    aiPanel.style.display = 'flex';
+    const contentEl = document.getElementById('ai-content');
+    if (contentEl && !contentEl.querySelector('.ai-chat-bubble')) {
+      contentEl.innerHTML = '';
+    }
+  }
+  const inputEl = document.getElementById('ai-input');
+  if (inputEl) {
+    inputEl.focus();
   }
 }
 

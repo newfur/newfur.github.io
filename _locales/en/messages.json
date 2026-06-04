@@ -623,5 +623,11 @@
   },
   "ai_api_key_optional": {
     "message": "Optional (e.g. for proxy auth)"
+  },
+  "ai_ask": {
+    "message": "Ask AI"
+  },
+  "ai_focus": {
+    "message": "Focus on:"
   }
 }
