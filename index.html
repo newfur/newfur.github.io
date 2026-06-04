@@ -1600,6 +1600,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
   animation: popScale 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+.selection-menu .menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.selection-menu .menu-divider {
+  width: 1px;
+  height: 20px;
+  background-color: var(--border-color);
+}
+
 /* 行動端將選單固定在螢幕底部，避免與系統原生選取選單（尤其 Android）重疊，且高度增加防擋 */
 .selection-menu.mobile-bottom-menu {
   position: fixed !important;
@@ -1608,10 +1620,27 @@ input[type="range"]::-webkit-slider-thumb:hover {
   left: 50% !important;
   transform: translateX(-50%) !important;
   display: flex !important;
-  padding: 10px 16px !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  width: min(340px, 90vw) !important;
+  align-items: center !important;
+  padding: 12px 16px !important;
   border-radius: 20px !important;
   animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
   box-shadow: 0 10px 40px var(--glass-shadow) !important;
+}
+
+.selection-menu.mobile-bottom-menu .menu-row {
+  width: 100%;
+  justify-content: center;
+  gap: 8px !important;
+}
+
+.selection-menu.mobile-bottom-menu .menu-divider {
+  width: 100% !important;
+  height: 1px !important;
+  background-color: var(--border-color);
+  margin: 4px 0 !important;
 }
 
 @keyframes slideUpMobile {
@@ -1642,6 +1671,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
   .selection-menu .highlight-colors {
     gap: 8px !important;
+  }
+  /* AI 伴侶懸浮面板移動端響應式對齊與縮放 */
+  .ai-panel {
+    bottom: 10px !important;
+    right: 5% !important;
+    left: 5% !important;
+    width: 90% !important;
+    max-width: 360px !important;
+    max-height: 50vh !important;
+    margin: 0 auto;
   }
 }
 
@@ -4063,37 +4102,41 @@ html.transition-none .page-texture-slide {
 
     <!-- ================= 文字選取懸浮菜單 (Text Selection Menu) ================= -->
     <div id="selection-menu" class="selection-menu panel-glass">
-      <div class="highlight-colors">
-        <button class="color-dot color-yellow" data-color="yellow"></button>
-        <button class="color-dot color-green" data-color="green"></button>
-        <button class="color-dot color-blue" data-color="blue"></button>
-        <button class="color-dot color-pink" data-color="pink"></button>
+      <div class="menu-row">
+        <div class="highlight-colors">
+          <button class="color-dot color-yellow" data-color="yellow"></button>
+          <button class="color-dot color-green" data-color="green"></button>
+          <button class="color-dot color-blue" data-color="blue"></button>
+          <button class="color-dot color-pink" data-color="pink"></button>
+        </div>
+        <button id="selection-delete-btn" class="menu-btn" style="display:none; color:red;">
+          <svg class="svg-icon svg-icon-sm" style="color:red; margin-right: 3px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          <span data-i18n="selection_delete">Delete</span>
+        </button>
       </div>
-      <div class="divider"></div>
-      <button id="selection-note-btn" class="menu-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-        <span data-i18n="note_title">Note</span>
-      </button>
-      <button id="selection-tts-btn" class="menu-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-        <span data-i18n="selection_speak">Speak</span>
-      </button>
-      <button id="selection-ai-summary" class="menu-btn ai-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
-        <span data-i18n="ai_summary">Summary</span>
-      </button>
-      <button id="selection-ai-explain" class="menu-btn ai-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
-        <span data-i18n="ai_explain">Explain</span>
-      </button>
-      <button id="selection-ai-translate" class="menu-btn ai-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
-        <span data-i18n="ai_translate">Translate</span>
-      </button>
-      <button id="selection-delete-btn" class="menu-btn" style="display:none; color:red;">
-        <svg class="svg-icon svg-icon-sm" style="color:red; margin-right: 3px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        <span data-i18n="selection_delete">Delete</span>
-      </button>
+      <div class="menu-divider"></div>
+      <div class="menu-row">
+        <button id="selection-note-btn" class="menu-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span data-i18n="note_title">Note</span>
+        </button>
+        <button id="selection-tts-btn" class="menu-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          <span data-i18n="selection_speak">Speak</span>
+        </button>
+        <button id="selection-ai-summary" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+          <span data-i18n="ai_summary">Summary</span>
+        </button>
+        <button id="selection-ai-explain" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span data-i18n="ai_explain">Explain</span>
+        </button>
+        <button id="selection-ai-translate" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          <span data-i18n="ai_translate">Translate</span>
+        </button>
+      </div>
     </div>
 
     <!-- ================= 筆記輸入對話框 (Note Edit Dialog) ================= -->
@@ -10422,6 +10465,7 @@ let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
 let selectedTextRange = null;
+let selectedNoteIdState = null; // 儲存當前選取的高亮/筆記的 ID
 let currentPageIndex = 0;
 let ttsClickTimeout = null;
 let currentPagesDisplayed = 'auto';
@@ -11131,6 +11175,19 @@ function initUIEventBindings() {
   bookContent.addEventListener('mouseup', handleTextSelection);
   bookContent.addEventListener('touchend', handleTextSelection);
 
+  // 監聽全局 selectionchange 事件，解決行動端長按選擇後需要滑動屏幕才彈出選單的 Bug
+  let selectionChangeTimeout = null;
+  document.addEventListener('selectionchange', () => {
+    if (!currentBook) return;
+    const readerView = document.getElementById('reader-view');
+    if (readerView && readerView.classList.contains('view-active')) {
+      if (selectionChangeTimeout) clearTimeout(selectionChangeTimeout);
+      selectionChangeTimeout = setTimeout(() => {
+        handleTextSelection();
+      }, 250);
+    }
+  });
+
   // 單擊句子直接從該句開始朗讀（帶延遲檢測選區，使用事件委託與坐標輔助定位）
   bookContent.addEventListener('click', (e) => {
     // 忽略點擊鏈接、按鈕、輸入框等交互元素
@@ -11168,6 +11225,13 @@ function initUIEventBindings() {
   document.getElementById('selection-ai-summary').addEventListener('click', triggerAISummary);
   document.getElementById('selection-ai-explain').addEventListener('click', triggerAIExplain);
   document.getElementById('selection-ai-translate').addEventListener('click', triggerAITranslate);
+  document.getElementById('selection-delete-btn').addEventListener('click', async () => {
+    if (selectedNoteIdState) {
+      await deleteNoteHandler(selectedNoteIdState);
+      document.getElementById('selection-menu').style.display = 'none';
+      window.getSelection().removeAllRanges();
+    }
+  });
 
   // 筆記對話框
   document.getElementById('note-cancel-btn').addEventListener('click', () => {
@@ -12002,6 +12066,11 @@ async function openBook(id) {
   document.getElementById('library-view').classList.remove('view-active');
   document.getElementById('reader-view').classList.add('view-active');
   document.getElementById('reader-book-title').textContent = book.title;
+  
+  // 重置隱藏浮動面板，避免上一次閱讀時殘留顯示
+  document.getElementById('selection-menu').style.display = 'none';
+  document.getElementById('note-dialog').style.display = 'none';
+  document.getElementById('ai-panel').style.display = 'none';
 
   // 設定書籍格式與排版類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
@@ -12094,6 +12163,11 @@ async function closeCurrentBook(triggerBack = true) {
   window.scrollTo(0, 0);
   document.getElementById('reader-view').classList.remove('view-active');
   document.getElementById('library-view').classList.add('view-active');
+  
+  // 隱藏所有選取選單與對話框，防止關閉書本後殘留或下次打開時重疊
+  document.getElementById('selection-menu').style.display = 'none';
+  document.getElementById('note-dialog').style.display = 'none';
+  document.getElementById('ai-panel').style.display = 'none';
   
   // 觸發強制重繪/Reflow，防止瀏覽器因隱藏切換導致的 Flex 佈局高度崩塌/拉伸 Bug
   const appHeader = document.querySelector('.app-header');
@@ -14416,6 +14490,12 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
 // 監聽文字選取
 function handleTextSelection(e) {
   const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    const menu = document.getElementById('selection-menu');
+    if (menu) menu.style.display = 'none';
+    selectedNoteIdState = null;
+    return;
+  }
   const selectedText = selection.toString().trim();
   const menu = document.getElementById('selection-menu');
 
@@ -14437,11 +14517,38 @@ function handleTextSelection(e) {
       menu.style.top = `${rect.top + window.scrollY - 55}px`;
       menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
     }
+
+    // 檢查選取內容是否包含已有的高亮/筆記 (通過 data-note-id 屬性判斷)
+    let noteId = null;
+    try {
+      const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+      if (sentenceEl) {
+        noteId = sentenceEl.getAttribute('data-note-id');
+      }
+    } catch (err) {
+      console.warn('Error reading data-note-id:', err);
+    }
+
+    const deleteBtn = document.getElementById('selection-delete-btn');
+    if (noteId) {
+      selectedNoteIdState = noteId;
+      if (deleteBtn) deleteBtn.style.display = 'inline-flex';
+    } else {
+      selectedNoteIdState = null;
+      if (deleteBtn) deleteBtn.style.display = 'none';
+    }
+
+    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況
+    document.querySelectorAll('.ai-btn').forEach(btn => {
+      btn.style.display = ai.isSupported ? 'inline-flex' : 'none';
+    });
+
     menu.style.display = 'flex';
   } else {
-    // 點擊空白處隱藏選單
-    if (e.target.closest('#selection-menu') === null) {
+    // 點擊空白處或清除選取時隱藏選單
+    if (!e || !e.target || e.target.closest('#selection-menu') === null) {
       menu.style.display = 'none';
+      selectedNoteIdState = null;
     }
   }
 }
@@ -14461,7 +14568,15 @@ async function handleAddHighlight(color) {
     sentenceIndex
   };
 
-  await library.saveNote(currentBook.id, note);
+  const updatedNotes = await library.saveNote(currentBook.id, note);
+  currentBook.notes = updatedNotes;
+
+  if (sentenceEl && updatedNotes) {
+    const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'highlight' && n.color === color);
+    if (savedNote) {
+      sentenceEl.setAttribute('data-note-id', savedNote.noteId);
+    }
+  }
   
   // 在頁面上即時繪製高亮
   highlightSelectionInDOM(color);
@@ -14501,6 +14616,7 @@ function applySavedHighlightsToDOM(targetWrapper = null, targetChapterIndex = nu
       if (sentenceEl) {
         // 如果是 highlight，直接高亮整句
         sentenceEl.classList.add(`highlight-${note.color}`);
+        sentenceEl.setAttribute('data-note-id', note.noteId);
       }
     }
   });
@@ -14532,7 +14648,15 @@ async function handleSaveNote() {
     sentenceIndex
   };
 
-  await library.saveNote(currentBook.id, note);
+  const updatedNotes = await library.saveNote(currentBook.id, note);
+  currentBook.notes = updatedNotes;
+
+  if (sentenceEl && updatedNotes) {
+    const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'note');
+    if (savedNote) {
+      sentenceEl.setAttribute('data-note-id', savedNote.noteId);
+    }
+  }
   
   // 顯示高亮代表有筆記
   highlightSelectionInDOM('yellow');
@@ -14680,8 +14804,36 @@ window.deleteBookmarkHandler = deleteBookmarkHandler;
 
 async function deleteNoteHandler(noteId) {
   if (currentBook) {
-    await library.deleteNote(currentBook.id, noteId);
+    // Find the note before deletion to get its chapterIndex and sentenceIndex
+    const note = currentBook.notes ? currentBook.notes.find(n => n.noteId === noteId) : null;
+    const chapterIndex = note ? note.chapterIndex : null;
+    const sentenceIndex = note ? note.sentenceIndex : null;
+
+    // Delete from DB and update the in-memory array
+    const updatedNotes = await library.deleteNote(currentBook.id, noteId);
+    currentBook.notes = updatedNotes;
+    
+    // Update the sidebar list
     await renderHighlightsList();
+
+    // Immediately remove highlight from DOM if it is the current chapter
+    if (chapterIndex === currentChapterIndex && sentenceIndex !== null) {
+      const container = document.getElementById('book-content');
+      if (container) {
+        const sentenceEl = container.querySelector(`[data-sentence-index="${sentenceIndex}"]`);
+        if (sentenceEl) {
+          // Remove highlight styles and data-note-id attribute
+          sentenceEl.classList.remove('highlight-yellow', 'highlight-green', 'highlight-blue', 'highlight-pink');
+          sentenceEl.removeAttribute('data-note-id');
+          
+          // Unwrap any inline span wrappers (from surroundContents)
+          const inlineSpans = sentenceEl.querySelectorAll('span[class^="highlight-"]');
+          inlineSpans.forEach(span => {
+            span.replaceWith(...span.childNodes);
+          });
+        }
+      }
+    }
   }
 }
 window.deleteNoteHandler = deleteNoteHandler;
@@ -14728,6 +14880,7 @@ function showAILoading() {
 async function triggerAISummary() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
   showAILoading();
   
   try {
@@ -14743,6 +14896,7 @@ async function triggerAISummary() {
 async function triggerAIExplain() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
   showAILoading();
 
   // 獲取選詞的上下文段落
@@ -14762,6 +14916,7 @@ async function triggerAIExplain() {
 async function triggerAITranslate() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
   showAILoading();
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文

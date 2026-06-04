@@ -1594,6 +1594,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
   animation: popScale 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+.selection-menu .menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.selection-menu .menu-divider {
+  width: 1px;
+  height: 20px;
+  background-color: var(--border-color);
+}
+
 /* 行動端將選單固定在螢幕底部，避免與系統原生選取選單（尤其 Android）重疊，且高度增加防擋 */
 .selection-menu.mobile-bottom-menu {
   position: fixed !important;
@@ -1602,10 +1614,27 @@ input[type="range"]::-webkit-slider-thumb:hover {
   left: 50% !important;
   transform: translateX(-50%) !important;
   display: flex !important;
-  padding: 10px 16px !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  width: min(340px, 90vw) !important;
+  align-items: center !important;
+  padding: 12px 16px !important;
   border-radius: 20px !important;
   animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
   box-shadow: 0 10px 40px var(--glass-shadow) !important;
+}
+
+.selection-menu.mobile-bottom-menu .menu-row {
+  width: 100%;
+  justify-content: center;
+  gap: 8px !important;
+}
+
+.selection-menu.mobile-bottom-menu .menu-divider {
+  width: 100% !important;
+  height: 1px !important;
+  background-color: var(--border-color);
+  margin: 4px 0 !important;
 }
 
 @keyframes slideUpMobile {
@@ -1636,6 +1665,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
   .selection-menu .highlight-colors {
     gap: 8px !important;
+  }
+  /* AI 伴侶懸浮面板移動端響應式對齊與縮放 */
+  .ai-panel {
+    bottom: 10px !important;
+    right: 5% !important;
+    left: 5% !important;
+    width: 90% !important;
+    max-width: 360px !important;
+    max-height: 50vh !important;
+    margin: 0 auto;
   }
 }
 

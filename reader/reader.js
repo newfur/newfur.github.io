@@ -56,6 +56,7 @@ let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
 let selectedTextRange = null;
+let selectedNoteIdState = null; // 儲存當前選取的高亮/筆記的 ID
 let currentPageIndex = 0;
 let ttsClickTimeout = null;
 let currentPagesDisplayed = 'auto';
@@ -765,6 +766,19 @@ function initUIEventBindings() {
   bookContent.addEventListener('mouseup', handleTextSelection);
   bookContent.addEventListener('touchend', handleTextSelection);
 
+  // 監聽全局 selectionchange 事件，解決行動端長按選擇後需要滑動屏幕才彈出選單的 Bug
+  let selectionChangeTimeout = null;
+  document.addEventListener('selectionchange', () => {
+    if (!currentBook) return;
+    const readerView = document.getElementById('reader-view');
+    if (readerView && readerView.classList.contains('view-active')) {
+      if (selectionChangeTimeout) clearTimeout(selectionChangeTimeout);
+      selectionChangeTimeout = setTimeout(() => {
+        handleTextSelection();
+      }, 250);
+    }
+  });
+
   // 單擊句子直接從該句開始朗讀（帶延遲檢測選區，使用事件委託與坐標輔助定位）
   bookContent.addEventListener('click', (e) => {
     // 忽略點擊鏈接、按鈕、輸入框等交互元素
@@ -802,6 +816,13 @@ function initUIEventBindings() {
   document.getElementById('selection-ai-summary').addEventListener('click', triggerAISummary);
   document.getElementById('selection-ai-explain').addEventListener('click', triggerAIExplain);
   document.getElementById('selection-ai-translate').addEventListener('click', triggerAITranslate);
+  document.getElementById('selection-delete-btn').addEventListener('click', async () => {
+    if (selectedNoteIdState) {
+      await deleteNoteHandler(selectedNoteIdState);
+      document.getElementById('selection-menu').style.display = 'none';
+      window.getSelection().removeAllRanges();
+    }
+  });
 
   // 筆記對話框
   document.getElementById('note-cancel-btn').addEventListener('click', () => {
@@ -1636,6 +1657,11 @@ async function openBook(id) {
   document.getElementById('library-view').classList.remove('view-active');
   document.getElementById('reader-view').classList.add('view-active');
   document.getElementById('reader-book-title').textContent = book.title;
+  
+  // 重置隱藏浮動面板，避免上一次閱讀時殘留顯示
+  document.getElementById('selection-menu').style.display = 'none';
+  document.getElementById('note-dialog').style.display = 'none';
+  document.getElementById('ai-panel').style.display = 'none';
 
   // 設定書籍格式與排版類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
@@ -1728,6 +1754,11 @@ async function closeCurrentBook(triggerBack = true) {
   window.scrollTo(0, 0);
   document.getElementById('reader-view').classList.remove('view-active');
   document.getElementById('library-view').classList.add('view-active');
+  
+  // 隱藏所有選取選單與對話框，防止關閉書本後殘留或下次打開時重疊
+  document.getElementById('selection-menu').style.display = 'none';
+  document.getElementById('note-dialog').style.display = 'none';
+  document.getElementById('ai-panel').style.display = 'none';
   
   // 觸發強制重繪/Reflow，防止瀏覽器因隱藏切換導致的 Flex 佈局高度崩塌/拉伸 Bug
   const appHeader = document.querySelector('.app-header');
@@ -4050,6 +4081,12 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
 // 監聽文字選取
 function handleTextSelection(e) {
   const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    const menu = document.getElementById('selection-menu');
+    if (menu) menu.style.display = 'none';
+    selectedNoteIdState = null;
+    return;
+  }
   const selectedText = selection.toString().trim();
   const menu = document.getElementById('selection-menu');
 
@@ -4071,11 +4108,38 @@ function handleTextSelection(e) {
       menu.style.top = `${rect.top + window.scrollY - 55}px`;
       menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
     }
+
+    // 檢查選取內容是否包含已有的高亮/筆記 (通過 data-note-id 屬性判斷)
+    let noteId = null;
+    try {
+      const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+      if (sentenceEl) {
+        noteId = sentenceEl.getAttribute('data-note-id');
+      }
+    } catch (err) {
+      console.warn('Error reading data-note-id:', err);
+    }
+
+    const deleteBtn = document.getElementById('selection-delete-btn');
+    if (noteId) {
+      selectedNoteIdState = noteId;
+      if (deleteBtn) deleteBtn.style.display = 'inline-flex';
+    } else {
+      selectedNoteIdState = null;
+      if (deleteBtn) deleteBtn.style.display = 'none';
+    }
+
+    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況
+    document.querySelectorAll('.ai-btn').forEach(btn => {
+      btn.style.display = ai.isSupported ? 'inline-flex' : 'none';
+    });
+
     menu.style.display = 'flex';
   } else {
-    // 點擊空白處隱藏選單
-    if (e.target.closest('#selection-menu') === null) {
+    // 點擊空白處或清除選取時隱藏選單
+    if (!e || !e.target || e.target.closest('#selection-menu') === null) {
       menu.style.display = 'none';
+      selectedNoteIdState = null;
     }
   }
 }
@@ -4095,7 +4159,15 @@ async function handleAddHighlight(color) {
     sentenceIndex
   };
 
-  await library.saveNote(currentBook.id, note);
+  const updatedNotes = await library.saveNote(currentBook.id, note);
+  currentBook.notes = updatedNotes;
+
+  if (sentenceEl && updatedNotes) {
+    const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'highlight' && n.color === color);
+    if (savedNote) {
+      sentenceEl.setAttribute('data-note-id', savedNote.noteId);
+    }
+  }
   
   // 在頁面上即時繪製高亮
   highlightSelectionInDOM(color);
@@ -4135,6 +4207,7 @@ function applySavedHighlightsToDOM(targetWrapper = null, targetChapterIndex = nu
       if (sentenceEl) {
         // 如果是 highlight，直接高亮整句
         sentenceEl.classList.add(`highlight-${note.color}`);
+        sentenceEl.setAttribute('data-note-id', note.noteId);
       }
     }
   });
@@ -4166,7 +4239,15 @@ async function handleSaveNote() {
     sentenceIndex
   };
 
-  await library.saveNote(currentBook.id, note);
+  const updatedNotes = await library.saveNote(currentBook.id, note);
+  currentBook.notes = updatedNotes;
+
+  if (sentenceEl && updatedNotes) {
+    const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'note');
+    if (savedNote) {
+      sentenceEl.setAttribute('data-note-id', savedNote.noteId);
+    }
+  }
   
   // 顯示高亮代表有筆記
   highlightSelectionInDOM('yellow');
@@ -4314,8 +4395,36 @@ window.deleteBookmarkHandler = deleteBookmarkHandler;
 
 async function deleteNoteHandler(noteId) {
   if (currentBook) {
-    await library.deleteNote(currentBook.id, noteId);
+    // Find the note before deletion to get its chapterIndex and sentenceIndex
+    const note = currentBook.notes ? currentBook.notes.find(n => n.noteId === noteId) : null;
+    const chapterIndex = note ? note.chapterIndex : null;
+    const sentenceIndex = note ? note.sentenceIndex : null;
+
+    // Delete from DB and update the in-memory array
+    const updatedNotes = await library.deleteNote(currentBook.id, noteId);
+    currentBook.notes = updatedNotes;
+    
+    // Update the sidebar list
     await renderHighlightsList();
+
+    // Immediately remove highlight from DOM if it is the current chapter
+    if (chapterIndex === currentChapterIndex && sentenceIndex !== null) {
+      const container = document.getElementById('book-content');
+      if (container) {
+        const sentenceEl = container.querySelector(`[data-sentence-index="${sentenceIndex}"]`);
+        if (sentenceEl) {
+          // Remove highlight styles and data-note-id attribute
+          sentenceEl.classList.remove('highlight-yellow', 'highlight-green', 'highlight-blue', 'highlight-pink');
+          sentenceEl.removeAttribute('data-note-id');
+          
+          // Unwrap any inline span wrappers (from surroundContents)
+          const inlineSpans = sentenceEl.querySelectorAll('span[class^="highlight-"]');
+          inlineSpans.forEach(span => {
+            span.replaceWith(...span.childNodes);
+          });
+        }
+      }
+    }
   }
 }
 window.deleteNoteHandler = deleteNoteHandler;
@@ -4362,6 +4471,7 @@ function showAILoading() {
 async function triggerAISummary() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
   showAILoading();
   
   try {
@@ -4377,6 +4487,7 @@ async function triggerAISummary() {
 async function triggerAIExplain() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
   showAILoading();
 
   // 獲取選詞的上下文段落
@@ -4396,6 +4507,7 @@ async function triggerAIExplain() {
 async function triggerAITranslate() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
+  window.getSelection().removeAllRanges();
   showAILoading();
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文

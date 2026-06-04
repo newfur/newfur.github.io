@@ -412,37 +412,41 @@
 
     <!-- ================= 文字選取懸浮菜單 (Text Selection Menu) ================= -->
     <div id="selection-menu" class="selection-menu panel-glass">
-      <div class="highlight-colors">
-        <button class="color-dot color-yellow" data-color="yellow"></button>
-        <button class="color-dot color-green" data-color="green"></button>
-        <button class="color-dot color-blue" data-color="blue"></button>
-        <button class="color-dot color-pink" data-color="pink"></button>
+      <div class="menu-row">
+        <div class="highlight-colors">
+          <button class="color-dot color-yellow" data-color="yellow"></button>
+          <button class="color-dot color-green" data-color="green"></button>
+          <button class="color-dot color-blue" data-color="blue"></button>
+          <button class="color-dot color-pink" data-color="pink"></button>
+        </div>
+        <button id="selection-delete-btn" class="menu-btn" style="display:none; color:red;">
+          <svg class="svg-icon svg-icon-sm" style="color:red; margin-right: 3px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          <span data-i18n="selection_delete">Delete</span>
+        </button>
       </div>
-      <div class="divider"></div>
-      <button id="selection-note-btn" class="menu-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-        <span data-i18n="note_title">Note</span>
-      </button>
-      <button id="selection-tts-btn" class="menu-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-        <span data-i18n="selection_speak">Speak</span>
-      </button>
-      <button id="selection-ai-summary" class="menu-btn ai-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
-        <span data-i18n="ai_summary">Summary</span>
-      </button>
-      <button id="selection-ai-explain" class="menu-btn ai-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
-        <span data-i18n="ai_explain">Explain</span>
-      </button>
-      <button id="selection-ai-translate" class="menu-btn ai-btn">
-        <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
-        <span data-i18n="ai_translate">Translate</span>
-      </button>
-      <button id="selection-delete-btn" class="menu-btn" style="display:none; color:red;">
-        <svg class="svg-icon svg-icon-sm" style="color:red; margin-right: 3px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        <span data-i18n="selection_delete">Delete</span>
-      </button>
+      <div class="menu-divider"></div>
+      <div class="menu-row">
+        <button id="selection-note-btn" class="menu-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span data-i18n="note_title">Note</span>
+        </button>
+        <button id="selection-tts-btn" class="menu-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          <span data-i18n="selection_speak">Speak</span>
+        </button>
+        <button id="selection-ai-summary" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+          <span data-i18n="ai_summary">Summary</span>
+        </button>
+        <button id="selection-ai-explain" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span data-i18n="ai_explain">Explain</span>
+        </button>
+        <button id="selection-ai-translate" class="menu-btn ai-btn">
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          <span data-i18n="ai_translate">Translate</span>
+        </button>
+      </div>
     </div>
 
     <!-- ================= 筆記輸入對話框 (Note Edit Dialog) ================= -->
