@@ -1442,6 +1442,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   font-family: var(--sidebar-font-family) !important;
 }
 
+/* 強制所有控制標籤、功能按鈕及其所有子元素使用系統 UI 字型，防止被 book-content 或 sidebar 萬用字元字型覆蓋 */
+.reader-sidebar .tab-btn,
+.reader-sidebar .tab-btn *,
+.reader-sidebar h4,
+.reader-sidebar h4 *,
+#add-bookmark-btn,
+#add-bookmark-btn * {
+  font-family: var(--font-sans) !important;
+}
+
 .reader-sidebar {
   position: fixed;
   top: 0;
