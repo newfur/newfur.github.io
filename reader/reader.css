@@ -3858,6 +3858,36 @@ html.transition-none .page-texture-slide {
   border: 1px solid var(--border-color);
 }
 
+/* AI 伴侶面板在桌面端的側邊欄排版與滑入動畫 */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (min-width: 769px) {
+  .ai-panel {
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 400px !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 24px 0 0 24px !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    border-right: none !important;
+    border-left: 1px solid var(--border-color) !important;
+    box-shadow: -10px 0 40px var(--glass-shadow) !important;
+    margin: 0 !important;
+    animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  .ai-panel-header {
+    height: 64px !important;
+    padding: 0 20px !important;
+    box-sizing: border-box !important;
+  }
+}
+
 
 
 
