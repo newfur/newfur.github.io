@@ -553,10 +553,22 @@
     "message": "输入问题，向 AI 提问..."
   },
   "ai_save_settings": {
-    "message": "保存 AI 配置"
+    "message": "保存"
   },
   "ai_settings_saved": {
     "message": "已保存"
+  },
+  "ai_test_settings": {
+    "message": "测试连接"
+  },
+  "ai_test_testing": {
+    "message": "测试中..."
+  },
+  "ai_test_success": {
+    "message": "测试成功！"
+  },
+  "ai_test_fail": {
+    "message": "测试失败"
   },
   "ai_assistant": {
     "message": "AI 助手"

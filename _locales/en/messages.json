@@ -553,10 +553,22 @@
     "message": "Ask AI anything..."
   },
   "ai_save_settings": {
-    "message": "Save AI Settings"
+    "message": "Save"
   },
   "ai_settings_saved": {
-    "message": "Saved!"
+    "message": "Saved"
+  },
+  "ai_test_settings": {
+    "message": "Test Connection"
+  },
+  "ai_test_testing": {
+    "message": "Testing..."
+  },
+  "ai_test_success": {
+    "message": "Success!"
+  },
+  "ai_test_fail": {
+    "message": "Failed"
   },
   "ai_assistant": {
     "message": "AI Assistant"

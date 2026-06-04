@@ -191,7 +191,12 @@ export class AIEngine {
 
   // 獨立離線 HTML 環境下直接 Fetch 流式訪問
   async _streamDirect(provider, url, apiKey, model, messages, onChunk) {
-    let fetchUrl = url;
+    let fetchUrl = (url ? url.trim() : "");
+    if (!fetchUrl) {
+      fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434';
+    }
+    const activeModel = (model ? model.trim() : "") || (provider === 'openai' ? 'gpt-4o-mini' : 'llama3');
+
     const headers = {
       'Content-Type': 'application/json'
     };
@@ -205,7 +210,7 @@ export class AIEngine {
         fetchUrl = fetchUrl.replace(/\/+$/, '') + '/chat/completions';
       }
       body = {
-        model: model || 'gpt-4o-mini',
+        model: activeModel,
         messages: messages,
         stream: true
       };
@@ -214,7 +219,7 @@ export class AIEngine {
         fetchUrl = fetchUrl.replace(/\/+$/, '') + '/api/chat';
       }
       body = {
-        model: model || 'llama3',
+        model: activeModel,
         messages: messages,
         stream: true
       };
@@ -303,5 +308,35 @@ export class AIEngine {
     }
 
     return fullResponse;
+  }
+
+  // 測試 AI 連線配置是否可用
+  async testConnection(provider, endpoint, apiKey, model) {
+    const prevProvider = this.provider;
+    const prevEndpoint = this.endpoint;
+    const prevApiKey = this.apiKey;
+    const prevModel = this.model;
+
+    try {
+      this.configure({ provider, apiKey, endpoint, model });
+
+      if (provider === 'builtin') {
+        await this.checkAvailability();
+        if (!this.isSupported) throw new Error('Built-in AI is not supported in this browser.');
+        return 'Built-in AI (Gemini Nano) is available!';
+      }
+
+      let resultText = '';
+      const testSystemPrompt = 'You are a helpful assistant. Respond with a very short connection success message.';
+      const testUserPrompt = 'Respond with "OK" if you receive this.';
+      
+      await this._chat(testSystemPrompt, testUserPrompt, (chunk) => {
+        resultText = chunk;
+      });
+      
+      return resultText || 'Connection OK';
+    } finally {
+      this.configure({ provider: prevProvider, apiKey: prevApiKey, endpoint: prevEndpoint, model: prevModel });
+    }
   }
 }

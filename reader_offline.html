@@ -4591,9 +4591,11 @@ html.transition-none .page-texture-slide {
           <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
           <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
         </div>
-        <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 5px;">
-          <button id="ai-save-btn" class="btn btn-primary" style="width: 100%; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save AI Settings</button>
+        <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 15px; gap: 10px;">
+          <button id="ai-test-btn" class="btn btn-secondary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex; border: 1px solid var(--border-color);" data-i18n="ai_test_settings">Test Connection</button>
+          <button id="ai-save-btn" class="btn btn-primary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save</button>
         </div>
+        <div id="ai-test-result" style="display: none; margin-top: 10px; font-size: 13px; text-align: center; padding: 8px; border-radius: 8px; font-weight: 500;"></div>
       </div>
     </div>
   </dialog>
@@ -5170,10 +5172,22 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "Ask AI anything..."
     },
     "ai_save_settings": {
-      "message": "Save AI Settings"
+      "message": "Save"
     },
     "ai_settings_saved": {
-      "message": "Saved!"
+      "message": "Saved"
+    },
+    "ai_test_settings": {
+      "message": "Test Connection"
+    },
+    "ai_test_testing": {
+      "message": "Testing..."
+    },
+    "ai_test_success": {
+      "message": "Success!"
+    },
+    "ai_test_fail": {
+      "message": "Failed"
     },
     "ai_assistant": {
       "message": "AI Assistant"
@@ -5770,10 +5784,22 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "輸入問題，向 AI 提問..."
     },
     "ai_save_settings": {
-      "message": "保存 AI 配置"
+      "message": "保存"
     },
     "ai_settings_saved": {
       "message": "已保存"
+    },
+    "ai_test_settings": {
+      "message": "測試連接"
+    },
+    "ai_test_testing": {
+      "message": "測試中..."
+    },
+    "ai_test_success": {
+      "message": "測試成功！"
+    },
+    "ai_test_fail": {
+      "message": "測試失敗"
     },
     "ai_assistant": {
       "message": "AI 助手"
@@ -6370,10 +6396,22 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "输入问题，向 AI 提问..."
     },
     "ai_save_settings": {
-      "message": "保存 AI 配置"
+      "message": "保存"
     },
     "ai_settings_saved": {
       "message": "已保存"
+    },
+    "ai_test_settings": {
+      "message": "测试连接"
+    },
+    "ai_test_testing": {
+      "message": "测试中..."
+    },
+    "ai_test_success": {
+      "message": "测试成功！"
+    },
+    "ai_test_fail": {
+      "message": "测试失败"
     },
     "ai_assistant": {
       "message": "AI 助手"
@@ -11030,7 +11068,12 @@ class AIEngine {
 
   // 獨立離線 HTML 環境下直接 Fetch 流式訪問
   async _streamDirect(provider, url, apiKey, model, messages, onChunk) {
-    let fetchUrl = url;
+    let fetchUrl = (url ? url.trim() : "");
+    if (!fetchUrl) {
+      fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434';
+    }
+    const activeModel = (model ? model.trim() : "") || (provider === 'openai' ? 'gpt-4o-mini' : 'llama3');
+
     const headers = {
       'Content-Type': 'application/json'
     };
@@ -11044,7 +11087,7 @@ class AIEngine {
         fetchUrl = fetchUrl.replace(/\/+$/, '') + '/chat/completions';
       }
       body = {
-        model: model || 'gpt-4o-mini',
+        model: activeModel,
         messages: messages,
         stream: true
       };
@@ -11053,7 +11096,7 @@ class AIEngine {
         fetchUrl = fetchUrl.replace(/\/+$/, '') + '/api/chat';
       }
       body = {
-        model: model || 'llama3',
+        model: activeModel,
         messages: messages,
         stream: true
       };
@@ -11142,6 +11185,36 @@ class AIEngine {
     }
 
     return fullResponse;
+  }
+
+  // 測試 AI 連線配置是否可用
+  async testConnection(provider, endpoint, apiKey, model) {
+    const prevProvider = this.provider;
+    const prevEndpoint = this.endpoint;
+    const prevApiKey = this.apiKey;
+    const prevModel = this.model;
+
+    try {
+      this.configure({ provider, apiKey, endpoint, model });
+
+      if (provider === 'builtin') {
+        await this.checkAvailability();
+        if (!this.isSupported) throw new Error('Built-in AI is not supported in this browser.');
+        return 'Built-in AI (Gemini Nano) is available!';
+      }
+
+      let resultText = '';
+      const testSystemPrompt = 'You are a helpful assistant. Respond with a very short connection success message.';
+      const testUserPrompt = 'Respond with "OK" if you receive this.';
+      
+      await this._chat(testSystemPrompt, testUserPrompt, (chunk) => {
+        resultText = chunk;
+      });
+      
+      return resultText || 'Connection OK';
+    } finally {
+      this.configure({ provider: prevProvider, apiKey: prevApiKey, endpoint: prevEndpoint, model: prevModel });
+    }
   }
 }
 
@@ -11757,6 +11830,35 @@ function initUIEventBindings() {
       const val = e.target.value;
       ai.configure({ model: val });
       chrome.storage.local.set({ aiModel: val });
+    });
+  }
+
+  // AI 測試配置按鈕監聽
+  const aiTestBtn = document.getElementById('ai-test-btn');
+  const aiTestResult = document.getElementById('ai-test-result');
+  if (aiTestBtn && aiTestResult) {
+    aiTestBtn.addEventListener('click', async () => {
+      const provider = document.getElementById('ai-provider-select').value;
+      const apiKey = document.getElementById('ai-api-key-input').value;
+      const endpoint = document.getElementById('ai-endpoint-input').value;
+      const model = document.getElementById('ai-model-input').value;
+
+      aiTestResult.style.display = 'block';
+      aiTestResult.style.color = 'var(--text-color)';
+      aiTestResult.textContent = getMsg('ai_test_testing') || 'Testing...';
+
+      try {
+        const response = await ai.testConnection(provider, endpoint, apiKey, model);
+        aiTestResult.style.color = '#34c759'; // green color for success
+        const preview = response.length > 30 ? response.substring(0, 30) + '...' : response;
+        aiTestResult.textContent = `${getMsg('ai_test_success') || 'Success!'} (${preview})`;
+        setTimeout(() => {
+          aiTestResult.style.display = 'none';
+        }, 5000);
+      } catch (err) {
+        aiTestResult.style.color = '#ff3b30'; // red color for error
+        aiTestResult.textContent = `${getMsg('ai_test_fail') || 'Failed'}: ${err.message || err}`;
+      }
     });
   }
 
@@ -15552,9 +15654,11 @@ function handleTextSelection(e) {
       if (deleteBtn) deleteBtn.style.display = 'none';
     }
 
-    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況
+    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況或自定義 AI 配置
+    const hasCustomAI = ai.provider !== 'builtin';
+    const showAI = ai.isSupported || hasCustomAI;
     document.querySelectorAll('.ai-btn').forEach(btn => {
-      btn.style.display = ai.isSupported ? 'inline-flex' : 'none';
+      btn.style.display = showAI ? 'inline-flex' : 'none';
     });
 
     menu.style.display = 'flex';

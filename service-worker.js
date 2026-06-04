@@ -74,7 +74,12 @@ chrome.runtime.onConnect.addListener((port) => {
       if (msg.action === "chat") {
         const { provider, url, apiKey, model, messages } = msg;
         try {
-          let fetchUrl = url;
+          let fetchUrl = (url ? url.trim() : "");
+          if (!fetchUrl) {
+            fetchUrl = provider === "openai" ? "https://api.openai.com/v1" : "http://localhost:11434";
+          }
+          const activeModel = (model ? model.trim() : "") || (provider === "openai" ? "gpt-4o-mini" : "llama3");
+
           const headers = {
             "Content-Type": "application/json"
           };
@@ -88,7 +93,7 @@ chrome.runtime.onConnect.addListener((port) => {
               fetchUrl = fetchUrl.replace(/\/+$/, "") + "/chat/completions";
             }
             body = {
-              model: model || "gpt-4o-mini",
+              model: activeModel,
               messages: messages,
               stream: true
             };
@@ -97,7 +102,7 @@ chrome.runtime.onConnect.addListener((port) => {
               fetchUrl = fetchUrl.replace(/\/+$/, "") + "/api/chat";
             }
             body = {
-              model: model || "llama3",
+              model: activeModel,
               messages: messages,
               stream: true
             };

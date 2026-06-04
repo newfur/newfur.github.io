@@ -609,6 +609,35 @@ function initUIEventBindings() {
     });
   }
 
+  // AI 測試配置按鈕監聽
+  const aiTestBtn = document.getElementById('ai-test-btn');
+  const aiTestResult = document.getElementById('ai-test-result');
+  if (aiTestBtn && aiTestResult) {
+    aiTestBtn.addEventListener('click', async () => {
+      const provider = document.getElementById('ai-provider-select').value;
+      const apiKey = document.getElementById('ai-api-key-input').value;
+      const endpoint = document.getElementById('ai-endpoint-input').value;
+      const model = document.getElementById('ai-model-input').value;
+
+      aiTestResult.style.display = 'block';
+      aiTestResult.style.color = 'var(--text-color)';
+      aiTestResult.textContent = getMsg('ai_test_testing') || 'Testing...';
+
+      try {
+        const response = await ai.testConnection(provider, endpoint, apiKey, model);
+        aiTestResult.style.color = '#34c759'; // green color for success
+        const preview = response.length > 30 ? response.substring(0, 30) + '...' : response;
+        aiTestResult.textContent = `${getMsg('ai_test_success') || 'Success!'} (${preview})`;
+        setTimeout(() => {
+          aiTestResult.style.display = 'none';
+        }, 5000);
+      } catch (err) {
+        aiTestResult.style.color = '#ff3b30'; // red color for error
+        aiTestResult.textContent = `${getMsg('ai_test_fail') || 'Failed'}: ${err.message || err}`;
+      }
+    });
+  }
+
   // AI 保存配置按鈕監聽
   const aiSaveBtn = document.getElementById('ai-save-btn');
   if (aiSaveBtn) {
@@ -4401,9 +4430,11 @@ function handleTextSelection(e) {
       if (deleteBtn) deleteBtn.style.display = 'none';
     }
 
-    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況
+    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況或自定義 AI 配置
+    const hasCustomAI = ai.provider !== 'builtin';
+    const showAI = ai.isSupported || hasCustomAI;
     document.querySelectorAll('.ai-btn').forEach(btn => {
-      btn.style.display = ai.isSupported ? 'inline-flex' : 'none';
+      btn.style.display = showAI ? 'inline-flex' : 'none';
     });
 
     menu.style.display = 'flex';

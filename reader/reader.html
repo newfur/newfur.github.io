@@ -727,9 +727,11 @@
           <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
           <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
         </div>
-        <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 5px;">
-          <button id="ai-save-btn" class="btn btn-primary" style="width: 100%; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save AI Settings</button>
+        <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 15px; gap: 10px;">
+          <button id="ai-test-btn" class="btn btn-secondary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex; border: 1px solid var(--border-color);" data-i18n="ai_test_settings">Test Connection</button>
+          <button id="ai-save-btn" class="btn btn-primary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save</button>
         </div>
+        <div id="ai-test-result" style="display: none; margin-top: 10px; font-size: 13px; text-align: center; padding: 8px; border-radius: 8px; font-weight: 500;"></div>
       </div>
     </div>
   </dialog>
