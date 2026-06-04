@@ -738,6 +738,7 @@ function initUIEventBindings() {
   if (closeAiPanelBtn) {
     closeAiPanelBtn.addEventListener('click', () => {
       document.getElementById('ai-panel').style.display = 'none';
+      updateHeaderActiveStates();
     });
   }
 
@@ -760,7 +761,13 @@ function initUIEventBindings() {
           `;
         }
         document.getElementById('ai-input').focus();
+        
+        // 關閉其他側邊欄和下拉面板
+        document.getElementById('reader-sidebar').classList.remove('active');
+        document.getElementById('settings-panel').classList.remove('dropdown-active');
+        document.getElementById('tts-panel').classList.remove('dropdown-active');
       }
+      updateHeaderActiveStates();
     });
   }
 
@@ -1175,9 +1182,11 @@ function initUIEventBindings() {
     }
     // 設定面板：點擊面板及其觸發按鈕外部則關閉
     const settingsPanel = document.getElementById('settings-panel');
+    let panelClosed = false;
     if (settingsPanel && settingsPanel.classList.contains('dropdown-active')) {
       if (!target.closest('#settings-panel') && !target.closest('#settings-toggle')) {
         settingsPanel.classList.remove('dropdown-active');
+        panelClosed = true;
       }
     }
     // TTS 面板：點擊面板及其觸發按鈕外部則關閉
@@ -1185,6 +1194,7 @@ function initUIEventBindings() {
     if (ttsPanel && ttsPanel.classList.contains('dropdown-active')) {
       if (!target.closest('#tts-panel') && !target.closest('#tts-toggle')) {
         ttsPanel.classList.remove('dropdown-active');
+        panelClosed = true;
       }
     }
     // 側邊欄：點擊側邊欄及其觸發按鈕外部則關閉
@@ -1192,7 +1202,11 @@ function initUIEventBindings() {
     if (sidebar && sidebar.classList.contains('active')) {
       if (!target.closest('#reader-sidebar') && !target.closest('#sidebar-toggle')) {
         sidebar.classList.remove('active');
+        panelClosed = true;
       }
+    }
+    if (panelClosed) {
+      updateHeaderActiveStates();
     }
   });
 
@@ -4368,18 +4382,43 @@ function toggleSidebar() {
       }
     }, 150);
   }
+  updateHeaderActiveStates();
 }
 
 function toggleSettingsPanel() {
   document.getElementById('settings-panel').classList.toggle('dropdown-active');
   document.getElementById('reader-sidebar').classList.remove('active');
   document.getElementById('tts-panel').classList.remove('dropdown-active');
+  updateHeaderActiveStates();
 }
 
 function toggleTTSPanel() {
   document.getElementById('tts-panel').classList.toggle('dropdown-active');
   document.getElementById('reader-sidebar').classList.remove('active');
   document.getElementById('settings-panel').classList.remove('dropdown-active');
+  updateHeaderActiveStates();
+}
+
+function updateHeaderActiveStates() {
+  const sidebar = document.getElementById('reader-sidebar');
+  const ttsPanel = document.getElementById('tts-panel');
+  const settingsPanel = document.getElementById('settings-panel');
+  const aiPanel = document.getElementById('ai-panel');
+
+  const sidebarActive = sidebar && sidebar.classList.contains('active');
+  const ttsActive = ttsPanel && ttsPanel.classList.contains('dropdown-active');
+  const settingsActive = settingsPanel && settingsPanel.classList.contains('dropdown-active');
+  const aiActive = aiPanel && (aiPanel.style.display === 'flex' || aiPanel.style.display === 'block');
+
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const ttsToggle = document.getElementById('tts-toggle');
+  const settingsToggle = document.getElementById('settings-toggle');
+  const aiToggle = document.getElementById('ai-toggle');
+
+  if (sidebarToggle) sidebarToggle.classList.toggle('active', sidebarActive);
+  if (ttsToggle) ttsToggle.classList.toggle('active', ttsActive);
+  if (settingsToggle) settingsToggle.classList.toggle('active', settingsActive);
+  if (aiToggle) aiToggle.classList.toggle('active', aiActive);
 }
 
 
@@ -5246,6 +5285,11 @@ function triggerAIAsk() {
     if (contentEl && !contentEl.querySelector('.ai-chat-bubble')) {
       contentEl.innerHTML = '';
     }
+    // 關閉其他側邊欄和下拉面板
+    document.getElementById('reader-sidebar').classList.remove('active');
+    document.getElementById('settings-panel').classList.remove('dropdown-active');
+    document.getElementById('tts-panel').classList.remove('dropdown-active');
+    updateHeaderActiveStates();
   }
   const inputEl = document.getElementById('ai-input');
   if (inputEl) {

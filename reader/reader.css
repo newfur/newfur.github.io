@@ -209,6 +209,10 @@ button, select, input {
   transform: scale(1.05);
 }
 
+.btn-icon-only.active {
+  color: var(--primary-color) !important;
+}
+
 /* 毛玻璃容器樣式 */
 .panel-glass {
   background: var(--glass-bg);
@@ -1804,7 +1808,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background-color: var(--border-color);
 }
 
-.ai-btn {
+.selection-menu .ai-btn {
   color: var(--primary-color);
   font-weight: 600;
 }
