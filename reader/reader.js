@@ -4113,7 +4113,9 @@ function handleTextSelection(e) {
     // 檢查選取內容是否包含已有的高亮/筆記 (通過 data-note-id 屬性判斷)
     let noteId = null;
     try {
-      const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+      const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
+        ? selectedTextRange.startContainer.closest('.tts-sentence') 
+        : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
       if (sentenceEl) {
         noteId = sentenceEl.getAttribute('data-note-id');
       }
@@ -4254,7 +4256,9 @@ function applyHighlightToDOMRange(element, startOffset, endOffset, color, noteId
 async function handleAddHighlight(color) {
   if (!currentBook || !selectedTextState) return;
 
-  const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+  const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
+    ? selectedTextRange.startContainer.closest('.tts-sentence') 
+    : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
   const sentenceIndex = sentenceEl ? parseInt(sentenceEl.getAttribute('data-sentence-index')) : 0;
 
   let startOffset = 0;
@@ -4298,10 +4302,12 @@ async function handleAddHighlight(color) {
 // 在 DOM 中包裹高亮標籤
 function highlightSelectionInDOM(color, noteId) {
   if (!selectedTextRange) return;
-  const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+  const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
+    ? selectedTextRange.startContainer.closest('.tts-sentence') 
+    : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
   if (sentenceEl) {
     const { startOffset, endOffset } = getSelectionOffsets(sentenceEl, selectedTextRange);
-    applyHighlightToDOMRange(sentenceEl, startOffset, endOffset, color, noteId);
+    applyHighlightToDOMRange(sentenceEl, startOffset, endOffset, color, noteId, selectedTextState);
   }
 }
 
@@ -4341,7 +4347,9 @@ async function handleSaveNote() {
   const text = document.getElementById('note-textarea').value.trim();
   if (!text) return;
 
-  const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+  const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
+    ? selectedTextRange.startContainer.closest('.tts-sentence') 
+    : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
   const sentenceIndex = sentenceEl ? parseInt(sentenceEl.getAttribute('data-sentence-index')) : 0;
 
   let startOffset = 0;
