@@ -848,10 +848,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v1.2.2';
+            versionDisplay.textContent = 'v1.3.0';
           }
         } else {
-          versionDisplay.textContent = 'v1.2.2';
+          versionDisplay.textContent = 'v1.3.0';
         }
       }
       aboutDialog.showModal();
