@@ -827,6 +827,7 @@ function initUIEventBindings() {
   // 筆記對話框
   document.getElementById('note-cancel-btn').addEventListener('click', () => {
     document.getElementById('note-dialog').style.display = 'none';
+    window.getSelection().removeAllRanges();
   });
   document.getElementById('note-save-btn').addEventListener('click', handleSaveNote);
 
