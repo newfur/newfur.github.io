@@ -14624,14 +14624,14 @@ function handleTextSelection(e) {
       menu.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (menu.offsetWidth / 2)}px`;
     }
 
-    // 檢查選取內容是否包含已有的高亮/筆記 (通過 data-note-id 屬性判斷)
+    // 檢查選取內容是否為已有的高亮/筆記
     let noteId = null;
     try {
-      const sentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
-        ? selectedTextRange.startContainer.closest('.tts-sentence') 
-        : selectedTextRange.startContainer.parentNode.closest('.tts-sentence');
-      if (sentenceEl) {
-        noteId = sentenceEl.getAttribute('data-note-id');
+      const startNode = selectedTextRange.startContainer;
+      const startElement = startNode.nodeType === Node.ELEMENT_NODE ? startNode : startNode.parentElement;
+      const highlightSpan = startElement ? startElement.closest('span[class^="highlight-"]') : null;
+      if (highlightSpan) {
+        noteId = highlightSpan.getAttribute('data-note-id');
       }
     } catch (err) {
       console.warn('Error reading data-note-id:', err);
@@ -14698,8 +14698,8 @@ function applyHighlightToDOMRange(element, startOffset, endOffset, color, noteId
   let start = startOffset;
   let end = endOffset;
 
-  // 如果 start/end 為空或未定義，則根據 textFallback 搜尋 substring
-  if (start === undefined || end === undefined || start === null || end === null) {
+  // 如果起止位置無效、相同或為空，則使用 textFallback 在純文字中進行子字串搜尋
+  if (start === undefined || end === undefined || start === null || end === null || start >= end) {
     if (!textFallback) return;
     const txt = element.textContent;
     const idx = txt.indexOf(textFallback);
@@ -14801,7 +14801,6 @@ async function handleAddHighlight(color) {
     const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'highlight' && n.color === color);
     if (savedNote) {
       savedNoteId = savedNote.noteId;
-      sentenceEl.setAttribute('data-note-id', savedNote.noteId);
     }
   }
   
@@ -14840,7 +14839,6 @@ function applySavedHighlightsToDOM(targetWrapper = null, targetChapterIndex = nu
         const color = note.color || 'yellow';
         // 套用精確高亮範圍
         applyHighlightToDOMRange(sentenceEl, note.startOffset, note.endOffset, color, note.noteId, note.text);
-        sentenceEl.setAttribute('data-note-id', note.noteId);
       }
     }
   });
@@ -14892,7 +14890,6 @@ async function handleSaveNote() {
     const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'note');
     if (savedNote) {
       savedNoteId = savedNote.noteId;
-      sentenceEl.setAttribute('data-note-id', savedNote.noteId);
     }
   }
   
