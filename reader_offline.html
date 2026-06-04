@@ -739,35 +739,35 @@ button, select, input {
 }
 
 /* 字體切換樣式 */
-.font-sans, .font-sans p, .font-sans li, .font-sans dt, .font-sans dd, .font-sans h1, .font-sans h2, .font-sans h3, .font-sans h4, .font-sans h5, .font-sans h6 {
+.font-sans, .font-sans *:not(code):not(pre):not(kbd) {
   font-family: var(--font-sans) !important;
 }
 
-.font-serif, .font-serif p, .font-serif li, .font-serif dt, .font-serif dd, .font-serif h1, .font-serif h2, .font-serif h3, .font-serif h4, .font-serif h5, .font-serif h6 {
+.font-serif, .font-serif *:not(code):not(pre):not(kbd) {
   font-family: var(--font-serif) !important;
 }
 
-.font-lxgw, .font-lxgw p, .font-lxgw li, .font-lxgw dt, .font-lxgw dd, .font-lxgw h1, .font-lxgw h2, .font-lxgw h3, .font-lxgw h4, .font-lxgw h5, .font-lxgw h6 {
+.font-lxgw, .font-lxgw *:not(code):not(pre):not(kbd) {
   font-family: var(--font-lxgw) !important;
 }
 
-.font-noto-serif, .font-noto-serif p, .font-noto-serif li, .font-noto-serif dt, .font-noto-serif dd, .font-noto-serif h1, .font-noto-serif h2, .font-noto-serif h3, .font-noto-serif h4, .font-noto-serif h5, .font-noto-serif h6 {
+.font-noto-serif, .font-noto-serif *:not(code):not(pre):not(kbd) {
   font-family: var(--font-noto-serif) !important;
 }
 
-.font-playfair, .font-playfair p, .font-playfair li, .font-playfair dt, .font-playfair dd, .font-playfair h1, .font-playfair h2, .font-playfair h3, .font-playfair h4, .font-playfair h5, .font-playfair h6 {
+.font-playfair, .font-playfair *:not(code):not(pre):not(kbd) {
   font-family: var(--font-playfair) !important;
 }
 
-.font-fira, .font-fira p, .font-fira li, .font-fira dt, .font-fira dd, .font-fira h1, .font-fira h2, .font-fira h3, .font-fira h4, .font-fira h5, .font-fira h6 {
+.font-fira, .font-fira *:not(code):not(pre):not(kbd) {
   font-family: var(--font-fira) !important;
 }
 
-.font-dyslexic, .font-dyslexic p, .font-dyslexic li, .font-dyslexic dt, .font-dyslexic dd, .font-dyslexic h1, .font-dyslexic h2, .font-dyslexic h3, .font-dyslexic h4, .font-dyslexic h5, .font-dyslexic h6 {
+.font-dyslexic, .font-dyslexic *:not(code):not(pre):not(kbd) {
   font-family: var(--font-dyslexic) !important;
 }
 
-.font-system, .font-system p, .font-system li, .font-system dt, .font-system dd, .font-system h1, .font-system h2, .font-system h3, .font-system h4, .font-system h5, .font-system h6 {
+.font-system, .font-system *:not(code):not(pre):not(kbd) {
   font-family: system-ui, -apple-system, sans-serif !important;
 }
 
@@ -9026,8 +9026,48 @@ class TTSEngine {
     }
     let activeSubChapterIndex = subChapters.length > 0 ? subChapters[0].index : this.currentChapterIndex;
 
+    let currentText = "";
+    let currentElements = [];
+    let currentActiveSubChapterIndex = activeSubChapterIndex;
+    let isHeading = false;
+
+    const isBlockElement = (node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      const tagName = node.tagName.toLowerCase();
+      const blockTags = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td', 'blockquote', 'section', 'article', 'aside', 'header', 'footer', 'dt', 'dd'];
+      return blockTags.includes(tagName);
+    };
+
+    const flushCurrentSentence = () => {
+      const cleanSentence = currentText.trim();
+      if (cleanSentence.length > 0) {
+        if (currentElements.length > 0) {
+          this.sentences.push({
+            index: sentenceId,
+            relativeIndex: sentenceId,
+            chapterIndex: currentActiveSubChapterIndex,
+            text: cleanSentence,
+            isHeading: isHeading,
+            elements: [...currentElements],
+            element: currentElements[0]
+          });
+          currentElements.forEach(el => {
+            el.setAttribute('data-sentence-index', sentenceId);
+          });
+          sentenceId++;
+        }
+      }
+      currentText = "";
+      currentElements = [];
+    };
+
     // 遞歸遍歷文字節點
     const traverse = (node) => {
+      const isBlock = isBlockElement(node);
+      if (isBlock) {
+        flushCurrentSentence();
+      }
+
       if (node.nodeType === Node.ELEMENT_NODE) {
         const nodeId = node.getAttribute('id') || '';
         const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
@@ -9035,7 +9075,9 @@ class TTSEngine {
           sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
         );
         if (matchedSub) {
+          flushCurrentSentence();
           activeSubChapterIndex = matchedSub.index;
+          currentActiveSubChapterIndex = matchedSub.index;
         }
 
         const tagName = node.tagName.toLowerCase();
@@ -9063,19 +9105,18 @@ class TTSEngine {
             if (cleanSentence.length > 0) {
               const span = document.createElement('span');
               span.className = 'tts-sentence';
-              span.setAttribute('data-sentence-index', sentenceId);
               span.textContent = s; // 保留原始空白與標點
               fragment.appendChild(span);
               
-              this.sentences.push({
-                index: sentenceId,
-                relativeIndex: sentenceId,
-                chapterIndex: activeSubChapterIndex,
-                text: cleanSentence,
-                isHeading: this._isHeadingNode(node),
-                element: span
-              });
-              sentenceId++;
+              currentElements.push(span);
+              currentText += s;
+              isHeading = this._isHeadingNode(node);
+              currentActiveSubChapterIndex = activeSubChapterIndex;
+
+              const endsSentence = /[。！？.!?\r\n]/.test(s);
+              if (endsSentence) {
+                flushCurrentSentence();
+              }
             } else {
               fragment.appendChild(document.createTextNode(s));
             }
@@ -9087,9 +9128,14 @@ class TTSEngine {
         const children = Array.from(node.childNodes);
         children.forEach(child => traverse(child));
       }
+
+      if (isBlock) {
+        flushCurrentSentence();
+      }
     };
 
     traverse(this.container);
+    flushCurrentSentence();
   }
 
   // 無縫切換章節時，將新加載的 DOM element 對應到已預加載的句子對象上
@@ -9118,7 +9164,73 @@ class TTSEngine {
       startSentenceIndex = 0;
     }
 
+    let currentText = "";
+    let currentElements = [];
+    let currentActiveSubChapterIndex = activeSubChapterIndex;
+    let isHeading = false;
+
+    const isBlockElement = (node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      const tagName = node.tagName.toLowerCase();
+      const blockTags = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td', 'blockquote', 'section', 'article', 'aside', 'header', 'footer', 'dt', 'dd'];
+      return blockTags.includes(tagName);
+    };
+
+    const flushCurrentSentence = () => {
+      const cleanSentence = currentText.trim();
+      if (cleanSentence.length > 0) {
+        if (currentElements.length > 0) {
+          const targetSentIdx = startSentenceIndex + sentenceId;
+          let finalSentIdx = targetSentIdx;
+
+          const hasNoElements = (sent) => !sent.element && (!sent.elements || sent.elements.length === 0);
+
+          let existingSentence = this.sentences.find(sent => 
+            sent.chapterIndex === currentActiveSubChapterIndex && 
+            sent.text === cleanSentence && 
+            hasNoElements(sent)
+          );
+          if (!existingSentence) {
+            existingSentence = this.sentences.find(sent => 
+              sent.text === cleanSentence && 
+              hasNoElements(sent)
+            );
+          }
+
+          if (existingSentence) {
+            existingSentence.element = currentElements[0];
+            existingSentence.elements = [...currentElements];
+            existingSentence.chapterIndex = currentActiveSubChapterIndex;
+            existingSentence.isHeading = isHeading;
+            finalSentIdx = existingSentence.index;
+          } else {
+            // 退化降級：直接按 index 對照
+            const sentByIndex = this.sentences[targetSentIdx];
+            if (sentByIndex) {
+              sentByIndex.element = currentElements[0];
+              sentByIndex.elements = [...currentElements];
+              sentByIndex.chapterIndex = currentActiveSubChapterIndex;
+              sentByIndex.isHeading = isHeading;
+              finalSentIdx = sentByIndex.index;
+            }
+          }
+
+          currentElements.forEach(el => {
+            el.setAttribute('data-sentence-index', finalSentIdx);
+          });
+          sentenceId++;
+        }
+      }
+      currentText = "";
+      currentElements = [];
+    };
+
     const traverse = (node) => {
+      const isBlock = isBlockElement(node);
+      if (isBlock) {
+        flushCurrentSentence();
+      }
+
       if (node.nodeType === Node.ELEMENT_NODE) {
         const nodeId = node.getAttribute('id') || '';
         const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
@@ -9126,7 +9238,9 @@ class TTSEngine {
           sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
         );
         if (matchedSub) {
+          flushCurrentSentence();
           activeSubChapterIndex = matchedSub.index;
+          currentActiveSubChapterIndex = matchedSub.index;
         }
 
         const tagName = node.tagName.toLowerCase();
@@ -9156,28 +9270,15 @@ class TTSEngine {
               span.textContent = s;
               fragment.appendChild(span);
               
-              const targetSentIdx = startSentenceIndex + sentenceId;
-              let finalSentIdx = targetSentIdx;
-              
-              const existingSentence = this.sentences.find(sent => sent.chapterIndex === activeSubChapterIndex && sent.text === cleanSentence && !sent.element)
-                || this.sentences.find(sent => sent.text === cleanSentence && !sent.element);
-              if (existingSentence) {
-                existingSentence.element = span;
-                existingSentence.chapterIndex = activeSubChapterIndex; // 同步更新為精確子章節索引
-                existingSentence.isHeading = this._isHeadingNode(node);
-                finalSentIdx = existingSentence.index;
-              } else {
-                // 退化降級：直接按 index 對照
-                const sentByIndex = this.sentences[targetSentIdx];
-                if (sentByIndex) {
-                  sentByIndex.element = span;
-                  sentByIndex.chapterIndex = activeSubChapterIndex; // 同步更新為精確子章節索引
-                  sentByIndex.isHeading = this._isHeadingNode(node);
-                  finalSentIdx = sentByIndex.index;
-                }
+              currentElements.push(span);
+              currentText += s;
+              isHeading = this._isHeadingNode(node);
+              currentActiveSubChapterIndex = activeSubChapterIndex;
+
+              const endsSentence = /[。！？.!?\r\n]/.test(s);
+              if (endsSentence) {
+                flushCurrentSentence();
               }
-              span.setAttribute('data-sentence-index', finalSentIdx);
-              sentenceId++;
             } else {
               fragment.appendChild(document.createTextNode(s));
             }
@@ -9189,9 +9290,14 @@ class TTSEngine {
         const children = Array.from(node.childNodes);
         children.forEach(child => traverse(child));
       }
+
+      if (isBlock) {
+        flushCurrentSentence();
+      }
     };
 
     traverse(this.container);
+    flushCurrentSentence();
 
     // DOM 映射完成後，立即高亮並平移至當前正在播放的句子
     const currentSent = this.sentences[this.currentIndex];
