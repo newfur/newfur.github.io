@@ -130,6 +130,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const savedWidth = localStorage.getItem('coverWidth') || '180';
   document.documentElement.style.setProperty('--cover-width', `${savedWidth}px`);
 
+  // 0.6 立即套用 AI 面板大小設定以防佈局抖動
+  const savedAIWidth = localStorage.getItem('aiPanelWidth') || '400px';
+  document.documentElement.style.setProperty('--ai-panel-width', savedAIWidth);
+
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
 
@@ -155,6 +159,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 4. 綁定按鈕事件
   initUIEventBindings();
+
+  // 5. 初始化 AI 面板調整大小
+  initAIResize();
 });
 
 // UI 事件綁定
@@ -5404,6 +5411,55 @@ function triggerAIAsk() {
   if (inputEl) {
     inputEl.focus();
   }
+}
+
+// 初始化 AI 伴侶面板拖曳調整大小功能
+function initAIResize() {
+  const handle = document.getElementById('ai-resize-handle');
+  const panel = document.getElementById('ai-panel');
+  if (!handle || !panel) return;
+
+  let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 只允許左鍵拖曳
+    e.preventDefault();
+
+    isResizing = true;
+    startX = e.clientX;
+    startWidth = panel.offsetWidth;
+
+    handle.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    // 拖曳向左 (e.clientX 減小) 時，面板寬度增加
+    const deltaX = startX - e.clientX;
+    let newWidth = startWidth + deltaX;
+
+    // 設定寬度邊界限制：280px 到 70% 螢幕寬度 (最大 800px)
+    const minWidth = 280;
+    const maxWidth = Math.min(800, window.innerWidth * 0.7);
+    if (newWidth < minWidth) newWidth = minWidth;
+    if (newWidth > maxWidth) newWidth = maxWidth;
+
+    document.documentElement.style.setProperty('--ai-panel-width', `${newWidth}px`);
+    localStorage.setItem('aiPanelWidth', `${newWidth}px`);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    handle.classList.remove('resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
 }
 
 // ==================== 備份與還原功能 ====================

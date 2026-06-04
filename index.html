@@ -17,6 +17,7 @@
   --font-playfair: 'Playfair Display', Georgia, serif;
   --font-fira: 'Fira Code', Consolas, Monaco, monospace;
   --font-dyslexic: 'OpenDyslexic', 'Inter', sans-serif;
+  --ai-panel-width: 400px;
 }
 
 /* 主題配色定義 */
@@ -3898,7 +3899,7 @@ html.transition-none .page-texture-slide {
     top: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
-    width: 400px !important;
+    width: var(--ai-panel-width) !important;
     height: 100vh !important;
     max-height: 100vh !important;
     border-radius: 24px 0 0 24px !important;
@@ -3915,6 +3916,30 @@ html.transition-none .page-texture-slide {
     padding: 0 20px !important;
     box-sizing: border-box !important;
   }
+}
+
+/* AI 調整大小拖曳把手 */
+.ai-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 500;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .ai-resize-handle {
+    display: none !important;
+  }
+}
+
+.ai-resize-handle:hover,
+.ai-resize-handle.resizing {
+  background: rgba(10, 132, 255, 0.25);
 }
 
 /* ==================== 11. 側邊欄與 AI 面板開啟時的版面移動 (Desktop Layout Shifts) ==================== */
@@ -3966,41 +3991,41 @@ html.transition-none .page-texture-slide {
 
   /* 2. 僅右側 AI 面板開啟 */
   body.ai-active #reader-view {
-    padding-right: 400px;
+    padding-right: var(--ai-panel-width);
   }
   body.ai-active .reader-header {
-    right: 400px;
+    right: var(--ai-panel-width);
   }
   body.ai-active .nav-arrow-btn.right-arrow {
-    right: 424px; /* 400px + 24px */
+    right: calc(var(--ai-panel-width) + 24px);
   }
   body.ai-active .dropdown-panel {
-    right: 420px; /* 400px + 20px */
+    right: calc(var(--ai-panel-width) + 20px);
   }
   body.ai-active:not(.sidebar-active) .note-dialog {
-    left: calc(50% - 200px); /* 50% - 400px/2 */
+    left: calc(50% - var(--ai-panel-width) / 2);
   }
 
   /* 3. 兩者同時開啟 */
   body.sidebar-active.ai-active #reader-view {
     padding-left: 360px;
-    padding-right: 400px;
+    padding-right: var(--ai-panel-width);
   }
   body.sidebar-active.ai-active .reader-header {
     left: 360px;
-    right: 400px;
+    right: var(--ai-panel-width);
   }
   body.sidebar-active.ai-active .nav-arrow-btn.left-arrow {
     left: 384px;
   }
   body.sidebar-active.ai-active .nav-arrow-btn.right-arrow {
-    right: 424px;
+    right: calc(var(--ai-panel-width) + 24px);
   }
   body.sidebar-active.ai-active .dropdown-panel {
-    right: 420px;
+    right: calc(var(--ai-panel-width) + 20px);
   }
   body.sidebar-active.ai-active .note-dialog {
-    left: calc(50% - 20px); /* 50% + 180px - 200px */
+    left: calc(50% + 180px - var(--ai-panel-width) / 2);
   }
 }
 
@@ -4485,6 +4510,7 @@ html.transition-none .page-texture-slide {
 
     <!-- ================= AI 回答懸浮視窗 (AI Response Panel) ================= -->
     <div id="ai-panel" class="ai-panel panel-glass">
+      <div id="ai-resize-handle" class="ai-resize-handle"></div>
       <div class="ai-panel-header">
         <span class="ai-title">
           <svg class="svg-icon svg-icon-sm" style="margin-right: 5px; color: var(--primary-color);" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"></path></svg>
@@ -11637,6 +11663,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const savedWidth = localStorage.getItem('coverWidth') || '180';
   document.documentElement.style.setProperty('--cover-width', `${savedWidth}px`);
 
+  // 0.6 立即套用 AI 面板大小設定以防佈局抖動
+  const savedAIWidth = localStorage.getItem('aiPanelWidth') || '400px';
+  document.documentElement.style.setProperty('--ai-panel-width', savedAIWidth);
+
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
 
@@ -11662,6 +11692,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 4. 綁定按鈕事件
   initUIEventBindings();
+
+  // 5. 初始化 AI 面板調整大小
+  initAIResize();
 });
 
 // UI 事件綁定
@@ -16911,6 +16944,55 @@ function triggerAIAsk() {
   if (inputEl) {
     inputEl.focus();
   }
+}
+
+// 初始化 AI 伴侶面板拖曳調整大小功能
+function initAIResize() {
+  const handle = document.getElementById('ai-resize-handle');
+  const panel = document.getElementById('ai-panel');
+  if (!handle || !panel) return;
+
+  let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 只允許左鍵拖曳
+    e.preventDefault();
+
+    isResizing = true;
+    startX = e.clientX;
+    startWidth = panel.offsetWidth;
+
+    handle.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    // 拖曳向左 (e.clientX 減小) 時，面板寬度增加
+    const deltaX = startX - e.clientX;
+    let newWidth = startWidth + deltaX;
+
+    // 設定寬度邊界限制：280px 到 70% 螢幕寬度 (最大 800px)
+    const minWidth = 280;
+    const maxWidth = Math.min(800, window.innerWidth * 0.7);
+    if (newWidth < minWidth) newWidth = minWidth;
+    if (newWidth > maxWidth) newWidth = maxWidth;
+
+    document.documentElement.style.setProperty('--ai-panel-width', `${newWidth}px`);
+    localStorage.setItem('aiPanelWidth', `${newWidth}px`);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    handle.classList.remove('resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
 }
 
 // ==================== 備份與還原功能 ====================

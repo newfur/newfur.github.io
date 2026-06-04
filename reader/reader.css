@@ -11,6 +11,7 @@
   --font-playfair: 'Playfair Display', Georgia, serif;
   --font-fira: 'Fira Code', Consolas, Monaco, monospace;
   --font-dyslexic: 'OpenDyslexic', 'Inter', sans-serif;
+  --ai-panel-width: 400px;
 }
 
 /* 主題配色定義 */
@@ -3892,7 +3893,7 @@ html.transition-none .page-texture-slide {
     top: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
-    width: 400px !important;
+    width: var(--ai-panel-width) !important;
     height: 100vh !important;
     max-height: 100vh !important;
     border-radius: 24px 0 0 24px !important;
@@ -3909,6 +3910,30 @@ html.transition-none .page-texture-slide {
     padding: 0 20px !important;
     box-sizing: border-box !important;
   }
+}
+
+/* AI 調整大小拖曳把手 */
+.ai-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 500;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .ai-resize-handle {
+    display: none !important;
+  }
+}
+
+.ai-resize-handle:hover,
+.ai-resize-handle.resizing {
+  background: rgba(10, 132, 255, 0.25);
 }
 
 /* ==================== 11. 側邊欄與 AI 面板開啟時的版面移動 (Desktop Layout Shifts) ==================== */
@@ -3960,41 +3985,41 @@ html.transition-none .page-texture-slide {
 
   /* 2. 僅右側 AI 面板開啟 */
   body.ai-active #reader-view {
-    padding-right: 400px;
+    padding-right: var(--ai-panel-width);
   }
   body.ai-active .reader-header {
-    right: 400px;
+    right: var(--ai-panel-width);
   }
   body.ai-active .nav-arrow-btn.right-arrow {
-    right: 424px; /* 400px + 24px */
+    right: calc(var(--ai-panel-width) + 24px);
   }
   body.ai-active .dropdown-panel {
-    right: 420px; /* 400px + 20px */
+    right: calc(var(--ai-panel-width) + 20px);
   }
   body.ai-active:not(.sidebar-active) .note-dialog {
-    left: calc(50% - 200px); /* 50% - 400px/2 */
+    left: calc(50% - var(--ai-panel-width) / 2);
   }
 
   /* 3. 兩者同時開啟 */
   body.sidebar-active.ai-active #reader-view {
     padding-left: 360px;
-    padding-right: 400px;
+    padding-right: var(--ai-panel-width);
   }
   body.sidebar-active.ai-active .reader-header {
     left: 360px;
-    right: 400px;
+    right: var(--ai-panel-width);
   }
   body.sidebar-active.ai-active .nav-arrow-btn.left-arrow {
     left: 384px;
   }
   body.sidebar-active.ai-active .nav-arrow-btn.right-arrow {
-    right: 424px;
+    right: calc(var(--ai-panel-width) + 24px);
   }
   body.sidebar-active.ai-active .dropdown-panel {
-    right: 420px;
+    right: calc(var(--ai-panel-width) + 20px);
   }
   body.sidebar-active.ai-active .note-dialog {
-    left: calc(50% - 20px); /* 50% + 180px - 200px */
+    left: calc(50% + 180px - var(--ai-panel-width) / 2);
   }
 }
 
