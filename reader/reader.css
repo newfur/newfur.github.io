@@ -1414,8 +1414,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .reader-sidebar h4 {
   border: none !important;
   padding: 0 !important;
-  margin: 20px 0 10px 0 !important;
-  font-size: 17px !important;
+  margin: 16px 0 8px 0 !important;
+  font-size: 14px !important;
   font-weight: 600 !important;
   font-family: var(--font-sans) !important;
   color: var(--text-muted) !important;
@@ -1426,9 +1426,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 #add-bookmark-btn {
   font-family: var(--font-sans) !important;
   font-weight: 600 !important;
-  font-size: 17px !important;
+  font-size: 15px !important;
   letter-spacing: -0.5px !important;
-  padding: 10px 16px !important;
+  padding: 8px 16px !important;
 }
 
 .reader-sidebar button,
@@ -2806,10 +2806,10 @@ html.transition-none .page-texture-slide {
     padding: 6px 10px !important;
   }
   .reader-sidebar h4 {
-    font-size: 14px !important;
+    font-size: 12px !important;
   }
   #add-bookmark-btn {
-    font-size: 14px !important;
+    font-size: 13px !important;
     padding: 8px 12px !important;
   }
 
