@@ -781,6 +781,14 @@ button, select, input {
   line-height: var(--book-line-height) !important;
 }
 
+/* 用戶自訂左右邊距優化（重設書籍內建的 left/right margin 与 padding 以確保邊距完全受閱讀器控制） */
+#book-content *:not(ol):not(ul):not(li):not(blockquote):not(table):not(code):not(pre):not(kbd):not(img):not(svg):not(image) {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 /* ==================== 左右分欄翻頁自適應與插圖排版 ==================== */
 /* 翻頁模式專屬樣式 */
 body.layout-paginated {
