@@ -3911,6 +3911,93 @@ html.transition-none .page-texture-slide {
   }
 }
 
+/* ==================== 11. 側邊欄與 AI 面板開啟時的版面移動 (Desktop Layout Shifts) ==================== */
+@media (min-width: 769px) {
+  /* 基礎過渡動畫 */
+  #reader-view {
+    transition: padding-left 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
+                padding-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  .reader-header {
+    transition: left 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
+                right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  .nav-arrow-btn.left-arrow {
+    transition: left 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.3s, background 0.3s, transform 0.3s;
+  }
+  
+  .nav-arrow-btn.right-arrow {
+    transition: right 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.3s, background 0.3s, transform 0.3s;
+  }
+  
+  .dropdown-panel {
+    transition: right 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.25s, transform 0.25s;
+  }
+  
+  .note-dialog {
+    transition: left 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.2s, transform 0.2s;
+  }
+
+  /* 1. 僅左側邊欄開啟 */
+  body.sidebar-active #reader-view {
+    padding-left: 360px;
+  }
+  body.sidebar-active .reader-header {
+    left: 360px;
+  }
+  body.sidebar-active .nav-arrow-btn.left-arrow {
+    left: 384px; /* 360px + 24px */
+  }
+  body.sidebar-active:not(.ai-active) .note-dialog {
+    left: calc(50% + 180px); /* 50% + 360px/2 */
+  }
+
+  /* 2. 僅右側 AI 面板開啟 */
+  body.ai-active #reader-view {
+    padding-right: 400px;
+  }
+  body.ai-active .reader-header {
+    right: 400px;
+  }
+  body.ai-active .nav-arrow-btn.right-arrow {
+    right: 424px; /* 400px + 24px */
+  }
+  body.ai-active .dropdown-panel {
+    right: 420px; /* 400px + 20px */
+  }
+  body.ai-active:not(.sidebar-active) .note-dialog {
+    left: calc(50% - 200px); /* 50% - 400px/2 */
+  }
+
+  /* 3. 兩者同時開啟 */
+  body.sidebar-active.ai-active #reader-view {
+    padding-left: 360px;
+    padding-right: 400px;
+  }
+  body.sidebar-active.ai-active .reader-header {
+    left: 360px;
+    right: 400px;
+  }
+  body.sidebar-active.ai-active .nav-arrow-btn.left-arrow {
+    left: 384px;
+  }
+  body.sidebar-active.ai-active .nav-arrow-btn.right-arrow {
+    right: 424px;
+  }
+  body.sidebar-active.ai-active .dropdown-panel {
+    right: 420px;
+  }
+  body.sidebar-active.ai-active .note-dialog {
+    left: calc(50% - 20px); /* 50% + 180px - 200px */
+  }
+}
+
 
 
 

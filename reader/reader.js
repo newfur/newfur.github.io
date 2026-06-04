@@ -1079,6 +1079,7 @@ function initUIEventBindings() {
   // AI 面板
   document.getElementById('close-ai-panel').addEventListener('click', () => {
     document.getElementById('ai-panel').style.display = 'none';
+    updateHeaderActiveStates();
   });
 
   // 全局設置對話框
@@ -1970,6 +1971,7 @@ async function openBook(id) {
   document.getElementById('selection-menu').style.display = 'none';
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
+  updateHeaderActiveStates();
 
   // 設定書籍格式與排版類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
@@ -2067,6 +2069,7 @@ async function closeCurrentBook(triggerBack = true) {
   document.getElementById('selection-menu').style.display = 'none';
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
+  updateHeaderActiveStates();
   
   // 觸發強制重繪/Reflow，防止瀏覽器因隱藏切換導致的 Flex 佈局高度崩塌/拉伸 Bug
   const appHeader = document.querySelector('.app-header');
@@ -4419,6 +4422,10 @@ function updateHeaderActiveStates() {
   if (ttsToggle) ttsToggle.classList.toggle('active', ttsActive);
   if (settingsToggle) settingsToggle.classList.toggle('active', settingsActive);
   if (aiToggle) aiToggle.classList.toggle('active', aiActive);
+
+  // Sync state classes to document body
+  document.body.classList.toggle('sidebar-active', sidebarActive);
+  document.body.classList.toggle('ai-active', aiActive);
 }
 
 
