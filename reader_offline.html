@@ -11973,7 +11973,12 @@ function initUIEventBindings() {
         }, 5000);
       } catch (err) {
         aiTestResult.style.color = '#ff3b30'; // red color for error
-        aiTestResult.textContent = `${getMsg('ai_test_fail') || 'Failed'}: ${err.message || err}`;
+        let errMsg = err.message || err;
+        const endpointLower = (endpoint || '').toLowerCase();
+        if (errMsg.includes('Failed to fetch') && (endpointLower.includes('127.0.0.1') || endpointLower.includes('localhost'))) {
+          errMsg += ' (请确认 Ollama 已启动且配置了 OLLAMA_ORIGINS="*"；网页版因浏览器 Mixed Content 安全限制无法连结本地 HTTP，请改用 Chrome 插件版)';
+        }
+        aiTestResult.textContent = `${getMsg('ai_test_fail') || 'Failed'}: ${errMsg}`;
       }
     });
   }
@@ -12015,7 +12020,12 @@ function initUIEventBindings() {
         }
       } catch (err) {
         console.error('Failed to fetch models:', err);
-        alert((getMsg('ai_fetch_models_fail') || 'Failed to fetch models') + ': ' + (err.message || err));
+        let errMsg = err.message || err;
+        const endpointLower = (endpoint || '').toLowerCase();
+        if (errMsg.includes('Failed to fetch') && (endpointLower.includes('127.0.0.1') || endpointLower.includes('localhost'))) {
+          errMsg += ' (请确认 Ollama 已启动且已设置 OLLAMA_ORIGINS="*" 并重启；若为 HTTPS 网页版，请换用 Chrome 插件版以避开 Mixed Content 限制)';
+        }
+        alert((getMsg('ai_fetch_models_fail') || 'Failed to fetch models') + ': ' + errMsg);
         aiFetchModelsBtn.textContent = originalText;
         aiFetchModelsBtn.style.color = '';
       } finally {
