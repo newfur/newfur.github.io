@@ -4145,6 +4145,111 @@ function handleTextSelection(e) {
   }
 }
 
+// 輔助函式：獲取選取範圍在句子文字內容中的起止偏移量
+function getSelectionOffsets(parent, range) {
+  let startOffset = 0;
+  let endOffset = 0;
+  let foundStart = false;
+  let foundEnd = false;
+  let currentOffset = 0;
+
+  const traverse = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (!foundStart && node === range.startContainer) {
+        startOffset = currentOffset + range.startOffset;
+        foundStart = true;
+      }
+      if (!foundEnd && node === range.endContainer) {
+        endOffset = currentOffset + range.endOffset;
+        foundEnd = true;
+      }
+      currentOffset += node.nodeValue.length;
+    } else {
+      const children = Array.from(node.childNodes);
+      for (let child of children) {
+        traverse(child);
+        if (foundStart && foundEnd) break;
+      }
+    }
+  };
+
+  traverse(parent);
+  return { startOffset, endOffset };
+}
+
+// 輔助函式：在 DOM 子樹中精確高亮指定起止偏移量（或子字串）的文字節點
+function applyHighlightToDOMRange(element, startOffset, endOffset, color, noteId, textFallback = '') {
+  let start = startOffset;
+  let end = endOffset;
+
+  // 如果 start/end 為空或未定義，則根據 textFallback 搜尋 substring
+  if (start === undefined || end === undefined || start === null || end === null) {
+    if (!textFallback) return;
+    const txt = element.textContent;
+    const idx = txt.indexOf(textFallback);
+    if (idx !== -1) {
+      start = idx;
+      end = idx + textFallback.length;
+    } else {
+      return; // 找不到對應文字則跳過
+    }
+  }
+
+  let currentOffset = 0;
+  const nodesToWrap = [];
+
+  const traverse = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const len = node.nodeValue.length;
+      const nodeStart = currentOffset;
+      const nodeEnd = currentOffset + len;
+
+      const intersectStart = Math.max(nodeStart, start);
+      const intersectEnd = Math.min(nodeEnd, end);
+
+      if (intersectStart < intersectEnd) {
+        nodesToWrap.push({
+          node,
+          start: intersectStart - nodeStart,
+          end: intersectEnd - nodeStart
+        });
+      }
+      currentOffset += len;
+    } else {
+      const children = Array.from(node.childNodes);
+      for (let child of children) {
+        traverse(child);
+      }
+    }
+  };
+
+  traverse(element);
+
+  // 從後往前處理節點，避免 splitText 影響前面的 node 索引
+  for (let i = nodesToWrap.length - 1; i >= 0; i--) {
+    const { node, start: sOffset, end: eOffset } = nodesToWrap[i];
+    let targetNode = node;
+    try {
+      if (sOffset > 0) {
+        targetNode = node.splitText(sOffset);
+      }
+      if (eOffset - sOffset < targetNode.nodeValue.length) {
+        targetNode.splitText(eOffset - sOffset);
+      }
+
+      const span = document.createElement('span');
+      span.className = `highlight-${color}`;
+      if (noteId) {
+        span.setAttribute('data-note-id', noteId);
+      }
+      targetNode.parentNode.replaceChild(span, targetNode);
+      span.appendChild(targetNode);
+    } catch (err) {
+      console.error('Failed to split/wrap text node for highlight:', err);
+    }
+  }
+}
+
 // 添加高亮劃線
 async function handleAddHighlight(color) {
   if (!currentBook || !selectedTextState) return;
@@ -4152,26 +4257,38 @@ async function handleAddHighlight(color) {
   const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
   const sentenceIndex = sentenceEl ? parseInt(sentenceEl.getAttribute('data-sentence-index')) : 0;
 
+  let startOffset = 0;
+  let endOffset = 0;
+  if (sentenceEl && selectedTextRange) {
+    const offsets = getSelectionOffsets(sentenceEl, selectedTextRange);
+    startOffset = offsets.startOffset;
+    endOffset = offsets.endOffset;
+  }
+
   const note = {
     type: 'highlight',
     color,
     text: selectedTextState,
     chapterIndex: currentChapterIndex,
-    sentenceIndex
+    sentenceIndex,
+    startOffset,
+    endOffset
   };
 
   const updatedNotes = await library.saveNote(currentBook.id, note);
   currentBook.notes = updatedNotes;
 
+  let savedNoteId = null;
   if (sentenceEl && updatedNotes) {
     const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'highlight' && n.color === color);
     if (savedNote) {
+      savedNoteId = savedNote.noteId;
       sentenceEl.setAttribute('data-note-id', savedNote.noteId);
     }
   }
   
   // 在頁面上即時繪製高亮
-  highlightSelectionInDOM(color);
+  highlightSelectionInDOM(color, savedNoteId);
   
   // 隱藏選單
   document.getElementById('selection-menu').style.display = 'none';
@@ -4179,18 +4296,12 @@ async function handleAddHighlight(color) {
 }
 
 // 在 DOM 中包裹高亮標籤
-function highlightSelectionInDOM(color) {
-  try {
-    const span = document.createElement('span');
-    span.className = `highlight-${color}`;
-    selectedTextRange.surroundContents(span);
-  } catch (e) {
-    // 如果選取跨越了多個 DOM 標籤節點，surroundContents 會報錯，此時降級高亮整個句子
-    console.warn('Selection spans multiple tags, highlighting sentence instead:', e);
-    const startParent = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
-    if (startParent) {
-      startParent.classList.add(`highlight-${color}`);
-    }
+function highlightSelectionInDOM(color, noteId) {
+  if (!selectedTextRange) return;
+  const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
+  if (sentenceEl) {
+    const { startOffset, endOffset } = getSelectionOffsets(sentenceEl, selectedTextRange);
+    applyHighlightToDOMRange(sentenceEl, startOffset, endOffset, color, noteId);
   }
 }
 
@@ -4206,8 +4317,9 @@ function applySavedHighlightsToDOM(targetWrapper = null, targetChapterIndex = nu
       // 尋找對應的句子元素
       const sentenceEl = container.querySelector(`[data-sentence-index="${note.sentenceIndex}"]`);
       if (sentenceEl) {
-        // 如果是 highlight，直接高亮整句
-        sentenceEl.classList.add(`highlight-${note.color}`);
+        const color = note.color || 'yellow';
+        // 套用精確高亮範圍
+        applyHighlightToDOMRange(sentenceEl, note.startOffset, note.endOffset, color, note.noteId, note.text);
         sentenceEl.setAttribute('data-note-id', note.noteId);
       }
     }
@@ -4232,26 +4344,38 @@ async function handleSaveNote() {
   const sentenceEl = selectedTextRange.startContainer.parentElement.closest('.tts-sentence');
   const sentenceIndex = sentenceEl ? parseInt(sentenceEl.getAttribute('data-sentence-index')) : 0;
 
+  let startOffset = 0;
+  let endOffset = 0;
+  if (sentenceEl && selectedTextRange) {
+    const offsets = getSelectionOffsets(sentenceEl, selectedTextRange);
+    startOffset = offsets.startOffset;
+    endOffset = offsets.endOffset;
+  }
+
   const note = {
     type: 'note',
     text: selectedTextState,
     noteText: text, // 用戶輸入的註釋
     chapterIndex: currentChapterIndex,
-    sentenceIndex
+    sentenceIndex,
+    startOffset,
+    endOffset
   };
 
   const updatedNotes = await library.saveNote(currentBook.id, note);
   currentBook.notes = updatedNotes;
 
+  let savedNoteId = null;
   if (sentenceEl && updatedNotes) {
     const savedNote = updatedNotes.find(n => n.chapterIndex === currentChapterIndex && n.sentenceIndex === sentenceIndex && n.type === 'note');
     if (savedNote) {
+      savedNoteId = savedNote.noteId;
       sentenceEl.setAttribute('data-note-id', savedNote.noteId);
     }
   }
   
   // 顯示高亮代表有筆記
-  highlightSelectionInDOM('yellow');
+  highlightSelectionInDOM('yellow', savedNoteId);
 
   document.getElementById('note-dialog').style.display = 'none';
   window.getSelection().removeAllRanges();
