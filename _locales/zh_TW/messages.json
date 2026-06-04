@@ -591,6 +591,66 @@
   "ai_settings_section": {
     "message": "AI 配置"
   },
+  "tts_settings_section": {
+    "message": "TTS 朗讀配置"
+  },
+  "tts_provider": {
+    "message": "TTS 服務商"
+  },
+  "tts_provider_edge": {
+    "message": "微軟 Edge 線上高品質語音"
+  },
+  "tts_provider_system": {
+    "message": "系統原生 WebSpeech 語音"
+  },
+  "tts_provider_openai": {
+    "message": "OpenAI TTS 語音接口"
+  },
+  "tts_provider_local": {
+    "message": "本地部署語音接口 (OpenAI相容)"
+  },
+  "tts_api_key": {
+    "message": "API 密鑰"
+  },
+  "tts_endpoint": {
+    "message": "API 端點 URL"
+  },
+  "tts_model": {
+    "message": "朗讀模型"
+  },
+  "tts_fetch_models": {
+    "message": "獲取模型"
+  },
+  "tts_api_key_optional": {
+    "message": "可選 (例如本地代理認證)"
+  },
+  "tts_language": {
+    "message": "朗讀語言"
+  },
+  "tts_lang_auto": {
+    "message": "自動檢測"
+  },
+  "tts_lang_zh_cn": {
+    "message": "簡體中文"
+  },
+  "tts_lang_zh_tw": {
+    "message": "繁體中文"
+  },
+  "tts_lang_en": {
+    "message": "英語"
+  },
+  "tts_lang_ja": {
+    "message": "日語"
+  },
+  "tts_lang_ko": {
+    "message": "韓語"
+  },
+  "tts_voice_label": {
+    "message": "聲音名稱"
+  },
+  "tts_lang_multilingual": {
+    "message": "多語言"
+  },
   "cover_width_setting": {
     "message": "封面大小"
   },
@@ -629,5 +689,59 @@
   },
   "ai_focus": {
     "message": "聚焦於:"
+  },
+  "ai_clear_history_title": {
+    "message": "清除所有對話歷史"
+  },
+  "ai_delete_chat_title": {
+    "message": "刪除該對話"
+  },
+  "confirm_delete_all_chats": {
+    "message": "確定要清除本書的所有 AI 溝通記錄嗎？此操作無法撤銷。"
+  },
+  "confirm_delete_single_chat": {
+    "message": "確定要刪除這條溝通記錄嗎？"
+  },
+  "ai_suggest_sum_chapter_lbl": {
+    "message": "總結本章"
+  },
+  "ai_suggest_sum_chapter_prt": {
+    "message": "幫我總結當前章節的核心觀點與主要內容。"
+  },
+  "ai_suggest_chapter_map_lbl": {
+    "message": "本章思維導圖"
+  },
+  "ai_suggest_chapter_map_prt": {
+    "message": "請梳理當前章節的內容結構，並以 Markdown 樹狀列表或 Mermaid 格式輸出一份清晰的思維導圖。"
+  },
+  "ai_suggest_book_map_lbl": {
+    "message": "全書思維導圖"
+  },
+  "ai_suggest_book_map_prt": {
+    "message": "請結合全書檢索到的脈絡，梳理本書的整體架構與核心章節邏輯，並輸出一份全書的思維導圖。"
+  },
+  "ai_suggest_takeaways_lbl": {
+    "message": "核心要點"
+  },
+  "ai_suggest_takeaways_prt": {
+    "message": "分析當前章節或全書中最重要的 3-5 個核心知識點與啟示（Key Takeaways）。"
+  },
+  "ai_suggest_characters_lbl": {
+    "message": "人物關係"
+  },
+  "ai_suggest_characters_prt": {
+    "message": "梳理本書中出現的主要人物、角色背景及其相互之間的關係脈絡。"
+  },
+  "ai_suggest_explain_concept_lbl": {
+    "message": "名詞解釋"
+  },
+  "ai_suggest_explain_concept_prt": {
+    "message": "解釋本書當前上下文中提到的核心專業術語或深奧概念。"
+  },
+  "ai_suggest_quiz_lbl": {
+    "message": "閱讀自測"
+  },
+  "ai_suggest_quiz_prt": {
+    "message": "根據當前章節的內容，為我設計 3 道閱讀理解或自測思考題，幫助我加深理解。"
   }
 }

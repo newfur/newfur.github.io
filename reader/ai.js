@@ -83,16 +83,31 @@ export class AIEngine {
   }
 
   // 核心對話入口 (流式輸出)
-  async _chat(systemPrompt, prompt, onChunk) {
+  async _chat(systemPrompt, prompt, onChunk, history = []) {
     if (this.provider === 'builtin') {
       await this._createSession(systemPrompt);
-      return this._streamPrompt(prompt, onChunk);
+      let fullPrompt = "";
+      if (history && history.length > 0) {
+        for (const turn of history) {
+          fullPrompt += `User: ${turn.query}\nAssistant: ${turn.reply}\n`;
+        }
+      }
+      fullPrompt += `User: ${prompt}\nAssistant:`;
+      return this._streamPrompt(fullPrompt, onChunk);
     }
 
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt }
+      { role: 'system', content: systemPrompt }
     ];
+
+    if (history && history.length > 0) {
+      for (const turn of history) {
+        messages.push({ role: 'user', content: turn.query });
+        messages.push({ role: 'assistant', content: turn.reply });
+      }
+    }
+
+    messages.push({ role: 'user', content: prompt });
 
     const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
     if (useExtension) {

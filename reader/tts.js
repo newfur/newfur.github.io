@@ -120,11 +120,63 @@ export class TTSEngine {
 
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
+
+    // Custom LLM / Local TTS Config
+    this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
+    this.ttsApiKey = '';
+    this.ttsEndpoint = '';
+    this.ttsModel = 'tts-1';
+
     this._initVoices();
+  }
+
+  // 設置配置項
+  configure({ provider, apiKey, endpoint, model }) {
+    let voiceChanged = false;
+    if (provider !== undefined && this.ttsProvider !== provider) {
+      this.ttsProvider = provider;
+      voiceChanged = true;
+    }
+    if (apiKey !== undefined && this.ttsApiKey !== apiKey) {
+      this.ttsApiKey = apiKey;
+    }
+    if (endpoint !== undefined && this.ttsEndpoint !== endpoint) {
+      this.ttsEndpoint = endpoint;
+    }
+    if (model !== undefined && this.ttsModel !== model) {
+      this.ttsModel = model;
+    }
+    if (voiceChanged) {
+      this._initVoices();
+    }
   }
 
   // 1. 初始化並加載語音包 (使用 SpeechSynthesis 獲取系統與 Edge 雲端語音)
   async _initVoices() {
+    if (this.ttsProvider === 'openai') {
+      this.voices = [
+        { name: 'Alloy (OpenAI)', lang: 'multilingual', friendlyName: 'Alloy', shortName: 'alloy', gender: 'neutral', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Echo (OpenAI)', lang: 'multilingual', friendlyName: 'Echo', shortName: 'echo', gender: 'neutral', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Fable (OpenAI)', lang: 'multilingual', friendlyName: 'Fable', shortName: 'fable', gender: 'neutral', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Onyx (OpenAI)', lang: 'multilingual', friendlyName: 'Onyx', shortName: 'onyx', gender: 'male', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Nova (OpenAI)', lang: 'multilingual', friendlyName: 'Nova', shortName: 'nova', gender: 'female', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Shimmer (OpenAI)', lang: 'multilingual', friendlyName: 'Shimmer', shortName: 'shimmer', gender: 'female', isEdge: false, isNative: false, type: 'openai' },
+      ];
+      if (this.onStateChange) this.onStateChange();
+      return;
+    } else if (this.ttsProvider === 'local') {
+      this.voices = [
+        { name: 'Alloy (Local)', lang: 'multilingual', friendlyName: 'Alloy', shortName: 'alloy', gender: 'neutral', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Echo (Local)', lang: 'multilingual', friendlyName: 'Echo', shortName: 'echo', gender: 'neutral', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Fable (Local)', lang: 'multilingual', friendlyName: 'Fable', shortName: 'fable', gender: 'neutral', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Onyx (Local)', lang: 'multilingual', friendlyName: 'Onyx', shortName: 'onyx', gender: 'male', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Nova (Local)', lang: 'multilingual', friendlyName: 'Nova', shortName: 'nova', gender: 'female', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Shimmer (Local)', lang: 'multilingual', friendlyName: 'Shimmer', shortName: 'shimmer', gender: 'female', isEdge: false, isNative: false, type: 'local' },
+      ];
+      if (this.onStateChange) this.onStateChange();
+      return;
+    }
+
     const getWebSpeechVoices = () => {
       if (this.synth) {
         return this.synth.getVoices().map(v => ({
@@ -140,6 +192,12 @@ export class TTSEngine {
       }
       return [];
     };
+
+    if (this.ttsProvider === 'system') {
+      this.voices = getWebSpeechVoices();
+      if (this.onStateChange) this.onStateChange();
+      return;
+    }
 
     const loadVoices = () => {
       const voices = getWebSpeechVoices();
@@ -256,7 +314,7 @@ export class TTSEngine {
     // 過濾出與目標語言前綴匹配的語音包，防止下拉選單顯示過多無關語言的語音
     let matched = this.voices.filter(v => {
       const vLang = v.lang.toLowerCase().replace('_', '-');
-      return vLang.startsWith(langPrefix);
+      return vLang.startsWith(langPrefix) || vLang === 'multilingual';
     });
     
     // 若無任何語音匹配該前綴，退化為顯示所有語音
@@ -742,6 +800,59 @@ export class TTSEngine {
   _downloadSentenceAudio(sentence) {
     return new Promise(async (resolve, reject) => {
       try {
+        if (this.ttsProvider === 'openai' || this.ttsProvider === 'local') {
+          try {
+            const defaultEndpoint = this.ttsProvider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:5000/v1';
+            const endpoint = (this.ttsEndpoint || defaultEndpoint).replace(/\/+$/, '') + '/audio/speech';
+            const apiKey = this.ttsApiKey || '';
+            const model = this.ttsModel || 'tts-1';
+            const voiceName = (this.selectedVoice && this.selectedVoice.shortName) || 'alloy';
+
+            const headers = {
+              'Content-Type': 'application/json'
+            };
+            if (apiKey) {
+              headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            let speakText = sentence.text;
+            // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+            speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+            speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+            speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+
+            if (!/[。！？.!?；;，,：:]\s*$/.test(speakText)) {
+              if (sentence.isHeading) {
+                speakText += "。";
+              } else {
+                speakText += "，";
+              }
+            }
+
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: headers,
+              body: JSON.stringify({
+                model: model,
+                input: speakText,
+                voice: voiceName,
+                response_format: 'mp3'
+              })
+            });
+
+            if (!response.ok) {
+              const errText = await response.text();
+              throw new Error(`HTTP ${response.status}: ${errText || response.statusText}`);
+            }
+
+            const blob = await response.blob();
+            resolve(blob);
+          } catch (e) {
+            reject(e);
+          }
+          return;
+        }
+
         const secMsGec = await this._generateSecMsGecToken();
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
@@ -1607,7 +1718,20 @@ export class TTSEngine {
   }
 
   setVoice(voiceName) {
-    const newVoice = this.voices.find(v => v.name === voiceName) || null;
+    let newVoice = this.voices.find(v => v.name === voiceName) || null;
+    if (!newVoice && voiceName && (this.ttsProvider === 'openai' || this.ttsProvider === 'local')) {
+      newVoice = {
+        name: voiceName,
+        lang: 'multilingual',
+        friendlyName: voiceName,
+        shortName: voiceName,
+        gender: 'neutral',
+        isEdge: false,
+        isNative: false,
+        type: this.ttsProvider
+      };
+      this.voices.push(newVoice);
+    }
     const isChanged = !this.selectedVoice || !newVoice || this.selectedVoice.name !== newVoice.name;
     
     this.selectedVoice = newVoice;
@@ -1670,6 +1794,45 @@ export class TTSEngine {
             block: 'center'
           });
         }
+      }
+    }
+  }
+
+  async fetchModels(provider, url, apiKey) {
+    const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
+    if (useExtension) {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'fetchModels', provider: 'openai', url, apiKey }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success) {
+            resolve(response.models);
+          } else {
+            reject(new Error(response?.error || 'Failed to fetch models'));
+          }
+        });
+      });
+    } else {
+      let fetchUrl = (url ? url.trim() : "");
+      if (!fetchUrl) {
+        fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:5000/v1';
+      }
+      const headers = {};
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      fetchUrl = fetchUrl.replace(/\/+$/, '') + '/models';
+      try {
+        const response = await fetch(fetchUrl, { headers });
+        if (!response.ok) throw new Error("Status " + response.status);
+        const data = await response.json();
+        let models = [];
+        if (data.data) {
+          models = data.data.map(m => m.id);
+        }
+        return models;
+      } catch (err) {
+        throw err;
       }
     }
   }

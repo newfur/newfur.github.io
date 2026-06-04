@@ -591,6 +591,66 @@
   "ai_settings_section": {
     "message": "AI Settings"
   },
+  "tts_settings_section": {
+    "message": "TTS Settings"
+  },
+  "tts_provider": {
+    "message": "TTS Provider"
+  },
+  "tts_provider_edge": {
+    "message": "Microsoft Edge Online"
+  },
+  "tts_provider_system": {
+    "message": "System WebSpeech API"
+  },
+  "tts_provider_openai": {
+    "message": "OpenAI TTS API"
+  },
+  "tts_provider_local": {
+    "message": "Local TTS API (OpenAI-compatible)"
+  },
+  "tts_api_key": {
+    "message": "API Key"
+  },
+  "tts_endpoint": {
+    "message": "API Endpoint"
+  },
+  "tts_model": {
+    "message": "Model Name"
+  },
+  "tts_fetch_models": {
+    "message": "Get Models"
+  },
+  "tts_api_key_optional": {
+    "message": "Optional (e.g. for proxy auth)"
+  },
+  "tts_language": {
+    "message": "Speech Language"
+  },
+  "tts_lang_auto": {
+    "message": "Auto Detect"
+  },
+  "tts_lang_zh_cn": {
+    "message": "Simplified Chinese"
+  },
+  "tts_lang_zh_tw": {
+    "message": "Traditional Chinese"
+  },
+  "tts_lang_en": {
+    "message": "English"
+  },
+  "tts_lang_ja": {
+    "message": "Japanese"
+  },
+  "tts_lang_ko": {
+    "message": "Korean"
+  },
+  "tts_voice_label": {
+    "message": "Voice Name"
+  },
+  "tts_lang_multilingual": {
+    "message": "Multilingual"
+  },
   "cover_width_setting": {
     "message": "Cover Width"
   },
@@ -629,5 +689,59 @@
   },
   "ai_focus": {
     "message": "Focus on:"
+  },
+  "ai_clear_history_title": {
+    "message": "Clear all chat history"
+  },
+  "ai_delete_chat_title": {
+    "message": "Delete this conversation"
+  },
+  "confirm_delete_all_chats": {
+    "message": "Are you sure you want to clear all AI chat history for this book? This action cannot be undone."
+  },
+  "confirm_delete_single_chat": {
+    "message": "Are you sure you want to delete this conversation turn?"
+  },
+  "ai_suggest_sum_chapter_lbl": {
+    "message": "Summarize Chapter"
+  },
+  "ai_suggest_sum_chapter_prt": {
+    "message": "Help me summarize the core arguments and main contents of the current chapter."
+  },
+  "ai_suggest_chapter_map_lbl": {
+    "message": "Chapter Mind Map"
+  },
+  "ai_suggest_chapter_map_prt": {
+    "message": "Please structure the content of the current chapter and output a clear mind map in Markdown tree list or Mermaid format."
+  },
+  "ai_suggest_book_map_lbl": {
+    "message": "Book Mind Map"
+  },
+  "ai_suggest_book_map_prt": {
+    "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic of this book, and output a mind map of the entire book."
+  },
+  "ai_suggest_takeaways_lbl": {
+    "message": "Key Takeaways"
+  },
+  "ai_suggest_takeaways_prt": {
+    "message": "Analyze the 3-5 most important key concepts and takeaways from the current chapter or the entire book."
+  },
+  "ai_suggest_characters_lbl": {
+    "message": "Character Relations"
+  },
+  "ai_suggest_characters_prt": {
+    "message": "Structure the main characters, character backgrounds, and the network of relationships between them in this book."
+  },
+  "ai_suggest_explain_concept_lbl": {
+    "message": "Explain Terminology"
+  },
+  "ai_suggest_explain_concept_prt": {
+    "message": "Explain the core professional terminology or deep concepts mentioned in the current context of this book."
+  },
+  "ai_suggest_quiz_lbl": {
+    "message": "Read Practice"
+  },
+  "ai_suggest_quiz_prt": {
+    "message": "Based on the content of the current chapter, design 3 reading comprehension or self-test thinking questions for me to help deepen my understanding."
   }
 }

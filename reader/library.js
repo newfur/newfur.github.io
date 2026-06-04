@@ -163,6 +163,17 @@ export class BookLibrary {
         }
       }
 
+      // 合併 AI 溝通記錄 (避免重複)
+      const mergedAIChats = [...(existingBook.aiChats || [])];
+      if (backupBook.aiChats) {
+        for (const c of backupBook.aiChats) {
+          const isDuplicate = mergedAIChats.some(ex => ex.chatId === c.chatId);
+          if (!isDuplicate) {
+            mergedAIChats.push(c);
+          }
+        }
+      }
+
       // 合併閱讀統計資訊
       const mergedStats = {
         totalTime: (existingBook.stats?.totalTime || 0) + (backupBook.stats?.totalTime || 0),
@@ -195,6 +206,7 @@ export class BookLibrary {
         progress: mergedProgress,
         bookmarks: mergedBookmarks,
         notes: mergedNotes,
+        aiChats: mergedAIChats,
         stats: mergedStats
       };
     } else {
@@ -512,6 +524,69 @@ export class BookLibrary {
           }
         };
       });
+    });
+  }
+
+  // 保存 AI 溝通記錄
+  async saveAIChat(id, chat) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    if (!book.aiChats) book.aiChats = [];
+    
+    book.aiChats.push({
+      chatId: chat.chatId || 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      createdAt: Date.now(),
+      query: chat.query,
+      reply: chat.reply
+    });
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 刪除單一 AI 溝通記錄
+  async deleteAIChat(id, chatId) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    if (book.aiChats) {
+      book.aiChats = book.aiChats.filter(c => c.chatId !== chatId);
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 清除全部 AI 溝通記錄
+  async clearAllAIChats(id) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.aiChats = [];
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
     });
   }
 }

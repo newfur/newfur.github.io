@@ -591,6 +591,66 @@
   "ai_settings_section": {
     "message": "AI 配置"
   },
+  "tts_settings_section": {
+    "message": "TTS 朗读配置"
+  },
+  "tts_provider": {
+    "message": "TTS 服务商"
+  },
+  "tts_provider_edge": {
+    "message": "微软 Edge 在线高质量语音"
+  },
+  "tts_provider_system": {
+    "message": "系统原生 WebSpeech 语音"
+  },
+  "tts_provider_openai": {
+    "message": "OpenAI TTS 语音接口"
+  },
+  "tts_provider_local": {
+    "message": "本地部署语音接口 (OpenAI兼容)"
+  },
+  "tts_api_key": {
+    "message": "API 密钥"
+  },
+  "tts_endpoint": {
+    "message": "API 端点 URL"
+  },
+  "tts_model": {
+    "message": "朗读模型"
+  },
+  "tts_fetch_models": {
+    "message": "获取模型"
+  },
+  "tts_api_key_optional": {
+    "message": "可选 (例如本地代理认证)"
+  },
+  "tts_language": {
+    "message": "朗读语言"
+  },
+  "tts_lang_auto": {
+    "message": "自动检测"
+  },
+  "tts_lang_zh_cn": {
+    "message": "简体中文"
+  },
+  "tts_lang_zh_tw": {
+    "message": "繁体中文"
+  },
+  "tts_lang_en": {
+    "message": "英语"
+  },
+  "tts_lang_ja": {
+    "message": "日语"
+  },
+  "tts_lang_ko": {
+    "message": "韩语"
+  },
+  "tts_voice_label": {
+    "message": "声音名称"
+  },
+  "tts_lang_multilingual": {
+    "message": "多语言"
+  },
   "cover_width_setting": {
     "message": "封面大小"
   },
@@ -629,5 +689,59 @@
   },
   "ai_focus": {
     "message": "聚焦于:"
+  },
+  "ai_clear_history_title": {
+    "message": "清除所有对话历史"
+  },
+  "ai_delete_chat_title": {
+    "message": "删除该对话"
+  },
+  "confirm_delete_all_chats": {
+    "message": "确定要清除本书的所有 AI 沟通记录吗？此操作无法撤销。"
+  },
+  "confirm_delete_single_chat": {
+    "message": "确定要删除这条沟通记录吗？"
+  },
+  "ai_suggest_sum_chapter_lbl": {
+    "message": "总结本章"
+  },
+  "ai_suggest_sum_chapter_prt": {
+    "message": "帮我总结当前章节的核心观点与主要内容。"
+  },
+  "ai_suggest_chapter_map_lbl": {
+    "message": "本章思维导图"
+  },
+  "ai_suggest_chapter_map_prt": {
+    "message": "请梳理当前章节的内容结构，并以 Markdown 树状列表或 Mermaid 格式输出一份清晰的思维导图。"
+  },
+  "ai_suggest_book_map_lbl": {
+    "message": "全书思维导图"
+  },
+  "ai_suggest_book_map_prt": {
+    "message": "请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，并输出一份全书的思维导图。"
+  },
+  "ai_suggest_takeaways_lbl": {
+    "message": "核心要点"
+  },
+  "ai_suggest_takeaways_prt": {
+    "message": "分析当前章节或全书中最重要的 3-5 个核心知识点与启示（Key Takeaways）。"
+  },
+  "ai_suggest_characters_lbl": {
+    "message": "人物关系"
+  },
+  "ai_suggest_characters_prt": {
+    "message": "梳理本书中出现的主要人物、角色背景及其相互之间的关系脉络。"
+  },
+  "ai_suggest_explain_concept_lbl": {
+    "message": "名词解释"
+  },
+  "ai_suggest_explain_concept_prt": {
+    "message": "解释本书当前上下文中提到的核心专业术语或深奥概念。"
+  },
+  "ai_suggest_quiz_lbl": {
+    "message": "阅读自测"
+  },
+  "ai_suggest_quiz_prt": {
+    "message": "根据当前章节的内容，为我设计 3 道阅读理解或自测思考题，帮助我加深理解。"
   }
 }

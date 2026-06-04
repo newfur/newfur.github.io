@@ -209,6 +209,7 @@ button, select, input {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .btn-icon-only:hover {
@@ -710,6 +711,7 @@ button, select, input {
   border-top: none;
   border-left: none;
   border-right: none;
+  box-sizing: border-box;
 }
 
 .reader-title {
@@ -1539,6 +1541,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
   overflow-y: auto;
   padding: 20px;
   display: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sidebar-content.active {
@@ -1729,6 +1733,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
   to { transform: translate(-50%, 0); opacity: 1; }
 }
 
+@keyframes slideUpFullScreen {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
 /* 行動端選單排版微調：隱藏文字、放大圖標與色點，使佈局精簡且易於觸控 */
 @media (max-width: 768px) {
   .selection-menu .menu-btn span {
@@ -1753,15 +1762,19 @@ input[type="range"]::-webkit-slider-thumb:hover {
   .selection-menu .highlight-colors {
     gap: 8px !important;
   }
-  /* AI 伴侶懸浮面板移動端響應式對齊與縮放 */
+  /* AI 伴侶懸浮面板移動端全螢幕佈局與滑入動畫 */
   .ai-panel {
-    bottom: 10px !important;
-    right: 5% !important;
-    left: 5% !important;
-    width: 90% !important;
-    max-width: 360px !important;
-    max-height: 50vh !important;
-    margin: 0 auto;
+    top: 0 !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    animation: slideUpFullScreen 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
 }
 
@@ -1882,6 +1895,7 @@ textarea:focus {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 10px 40px var(--glass-shadow);
+  overscroll-behavior: contain;
 }
 
 .ai-panel-header {
@@ -1904,6 +1918,10 @@ textarea:focus {
   overflow-y: auto;
   font-size: 16px;
   line-height: 1.65;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ai-loading {
@@ -2812,14 +2830,14 @@ html.transition-none .page-texture-slide {
     padding: 0 8px;
   }
   .reader-header .btn-icon-only {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
   }
   .reader-header-actions {
     gap: 4px;
   }
   .reader-title {
-    max-width: calc(100% - 160px);
+    max-width: calc(100% - 220px);
     font-size: 15px;
   }
 
@@ -2828,8 +2846,8 @@ html.transition-none .page-texture-slide {
     padding: 0 12px !important;
   }
   .sidebar-header .btn-icon-only {
-    width: 36px !important;
-    height: 36px !important;
+    width: 40px !important;
+    height: 40px !important;
   }
   .reader-sidebar .tab-btn {
     font-size: 15px !important;
@@ -3845,16 +3863,125 @@ html.transition-none .page-texture-slide {
   stroke-linejoin: round;
 }
 
+/* 對話組容器與刪除按鈕 */
+.ai-chat-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px;
+  border-radius: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.ai-chat-group:hover {
+  background-color: rgba(120, 120, 120, 0.05);
+}
+
+.delete-chat-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s, background-color 0.2s;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  box-shadow: 0 2px 8px var(--glass-shadow);
+}
+
+.ai-chat-group:hover .delete-chat-btn {
+  opacity: 1;
+}
+
+.delete-chat-btn:hover {
+  color: #ff3b30;
+  background-color: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.2);
+}
+
+@media (max-width: 768px) {
+  .delete-chat-btn {
+    opacity: 0.6;
+    left: 8px;
+    top: 8px;
+  }
+}
+
+/* 快捷提示詞標籤樣式 */
+.ai-suggestions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-color);
+}
+
+.ai-suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.ai-suggestion-chip:hover {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+  transform: translateY(-1px);
+  border-color: var(--primary-color);
+}
+
+.ai-suggestion-chip svg {
+  width: 14px;
+  height: 14px;
+  color: var(--primary-color);
+  stroke-width: 2;
+  fill: none;
+}
+
 /* 聊天氣泡樣式 */
 .ai-chat-bubble {
   margin-bottom: 12px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-radius: 14px;
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: 15.5px;
+  line-height: 1.68;
   word-wrap: break-word;
-  max-width: 90%;
+  max-width: 85%;
   box-sizing: border-box;
+}
+
+/* 強制 AI 伴侶面板使用優雅的無襯線系統字體，避免受書籍字體切換影響 */
+.ai-panel,
+.ai-panel *:not(code):not(pre):not(kbd) {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "PingFang SC", "Lantinghei SC", "Microsoft YaHei", sans-serif !important;
+}
+
+.ai-panel pre,
+.ai-panel code,
+.ai-panel pre *,
+.ai-panel code * {
+  font-family: var(--font-fira), Consolas, Monaco, monospace !important;
 }
 
 .user-bubble {
@@ -3863,6 +3990,7 @@ html.transition-none .page-texture-slide {
   margin-left: auto;
   border-bottom-right-radius: 4px;
   text-align: left;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .assistant-bubble {
@@ -3871,6 +3999,328 @@ html.transition-none .page-texture-slide {
   margin-right: auto;
   border-bottom-left-radius: 4px;
   border: 1px solid var(--border-color);
+  max-width: 100%;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+}
+
+/* AI 聊天內容 Markdown 排版微調 */
+.ai-chat-bubble a {
+  color: var(--primary-color);
+  text-decoration: underline;
+  transition: color var(--transition-speed);
+}
+.ai-chat-bubble a:hover {
+  color: var(--primary-hover);
+}
+
+.assistant-bubble p {
+  margin: 0 0 10px 0;
+  line-height: 1.65;
+}
+.assistant-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-bubble h1,
+.assistant-bubble h2,
+.assistant-bubble h3,
+.assistant-bubble h4,
+.assistant-bubble h5,
+.assistant-bubble h6 {
+  color: var(--primary-color);
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 16px 0 8px 0;
+  font-family: inherit !important;
+}
+
+.assistant-bubble h1 {
+  font-size: 1.45em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 4px;
+  margin-top: 18px;
+}
+.assistant-bubble h2 {
+  font-size: 1.35em;
+  margin-top: 16px;
+}
+.assistant-bubble h3 {
+  font-size: 1.25em;
+  margin-top: 14px;
+}
+.assistant-bubble h4 {
+  font-size: 1.16em;
+  margin-top: 12px;
+}
+.assistant-bubble h5 {
+  font-size: 1.08em;
+  margin-top: 10px;
+}
+.assistant-bubble h6 {
+  font-size: 1.02em;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.assistant-bubble ul {
+  margin: 8px 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+.assistant-bubble li {
+  margin: 6px 0;
+  line-height: 1.6;
+}
+
+.assistant-bubble blockquote {
+  border-left: 4px solid var(--primary-color);
+  padding: 8px 12px;
+  margin: 12px 0;
+  background-color: rgba(10, 132, 255, 0.04);
+  color: var(--text-color);
+  border-radius: 0 8px 8px 0;
+}
+.assistant-bubble blockquote p {
+  margin-bottom: 0;
+}
+
+.assistant-bubble hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 16px 0;
+}
+
+.assistant-bubble pre {
+  background: rgba(120, 120, 120, 0.08);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: var(--font-fira), Consolas, Monaco, monospace;
+  font-size: 14.5px;
+  margin: 10px 0;
+  border: 1px solid var(--border-color);
+}
+.assistant-bubble pre code.language-code {
+  white-space: pre-wrap;
+  word-break: break-all;
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 1em;
+}
+
+.assistant-bubble .ordered-list-item {
+  margin: 6px 0;
+  padding-left: 2px;
+  line-height: 1.6;
+}
+
+.assistant-bubble .empty-line {
+  height: 8px;
+}
+
+/* GFM 表格排版 */
+.assistant-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  background-color: rgba(120, 120, 120, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  display: block;
+  overflow-x: auto; /* 響應式滾動 */
+}
+.assistant-bubble th,
+.assistant-bubble td {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+}
+.assistant-bubble th {
+  background-color: rgba(120, 120, 120, 0.06);
+  font-weight: 600;
+  color: var(--primary-color);
+  text-align: left;
+}
+.assistant-bubble tr:nth-child(even) {
+  background-color: rgba(120, 120, 120, 0.02);
+}
+
+/* Obsidian 高亮與刪除線及雙鏈 */
+.assistant-bubble mark.obsidian-highlight {
+  background-color: rgba(255, 224, 0, 0.3);
+  color: var(--text-color);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+.assistant-bubble del.obsidian-del {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+.assistant-bubble .obsidian-wikilink {
+  background-color: rgba(10, 132, 255, 0.08);
+  color: var(--primary-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-weight: 500;
+  border: 1px solid rgba(10, 132, 255, 0.15);
+  display: inline-block;
+  margin: 1px 2px;
+}
+
+/* 任務列表 */
+.assistant-bubble li.task-list-item {
+  list-style-type: none !important;
+  margin-left: -16px !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.assistant-bubble li.task-list-item input[type="checkbox"] {
+  margin: 0;
+  cursor: default;
+  accent-color: var(--primary-color) !important;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.assistant-bubble li.task-list-item span {
+  line-height: 1.6;
+}
+
+/* 圖片排版 */
+.assistant-bubble img.obsidian-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin: 10px 0;
+  border: 1px solid var(--border-color);
+  display: block;
+}
+
+/* Obsidian Callouts 樣式 */
+.assistant-bubble .obsidian-callout {
+  border-left: 4px solid var(--primary-color);
+  border-radius: 4px 8px 8px 4px;
+  margin: 16px 0;
+  padding: 12px 16px;
+  background-color: rgba(10, 132, 255, 0.04);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+.assistant-bubble .callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 14.5px;
+  color: var(--primary-color);
+}
+.assistant-bubble .callout-title .callout-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+.assistant-bubble .callout-title .callout-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+.assistant-bubble .callout-title-inner {
+  line-height: 1.2;
+}
+.assistant-bubble .callout-content {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-color);
+}
+.assistant-bubble .callout-content p {
+  margin: 0 0 8px 0;
+}
+.assistant-bubble .callout-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Callouts 變體色彩 */
+.assistant-bubble .obsidian-callout.callout-note {
+  border-left-color: #0a84ff;
+  background-color: rgba(10, 132, 255, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-note .callout-title {
+  color: #0a84ff;
+}
+
+.assistant-bubble .obsidian-callout.callout-info,
+.assistant-bubble .obsidian-callout.callout-todo {
+  border-left-color: #00bcd4;
+  background-color: rgba(0, 188, 212, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-info .callout-title,
+.assistant-bubble .obsidian-callout.callout-todo .callout-title {
+  color: #00bcd4;
+}
+
+.assistant-bubble .obsidian-callout.callout-tip,
+.assistant-bubble .obsidian-callout.callout-hint,
+.assistant-bubble .obsidian-callout.callout-success,
+.assistant-bubble .obsidian-callout.callout-check,
+.assistant-bubble .obsidian-callout.callout-done {
+  border-left-color: #30d158;
+  background-color: rgba(48, 209, 88, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-tip .callout-title,
+.assistant-bubble .obsidian-callout.callout-hint .callout-title,
+.assistant-bubble .obsidian-callout.callout-success .callout-title,
+.assistant-bubble .obsidian-callout.callout-check .callout-title,
+.assistant-bubble .obsidian-callout.callout-done .callout-title {
+  color: #30d158;
+}
+
+.assistant-bubble .obsidian-callout.callout-warning,
+.assistant-bubble .obsidian-callout.callout-caution,
+.assistant-bubble .obsidian-callout.callout-attention {
+  border-left-color: #ff9f0a;
+  background-color: rgba(255, 159, 10, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-warning .callout-title,
+.assistant-bubble .obsidian-callout.callout-caution .callout-title,
+.assistant-bubble .obsidian-callout.callout-attention .callout-title {
+  color: #ff9f0a;
+}
+
+.assistant-bubble .obsidian-callout.callout-error,
+.assistant-bubble .obsidian-callout.callout-danger,
+.assistant-bubble .obsidian-callout.callout-bug {
+  border-left-color: #ff453a;
+  background-color: rgba(255, 69, 58, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-error .callout-title,
+.assistant-bubble .obsidian-callout.callout-danger .callout-title,
+.assistant-bubble .obsidian-callout.callout-bug .callout-title {
+  color: #ff453a;
+}
+
+.assistant-bubble .obsidian-callout.callout-quote {
+  border-left-color: var(--text-muted);
+  background-color: rgba(120, 120, 120, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-quote .callout-title {
+  color: var(--text-muted);
+}
+
+.assistant-bubble .obsidian-callout.callout-example {
+  border-left-color: #bf5af2;
+  background-color: rgba(191, 90, 242, 0.04);
+}
+.assistant-bubble .obsidian-callout.callout-example .callout-title {
+  color: #bf5af2;
 }
 
 .ai-chat-bubble code {
@@ -3902,7 +4352,7 @@ html.transition-none .page-texture-slide {
     width: var(--ai-panel-width) !important;
     height: 100vh !important;
     max-height: 100vh !important;
-    border-radius: 24px 0 0 24px !important;
+    border-radius: 0 !important;
     border-top: none !important;
     border-bottom: none !important;
     border-right: none !important;
@@ -3915,6 +4365,9 @@ html.transition-none .page-texture-slide {
     height: 64px !important;
     padding: 0 20px !important;
     box-sizing: border-box !important;
+  }
+  .reader-sidebar {
+    border-radius: 0 !important;
   }
 }
 
@@ -4026,6 +4479,15 @@ html.transition-none .page-texture-slide {
   }
   body.sidebar-active.ai-active .note-dialog {
     left: calc(50% + 180px - var(--ai-panel-width) / 2);
+  }
+}
+
+/* 行動端開啟側邊欄或 AI 面板時防止背景滾動與穿透 */
+@media (max-width: 768px) {
+  body.ai-active,
+  body.sidebar-active {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
   }
 }
 
@@ -4516,9 +4978,14 @@ html.transition-none .page-texture-slide {
           <svg class="svg-icon svg-icon-sm" style="margin-right: 5px; color: var(--primary-color);" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"></path></svg>
           <span data-i18n="ai_assistant_title">AI Reading Assistant</span>
         </span>
-        <button id="close-ai-panel" class="btn-icon-only">
-          <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button id="clear-ai-history-btn" class="btn-icon-only" data-i18n-title="ai_clear_history_title" title="Clear all chat history">
+            <svg class="svg-icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          </button>
+          <button id="close-ai-panel" class="btn-icon-only">
+            <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
       </div>
       <div id="ai-content" class="ai-panel-body">
         <!-- AI 生成結果將在此輸出 -->
@@ -4531,6 +4998,7 @@ html.transition-none .page-texture-slide {
           <svg class="svg-icon svg-icon-sm" style="width: 12px; height: 12px;" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
+      <div id="ai-suggestions-container" class="ai-suggestions-container"></div>
       <div class="ai-panel-footer">
         <textarea id="ai-input" data-i18n-placeholder="ai_input_placeholder" placeholder="Ask AI anything..."></textarea>
         <button id="ai-send-btn">
@@ -4690,7 +5158,7 @@ html.transition-none .page-texture-slide {
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
         <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
-        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v1.3.0</span></div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.0</span></div>
         
         <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
         
@@ -4776,7 +5244,54 @@ html.transition-none .page-texture-slide {
             </select>
           </div>
         </div>
-        <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 15px; gap: 10px;">
+        <div style="border-top: 1px dashed var(--border-color); margin: 5px 0;"></div>
+
+        <!-- TTS 設定 -->
+        <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--primary-color);" data-i18n="tts_settings_section">TTS Settings</h4>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="tts_provider">TTS Provider</label>
+          <select id="tts-provider-select" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <option value="edge" data-i18n="tts_provider_edge" selected>Microsoft Edge Online</option>
+            <option value="system" data-i18n="tts_provider_system">System WebSpeech API</option>
+            <option value="openai" data-i18n="tts_provider_openai">OpenAI TTS API</option>
+            <option value="local" data-i18n="tts_provider_local">Local TTS API (OpenAI-compatible)</option>
+          </select>
+        </div>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="tts_language">Speech Language</label>
+          <select id="tts-language-select" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <option value="auto" data-i18n="tts_lang_auto" selected>Auto Detect</option>
+            <option value="zh-CN" data-i18n="tts_lang_zh_cn">Simplified Chinese</option>
+            <option value="zh-TW" data-i18n="tts_lang_zh_tw">Traditional Chinese</option>
+            <option value="en" data-i18n="tts_lang_en">English</option>
+            <option value="ja" data-i18n="tts_lang_ja">Japanese</option>
+            <option value="ko" data-i18n="tts_lang_ko">Korean</option>
+          </select>
+        </div>
+        <div class="setting-item" id="tts-api-key-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="tts_api_key">API Key</label>
+          <input type="password" id="tts-api-key-input" placeholder="sk-..." style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" id="tts-endpoint-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="tts_endpoint">API Endpoint</label>
+          <input type="text" id="tts-endpoint-input" placeholder="https://api.openai.com/v1" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" id="tts-model-container" style="display: none; flex-direction: column; gap: 6px;">
+          <div style="display: flex; width: 100%; justify-content: space-between; align-items: center;">
+            <label style="font-weight: 500;" data-i18n="tts_model">Model Name</label>
+            <button id="tts-fetch-models-btn" class="btn btn-secondary" style="padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-color); display: inline-flex; align-items: center; justify-content: center; background: none; color: var(--text-color);" data-i18n="tts_fetch_models">Get Models</button>
+          </div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <input type="text" id="tts-model-input" placeholder="tts-1" style="flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <select id="tts-model-select" style="display: none; width: auto; max-width: 150px; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            </select>
+          </div>
+        </div>
+        <div class="setting-item" id="tts-voice-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="tts_voice_label">Voice Name</label>
+          <input type="text" id="tts-voice-input" placeholder="alloy" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" id="ai-save-container" style="display: flex; margin-top: 15px; gap: 10px;">
           <button id="ai-test-btn" class="btn btn-secondary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex; border: 1px solid var(--border-color);" data-i18n="ai_test_settings">Test Connection</button>
           <button id="ai-save-btn" class="btn btn-primary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save</button>
         </div>
@@ -5395,6 +5910,66 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "ai_settings_section": {
       "message": "AI Settings"
     },
+    "tts_settings_section": {
+      "message": "TTS Settings"
+    },
+    "tts_provider": {
+      "message": "TTS Provider"
+    },
+    "tts_provider_edge": {
+      "message": "Microsoft Edge Online"
+    },
+    "tts_provider_system": {
+      "message": "System WebSpeech API"
+    },
+    "tts_provider_openai": {
+      "message": "OpenAI TTS API"
+    },
+    "tts_provider_local": {
+      "message": "Local TTS API (OpenAI-compatible)"
+    },
+    "tts_api_key": {
+      "message": "API Key"
+    },
+    "tts_endpoint": {
+      "message": "API Endpoint"
+    },
+    "tts_model": {
+      "message": "Model Name"
+    },
+    "tts_fetch_models": {
+      "message": "Get Models"
+    },
+    "tts_api_key_optional": {
+      "message": "Optional (e.g. for proxy auth)"
+    },
+    "tts_language": {
+      "message": "Speech Language"
+    },
+    "tts_lang_auto": {
+      "message": "Auto Detect"
+    },
+    "tts_lang_zh_cn": {
+      "message": "Simplified Chinese"
+    },
+    "tts_lang_zh_tw": {
+      "message": "Traditional Chinese"
+    },
+    "tts_lang_en": {
+      "message": "English"
+    },
+    "tts_lang_ja": {
+      "message": "Japanese"
+    },
+    "tts_lang_ko": {
+      "message": "Korean"
+    },
+    "tts_voice_label": {
+      "message": "Voice Name"
+    },
+    "tts_lang_multilingual": {
+      "message": "Multilingual"
+    },
     "cover_width_setting": {
       "message": "Cover Width"
     },
@@ -5433,6 +6008,60 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_focus": {
       "message": "Focus on:"
+    },
+    "ai_clear_history_title": {
+      "message": "Clear all chat history"
+    },
+    "ai_delete_chat_title": {
+      "message": "Delete this conversation"
+    },
+    "confirm_delete_all_chats": {
+      "message": "Are you sure you want to clear all AI chat history for this book? This action cannot be undone."
+    },
+    "confirm_delete_single_chat": {
+      "message": "Are you sure you want to delete this conversation turn?"
+    },
+    "ai_suggest_sum_chapter_lbl": {
+      "message": "Summarize Chapter"
+    },
+    "ai_suggest_sum_chapter_prt": {
+      "message": "Help me summarize the core arguments and main contents of the current chapter."
+    },
+    "ai_suggest_chapter_map_lbl": {
+      "message": "Chapter Mind Map"
+    },
+    "ai_suggest_chapter_map_prt": {
+      "message": "Please structure the content of the current chapter and output a clear mind map in Markdown tree list or Mermaid format."
+    },
+    "ai_suggest_book_map_lbl": {
+      "message": "Book Mind Map"
+    },
+    "ai_suggest_book_map_prt": {
+      "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic of this book, and output a mind map of the entire book."
+    },
+    "ai_suggest_takeaways_lbl": {
+      "message": "Key Takeaways"
+    },
+    "ai_suggest_takeaways_prt": {
+      "message": "Analyze the 3-5 most important key concepts and takeaways from the current chapter or the entire book."
+    },
+    "ai_suggest_characters_lbl": {
+      "message": "Character Relations"
+    },
+    "ai_suggest_characters_prt": {
+      "message": "Structure the main characters, character backgrounds, and the network of relationships between them in this book."
+    },
+    "ai_suggest_explain_concept_lbl": {
+      "message": "Explain Terminology"
+    },
+    "ai_suggest_explain_concept_prt": {
+      "message": "Explain the core professional terminology or deep concepts mentioned in the current context of this book."
+    },
+    "ai_suggest_quiz_lbl": {
+      "message": "Read Practice"
+    },
+    "ai_suggest_quiz_prt": {
+      "message": "Based on the content of the current chapter, design 3 reading comprehension or self-test thinking questions for me to help deepen my understanding."
     }
   },
   "zh_TW": {
@@ -6028,6 +6657,66 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "ai_settings_section": {
       "message": "AI 配置"
     },
+    "tts_settings_section": {
+      "message": "TTS 朗讀配置"
+    },
+    "tts_provider": {
+      "message": "TTS 服務商"
+    },
+    "tts_provider_edge": {
+      "message": "微軟 Edge 線上高品質語音"
+    },
+    "tts_provider_system": {
+      "message": "系統原生 WebSpeech 語音"
+    },
+    "tts_provider_openai": {
+      "message": "OpenAI TTS 語音接口"
+    },
+    "tts_provider_local": {
+      "message": "本地部署語音接口 (OpenAI相容)"
+    },
+    "tts_api_key": {
+      "message": "API 密鑰"
+    },
+    "tts_endpoint": {
+      "message": "API 端點 URL"
+    },
+    "tts_model": {
+      "message": "朗讀模型"
+    },
+    "tts_fetch_models": {
+      "message": "獲取模型"
+    },
+    "tts_api_key_optional": {
+      "message": "可選 (例如本地代理認證)"
+    },
+    "tts_language": {
+      "message": "朗讀語言"
+    },
+    "tts_lang_auto": {
+      "message": "自動檢測"
+    },
+    "tts_lang_zh_cn": {
+      "message": "簡體中文"
+    },
+    "tts_lang_zh_tw": {
+      "message": "繁體中文"
+    },
+    "tts_lang_en": {
+      "message": "英語"
+    },
+    "tts_lang_ja": {
+      "message": "日語"
+    },
+    "tts_lang_ko": {
+      "message": "韓語"
+    },
+    "tts_voice_label": {
+      "message": "聲音名稱"
+    },
+    "tts_lang_multilingual": {
+      "message": "多語言"
+    },
     "cover_width_setting": {
       "message": "封面大小"
     },
@@ -6066,6 +6755,60 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_focus": {
       "message": "聚焦於:"
+    },
+    "ai_clear_history_title": {
+      "message": "清除所有對話歷史"
+    },
+    "ai_delete_chat_title": {
+      "message": "刪除該對話"
+    },
+    "confirm_delete_all_chats": {
+      "message": "確定要清除本書的所有 AI 溝通記錄嗎？此操作無法撤銷。"
+    },
+    "confirm_delete_single_chat": {
+      "message": "確定要刪除這條溝通記錄嗎？"
+    },
+    "ai_suggest_sum_chapter_lbl": {
+      "message": "總結本章"
+    },
+    "ai_suggest_sum_chapter_prt": {
+      "message": "幫我總結當前章節的核心觀點與主要內容。"
+    },
+    "ai_suggest_chapter_map_lbl": {
+      "message": "本章思維導圖"
+    },
+    "ai_suggest_chapter_map_prt": {
+      "message": "請梳理當前章節的內容結構，並以 Markdown 樹狀列表或 Mermaid 格式輸出一份清晰的思維導圖。"
+    },
+    "ai_suggest_book_map_lbl": {
+      "message": "全書思維導圖"
+    },
+    "ai_suggest_book_map_prt": {
+      "message": "請結合全書檢索到的脈絡，梳理本書的整體架構與核心章節邏輯，並輸出一份全書的思維導圖。"
+    },
+    "ai_suggest_takeaways_lbl": {
+      "message": "核心要點"
+    },
+    "ai_suggest_takeaways_prt": {
+      "message": "分析當前章節或全書中最重要的 3-5 個核心知識點與啟示（Key Takeaways）。"
+    },
+    "ai_suggest_characters_lbl": {
+      "message": "人物關係"
+    },
+    "ai_suggest_characters_prt": {
+      "message": "梳理本書中出現的主要人物、角色背景及其相互之間的關係脈絡。"
+    },
+    "ai_suggest_explain_concept_lbl": {
+      "message": "名詞解釋"
+    },
+    "ai_suggest_explain_concept_prt": {
+      "message": "解釋本書當前上下文中提到的核心專業術語或深奧概念。"
+    },
+    "ai_suggest_quiz_lbl": {
+      "message": "閱讀自測"
+    },
+    "ai_suggest_quiz_prt": {
+      "message": "根據當前章節的內容，為我設計 3 道閱讀理解或自測思考題，幫助我加深理解。"
     }
   },
   "zh_CN": {
@@ -6661,6 +7404,66 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "ai_settings_section": {
       "message": "AI 配置"
     },
+    "tts_settings_section": {
+      "message": "TTS 朗读配置"
+    },
+    "tts_provider": {
+      "message": "TTS 服务商"
+    },
+    "tts_provider_edge": {
+      "message": "微软 Edge 在线高质量语音"
+    },
+    "tts_provider_system": {
+      "message": "系统原生 WebSpeech 语音"
+    },
+    "tts_provider_openai": {
+      "message": "OpenAI TTS 语音接口"
+    },
+    "tts_provider_local": {
+      "message": "本地部署语音接口 (OpenAI兼容)"
+    },
+    "tts_api_key": {
+      "message": "API 密钥"
+    },
+    "tts_endpoint": {
+      "message": "API 端点 URL"
+    },
+    "tts_model": {
+      "message": "朗读模型"
+    },
+    "tts_fetch_models": {
+      "message": "获取模型"
+    },
+    "tts_api_key_optional": {
+      "message": "可选 (例如本地代理认证)"
+    },
+    "tts_language": {
+      "message": "朗读语言"
+    },
+    "tts_lang_auto": {
+      "message": "自动检测"
+    },
+    "tts_lang_zh_cn": {
+      "message": "简体中文"
+    },
+    "tts_lang_zh_tw": {
+      "message": "繁体中文"
+    },
+    "tts_lang_en": {
+      "message": "英语"
+    },
+    "tts_lang_ja": {
+      "message": "日语"
+    },
+    "tts_lang_ko": {
+      "message": "韩语"
+    },
+    "tts_voice_label": {
+      "message": "声音名称"
+    },
+    "tts_lang_multilingual": {
+      "message": "多语言"
+    },
     "cover_width_setting": {
       "message": "封面大小"
     },
@@ -6699,6 +7502,60 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_focus": {
       "message": "聚焦于:"
+    },
+    "ai_clear_history_title": {
+      "message": "清除所有对话历史"
+    },
+    "ai_delete_chat_title": {
+      "message": "删除该对话"
+    },
+    "confirm_delete_all_chats": {
+      "message": "确定要清除本书的所有 AI 沟通记录吗？此操作无法撤销。"
+    },
+    "confirm_delete_single_chat": {
+      "message": "确定要删除这条沟通记录吗？"
+    },
+    "ai_suggest_sum_chapter_lbl": {
+      "message": "总结本章"
+    },
+    "ai_suggest_sum_chapter_prt": {
+      "message": "帮我总结当前章节的核心观点与主要内容。"
+    },
+    "ai_suggest_chapter_map_lbl": {
+      "message": "本章思维导图"
+    },
+    "ai_suggest_chapter_map_prt": {
+      "message": "请梳理当前章节的内容结构，并以 Markdown 树状列表或 Mermaid 格式输出一份清晰的思维导图。"
+    },
+    "ai_suggest_book_map_lbl": {
+      "message": "全书思维导图"
+    },
+    "ai_suggest_book_map_prt": {
+      "message": "请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，并输出一份全书的思维导图。"
+    },
+    "ai_suggest_takeaways_lbl": {
+      "message": "核心要点"
+    },
+    "ai_suggest_takeaways_prt": {
+      "message": "分析当前章节或全书中最重要的 3-5 个核心知识点与启示（Key Takeaways）。"
+    },
+    "ai_suggest_characters_lbl": {
+      "message": "人物关系"
+    },
+    "ai_suggest_characters_prt": {
+      "message": "梳理本书中出现的主要人物、角色背景及其相互之间的关系脉络。"
+    },
+    "ai_suggest_explain_concept_lbl": {
+      "message": "名词解释"
+    },
+    "ai_suggest_explain_concept_prt": {
+      "message": "解释本书当前上下文中提到的核心专业术语或深奥概念。"
+    },
+    "ai_suggest_quiz_lbl": {
+      "message": "阅读自测"
+    },
+    "ai_suggest_quiz_prt": {
+      "message": "根据当前章节的内容，为我设计 3 道阅读理解或自测思考题，帮助我加深理解。"
     }
   }
 };
@@ -7025,6 +7882,17 @@ class BookLibrary {
         }
       }
 
+      // 合併 AI 溝通記錄 (避免重複)
+      const mergedAIChats = [...(existingBook.aiChats || [])];
+      if (backupBook.aiChats) {
+        for (const c of backupBook.aiChats) {
+          const isDuplicate = mergedAIChats.some(ex => ex.chatId === c.chatId);
+          if (!isDuplicate) {
+            mergedAIChats.push(c);
+          }
+        }
+      }
+
       // 合併閱讀統計資訊
       const mergedStats = {
         totalTime: (existingBook.stats?.totalTime || 0) + (backupBook.stats?.totalTime || 0),
@@ -7057,6 +7925,7 @@ class BookLibrary {
         progress: mergedProgress,
         bookmarks: mergedBookmarks,
         notes: mergedNotes,
+        aiChats: mergedAIChats,
         stats: mergedStats
       };
     } else {
@@ -7374,6 +8243,69 @@ class BookLibrary {
           }
         };
       });
+    });
+  }
+
+  // 保存 AI 溝通記錄
+  async saveAIChat(id, chat) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    if (!book.aiChats) book.aiChats = [];
+    
+    book.aiChats.push({
+      chatId: chat.chatId || 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      createdAt: Date.now(),
+      query: chat.query,
+      reply: chat.reply
+    });
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 刪除單一 AI 溝通記錄
+  async deleteAIChat(id, chatId) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    if (book.aiChats) {
+      book.aiChats = book.aiChats.filter(c => c.chatId !== chatId);
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 清除全部 AI 溝通記錄
+  async clearAllAIChats(id) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.aiChats = [];
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
     });
   }
 }
@@ -9554,11 +10486,63 @@ class TTSEngine {
 
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
+
+    // Custom LLM / Local TTS Config
+    this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
+    this.ttsApiKey = '';
+    this.ttsEndpoint = '';
+    this.ttsModel = 'tts-1';
+
     this._initVoices();
+  }
+
+  // 設置配置項
+  configure({ provider, apiKey, endpoint, model }) {
+    let voiceChanged = false;
+    if (provider !== undefined && this.ttsProvider !== provider) {
+      this.ttsProvider = provider;
+      voiceChanged = true;
+    }
+    if (apiKey !== undefined && this.ttsApiKey !== apiKey) {
+      this.ttsApiKey = apiKey;
+    }
+    if (endpoint !== undefined && this.ttsEndpoint !== endpoint) {
+      this.ttsEndpoint = endpoint;
+    }
+    if (model !== undefined && this.ttsModel !== model) {
+      this.ttsModel = model;
+    }
+    if (voiceChanged) {
+      this._initVoices();
+    }
   }
 
   // 1. 初始化並加載語音包 (使用 SpeechSynthesis 獲取系統與 Edge 雲端語音)
   async _initVoices() {
+    if (this.ttsProvider === 'openai') {
+      this.voices = [
+        { name: 'Alloy (OpenAI)', lang: 'multilingual', friendlyName: 'Alloy', shortName: 'alloy', gender: 'neutral', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Echo (OpenAI)', lang: 'multilingual', friendlyName: 'Echo', shortName: 'echo', gender: 'neutral', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Fable (OpenAI)', lang: 'multilingual', friendlyName: 'Fable', shortName: 'fable', gender: 'neutral', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Onyx (OpenAI)', lang: 'multilingual', friendlyName: 'Onyx', shortName: 'onyx', gender: 'male', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Nova (OpenAI)', lang: 'multilingual', friendlyName: 'Nova', shortName: 'nova', gender: 'female', isEdge: false, isNative: false, type: 'openai' },
+        { name: 'Shimmer (OpenAI)', lang: 'multilingual', friendlyName: 'Shimmer', shortName: 'shimmer', gender: 'female', isEdge: false, isNative: false, type: 'openai' },
+      ];
+      if (this.onStateChange) this.onStateChange();
+      return;
+    } else if (this.ttsProvider === 'local') {
+      this.voices = [
+        { name: 'Alloy (Local)', lang: 'multilingual', friendlyName: 'Alloy', shortName: 'alloy', gender: 'neutral', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Echo (Local)', lang: 'multilingual', friendlyName: 'Echo', shortName: 'echo', gender: 'neutral', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Fable (Local)', lang: 'multilingual', friendlyName: 'Fable', shortName: 'fable', gender: 'neutral', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Onyx (Local)', lang: 'multilingual', friendlyName: 'Onyx', shortName: 'onyx', gender: 'male', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Nova (Local)', lang: 'multilingual', friendlyName: 'Nova', shortName: 'nova', gender: 'female', isEdge: false, isNative: false, type: 'local' },
+        { name: 'Shimmer (Local)', lang: 'multilingual', friendlyName: 'Shimmer', shortName: 'shimmer', gender: 'female', isEdge: false, isNative: false, type: 'local' },
+      ];
+      if (this.onStateChange) this.onStateChange();
+      return;
+    }
+
     const getWebSpeechVoices = () => {
       if (this.synth) {
         return this.synth.getVoices().map(v => ({
@@ -9574,6 +10558,12 @@ class TTSEngine {
       }
       return [];
     };
+
+    if (this.ttsProvider === 'system') {
+      this.voices = getWebSpeechVoices();
+      if (this.onStateChange) this.onStateChange();
+      return;
+    }
 
     const loadVoices = () => {
       const voices = getWebSpeechVoices();
@@ -9690,7 +10680,7 @@ class TTSEngine {
     // 過濾出與目標語言前綴匹配的語音包，防止下拉選單顯示過多無關語言的語音
     let matched = this.voices.filter(v => {
       const vLang = v.lang.toLowerCase().replace('_', '-');
-      return vLang.startsWith(langPrefix);
+      return vLang.startsWith(langPrefix) || vLang === 'multilingual';
     });
     
     // 若無任何語音匹配該前綴，退化為顯示所有語音
@@ -10176,6 +11166,59 @@ class TTSEngine {
   _downloadSentenceAudio(sentence) {
     return new Promise(async (resolve, reject) => {
       try {
+        if (this.ttsProvider === 'openai' || this.ttsProvider === 'local') {
+          try {
+            const defaultEndpoint = this.ttsProvider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:5000/v1';
+            const endpoint = (this.ttsEndpoint || defaultEndpoint).replace(/\/+$/, '') + '/audio/speech';
+            const apiKey = this.ttsApiKey || '';
+            const model = this.ttsModel || 'tts-1';
+            const voiceName = (this.selectedVoice && this.selectedVoice.shortName) || 'alloy';
+
+            const headers = {
+              'Content-Type': 'application/json'
+            };
+            if (apiKey) {
+              headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            let speakText = sentence.text;
+            // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+            speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+            speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+            speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+
+            if (!/[。！？.!?；;，,：:]\s*$/.test(speakText)) {
+              if (sentence.isHeading) {
+                speakText += "。";
+              } else {
+                speakText += "，";
+              }
+            }
+
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: headers,
+              body: JSON.stringify({
+                model: model,
+                input: speakText,
+                voice: voiceName,
+                response_format: 'mp3'
+              })
+            });
+
+            if (!response.ok) {
+              const errText = await response.text();
+              throw new Error(`HTTP ${response.status}: ${errText || response.statusText}`);
+            }
+
+            const blob = await response.blob();
+            resolve(blob);
+          } catch (e) {
+            reject(e);
+          }
+          return;
+        }
+
         const secMsGec = await this._generateSecMsGecToken();
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
@@ -11041,7 +12084,20 @@ class TTSEngine {
   }
 
   setVoice(voiceName) {
-    const newVoice = this.voices.find(v => v.name === voiceName) || null;
+    let newVoice = this.voices.find(v => v.name === voiceName) || null;
+    if (!newVoice && voiceName && (this.ttsProvider === 'openai' || this.ttsProvider === 'local')) {
+      newVoice = {
+        name: voiceName,
+        lang: 'multilingual',
+        friendlyName: voiceName,
+        shortName: voiceName,
+        gender: 'neutral',
+        isEdge: false,
+        isNative: false,
+        type: this.ttsProvider
+      };
+      this.voices.push(newVoice);
+    }
     const isChanged = !this.selectedVoice || !newVoice || this.selectedVoice.name !== newVoice.name;
     
     this.selectedVoice = newVoice;
@@ -11104,6 +12160,45 @@ class TTSEngine {
             block: 'center'
           });
         }
+      }
+    }
+  }
+
+  async fetchModels(provider, url, apiKey) {
+    const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
+    if (useExtension) {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'fetchModels', provider: 'openai', url, apiKey }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success) {
+            resolve(response.models);
+          } else {
+            reject(new Error(response?.error || 'Failed to fetch models'));
+          }
+        });
+      });
+    } else {
+      let fetchUrl = (url ? url.trim() : "");
+      if (!fetchUrl) {
+        fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:5000/v1';
+      }
+      const headers = {};
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      fetchUrl = fetchUrl.replace(/\/+$/, '') + '/models';
+      try {
+        const response = await fetch(fetchUrl, { headers });
+        if (!response.ok) throw new Error("Status " + response.status);
+        const data = await response.json();
+        let models = [];
+        if (data.data) {
+          models = data.data.map(m => m.id);
+        }
+        return models;
+      } catch (err) {
+        throw err;
       }
     }
   }
@@ -11208,16 +12303,31 @@ class AIEngine {
   }
 
   // 核心對話入口 (流式輸出)
-  async _chat(systemPrompt, prompt, onChunk) {
+  async _chat(systemPrompt, prompt, onChunk, history = []) {
     if (this.provider === 'builtin') {
       await this._createSession(systemPrompt);
-      return this._streamPrompt(prompt, onChunk);
+      let fullPrompt = "";
+      if (history && history.length > 0) {
+        for (const turn of history) {
+          fullPrompt += `User: ${turn.query}\nAssistant: ${turn.reply}\n`;
+        }
+      }
+      fullPrompt += `User: ${prompt}\nAssistant:`;
+      return this._streamPrompt(fullPrompt, onChunk);
     }
 
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt }
+      { role: 'system', content: systemPrompt }
     ];
+
+    if (history && history.length > 0) {
+      for (const turn of history) {
+        messages.push({ role: 'user', content: turn.query });
+        messages.push({ role: 'assistant', content: turn.reply });
+      }
+    }
+
+    messages.push({ role: 'user', content: prompt });
 
     const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
     if (useExtension) {
@@ -11596,6 +12706,8 @@ let selectedNoteIdState = null; // 儲存當前選取的高亮/筆記的 ID
 let currentPageIndex = 0;
 let ttsClickTimeout = null;
 let currentPagesDisplayed = 'auto';
+let currentTTSLanguage = 'auto';
+let ttsDefaultVoice = '';
 let currentPaperTexture = 'texture-classic';
 let activeCoverUrls = [];
 let activeResourceUrls = [];
@@ -11671,6 +12783,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
+  initAISuggestions();
 
   // 2. 開啟資料庫並載入書架
   try {
@@ -11682,6 +12795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 3. 初始化 AI 配置與檢測支持
   await initAISettings();
+  await initTTSSettings();
 
   // 3.5 立即恢復主題設定（確保刷新頁面後主題不遺失）
   chrome.storage.local.get(['theme'], (res) => {
@@ -12155,6 +13269,118 @@ function initUIEventBindings() {
     });
   }
 
+  // TTS 設定變更監聽
+  const ttsProviderSelect = document.getElementById('tts-provider-select');
+  if (ttsProviderSelect) {
+    ttsProviderSelect.addEventListener('change', (e) => {
+      const provider = e.target.value;
+      
+      const endpointInput = document.getElementById('tts-endpoint-input');
+      const modelInput = document.getElementById('tts-model-input');
+      const apiKeyInput = document.getElementById('tts-api-key-input');
+      if (provider === 'openai') {
+        if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
+        if (modelInput) modelInput.placeholder = 'tts-1';
+        if (apiKeyInput) apiKeyInput.placeholder = 'sk-...';
+      } else if (provider === 'local') {
+        if (endpointInput) endpointInput.placeholder = 'http://localhost:5000/v1';
+        if (modelInput) modelInput.placeholder = 'tts-1';
+        if (apiKeyInput) apiKeyInput.placeholder = getMsg('tts_api_key_optional') || 'Optional (e.g. for proxy auth)';
+      }
+
+      updateTTSConfigFieldsVisibility(provider);
+      tts.configure({ provider });
+      chrome.storage.local.set({ ttsProvider: provider }, () => {
+        initTTSPanelVoices();
+      });
+    });
+  }
+
+  const ttsApiKeyInput = document.getElementById('tts-api-key-input');
+  if (ttsApiKeyInput) {
+    ttsApiKeyInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      tts.configure({ apiKey: val });
+      chrome.storage.local.set({ ttsApiKey: val });
+    });
+  }
+
+  const ttsEndpointInput = document.getElementById('tts-endpoint-input');
+  if (ttsEndpointInput) {
+    ttsEndpointInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      tts.configure({ endpoint: val });
+      chrome.storage.local.set({ ttsEndpoint: val });
+    });
+  }
+
+  const ttsModelInput = document.getElementById('tts-model-input');
+  if (ttsModelInput) {
+    ttsModelInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      tts.configure({ model: val });
+      chrome.storage.local.set({ ttsModel: val });
+    });
+  }
+
+  // TTS 獲取模型列表按鈕監聽
+  const ttsFetchModelsBtn = document.getElementById('tts-fetch-models-btn');
+  const ttsModelSelect = document.getElementById('tts-model-select');
+  if (ttsFetchModelsBtn && ttsModelSelect && ttsModelInput) {
+    ttsFetchModelsBtn.addEventListener('click', async () => {
+      const provider = document.getElementById('tts-provider-select').value;
+      const endpoint = document.getElementById('tts-endpoint-input').value;
+      const apiKey = document.getElementById('tts-api-key-input').value;
+
+      const originalText = ttsFetchModelsBtn.textContent;
+      ttsFetchModelsBtn.textContent = getMsg('ai_fetching_models') || 'Fetching...';
+      ttsFetchModelsBtn.disabled = true;
+
+      try {
+        const models = await tts.fetchModels(provider, endpoint, apiKey);
+        if (models && models.length > 0) {
+          ttsModelSelect.innerHTML = '';
+          const placeholderOpt = document.createElement('option');
+          placeholderOpt.value = '';
+          placeholderOpt.textContent = '-- Select --';
+          ttsModelSelect.appendChild(placeholderOpt);
+
+          models.forEach(model => {
+            const opt = document.createElement('option');
+            opt.value = model;
+            opt.textContent = model;
+            ttsModelSelect.appendChild(opt);
+          });
+          ttsModelSelect.style.display = 'inline-block';
+          ttsFetchModelsBtn.textContent = getMsg('ai_fetch_models_success') || 'Success';
+          ttsFetchModelsBtn.style.color = '#34c759';
+        } else {
+          throw new Error('No models returned');
+        }
+      } catch (err) {
+        console.error('Failed to fetch TTS models:', err);
+        alert((getMsg('ai_fetch_models_fail') || 'Failed to fetch models') + ': ' + (err.message || err));
+        ttsFetchModelsBtn.textContent = originalText;
+        ttsFetchModelsBtn.style.color = '';
+      } finally {
+        ttsFetchModelsBtn.disabled = false;
+        setTimeout(() => {
+          ttsFetchModelsBtn.textContent = originalText;
+          ttsFetchModelsBtn.style.color = '';
+        }, 3000);
+      }
+    });
+
+    ttsModelSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val) {
+        ttsModelInput.value = val;
+        tts.configure({ model: val });
+        chrome.storage.local.set({ ttsModel: val });
+      }
+    });
+  }
+
   // AI 測試配置按鈕監聽
   const aiTestBtn = document.getElementById('ai-test-btn');
   const aiTestResult = document.getElementById('ai-test-result');
@@ -12260,9 +13486,32 @@ function initUIEventBindings() {
       const endpoint = document.getElementById('ai-endpoint-input').value;
       const model = document.getElementById('ai-model-input').value;
 
+      const ttsProvider = document.getElementById('tts-provider-select').value;
+      const ttsApiKey = document.getElementById('tts-api-key-input').value;
+      const ttsEndpoint = document.getElementById('tts-endpoint-input').value;
+      const ttsModel = document.getElementById('tts-model-input').value;
+      const ttsLanguage = document.getElementById('tts-language-select').value;
+      const ttsVoice = document.getElementById('tts-voice-input').value.trim();
+
       ai.configure({ provider, apiKey, endpoint, model });
-      chrome.storage.local.set({ aiProvider: provider, aiApiKey: apiKey, aiEndpoint: endpoint, aiModel: model }, () => {
+      tts.configure({ provider: ttsProvider, apiKey: ttsApiKey, endpoint: ttsEndpoint, model: ttsModel });
+      currentTTSLanguage = ttsLanguage;
+      ttsDefaultVoice = ttsVoice;
+
+      chrome.storage.local.set({ 
+        aiProvider: provider, 
+        aiApiKey: apiKey, 
+        aiEndpoint: endpoint, 
+        aiModel: model,
+        ttsProvider: ttsProvider,
+        ttsApiKey: ttsApiKey,
+        ttsEndpoint: ttsEndpoint,
+        ttsModel: ttsModel,
+        ttsLanguage: ttsLanguage,
+        ttsDefaultVoice: ttsVoice
+      }, () => {
         updateAIButtonsVisibility();
+        initTTSPanelVoices();
         // 顯示已保存的反饋狀態
         const originalText = aiSaveBtn.textContent;
         aiSaveBtn.textContent = getMsg('ai_settings_saved');
@@ -12284,6 +13533,25 @@ function initUIEventBindings() {
     });
   }
 
+  // AI 面板一鍵清空歷史記錄按鈕監聽
+  const clearAIHistoryBtn = document.getElementById('clear-ai-history-btn');
+  if (clearAIHistoryBtn) {
+    clearAIHistoryBtn.addEventListener('click', async () => {
+      if (!currentBook) return;
+      const confirmMsg = getMsg('confirm_delete_all_chats') || '確定要清除本書的所有 AI 溝通記錄嗎？此操作無法撤銷。';
+      if (confirm(confirmMsg)) {
+        try {
+          const updatedChats = await library.clearAllAIChats(currentBook.id);
+          currentBook.aiChats = updatedChats;
+          renderAIChatHistory();
+        } catch (err) {
+          console.error('Failed to clear AI history:', err);
+          alert(getMsg('error_prefix') + ': ' + err.message);
+        }
+      }
+    });
+  }
+
   // 頂欄 AI 助手切換按鈕監聽
   const aiToggleBtn = document.getElementById('ai-toggle');
   if (aiToggleBtn) {
@@ -12295,7 +13563,7 @@ function initUIEventBindings() {
         aiPanel.style.display = 'flex';
         // 如果是空的，初始化歡迎詞
         const contentEl = document.getElementById('ai-content');
-        if (!contentEl.querySelector('.ai-chat-bubble')) {
+        if (contentEl.querySelectorAll('.ai-chat-group').length === 0 && !contentEl.querySelector('.ai-chat-bubble')) {
           contentEl.innerHTML = `
             <div class="ai-chat-bubble assistant-bubble">
               ${getMsg('ai_welcome_msg') || 'Hi! I am your AI Reading Assistant. How can I help you today?'}
@@ -12691,10 +13959,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v1.3.0';
+            versionDisplay.textContent = 'v2.0.0';
           }
         } else {
-          versionDisplay.textContent = 'v1.3.0';
+          versionDisplay.textContent = 'v2.0.0';
         }
       }
       aboutDialog.showModal();
@@ -12856,6 +14124,7 @@ function initUIEventBindings() {
   let touchStartX = 0;
   window.addEventListener('touchstart', (e) => {
     if (!document.getElementById('reader-view').classList.contains('view-active')) return;
+    if (document.body.classList.contains('ai-active') || document.body.classList.contains('sidebar-active')) return;
     if (!currentBook || currentBook.format === 'cbz') return;
     if (document.body.classList.contains('layout-paginated')) return;
     touchStartY = e.touches[0].clientY;
@@ -12864,6 +14133,7 @@ function initUIEventBindings() {
 
   window.addEventListener('touchend', (e) => {
     if (!document.getElementById('reader-view').classList.contains('view-active')) return;
+    if (document.body.classList.contains('ai-active') || document.body.classList.contains('sidebar-active')) return;
     if (!currentBook || currentBook.format === 'cbz') return;
     if (document.body.classList.contains('layout-paginated')) return;
     if (isChangingChapter) return;
@@ -13514,6 +14784,7 @@ async function openBook(id) {
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
   updateHeaderActiveStates();
+  renderAIChatHistory();
 
   // 設定書籍格式與排版類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
@@ -15255,7 +16526,6 @@ function updateAIConfigFieldsVisibility(provider) {
   const apiKeyContainer = document.getElementById('ai-api-key-container');
   const endpointContainer = document.getElementById('ai-endpoint-container');
   const modelContainer = document.getElementById('ai-model-container');
-  const saveContainer = document.getElementById('ai-save-container');
 
   if (!apiKeyContainer || !endpointContainer || !modelContainer) return;
 
@@ -15263,17 +16533,85 @@ function updateAIConfigFieldsVisibility(provider) {
     apiKeyContainer.style.display = 'none';
     endpointContainer.style.display = 'none';
     modelContainer.style.display = 'none';
-    if (saveContainer) saveContainer.style.display = 'none';
-  } else if (provider === 'ollama') {
+  } else if (provider === 'ollama' || provider === 'openai') {
     apiKeyContainer.style.display = 'flex';
     endpointContainer.style.display = 'flex';
     modelContainer.style.display = 'flex';
-    if (saveContainer) saveContainer.style.display = 'flex';
-  } else if (provider === 'openai') {
+  }
+}
+
+async function initTTSSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['ttsProvider', 'ttsApiKey', 'ttsEndpoint', 'ttsModel', 'ttsLanguage', 'ttsDefaultVoice'], async (res) => {
+      const provider = res.ttsProvider || 'edge';
+      const apiKey = res.ttsApiKey || '';
+      const endpoint = res.ttsEndpoint || '';
+      const model = res.ttsModel || 'tts-1';
+      currentTTSLanguage = res.ttsLanguage || 'auto';
+      ttsDefaultVoice = res.ttsDefaultVoice || '';
+
+      // 配置 TTS 引擎
+      tts.configure({ provider, apiKey, endpoint, model });
+
+      // 初始化 UI 控制項值
+      const providerSelect = document.getElementById('tts-provider-select');
+      const apiKeyInput = document.getElementById('tts-api-key-input');
+      const endpointInput = document.getElementById('tts-endpoint-input');
+      const modelInput = document.getElementById('tts-model-input');
+      const languageSelect = document.getElementById('tts-language-select');
+      const voiceInput = document.getElementById('tts-voice-input');
+
+      if (providerSelect) providerSelect.value = provider;
+      if (languageSelect) languageSelect.value = currentTTSLanguage;
+      if (voiceInput) voiceInput.value = ttsDefaultVoice;
+      if (apiKeyInput) {
+        apiKeyInput.value = apiKey;
+        if (provider === 'local') {
+          apiKeyInput.placeholder = getMsg('tts_api_key_optional') || 'Optional (e.g. for proxy auth)';
+        } else {
+          apiKeyInput.placeholder = 'sk-...';
+        }
+      }
+      if (endpointInput) {
+        endpointInput.value = endpoint;
+        if (provider === 'openai') {
+          endpointInput.placeholder = 'https://api.openai.com/v1';
+        } else if (provider === 'local') {
+          endpointInput.placeholder = 'http://localhost:5000/v1';
+        }
+      }
+      if (modelInput) {
+        modelInput.value = model;
+        if (provider === 'openai') {
+          modelInput.placeholder = 'tts-1';
+        } else if (provider === 'local') {
+          modelInput.placeholder = 'tts-1';
+        }
+      }
+
+      // 根據 provider 顯示/隱藏對應的輸入框容器
+      updateTTSConfigFieldsVisibility(provider);
+
+      resolve();
+    });
+  });
+}
+
+function updateTTSConfigFieldsVisibility(provider) {
+  const apiKeyContainer = document.getElementById('tts-api-key-container');
+  const endpointContainer = document.getElementById('tts-endpoint-container');
+  const modelContainer = document.getElementById('tts-model-container');
+
+  if (!apiKeyContainer || !endpointContainer || !modelContainer) return;
+
+  if (provider === 'edge' || provider === 'system') {
+    apiKeyContainer.style.display = 'none';
+    endpointContainer.style.display = 'none';
+    modelContainer.style.display = 'none';
+  } else {
     apiKeyContainer.style.display = 'flex';
     endpointContainer.style.display = 'flex';
     modelContainer.style.display = 'flex';
-    if (saveContainer) saveContainer.style.display = 'flex';
   }
 }
 
@@ -15856,12 +17194,15 @@ function toggleLayoutMode(mode, saveToStorage = true) {
 function handleKeyDown(e) {
   if (!document.getElementById('reader-view').classList.contains('view-active')) return;
 
+  // 如果焦點在輸入框、文本區域或可編輯區域中，不響應鍵盤快捷鍵
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+    return;
+  }
+
   if (e.code === 'Space') {
-    // 空白鍵控制朗讀播放/暫停（避免在 Input 輸入時觸發）
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-      e.preventDefault();
-      document.getElementById('tts-play-btn').click();
-    }
+    // 空白鍵控制朗讀播放/暫停
+    e.preventDefault();
+    document.getElementById('tts-play-btn').click();
   } else if (e.code === 'ArrowLeft') {
     // 左方向鍵翻頁
     if (currentBook.format === 'cbz') prevComicPage();
@@ -15981,7 +17322,9 @@ function updateHeaderActiveStates() {
 function initTTSPanelVoices(filename, isBookOpening = false) {
   // 檢測書籍語言
   let lang = 'en';
-  if (currentBook || (tts && tts.sentences && tts.sentences.length > 0)) {
+  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
+    lang = currentTTSLanguage;
+  } else if (currentBook || (tts && tts.sentences && tts.sentences.length > 0)) {
     // 優先從文件名、書籍標題及當前文本中抽樣檢測
     let sampleText = filename || '';
     if (currentBook) {
@@ -16032,25 +17375,49 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   if (ttsOnlyEdge && matchedVoices.some(v => v.isEdge)) {
     matchedVoices = matchedVoices.filter(v => v.isEdge);
   }
+  
+  let hasDefaultVoice = false;
   matchedVoices.forEach(voice => {
     const opt = document.createElement('option');
     opt.value = voice.name;
-    opt.textContent = `${voice.name} (${voice.lang})`;
+    const displayLang = voice.lang === 'multilingual' ? (getMsg('tts_lang_multilingual') || 'Multilingual') : voice.lang;
+    opt.textContent = `${voice.name} (${displayLang})`;
     select.appendChild(opt);
+    if (voice.name === ttsDefaultVoice) {
+      hasDefaultVoice = true;
+    }
   });
 
+  // Inject default/custom voice for OpenAI/Local providers if not present
+  if (ttsDefaultVoice && !hasDefaultVoice && (tts.ttsProvider === 'openai' || tts.ttsProvider === 'local')) {
+    const opt = document.createElement('option');
+    opt.value = ttsDefaultVoice;
+    opt.textContent = `${ttsDefaultVoice} (${getMsg('tts_lang_multilingual') || 'Multilingual'})`;
+    select.appendChild(opt);
+    
+    // Dynamically register in the engine as well
+    tts.setVoice(ttsDefaultVoice);
+  }
+
   // 優先使用保存的語音，其次保留當前已選中的語音，最後是默認優先語音
-  if (matchedVoices.length > 0) {
-    const savedVoice = currentBook?.progress?.ttsVoice;
-    if (savedVoice && matchedVoices.some(v => v.name === savedVoice)) {
+  const savedVoice = currentBook?.progress?.ttsVoice;
+  const allAvailableVoices = select.querySelectorAll('option');
+  const availableVoiceValues = Array.from(allAvailableVoices).map(opt => opt.value);
+  
+  if (availableVoiceValues.length > 0) {
+    if (savedVoice && availableVoiceValues.includes(savedVoice)) {
       select.value = savedVoice;
       tts.setVoice(savedVoice);
-    } else if (currentSelected && matchedVoices.some(v => v.name === currentSelected)) {
+    } else if (ttsDefaultVoice && availableVoiceValues.includes(ttsDefaultVoice) && (tts.ttsProvider === 'openai' || tts.ttsProvider === 'local')) {
+      // If using OpenAI/Local, default to user's configured default voice if no saved progress voice
+      select.value = ttsDefaultVoice;
+      tts.setVoice(ttsDefaultVoice);
+    } else if (currentSelected && availableVoiceValues.includes(currentSelected)) {
       select.value = currentSelected;
       tts.setVoice(currentSelected);
     } else {
-      select.value = matchedVoices[0].name;
-      tts.setVoice(matchedVoices[0].name);
+      select.value = availableVoiceValues[0];
+      tts.setVoice(availableVoiceValues[0]);
     }
   }
 }
@@ -16626,6 +17993,31 @@ function speakSelection() {
 // ==================== 8. AI 伴侶流式調用 ==================== */
 
 // 輕量級 Markdown 格式化解析器，為 AI 回覆提供換行、加粗、代碼與列表的結構化渲染
+// 獲取 Obsidian Callout 對應的 SVG 圖標
+function getCalloutIcon(type) {
+  const icons = {
+    note: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-6h2zm0-8h-2V6h2z"/></svg>`,
+    info: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-6h2zm0-8h-2V6h2z"/></svg>`,
+    todo: `<svg viewBox="0 0 24 24"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-9 14-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z"/></svg>`,
+    tip: `<svg viewBox="0 0 24 24"><path d="M9 21h6v-1H9zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
+    hint: `<svg viewBox="0 0 24 24"><path d="M9 21h6v-1H9zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
+    important: `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>`,
+    warning: `<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
+    caution: `<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
+    attention: `<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
+    error: `<svg viewBox="0 0 24 24"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>`,
+    danger: `<svg viewBox="0 0 24 24"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>`,
+    bug: `<svg viewBox="0 0 24 24"><path d="M20 8h-2.81a5.985 5.985 0 0 0-1.82-1.96L17 4.41 15.59 3l-2.17 2.17a6.002 6.002 0 0 0-2.83 0L8.41 3 7 4.41l1.62 1.63C7.79 6.64 7.07 7.27 6.63 8H4v2h2.07c-.05.33-.07.66-.07 1v1H4v2h2v1c0 .34.02.67.07 1H4v2h2.63a5.985 5.985 0 0 0 1.82 1.96L6.83 20.4l1.41 1.41 2.17-2.17a6.002 6.002 0 0 0 2.83 0l2.17 2.17 1.41-1.41-1.62-1.63c.83-.61 1.55-1.24 1.99-1.97H20v-2h-2.07c.05-.33.07-.66.07-1v-1h2v-2h-2v-1c0-.34-.02-.67-.07-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>`,
+    success: `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z"/></svg>`,
+    check: `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z"/></svg>`,
+    done: `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z"/></svg>`,
+    quote: `<svg viewBox="0 0 24 24"><path d="M6 17h3l2-4V7H5v7h3zm8 0h3l2-4V7h-6v7h3z"/></svg>`,
+    example: `<svg viewBox="0 0 24 24"><path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5.89 12.55L12 15.89l6.11-3.34c.66-.36 1.07-1.05 1.07-1.81V9.58L12 13.5 4.82 9.58v1.16c0 .76.41 1.45 1.07 1.81z"/></svg>`
+  };
+  return icons[type] || icons.note;
+}
+
+// 輕量級 Markdown 格式化解析器，為 AI 回覆提供換行、加粗、代碼、列表、表格與 Callout 的結構化渲染
 function formatMarkdown(text) {
   if (!text) return '';
   
@@ -16637,35 +18029,77 @@ function formatMarkdown(text) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
     
-  // 2. 鏈接處理：[文本](鏈接) -> <a href="鏈接" target="_blank" style="color: var(--primary-color); text-decoration: underline;">文本</a>
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color: var(--primary-color); text-decoration: underline;">$1</a>');
+  // 1.5 圖片處理：![alt](url) -> <img src="url" alt="alt" class="obsidian-image" loading="lazy">
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="obsidian-image" loading="lazy">');
+
+  // 2. 鏈接處理：[文本](鏈接) -> <a href="鏈接" target="_blank">文本</a>
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
 
   // 3. 加粗：**文本** -> <strong>文本</strong>
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   
+  // 3.5 高亮 (Highlight): ==文本== -> <mark class="obsidian-highlight">文本</mark>
+  html = html.replace(/==(.*?)==/g, '<mark class="obsidian-highlight">$1</mark>');
+
+  // 3.6 刪除線 (Strikethrough): ~~文本~~ -> <del class="obsidian-del">文本</del>
+  html = html.replace(/~~(.*?)~~/g, '<del class="obsidian-del">$1</del>');
+
+  // 3.7 WikiLinks: [[鏈接|文本]] -> <span class="obsidian-wikilink">文本</span>, [[鏈接]] -> <span class="obsidian-wikilink">鏈接</span>
+  html = html.replace(/\[\[([^\]]+?)\|([^\]]+?)\]\]/g, '<span class="obsidian-wikilink">$2</span>');
+  html = html.replace(/\[\[([^\]]+?)\]\]/g, '<span class="obsidian-wikilink">$1</span>');
+
   // 4. 行內代碼：`代碼` -> <code>代碼</code>
   html = html.replace(/`(.*?)`/g, '<code>$1</code>');
   
-  // 5. 按行解析以支持標題、列表及多行代碼塊
+  // 5. 按行解析以支持標題、列表、多行代碼塊、表格及 Callout
   const lines = html.split('\n');
   let inList = false;
   let inCodeBlock = false;
+  let inBlockquote = false;
+  let inCallout = false;
+  let inTable = false;
   let codeBlockLines = [];
+  let calloutLines = [];
+  let calloutType = '';
+  let calloutTitle = '';
+  let tableAlignments = [];
   let resultLines = [];
   
-  for (let line of lines) {
+  // 表格輔助解析函數
+  function splitTableCells(lineStr) {
+    let cells = lineStr.trim().split('|');
+    if (cells[0] === '') cells.shift();
+    if (cells[cells.length - 1] === '') cells.pop();
+    return cells.map(c => c.trim());
+  }
+
+  function getTableAlignments(sepLineStr) {
+    return splitTableCells(sepLineStr).map(cell => {
+      const left = cell.startsWith(':');
+      const right = cell.endsWith(':');
+      if (left && right) return 'center';
+      if (right) return 'right';
+      return 'left';
+    });
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
     let trimmed = line.trim();
     
     // 檢查代碼塊
     if (trimmed.startsWith('```')) {
       if (inCodeBlock) {
         // 代碼塊結束
-        resultLines.push(`<pre style="background: rgba(120, 120, 120, 0.08); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-family: var(--font-fira), Consolas, Monaco, monospace; font-size: 14.5px; margin: 8px 0; border: 1px solid var(--border-color);"><code style="white-space: pre-wrap; word-break: break-all;">${codeBlockLines.join('\n')}</code></pre>`);
+        resultLines.push(`<pre><code class="language-code">${codeBlockLines.join('\n')}</code></pre>`);
         codeBlockLines = [];
         inCodeBlock = false;
       } else {
         // 代碼塊開始
         if (inList) { resultLines.push('</ul>'); inList = false; }
+        if (inBlockquote) { resultLines.push('</blockquote>'); inBlockquote = false; }
+        if (inCallout) { closeCallout(resultLines); inCallout = false; }
+        if (inTable) { resultLines.push('</tbody></table>'); inTable = false; }
         inCodeBlock = true;
       }
       continue;
@@ -16676,55 +18110,359 @@ function formatMarkdown(text) {
       continue;
     }
 
-    // 三級標題
-    if (trimmed.startsWith('### ')) {
+    // 檢查表格
+    if (trimmed.startsWith('|') || (inTable && trimmed.includes('|'))) {
       if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push(`<h4 style="margin: 12px 0 6px 0; font-size: 17px; font-weight: 600; color: var(--primary-color);">${trimmed.substring(4)}</h4>`);
+      if (inBlockquote) { resultLines.push('</blockquote>'); inBlockquote = false; }
+      if (inCallout) { closeCallout(resultLines); inCallout = false; }
+
+      if (!inTable) {
+        // 檢查下一行是否為表格分隔線
+        const nextLine = lines[i + 1];
+        const nextTrimmed = nextLine ? nextLine.trim() : '';
+        const isSeparator = nextTrimmed.includes('|') && /^[|:\-\s]+$/.test(nextTrimmed);
+        
+        if (isSeparator) {
+          inTable = true;
+          tableAlignments = getTableAlignments(nextTrimmed);
+          const headers = splitTableCells(line);
+          
+          resultLines.push('<table><thead><tr>');
+          headers.forEach((header, idx) => {
+            const align = tableAlignments[idx] || 'left';
+            resultLines.push(`<th style="text-align: ${align};">${header}</th>`);
+          });
+          resultLines.push('</tr></thead><tbody>');
+          
+          i++; // 跳過下一行的分隔線
+          continue;
+        }
+      } else {
+        // 表格內容行
+        const cells = splitTableCells(line);
+        resultLines.push('<tr>');
+        const colCount = tableAlignments.length;
+        for (let idx = 0; idx < colCount; idx++) {
+          const cell = cells[idx] || '';
+          const align = tableAlignments[idx] || 'left';
+          resultLines.push(`<td style="text-align: ${align};">${cell}</td>`);
+        }
+        resultLines.push('</tr>');
+        continue;
+      }
+    } else if (inTable) {
+      resultLines.push('</tbody></table>');
+      inTable = false;
     }
-    // 二級標題
-    else if (trimmed.startsWith('## ')) {
+
+    // 檢查分隔線
+    if (trimmed === '---' || trimmed === '***') {
       if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push(`<h3 style="margin: 14px 0 8px 0; font-size: 18px; font-weight: 600; color: var(--primary-color);">${trimmed.substring(3)}</h3>`);
+      if (inBlockquote) { resultLines.push('</blockquote>'); inBlockquote = false; }
+      if (inCallout) { closeCallout(resultLines); inCallout = false; }
+      resultLines.push('<hr>');
+      continue;
     }
-    // 一級標題
-    else if (trimmed.startsWith('# ')) {
+
+    // 檢查引用區塊 & Callout
+    // 由於 HTML 轉義，`>` 會變成 `&gt;`
+    let isBlockquote = false;
+    let quoteContent = '';
+    if (trimmed.startsWith('&gt;')) {
+      isBlockquote = true;
+      if (trimmed.startsWith('&gt; ')) {
+        quoteContent = trimmed.substring(5);
+      } else {
+        quoteContent = trimmed.substring(4);
+      }
+    }
+
+    if (isBlockquote) {
       if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push(`<h2 style="margin: 16px 0 10px 0; font-size: 20px; font-weight: 600; color: var(--primary-color);">${trimmed.substring(2)}</h2>`);
+      
+      const calloutMatch = quoteContent.match(/^\[!(.*?)\]\s*(.*)/);
+      if (calloutMatch && !inCallout && !inBlockquote) {
+        inCallout = true;
+        calloutType = calloutMatch[1].toLowerCase();
+        calloutTitle = calloutMatch[2].trim() || (calloutType.charAt(0).toUpperCase() + calloutType.slice(1));
+        calloutLines = [];
+      } else if (inCallout) {
+        calloutLines.push(quoteContent);
+      } else {
+        if (!inBlockquote) {
+          resultLines.push('<blockquote>');
+          inBlockquote = true;
+        }
+        resultLines.push(`<p>${quoteContent}</p>`);
+      }
+      continue;
+    } else {
+      if (inCallout) {
+        closeCallout(resultLines);
+        inCallout = false;
+      }
+      if (inBlockquote) {
+        resultLines.push('</blockquote>');
+        inBlockquote = false;
+      }
     }
-    // 無序列表項
-    else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+
+    // 檢查標題 1-6 級
+    let isHeading = false;
+    for (let h = 6; h >= 1; h--) {
+      const prefix = '#'.repeat(h) + ' ';
+      if (trimmed.startsWith(prefix)) {
+        if (inList) { resultLines.push('</ul>'); inList = false; }
+        const headingText = trimmed.substring(h + 1).trim();
+        resultLines.push(`<h${h}>${headingText}</h${h}>`);
+        isHeading = true;
+        break;
+      }
+    }
+    if (isHeading) {
+      continue;
+    }
+
+    // 無序列表項與任務列表項
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const rest = trimmed.substring(2).trim();
+      let isTask = false;
+      let isChecked = false;
+      let taskText = rest;
+      
+      if (rest.startsWith('[ ] ')) {
+        isTask = true;
+        isChecked = false;
+        taskText = rest.substring(4);
+      } else if (rest.startsWith('[x] ') || rest.startsWith('[X] ')) {
+        isTask = true;
+        isChecked = true;
+        taskText = rest.substring(4);
+      }
+      
       if (!inList) {
-        resultLines.push('<ul style="margin: 6px 0; padding-left: 20px; list-style-type: disc;">');
+        resultLines.push('<ul>');
         inList = true;
       }
-      resultLines.push(`<li style="margin: 6px 0; line-height: 1.65;">${trimmed.substring(2)}</li>`);
+      
+      if (isTask) {
+        resultLines.push(`<li class="task-list-item"><input type="checkbox" disabled ${isChecked ? 'checked' : ''}> <span>${taskText}</span></li>`);
+      } else {
+        resultLines.push(`<li>${rest}</li>`);
+      }
     }
     // 有序列表項
     else if (/^\d+\.\s/.test(trimmed)) {
       const match = trimmed.match(/^(\d+)\.\s(.*)/);
       if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push(`<div style="margin: 6px 0; padding-left: 5px; line-height: 1.65;"><strong>${match[1]}.</strong> ${match[2]}</div>`);
+      resultLines.push(`<div class="ordered-list-item"><strong>${match[1]}.</strong> ${match[2]}</div>`);
     }
-    // 空行換行
+    // 空行
     else if (trimmed === '') {
       if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push('<div style="height: 8px;"></div>');
+      resultLines.push('<div class="empty-line"></div>');
     }
-    // 普通文本行
+    // 普通正文行
     else {
       if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push(`<div style="margin: 4px 0; min-height: 1em; line-height: 1.65;">${line}</div>`);
+      resultLines.push(`<p>${line}</p>`);
     }
   }
-  
+
+  // 閉合所有未結束的狀態
   if (inCodeBlock) {
-    resultLines.push(`<pre style="background: rgba(120, 120, 120, 0.08); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-family: var(--font-fira), Consolas, Monaco, monospace; font-size: 14.5px; margin: 8px 0; border: 1px solid var(--border-color);"><code style="white-space: pre-wrap; word-break: break-all;">${codeBlockLines.join('\n')}</code></pre>`);
+    resultLines.push(`<pre><code class="language-code">${codeBlockLines.join('\n')}</code></pre>`);
   }
   if (inList) {
     resultLines.push('</ul>');
   }
+  if (inTable) {
+    resultLines.push('</tbody></table>');
+  }
+  if (inCallout) {
+    closeCallout(resultLines);
+  }
+  if (inBlockquote) {
+    resultLines.push('</blockquote>');
+  }
   
   return resultLines.join('\n');
+
+  // 關閉 Callout 的輔助方法
+  function closeCallout(resArr) {
+    const icon = getCalloutIcon(calloutType);
+    resArr.push(`<div class="obsidian-callout callout-${calloutType}">`);
+    resArr.push(`  <div class="callout-title">`);
+    resArr.push(`    <span class="callout-icon">${icon}</span>`);
+    resArr.push(`    <span class="callout-title-inner">${calloutTitle}</span>`);
+    resArr.push(`  </div>`);
+    if (calloutLines.length > 0) {
+      resArr.push(`  <div class="callout-content">`);
+      calloutLines.forEach(l => {
+        if (l.trim() !== '') {
+          resArr.push(`    <p>${l}</p>`);
+        }
+      });
+      resArr.push(`  </div>`);
+    }
+    resArr.push(`</div>`);
+  }
+}
+
+// 獲取預設的 AI 提問提示詞列表
+function getAISuggestions() {
+  return [
+    {
+      key: 'ai_suggest_sum_chapter',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>',
+      label: getMsg('ai_suggest_sum_chapter_lbl') || '总结本章',
+      prompt: getMsg('ai_suggest_sum_chapter_prt') || '帮我总结当前章节的核心观点与主要内容。'
+    },
+    {
+      key: 'ai_suggest_chapter_map',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3zM6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M18 8h-3v8h3M6 8h3v8H6"></path></svg>',
+      label: getMsg('ai_suggest_chapter_map_lbl') || '本章思维导图',
+      prompt: getMsg('ai_suggest_chapter_map_prt') || '请梳理当前章节的内容结构，并以 Markdown 树状列表或 Mermaid 格式输出一份清晰的思维导图。'
+    },
+    {
+      key: 'ai_suggest_book_map',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
+      label: getMsg('ai_suggest_book_map_lbl') || '全书思维导图',
+      prompt: getMsg('ai_suggest_book_map_prt') || '请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，并输出一份全书的思维导图。'
+    },
+    {
+      key: 'ai_suggest_takeaways',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>',
+      label: getMsg('ai_suggest_takeaways_lbl') || '核心要点',
+      prompt: getMsg('ai_suggest_takeaways_prt') || '分析当前章节或全书中最重要的 3-5 个核心知识点与启示（Key Takeaways）。'
+    },
+    {
+      key: 'ai_suggest_characters',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
+      label: getMsg('ai_suggest_characters_lbl') || '人物关系',
+      prompt: getMsg('ai_suggest_characters_prt') || '梳理本书中出现的主要人物、角色背景及其相互之间的关系脉络。'
+    },
+    {
+      key: 'ai_suggest_explain_concept',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>',
+      label: getMsg('ai_suggest_explain_concept_lbl') || '名词解释',
+      prompt: getMsg('ai_suggest_explain_concept_prt') || '解释本书当前上下文中提到的核心专业术语或深奥概念。'
+    },
+    {
+      key: 'ai_suggest_quiz',
+      icon: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+      label: getMsg('ai_suggest_quiz_lbl') || '阅读自测',
+      prompt: getMsg('ai_suggest_quiz_prt') || '根据当前章节的内容，为我设计 3 道阅读理解或自测思考题，帮助我加深理解。'
+    }
+  ];
+}
+
+// 初始化快捷提示词标标签栏
+function initAISuggestions() {
+  const container = document.getElementById('ai-suggestions-container');
+  if (!container) return;
+
+  container.innerHTML = '';
+  
+  const suggestions = getAISuggestions();
+  suggestions.forEach(item => {
+    const chip = document.createElement('div');
+    chip.className = 'ai-suggestion-chip';
+    chip.innerHTML = `${item.icon}<span>${item.label}</span>`;
+    chip.addEventListener('click', () => {
+      const inputEl = document.getElementById('ai-input');
+      if (inputEl) {
+        inputEl.value = item.prompt;
+        // 触发自适应高度
+        inputEl.style.height = 'auto';
+        inputEl.style.height = inputEl.scrollHeight + 'px';
+        sendCustomAIQuery();
+      }
+    });
+    container.appendChild(chip);
+  });
+}
+
+// 渲染本書的 AI 溝通歷史記錄
+function renderAIChatHistory() {
+  const contentEl = document.getElementById('ai-content');
+  if (!contentEl) return;
+
+  contentEl.innerHTML = '';
+  
+  const chats = currentBook && currentBook.aiChats ? currentBook.aiChats : [];
+  if (chats.length === 0) {
+    // 渲染默認歡迎語
+    contentEl.innerHTML = `
+      <div class="ai-chat-bubble assistant-bubble">
+        ${getMsg('ai_welcome_msg') || 'Hi! I am your AI Reading Assistant. How can I help you today?'}
+      </div>
+    `;
+    return;
+  }
+
+  chats.forEach(chat => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'ai-chat-group';
+    groupEl.setAttribute('data-chat-id', chat.chatId);
+
+    // 使用者提問氣泡
+    const userBubble = document.createElement('div');
+    userBubble.className = 'ai-chat-bubble user-bubble';
+    userBubble.textContent = chat.query;
+    groupEl.appendChild(userBubble);
+
+    // AI 回答氣泡
+    const assistantBubble = document.createElement('div');
+    assistantBubble.className = 'ai-chat-bubble assistant-bubble';
+    assistantBubble.innerHTML = formatMarkdown(chat.reply);
+    groupEl.appendChild(assistantBubble);
+
+    // 添加刪除按鈕
+    addDeleteButtonToGroup(groupEl, chat);
+
+    contentEl.appendChild(groupEl);
+  });
+
+  contentEl.scrollTop = contentEl.scrollHeight;
+}
+
+// 給對話組添加刪除按鈕
+function addDeleteButtonToGroup(groupEl, chat) {
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'delete-chat-btn';
+  deleteBtn.setAttribute('data-i18n-title', 'ai_delete_chat_title');
+  deleteBtn.setAttribute('title', getMsg('ai_delete_chat_title') || 'Delete conversation');
+  deleteBtn.innerHTML = `
+    <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+  `;
+  
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const confirmMsg = getMsg('confirm_delete_single_chat') || '確定要刪除這條溝通記錄嗎？';
+    if (confirm(confirmMsg)) {
+      try {
+        const updatedChats = await library.deleteAIChat(currentBook.id, chat.chatId);
+        currentBook.aiChats = updatedChats;
+        
+        // 刪除動畫
+        groupEl.style.transition = 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+        groupEl.style.opacity = '0';
+        groupEl.style.transform = 'scale(0.92)';
+        setTimeout(() => {
+          groupEl.remove();
+          const contentEl = document.getElementById('ai-content');
+          if (contentEl && contentEl.querySelectorAll('.ai-chat-group').length === 0) {
+            renderAIChatHistory(); // 如果空了，重新渲染歡迎詞
+          }
+        }, 250);
+      } catch (err) {
+        console.error('Failed to delete chat:', err);
+        alert(getMsg('error_prefix') + ': ' + err.message);
+      }
+    }
+  });
+  groupEl.appendChild(deleteBtn);
 }
 
 // 打開 AI 面板並顯示載入中
@@ -16733,26 +18471,40 @@ function showAILoading(typeLabel, textContext) {
   const content = document.getElementById('ai-content');
   panel.style.display = 'flex';
   
-  content.innerHTML = '';
+  // 如果只有歡迎詞（無對話組），清除之
+  if (content.querySelectorAll('.ai-chat-group').length === 0) {
+    content.innerHTML = '';
+  }
 
-  // 1. 插入使用者提問氣泡 (帶有操作類型)
+  // 1. 建立對話組容器
+  const groupEl = document.createElement('div');
+  groupEl.className = 'ai-chat-group';
+  const tempChatId = 'chat_temp_' + Date.now();
+  groupEl.setAttribute('data-chat-id', tempChatId);
+
+  // 2. 插入使用者提問氣泡 (帶有操作類型)
+  const queryText = `[${typeLabel}] ${textContext}`;
   const userBubble = document.createElement('div');
   userBubble.className = 'ai-chat-bubble user-bubble';
-  userBubble.textContent = `[${typeLabel}] ${textContext.substring(0, 100)}${textContext.length > 100 ? '...' : ''}`;
-  content.appendChild(userBubble);
+  userBubble.textContent = queryText;
+  groupEl.appendChild(userBubble);
 
-  // 2. 插入 AI 思考氣泡
+  // 3. 插入 AI 思考氣泡
   const assistantBubble = document.createElement('div');
   assistantBubble.className = 'ai-chat-bubble assistant-bubble';
-  assistantBubble.id = 'ai-active-assistant-bubble'; // 方便串流更新
+  assistantBubble.id = 'ai-active-assistant-bubble'; // 方便流式更新
   assistantBubble.innerHTML = `
     <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
       <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
-      <span>${getMsg('ai_thinking')}</span>
+      <span>${getMsg('ai_thinking') || 'Thinking...'}</span>
     </div>
   `;
-  content.appendChild(assistantBubble);
+  groupEl.appendChild(assistantBubble);
+
+  content.appendChild(groupEl);
   content.scrollTop = content.scrollHeight;
+
+  return { groupEl, queryText, assistantBubble };
 }
 
 // 向 AI 發送自定義提問
@@ -16766,27 +18518,35 @@ async function sendCustomAIQuery() {
 
   const contentEl = document.getElementById('ai-content');
 
-  // 如果沒有對話氣泡，清除默認歡迎內容
-  if (!contentEl.querySelector('.ai-chat-bubble')) {
+  // 如果只有歡迎詞，清除之
+  if (contentEl.querySelectorAll('.ai-chat-group').length === 0) {
     contentEl.innerHTML = '';
   }
 
-  // 1. 插入使用者問題氣泡
+  // 1. 建立對話組容器
+  const groupEl = document.createElement('div');
+  groupEl.className = 'ai-chat-group';
+  const tempChatId = 'chat_temp_' + Date.now();
+  groupEl.setAttribute('data-chat-id', tempChatId);
+
+  // 2. 插入使用者問題氣泡
   const userBubble = document.createElement('div');
   userBubble.className = 'ai-chat-bubble user-bubble';
   userBubble.textContent = query;
-  contentEl.appendChild(userBubble);
+  groupEl.appendChild(userBubble);
 
-  // 2. 插入 AI 思考中/回答氣泡
+  // 3. 插入 AI 思考中/回答氣泡
   const assistantBubble = document.createElement('div');
   assistantBubble.className = 'ai-chat-bubble assistant-bubble';
   assistantBubble.innerHTML = `
     <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
       <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
-      <span>${getMsg('ai_thinking')}</span>
+      <span>${getMsg('ai_thinking') || 'Thinking...'}</span>
     </div>
   `;
-  contentEl.appendChild(assistantBubble);
+  groupEl.appendChild(assistantBubble);
+  
+  contentEl.appendChild(groupEl);
   contentEl.scrollTop = contentEl.scrollHeight;
 
   try {
@@ -16846,12 +18606,27 @@ async function sendCustomAIQuery() {
     const badge = document.getElementById('ai-selection-context');
     if (badge) badge.style.display = 'none';
 
-    await ai._chat(systemPrompt, query, (chunk) => {
+    const history = (currentBook && currentBook.aiChats) ? currentBook.aiChats.slice(-10) : [];
+    const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
       assistantBubble.innerHTML = formatMarkdown(chunk);
       contentEl.scrollTop = contentEl.scrollHeight;
-    });
+    }, history);
+
+    // 保存到資料庫
+    const newChat = {
+      chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      query: query,
+      reply: finalReply
+    };
+    groupEl.setAttribute('data-chat-id', newChat.chatId);
+    
+    // 添加刪除按鈕
+    addDeleteButtonToGroup(groupEl, newChat);
+
+    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
+    currentBook.aiChats = updatedChats;
   } catch (e) {
-    assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix') || 'Error'}: ${e.message}</span>`;
   }
 }
 
@@ -16862,20 +18637,32 @@ async function triggerAISummary() {
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_summary_label') || 'Summary';
-  showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
   
   try {
-    const bubble = document.getElementById('ai-active-assistant-bubble');
-    await ai.summarize(selectedTextState, (chunk) => {
-      if (bubble) {
-        bubble.innerHTML = formatMarkdown(chunk);
+    const finalReply = await ai.summarize(selectedTextState, (chunk) => {
+      if (assistantBubble) {
+        assistantBubble.innerHTML = formatMarkdown(chunk);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
+
+    // 保存到資料庫
+    const newChat = {
+      chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      query: queryText,
+      reply: finalReply
+    };
+    groupEl.setAttribute('data-chat-id', newChat.chatId);
+    
+    // 添加刪除按鈕
+    addDeleteButtonToGroup(groupEl, newChat);
+
+    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
+    currentBook.aiChats = updatedChats;
   } catch (e) {
-    const bubble = document.getElementById('ai-active-assistant-bubble');
-    if (bubble) {
-      bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    if (assistantBubble) {
+      assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
     }
   }
 }
@@ -16887,24 +18674,36 @@ async function triggerAIExplain() {
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_explain_label') || 'Explain';
-  showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
 
   // 獲取選詞的上下文段落
   const parentPara = selectedTextRange.startContainer.parentElement.closest('p, div, li');
   const context = parentPara ? parentPara.textContent : selectedTextState;
 
   try {
-    const bubble = document.getElementById('ai-active-assistant-bubble');
-    await ai.explainWord(selectedTextState, context, (chunk) => {
-      if (bubble) {
-        bubble.innerHTML = formatMarkdown(chunk);
+    const finalReply = await ai.explainWord(selectedTextState, context, (chunk) => {
+      if (assistantBubble) {
+        assistantBubble.innerHTML = formatMarkdown(chunk);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
+
+    // 保存到資料庫
+    const newChat = {
+      chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      query: queryText,
+      reply: finalReply
+    };
+    groupEl.setAttribute('data-chat-id', newChat.chatId);
+    
+    // 添加刪除按鈕
+    addDeleteButtonToGroup(groupEl, newChat);
+
+    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
+    currentBook.aiChats = updatedChats;
   } catch (e) {
-    const bubble = document.getElementById('ai-active-assistant-bubble');
-    if (bubble) {
-      bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    if (assistantBubble) {
+      assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
     }
   }
 }
@@ -16916,7 +18715,7 @@ async function triggerAITranslate() {
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_translate_label') || 'Translate';
-  showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文
   const hasChinese = /[\u4e00-\u9fa5]/.test(selectedTextState);
@@ -16930,17 +18729,29 @@ async function triggerAITranslate() {
   }
 
   try {
-    const bubble = document.getElementById('ai-active-assistant-bubble');
-    await ai.translate(selectedTextState, targetLang, (chunk) => {
-      if (bubble) {
-        bubble.innerHTML = formatMarkdown(chunk);
+    const finalReply = await ai.translate(selectedTextState, targetLang, (chunk) => {
+      if (assistantBubble) {
+        assistantBubble.innerHTML = formatMarkdown(chunk);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
+
+    // 保存到資料庫
+    const newChat = {
+      chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      query: queryText,
+      reply: finalReply
+    };
+    groupEl.setAttribute('data-chat-id', newChat.chatId);
+    
+    // 添加刪除按鈕
+    addDeleteButtonToGroup(groupEl, newChat);
+
+    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
+    currentBook.aiChats = updatedChats;
   } catch (e) {
-    const bubble = document.getElementById('ai-active-assistant-bubble');
-    if (bubble) {
-      bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    if (assistantBubble) {
+      assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
     }
   }
 }
@@ -16968,7 +18779,7 @@ function triggerAIAsk() {
   if (aiPanel) {
     aiPanel.style.display = 'flex';
     const contentEl = document.getElementById('ai-content');
-    if (contentEl && !contentEl.querySelector('.ai-chat-bubble')) {
+    if (contentEl && contentEl.querySelectorAll('.ai-chat-group').length === 0) {
       contentEl.innerHTML = '';
     }
     // 關閉其他側邊欄和下拉面板
