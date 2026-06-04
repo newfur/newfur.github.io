@@ -331,6 +331,27 @@
           <option value="texture-grid" data-i18n="texture_grid">Retro Grid</option>
         </select>
       </div>
+      <div class="setting-item-divider" style="margin: 10px 0; border-top: 1px dashed var(--border-color);"></div>
+      <div class="setting-item">
+        <label data-i18n="ai_provider">AI Provider</label>
+        <select id="ai-provider-select">
+          <option value="builtin" data-i18n="ai_provider_builtin" selected>Built-in AI (Gemini Nano)</option>
+          <option value="openai" data-i18n="ai_provider_openai">OpenAI Compatible API</option>
+          <option value="ollama" data-i18n="ai_provider_ollama">Ollama (Local LLM)</option>
+        </select>
+      </div>
+      <div class="setting-item" id="ai-api-key-container" style="display: none;">
+        <label data-i18n="ai_api_key">API Key</label>
+        <input type="password" id="ai-api-key-input" placeholder="sk-...">
+      </div>
+      <div class="setting-item" id="ai-endpoint-container" style="display: none;">
+        <label data-i18n="ai_endpoint">API Endpoint</label>
+        <input type="text" id="ai-endpoint-input" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="setting-item" id="ai-model-container" style="display: none;">
+        <label data-i18n="ai_model">Model Name</label>
+        <input type="text" id="ai-model-input" placeholder="gpt-4o-mini">
+      </div>
     </div>
 
     <!-- ================= 懸浮 TTS 控制面板 (TTS Control Panel) ================= -->

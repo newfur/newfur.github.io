@@ -140,11 +140,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     alert(`${getMsg('failed_init_db')}: ${e.message}`);
   }
 
-  // 3. 檢測內置 AI 支持
-  await ai.checkAvailability();
-  if (!ai.isSupported) {
-    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'none');
-  }
+  // 3. 初始化 AI 配置與檢測支持
+  await initAISettings();
 
   // 3.5 立即恢復主題設定（確保刷新頁面後主題不遺失）
   chrome.storage.local.get(['theme'], (res) => {
@@ -558,6 +555,57 @@ function initUIEventBindings() {
   if (paperTextureSelect) {
     paperTextureSelect.addEventListener('change', (e) => {
       setPaperTexture(e.target.value);
+    });
+  }
+
+  // AI 設定變更監聽
+  const providerSelect = document.getElementById('ai-provider-select');
+  if (providerSelect) {
+    providerSelect.addEventListener('change', (e) => {
+      const provider = e.target.value;
+      
+      const endpointInput = document.getElementById('ai-endpoint-input');
+      const modelInput = document.getElementById('ai-model-input');
+      if (provider === 'openai') {
+        if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
+        if (modelInput) modelInput.placeholder = 'gpt-4o-mini';
+      } else if (provider === 'ollama') {
+        if (endpointInput) endpointInput.placeholder = 'http://localhost:11434';
+        if (modelInput) modelInput.placeholder = 'llama3';
+      }
+
+      updateAIConfigFieldsVisibility(provider);
+      ai.configure({ provider });
+      chrome.storage.local.set({ aiProvider: provider }, () => {
+        updateAIButtonsVisibility();
+      });
+    });
+  }
+
+  const apiKeyInput = document.getElementById('ai-api-key-input');
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      ai.configure({ apiKey: val });
+      chrome.storage.local.set({ aiApiKey: val });
+    });
+  }
+
+  const endpointInput = document.getElementById('ai-endpoint-input');
+  if (endpointInput) {
+    endpointInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      ai.configure({ endpoint: val });
+      chrome.storage.local.set({ aiEndpoint: val });
+    });
+  }
+
+  const modelInput = document.getElementById('ai-model-input');
+  if (modelInput) {
+    modelInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      ai.configure({ model: val });
+      chrome.storage.local.set({ aiModel: val });
     });
   }
 
@@ -3336,6 +3384,87 @@ function isMobileDevice() {
   const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
   return isMobileUA || (isTouch && window.innerWidth <= 1024);
+}
+
+async function initAISettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['aiProvider', 'aiApiKey', 'aiEndpoint', 'aiModel'], async (res) => {
+      const provider = res.aiProvider || 'builtin';
+      const apiKey = res.aiApiKey || '';
+      const endpoint = res.aiEndpoint || '';
+      const model = res.aiModel || '';
+
+      // 配置 AI 引擎
+      ai.configure({ provider, apiKey, endpoint, model });
+
+      // 初始化 UI 控制項值
+      const providerSelect = document.getElementById('ai-provider-select');
+      const apiKeyInput = document.getElementById('ai-api-key-input');
+      const endpointInput = document.getElementById('ai-endpoint-input');
+      const modelInput = document.getElementById('ai-model-input');
+
+      if (providerSelect) providerSelect.value = provider;
+      if (apiKeyInput) apiKeyInput.value = apiKey;
+      if (endpointInput) {
+        endpointInput.value = endpoint;
+        if (provider === 'openai') {
+          endpointInput.placeholder = 'https://api.openai.com/v1';
+        } else if (provider === 'ollama') {
+          endpointInput.placeholder = 'http://localhost:11434';
+        }
+      }
+      if (modelInput) {
+        modelInput.value = model;
+        if (provider === 'openai') {
+          modelInput.placeholder = 'gpt-4o-mini';
+        } else if (provider === 'ollama') {
+          modelInput.placeholder = 'llama3';
+        }
+      }
+
+      // 根據 provider 顯示/隱藏對應的輸入框容器
+      updateAIConfigFieldsVisibility(provider);
+
+      // 檢測內置 AI 支持狀態
+      await ai.checkAvailability();
+
+      // 更新 AI 功能按鈕可見度
+      updateAIButtonsVisibility();
+
+      resolve();
+    });
+  });
+}
+
+function updateAIConfigFieldsVisibility(provider) {
+  const apiKeyContainer = document.getElementById('ai-api-key-container');
+  const endpointContainer = document.getElementById('ai-endpoint-container');
+  const modelContainer = document.getElementById('ai-model-container');
+
+  if (!apiKeyContainer || !endpointContainer || !modelContainer) return;
+
+  if (provider === 'builtin') {
+    apiKeyContainer.style.display = 'none';
+    endpointContainer.style.display = 'none';
+    modelContainer.style.display = 'none';
+  } else if (provider === 'ollama') {
+    apiKeyContainer.style.display = 'none';
+    endpointContainer.style.display = 'flex';
+    modelContainer.style.display = 'flex';
+  } else if (provider === 'openai') {
+    apiKeyContainer.style.display = 'flex';
+    endpointContainer.style.display = 'flex';
+    modelContainer.style.display = 'flex';
+  }
+}
+
+function updateAIButtonsVisibility() {
+  const hasCustomAI = ai.provider !== 'builtin';
+  if (!ai.isSupported && !hasCustomAI) {
+    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'none');
+  } else {
+    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'inline-flex');
+  }
 }
 
 function initThemeAndStyles() {

@@ -527,5 +527,26 @@
   },
   "texture_grid": {
     "message": "复古格子"
+  },
+  "ai_provider": {
+    "message": "AI 服务商"
+  },
+  "ai_provider_builtin": {
+    "message": "浏览器内置 AI (Gemini Nano)"
+  },
+  "ai_provider_openai": {
+    "message": "OpenAI 兼容接口"
+  },
+  "ai_provider_ollama": {
+    "message": "Ollama (本地部署)"
+  },
+  "ai_api_key": {
+    "message": "API 密钥 (Key)"
+  },
+  "ai_endpoint": {
+    "message": "API 接口地址"
+  },
+  "ai_model": {
+    "message": "模型名称 (Model)"
   }
 }

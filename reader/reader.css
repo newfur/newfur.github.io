@@ -1308,6 +1308,25 @@ select {
   font-size: 14px;
 }
 
+.settings-panel input[type="text"],
+.settings-panel input[type="password"] {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  outline: none;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.settings-panel input[type="text"]:focus,
+.settings-panel input[type="password"]:focus {
+  border-color: var(--primary-color);
+}
+
 /* 滑動塊 (Sliders) */
 .slider-header {
   display: flex;

@@ -18,7 +18,8 @@
   ],
   "host_permissions": [
     "*://*.platform.bing.com/*",
-    "wss://*.platform.bing.com/*"
+    "wss://*.platform.bing.com/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "service-worker.js"

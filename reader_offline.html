@@ -1314,6 +1314,25 @@ select {
   font-size: 14px;
 }
 
+.settings-panel input[type="text"],
+.settings-panel input[type="password"] {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  outline: none;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.settings-panel input[type="text"]:focus,
+.settings-panel input[type="password"]:focus {
+  border-color: var(--primary-color);
+}
+
 /* 滑動塊 (Sliders) */
 .slider-header {
   display: flex;
@@ -4085,6 +4104,27 @@ html.transition-none .page-texture-slide {
           <option value="texture-grid" data-i18n="texture_grid">Retro Grid</option>
         </select>
       </div>
+      <div class="setting-item-divider" style="margin: 10px 0; border-top: 1px dashed var(--border-color);"></div>
+      <div class="setting-item">
+        <label data-i18n="ai_provider">AI Provider</label>
+        <select id="ai-provider-select">
+          <option value="builtin" data-i18n="ai_provider_builtin" selected>Built-in AI (Gemini Nano)</option>
+          <option value="openai" data-i18n="ai_provider_openai">OpenAI Compatible API</option>
+          <option value="ollama" data-i18n="ai_provider_ollama">Ollama (Local LLM)</option>
+        </select>
+      </div>
+      <div class="setting-item" id="ai-api-key-container" style="display: none;">
+        <label data-i18n="ai_api_key">API Key</label>
+        <input type="password" id="ai-api-key-input" placeholder="sk-...">
+      </div>
+      <div class="setting-item" id="ai-endpoint-container" style="display: none;">
+        <label data-i18n="ai_endpoint">API Endpoint</label>
+        <input type="text" id="ai-endpoint-input" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="setting-item" id="ai-model-container" style="display: none;">
+        <label data-i18n="ai_model">Model Name</label>
+        <input type="text" id="ai-model-input" placeholder="gpt-4o-mini">
+      </div>
     </div>
 
     <!-- ================= 懸浮 TTS 控制面板 (TTS Control Panel) ================= -->
@@ -4958,6 +4998,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "texture_grid": {
       "message": "Retro Grid"
+    },
+    "ai_provider": {
+      "message": "AI Provider"
+    },
+    "ai_provider_builtin": {
+      "message": "Built-in AI (Gemini Nano)"
+    },
+    "ai_provider_openai": {
+      "message": "OpenAI Compatible API"
+    },
+    "ai_provider_ollama": {
+      "message": "Ollama (Local LLM)"
+    },
+    "ai_api_key": {
+      "message": "API Key"
+    },
+    "ai_endpoint": {
+      "message": "API Endpoint"
+    },
+    "ai_model": {
+      "message": "Model Name"
     }
   },
   "zh_TW": {
@@ -5489,6 +5550,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "texture_grid": {
       "message": "復古格子"
+    },
+    "ai_provider": {
+      "message": "AI 服務商"
+    },
+    "ai_provider_builtin": {
+      "message": "瀏覽器內置 AI (Gemini Nano)"
+    },
+    "ai_provider_openai": {
+      "message": "OpenAI 相容介面"
+    },
+    "ai_provider_ollama": {
+      "message": "Ollama (本地部署)"
+    },
+    "ai_api_key": {
+      "message": "API 金鑰 (Key)"
+    },
+    "ai_endpoint": {
+      "message": "API 介面地址"
+    },
+    "ai_model": {
+      "message": "模型名稱 (Model)"
     }
   },
   "zh_CN": {
@@ -6020,6 +6102,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "texture_grid": {
       "message": "复古格子"
+    },
+    "ai_provider": {
+      "message": "AI 服务商"
+    },
+    "ai_provider_builtin": {
+      "message": "浏览器内置 AI (Gemini Nano)"
+    },
+    "ai_provider_openai": {
+      "message": "OpenAI 兼容接口"
+    },
+    "ai_provider_ollama": {
+      "message": "Ollama (本地部署)"
+    },
+    "ai_api_key": {
+      "message": "API 密钥 (Key)"
+    },
+    "ai_endpoint": {
+      "message": "API 接口地址"
+    },
+    "ai_model": {
+      "message": "模型名称 (Model)"
     }
   }
 };
@@ -10445,12 +10548,26 @@ class TTSEngine {
 // Module: reader/ai.js
 // ==========================================
 // reader/ai.js
-// AI 閱讀伴侶模組，對接瀏覽器內置的 Prompt API (Gemini Nano)
+// AI 閱讀伴侶模組，支持瀏覽器內置的 Prompt API (Gemini Nano) 以及自定義 AI 服務商 (OpenAI / Ollama)
 
 class AIEngine {
   constructor() {
     this.session = null;
-    this.isSupported = false;
+    this.isSupported = false; // 僅針對瀏覽器內置 AI 狀態
+    
+    // 自定義服務商配置
+    this.provider = 'builtin'; // 'builtin' | 'openai' | 'ollama'
+    this.apiKey = '';
+    this.endpoint = '';
+    this.model = '';
+  }
+
+  // 設置配置項
+  configure({ provider, apiKey, endpoint, model }) {
+    if (provider) this.provider = provider;
+    if (apiKey !== undefined) this.apiKey = apiKey;
+    if (endpoint !== undefined) this.endpoint = endpoint;
+    if (model !== undefined) this.model = model;
   }
 
   // 檢測瀏覽器內置 AI 是否可用
@@ -10485,7 +10602,7 @@ class AIEngine {
     return false;
   }
 
-  // 建立 AI 會話
+  // 建立內置 AI 會話
   async _createSession(systemPrompt = '') {
     if (!this.isSupported) throw new Error('Built-in AI is not supported in this browser.');
     
@@ -10512,39 +10629,52 @@ class AIEngine {
     }
   }
 
+  // 核心對話入口 (流式輸出)
+  async _chat(systemPrompt, prompt, onChunk) {
+    if (this.provider === 'builtin') {
+      await this._createSession(systemPrompt);
+      return this._streamPrompt(prompt, onChunk);
+    }
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt }
+    ];
+
+    const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
+    if (useExtension) {
+      return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+    } else {
+      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+    }
+  }
+
   // 1. 章節/選段摘要 (流式輸出)
   async summarize(text, onChunk) {
     const systemPrompt = 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input (if the text is in Chinese, summarize in Chinese).';
-    await this._createSession(systemPrompt);
-
     const prompt = `Please summarize this text: \n\n${text.substring(0, 4000)}`;
-    return this._streamPrompt(prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 2. 生詞釋義 (流式輸出)
   async explainWord(word, context, onChunk) {
     const systemPrompt = 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in the language of the context (Chinese if Chinese, English if English).';
-    await this._createSession(systemPrompt);
-
     const prompt = `Selected Word: "${word}"\nContext: "...${context.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
-    return this._streamPrompt(prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 3. 離線翻譯 (流式輸出)
   async translate(text, targetLangName, onChunk) {
     const systemPrompt = `You are a professional translator. Translate the text into ${targetLangName}. Output only the translation, no explanation.`;
-    await this._createSession(systemPrompt);
-
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
-    return this._streamPrompt(prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk);
   }
 
-  // 流式 Prompt 處理封裝
+  // 流式 Prompt 處理封裝 (內置 AI)
   async _streamPrompt(prompt, onChunk) {
     if (!this.session) throw new Error('AI session is not initialized');
 
     try {
-      // 檢測是否支持流式輸出
       if (typeof this.session.promptStreaming === 'function') {
         const stream = this.session.promptStreaming(prompt);
         let fullResponse = '';
@@ -10555,7 +10685,6 @@ class AIEngine {
         }
         return fullResponse;
       } else {
-        // 退而求其次非流式輸出
         const response = await this.session.prompt(prompt);
         if (onChunk) onChunk(response);
         return response;
@@ -10564,12 +10693,163 @@ class AIEngine {
       console.error('AI prompt error:', e);
       throw e;
     } finally {
-      // 完畢後關閉會話以釋放 AI 模型內存
       if (this.session) {
         try { this.session.destroy(); } catch(e) {}
         this.session = null;
       }
     }
+  }
+
+  // 透過 Extension 背景 Service Worker 流式訪問 (無跨域 CORS 問題)
+  async _streamExtension(provider, url, apiKey, model, messages, onChunk) {
+    return new Promise((resolve, reject) => {
+      const port = chrome.runtime.connect({ name: 'ai-stream' });
+      let fullResponse = '';
+
+      port.onMessage.addListener((msg) => {
+        if (msg.type === 'chunk') {
+          fullResponse += msg.text;
+          if (onChunk) onChunk(fullResponse);
+        } else if (msg.type === 'done') {
+          port.disconnect();
+          resolve(fullResponse);
+        } else if (msg.type === 'error') {
+          port.disconnect();
+          reject(new Error(msg.message));
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        }
+      });
+
+      port.postMessage({
+        action: 'chat',
+        provider,
+        url,
+        apiKey,
+        model,
+        messages
+      });
+    });
+  }
+
+  // 獨立離線 HTML 環境下直接 Fetch 流式訪問
+  async _streamDirect(provider, url, apiKey, model, messages, onChunk) {
+    let fetchUrl = url;
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    let body = {};
+
+    if (provider === 'openai') {
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      if (!fetchUrl.endsWith('/chat/completions')) {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/chat/completions';
+      }
+      body = {
+        model: model || 'gpt-4o-mini',
+        messages: messages,
+        stream: true
+      };
+    } else if (provider === 'ollama') {
+      if (!fetchUrl.endsWith('/api/chat')) {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/api/chat';
+      }
+      body = {
+        model: model || 'llama3',
+        messages: messages,
+        stream: true
+      };
+    }
+
+    const response = await fetch(fetchUrl, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errText || response.statusText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let fullResponse = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const cleanedLine = line.trim();
+        if (!cleanedLine) continue;
+
+        if (provider === 'openai') {
+          if (cleanedLine === 'data: [DONE]') {
+            continue;
+          }
+          if (cleanedLine.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(cleanedLine.substring(6));
+              const text = json.choices?.[0]?.delta?.content || '';
+              if (text) {
+                fullResponse += text;
+                if (onChunk) onChunk(fullResponse);
+              }
+            } catch (e) {
+              console.warn('Parse error:', cleanedLine, e);
+            }
+          }
+        } else if (provider === 'ollama') {
+          try {
+            const json = JSON.parse(cleanedLine);
+            const text = json.message?.content || '';
+            if (text) {
+              fullResponse += text;
+              if (onChunk) onChunk(fullResponse);
+            }
+          } catch (e) {
+            console.warn('Parse error:', cleanedLine, e);
+          }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const cleanedLine = buffer.trim();
+      if (provider === 'openai' && cleanedLine.startsWith('data: ') && cleanedLine !== 'data: [DONE]') {
+        try {
+          const json = JSON.parse(cleanedLine.substring(6));
+          const text = json.choices?.[0]?.delta?.content || '';
+          if (text) {
+            fullResponse += text;
+            if (onChunk) onChunk(fullResponse);
+          }
+        } catch (e) {}
+      } else if (provider === 'ollama') {
+        try {
+          const json = JSON.parse(cleanedLine);
+          const text = json.message?.content || '';
+          if (text) {
+            fullResponse += text;
+            if (onChunk) onChunk(fullResponse);
+          }
+        } catch (e) {}
+      }
+    }
+
+    return fullResponse;
   }
 }
 
@@ -10719,11 +10999,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     alert(`${getMsg('failed_init_db')}: ${e.message}`);
   }
 
-  // 3. 檢測內置 AI 支持
-  await ai.checkAvailability();
-  if (!ai.isSupported) {
-    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'none');
-  }
+  // 3. 初始化 AI 配置與檢測支持
+  await initAISettings();
 
   // 3.5 立即恢復主題設定（確保刷新頁面後主題不遺失）
   chrome.storage.local.get(['theme'], (res) => {
@@ -11137,6 +11414,57 @@ function initUIEventBindings() {
   if (paperTextureSelect) {
     paperTextureSelect.addEventListener('change', (e) => {
       setPaperTexture(e.target.value);
+    });
+  }
+
+  // AI 設定變更監聽
+  const providerSelect = document.getElementById('ai-provider-select');
+  if (providerSelect) {
+    providerSelect.addEventListener('change', (e) => {
+      const provider = e.target.value;
+      
+      const endpointInput = document.getElementById('ai-endpoint-input');
+      const modelInput = document.getElementById('ai-model-input');
+      if (provider === 'openai') {
+        if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
+        if (modelInput) modelInput.placeholder = 'gpt-4o-mini';
+      } else if (provider === 'ollama') {
+        if (endpointInput) endpointInput.placeholder = 'http://localhost:11434';
+        if (modelInput) modelInput.placeholder = 'llama3';
+      }
+
+      updateAIConfigFieldsVisibility(provider);
+      ai.configure({ provider });
+      chrome.storage.local.set({ aiProvider: provider }, () => {
+        updateAIButtonsVisibility();
+      });
+    });
+  }
+
+  const apiKeyInput = document.getElementById('ai-api-key-input');
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      ai.configure({ apiKey: val });
+      chrome.storage.local.set({ aiApiKey: val });
+    });
+  }
+
+  const endpointInput = document.getElementById('ai-endpoint-input');
+  if (endpointInput) {
+    endpointInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      ai.configure({ endpoint: val });
+      chrome.storage.local.set({ aiEndpoint: val });
+    });
+  }
+
+  const modelInput = document.getElementById('ai-model-input');
+  if (modelInput) {
+    modelInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      ai.configure({ model: val });
+      chrome.storage.local.set({ aiModel: val });
     });
   }
 
@@ -13915,6 +14243,87 @@ function isMobileDevice() {
   const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
   return isMobileUA || (isTouch && window.innerWidth <= 1024);
+}
+
+async function initAISettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['aiProvider', 'aiApiKey', 'aiEndpoint', 'aiModel'], async (res) => {
+      const provider = res.aiProvider || 'builtin';
+      const apiKey = res.aiApiKey || '';
+      const endpoint = res.aiEndpoint || '';
+      const model = res.aiModel || '';
+
+      // 配置 AI 引擎
+      ai.configure({ provider, apiKey, endpoint, model });
+
+      // 初始化 UI 控制項值
+      const providerSelect = document.getElementById('ai-provider-select');
+      const apiKeyInput = document.getElementById('ai-api-key-input');
+      const endpointInput = document.getElementById('ai-endpoint-input');
+      const modelInput = document.getElementById('ai-model-input');
+
+      if (providerSelect) providerSelect.value = provider;
+      if (apiKeyInput) apiKeyInput.value = apiKey;
+      if (endpointInput) {
+        endpointInput.value = endpoint;
+        if (provider === 'openai') {
+          endpointInput.placeholder = 'https://api.openai.com/v1';
+        } else if (provider === 'ollama') {
+          endpointInput.placeholder = 'http://localhost:11434';
+        }
+      }
+      if (modelInput) {
+        modelInput.value = model;
+        if (provider === 'openai') {
+          modelInput.placeholder = 'gpt-4o-mini';
+        } else if (provider === 'ollama') {
+          modelInput.placeholder = 'llama3';
+        }
+      }
+
+      // 根據 provider 顯示/隱藏對應的輸入框容器
+      updateAIConfigFieldsVisibility(provider);
+
+      // 檢測內置 AI 支持狀態
+      await ai.checkAvailability();
+
+      // 更新 AI 功能按鈕可見度
+      updateAIButtonsVisibility();
+
+      resolve();
+    });
+  });
+}
+
+function updateAIConfigFieldsVisibility(provider) {
+  const apiKeyContainer = document.getElementById('ai-api-key-container');
+  const endpointContainer = document.getElementById('ai-endpoint-container');
+  const modelContainer = document.getElementById('ai-model-container');
+
+  if (!apiKeyContainer || !endpointContainer || !modelContainer) return;
+
+  if (provider === 'builtin') {
+    apiKeyContainer.style.display = 'none';
+    endpointContainer.style.display = 'none';
+    modelContainer.style.display = 'none';
+  } else if (provider === 'ollama') {
+    apiKeyContainer.style.display = 'none';
+    endpointContainer.style.display = 'flex';
+    modelContainer.style.display = 'flex';
+  } else if (provider === 'openai') {
+    apiKeyContainer.style.display = 'flex';
+    endpointContainer.style.display = 'flex';
+    modelContainer.style.display = 'flex';
+  }
+}
+
+function updateAIButtonsVisibility() {
+  const hasCustomAI = ai.provider !== 'builtin';
+  if (!ai.isSupported && !hasCustomAI) {
+    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'none');
+  } else {
+    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'inline-flex');
+  }
 }
 
 function initThemeAndStyles() {

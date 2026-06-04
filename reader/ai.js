@@ -1,10 +1,24 @@
 // reader/ai.js
-// AI 閱讀伴侶模組，對接瀏覽器內置的 Prompt API (Gemini Nano)
+// AI 閱讀伴侶模組，支持瀏覽器內置的 Prompt API (Gemini Nano) 以及自定義 AI 服務商 (OpenAI / Ollama)
 
 export class AIEngine {
   constructor() {
     this.session = null;
-    this.isSupported = false;
+    this.isSupported = false; // 僅針對瀏覽器內置 AI 狀態
+    
+    // 自定義服務商配置
+    this.provider = 'builtin'; // 'builtin' | 'openai' | 'ollama'
+    this.apiKey = '';
+    this.endpoint = '';
+    this.model = '';
+  }
+
+  // 設置配置項
+  configure({ provider, apiKey, endpoint, model }) {
+    if (provider) this.provider = provider;
+    if (apiKey !== undefined) this.apiKey = apiKey;
+    if (endpoint !== undefined) this.endpoint = endpoint;
+    if (model !== undefined) this.model = model;
   }
 
   // 檢測瀏覽器內置 AI 是否可用
@@ -39,7 +53,7 @@ export class AIEngine {
     return false;
   }
 
-  // 建立 AI 會話
+  // 建立內置 AI 會話
   async _createSession(systemPrompt = '') {
     if (!this.isSupported) throw new Error('Built-in AI is not supported in this browser.');
     
@@ -66,39 +80,52 @@ export class AIEngine {
     }
   }
 
+  // 核心對話入口 (流式輸出)
+  async _chat(systemPrompt, prompt, onChunk) {
+    if (this.provider === 'builtin') {
+      await this._createSession(systemPrompt);
+      return this._streamPrompt(prompt, onChunk);
+    }
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt }
+    ];
+
+    const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
+    if (useExtension) {
+      return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+    } else {
+      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+    }
+  }
+
   // 1. 章節/選段摘要 (流式輸出)
   async summarize(text, onChunk) {
     const systemPrompt = 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input (if the text is in Chinese, summarize in Chinese).';
-    await this._createSession(systemPrompt);
-
     const prompt = `Please summarize this text: \n\n${text.substring(0, 4000)}`;
-    return this._streamPrompt(prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 2. 生詞釋義 (流式輸出)
   async explainWord(word, context, onChunk) {
     const systemPrompt = 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in the language of the context (Chinese if Chinese, English if English).';
-    await this._createSession(systemPrompt);
-
     const prompt = `Selected Word: "${word}"\nContext: "...${context.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
-    return this._streamPrompt(prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 3. 離線翻譯 (流式輸出)
   async translate(text, targetLangName, onChunk) {
     const systemPrompt = `You are a professional translator. Translate the text into ${targetLangName}. Output only the translation, no explanation.`;
-    await this._createSession(systemPrompt);
-
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
-    return this._streamPrompt(prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk);
   }
 
-  // 流式 Prompt 處理封裝
+  // 流式 Prompt 處理封裝 (內置 AI)
   async _streamPrompt(prompt, onChunk) {
     if (!this.session) throw new Error('AI session is not initialized');
 
     try {
-      // 檢測是否支持流式輸出
       if (typeof this.session.promptStreaming === 'function') {
         const stream = this.session.promptStreaming(prompt);
         let fullResponse = '';
@@ -109,7 +136,6 @@ export class AIEngine {
         }
         return fullResponse;
       } else {
-        // 退而求其次非流式輸出
         const response = await this.session.prompt(prompt);
         if (onChunk) onChunk(response);
         return response;
@@ -118,11 +144,162 @@ export class AIEngine {
       console.error('AI prompt error:', e);
       throw e;
     } finally {
-      // 完畢後關閉會話以釋放 AI 模型內存
       if (this.session) {
         try { this.session.destroy(); } catch(e) {}
         this.session = null;
       }
     }
+  }
+
+  // 透過 Extension 背景 Service Worker 流式訪問 (無跨域 CORS 問題)
+  async _streamExtension(provider, url, apiKey, model, messages, onChunk) {
+    return new Promise((resolve, reject) => {
+      const port = chrome.runtime.connect({ name: 'ai-stream' });
+      let fullResponse = '';
+
+      port.onMessage.addListener((msg) => {
+        if (msg.type === 'chunk') {
+          fullResponse += msg.text;
+          if (onChunk) onChunk(fullResponse);
+        } else if (msg.type === 'done') {
+          port.disconnect();
+          resolve(fullResponse);
+        } else if (msg.type === 'error') {
+          port.disconnect();
+          reject(new Error(msg.message));
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        }
+      });
+
+      port.postMessage({
+        action: 'chat',
+        provider,
+        url,
+        apiKey,
+        model,
+        messages
+      });
+    });
+  }
+
+  // 獨立離線 HTML 環境下直接 Fetch 流式訪問
+  async _streamDirect(provider, url, apiKey, model, messages, onChunk) {
+    let fetchUrl = url;
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    let body = {};
+
+    if (provider === 'openai') {
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      if (!fetchUrl.endsWith('/chat/completions')) {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/chat/completions';
+      }
+      body = {
+        model: model || 'gpt-4o-mini',
+        messages: messages,
+        stream: true
+      };
+    } else if (provider === 'ollama') {
+      if (!fetchUrl.endsWith('/api/chat')) {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/api/chat';
+      }
+      body = {
+        model: model || 'llama3',
+        messages: messages,
+        stream: true
+      };
+    }
+
+    const response = await fetch(fetchUrl, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errText || response.statusText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let fullResponse = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const cleanedLine = line.trim();
+        if (!cleanedLine) continue;
+
+        if (provider === 'openai') {
+          if (cleanedLine === 'data: [DONE]') {
+            continue;
+          }
+          if (cleanedLine.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(cleanedLine.substring(6));
+              const text = json.choices?.[0]?.delta?.content || '';
+              if (text) {
+                fullResponse += text;
+                if (onChunk) onChunk(fullResponse);
+              }
+            } catch (e) {
+              console.warn('Parse error:', cleanedLine, e);
+            }
+          }
+        } else if (provider === 'ollama') {
+          try {
+            const json = JSON.parse(cleanedLine);
+            const text = json.message?.content || '';
+            if (text) {
+              fullResponse += text;
+              if (onChunk) onChunk(fullResponse);
+            }
+          } catch (e) {
+            console.warn('Parse error:', cleanedLine, e);
+          }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const cleanedLine = buffer.trim();
+      if (provider === 'openai' && cleanedLine.startsWith('data: ') && cleanedLine !== 'data: [DONE]') {
+        try {
+          const json = JSON.parse(cleanedLine.substring(6));
+          const text = json.choices?.[0]?.delta?.content || '';
+          if (text) {
+            fullResponse += text;
+            if (onChunk) onChunk(fullResponse);
+          }
+        } catch (e) {}
+      } else if (provider === 'ollama') {
+        try {
+          const json = JSON.parse(cleanedLine);
+          const text = json.message?.content || '';
+          if (text) {
+            fullResponse += text;
+            if (onChunk) onChunk(fullResponse);
+          }
+        } catch (e) {}
+      }
+    }
+
+    return fullResponse;
   }
 }

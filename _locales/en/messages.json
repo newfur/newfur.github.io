@@ -527,5 +527,26 @@
   },
   "texture_grid": {
     "message": "Retro Grid"
+  },
+  "ai_provider": {
+    "message": "AI Provider"
+  },
+  "ai_provider_builtin": {
+    "message": "Built-in AI (Gemini Nano)"
+  },
+  "ai_provider_openai": {
+    "message": "OpenAI Compatible API"
+  },
+  "ai_provider_ollama": {
+    "message": "Ollama (Local LLM)"
+  },
+  "ai_api_key": {
+    "message": "API Key"
+  },
+  "ai_endpoint": {
+    "message": "API Endpoint"
+  },
+  "ai_model": {
+    "message": "Model Name"
   }
 }

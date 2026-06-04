@@ -66,3 +66,123 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // 保持異步通道開啟
   }
 });
+
+// 監聽來自前台的長連接，用於流式傳輸 AI 回答 (繞過 CORS 限制)
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "ai-stream") {
+    port.onMessage.addListener(async (msg) => {
+      if (msg.action === "chat") {
+        const { provider, url, apiKey, model, messages } = msg;
+        try {
+          let fetchUrl = url;
+          const headers = {
+            "Content-Type": "application/json"
+          };
+          let body = {};
+
+          if (provider === "openai") {
+            if (apiKey) {
+              headers["Authorization"] = `Bearer ${apiKey}`;
+            }
+            if (!fetchUrl.endsWith("/chat/completions")) {
+              fetchUrl = fetchUrl.replace(/\/+$/, "") + "/chat/completions";
+            }
+            body = {
+              model: model || "gpt-4o-mini",
+              messages: messages,
+              stream: true
+            };
+          } else if (provider === "ollama") {
+            if (!fetchUrl.endsWith("/api/chat")) {
+              fetchUrl = fetchUrl.replace(/\/+$/, "") + "/api/chat";
+            }
+            body = {
+              model: model || "llama3",
+              messages: messages,
+              stream: true
+            };
+          }
+
+          const response = await fetch(fetchUrl, {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(body)
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText || response.statusText}`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder("utf-8");
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); // 保留不完整的一行
+
+            for (const line of lines) {
+              const cleanedLine = line.trim();
+              if (!cleanedLine) continue;
+
+              if (provider === "openai") {
+                if (cleanedLine === "data: [DONE]") {
+                  continue;
+                }
+                if (cleanedLine.startsWith("data: ")) {
+                  try {
+                    const json = JSON.parse(cleanedLine.substring(6));
+                    const text = json.choices?.[0]?.delta?.content || "";
+                    if (text) {
+                      port.postMessage({ type: "chunk", text });
+                    }
+                  } catch (e) {
+                    console.warn("Parse error for line:", cleanedLine, e);
+                  }
+                }
+              } else if (provider === "ollama") {
+                try {
+                  const json = JSON.parse(cleanedLine);
+                  const text = json.message?.content || "";
+                  if (text) {
+                    port.postMessage({ type: "chunk", text });
+                  }
+                } catch (e) {
+                  console.warn("Parse error for line:", cleanedLine, e);
+                }
+              }
+            }
+          }
+
+          // 處理剩餘的緩衝區
+          if (buffer.trim()) {
+            const cleanedLine = buffer.trim();
+            if (provider === "openai" && cleanedLine.startsWith("data: ") && cleanedLine !== "data: [DONE]") {
+              try {
+                const json = JSON.parse(cleanedLine.substring(6));
+                const text = json.choices?.[0]?.delta?.content || "";
+                if (text) port.postMessage({ type: "chunk", text });
+              } catch (e) {}
+            } else if (provider === "ollama") {
+              try {
+                const json = JSON.parse(cleanedLine);
+                const text = json.message?.content || "";
+                if (text) port.postMessage({ type: "chunk", text });
+              } catch (e) {}
+            }
+          }
+
+          port.postMessage({ type: "done" });
+        } catch (error) {
+          port.postMessage({ type: "error", message: error.message });
+        }
+      }
+    });
+  }
+});
+
