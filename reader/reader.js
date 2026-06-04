@@ -655,7 +655,7 @@ function initUIEventBindings() {
         if (!contentEl.querySelector('.ai-chat-bubble')) {
           contentEl.innerHTML = `
             <div class="ai-chat-bubble assistant-bubble">
-              Hi, I am your AI Reading Assistant. How can I help you today?
+              ${getMsg('ai_welcome_msg') || 'Hi! I am your AI Reading Assistant. How can I help you today?'}
             </div>
           `;
         }
@@ -962,6 +962,61 @@ function initUIEventBindings() {
   document.getElementById('close-ai-panel').addEventListener('click', () => {
     document.getElementById('ai-panel').style.display = 'none';
   });
+
+  // 全局設置對話框
+  const globalSettingsBtn = document.getElementById('global-settings-btn');
+  const readerOpenSettingsBtn = document.getElementById('reader-open-settings-btn');
+  const globalSettingsDialog = document.getElementById('global-settings-dialog');
+  const closeGlobalSettingsBtn = document.getElementById('close-global-settings');
+  const globalCoverWidthSlider = document.getElementById('global-cover-width-slider');
+  const globalCoverWidthVal = document.getElementById('global-cover-width-val');
+
+  if (globalSettingsDialog) {
+    // 綁定打開
+    if (globalSettingsBtn) {
+      globalSettingsBtn.addEventListener('click', () => {
+        const savedWidth = localStorage.getItem('coverWidth') || '180';
+        if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
+        if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
+        globalSettingsDialog.showModal();
+      });
+    }
+    if (readerOpenSettingsBtn) {
+      readerOpenSettingsBtn.addEventListener('click', () => {
+        const settingsPanel = document.getElementById('settings-panel');
+        if (settingsPanel) settingsPanel.classList.remove('active');
+        
+        const savedWidth = localStorage.getItem('coverWidth') || '180';
+        if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
+        if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
+        globalSettingsDialog.showModal();
+      });
+    }
+
+    // 關閉按鈕
+    if (closeGlobalSettingsBtn) {
+      closeGlobalSettingsBtn.addEventListener('click', () => {
+        globalSettingsDialog.close();
+      });
+    }
+
+    // 點擊背景關閉
+    globalSettingsDialog.addEventListener('click', (event) => {
+      if (event.target === globalSettingsDialog) {
+        globalSettingsDialog.close();
+      }
+    });
+
+    // 封面大小滑動條監聽
+    if (globalCoverWidthSlider) {
+      globalCoverWidthSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${val}px`;
+        document.documentElement.style.setProperty('--cover-width', `${val}px`);
+        localStorage.setItem('coverWidth', val);
+      });
+    }
+  }
 
   // 關於對話框
   const aboutBtn = document.getElementById('about-btn');
@@ -4996,7 +5051,14 @@ async function triggerAITranslate() {
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文
   const hasChinese = /[\u4e00-\u9fa5]/.test(selectedTextState);
-  const targetLang = hasChinese ? 'English' : 'Traditional Chinese';
+  let targetLang = 'English';
+  if (!hasChinese) {
+    const localeTargetLang = getMsg('ai_target_lang');
+    targetLang = (localeTargetLang && localeTargetLang !== 'ai_target_lang') ? localeTargetLang : 'Traditional Chinese';
+    if (targetLang === 'English') {
+      targetLang = 'Traditional Chinese';
+    }
+  }
 
   try {
     const bubble = document.getElementById('ai-active-assistant-bubble');

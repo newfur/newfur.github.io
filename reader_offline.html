@@ -3965,6 +3965,12 @@ html.transition-none .page-texture-slide {
                 </span>
                 <span data-i18n="download_offline">Download Offline Version</span>
               </button>
+              <button id="global-settings-btn" class="dropdown-item" title="Global Settings">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </span>
+                <span data-i18n="global_settings_title">Settings</span>
+              </button>
               <button id="about-btn" class="dropdown-item" title="About Reader">
                 <span class="btn-icon">
                   <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
@@ -4049,7 +4055,7 @@ html.transition-none .page-texture-slide {
         <!-- AI 閱讀伴侶 -->
         <button id="ai-toggle" class="btn-icon-only ai-btn" data-i18n-title="ai_assistant" title="AI Assistant">
           <span class="icon">
-            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"></path></svg>
           </span>
         </button>
         <!-- 閱讀設定切換 -->
@@ -4203,27 +4209,7 @@ html.transition-none .page-texture-slide {
       </div>
       <div class="setting-item-divider" style="margin: 10px 0; border-top: 1px dashed var(--border-color);"></div>
       <div class="setting-item">
-        <label data-i18n="ai_provider">AI Provider</label>
-        <select id="ai-provider-select">
-          <option value="builtin" data-i18n="ai_provider_builtin" selected>Built-in AI (Gemini Nano)</option>
-          <option value="openai" data-i18n="ai_provider_openai">OpenAI Compatible API</option>
-          <option value="ollama" data-i18n="ai_provider_ollama">Ollama (Local LLM)</option>
-        </select>
-      </div>
-      <div class="setting-item" id="ai-api-key-container" style="display: none;">
-        <label data-i18n="ai_api_key">API Key</label>
-        <input type="password" id="ai-api-key-input" placeholder="sk-...">
-      </div>
-      <div class="setting-item" id="ai-endpoint-container" style="display: none;">
-        <label data-i18n="ai_endpoint">API Endpoint</label>
-        <input type="text" id="ai-endpoint-input" placeholder="https://api.openai.com/v1">
-      </div>
-      <div class="setting-item" id="ai-model-container" style="display: none;">
-        <label data-i18n="ai_model">Model Name</label>
-        <input type="text" id="ai-model-input" placeholder="gpt-4o-mini">
-      </div>
-      <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 10px;">
-        <button id="ai-save-btn" class="btn-primary" style="width: 100%; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save AI Settings</button>
+        <button id="reader-open-settings-btn" class="btn btn-secondary" style="width: 100%; justify-content: center; font-weight: 500; font-family: var(--font-sans);" data-i18n="global_settings_title">Global Settings</button>
       </div>
     </div>
 
@@ -4357,7 +4343,7 @@ html.transition-none .page-texture-slide {
     <div id="ai-panel" class="ai-panel panel-glass">
       <div class="ai-panel-header">
         <span class="ai-title">
-          <svg class="svg-icon svg-icon-sm" style="margin-right: 5px; color: var(--primary-color);" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
+          <svg class="svg-icon svg-icon-sm" style="margin-right: 5px; color: var(--primary-color);" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"></path></svg>
           <span data-i18n="ai_assistant_title">AI Reading Assistant</span>
         </span>
         <button id="close-ai-panel" class="btn-icon-only">
@@ -4554,6 +4540,60 @@ html.transition-none .page-texture-slide {
           <li data-i18n="about_usage_3">高亮標註：在閱讀時選中文本即可彈出選單進行劃線、記筆記和發起本地 AI 交互。</li>
           <li data-i18n="about_usage_4">備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。</li>
         </ol>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ==================== 全局設置對話框 (Global Settings Modal) ==================== -->
+  <dialog id="global-settings-dialog" class="custom-dialog panel-glass" style="max-height: 85vh; width: 450px; border-radius: 20px;">
+    <div class="dialog-form" style="display: flex; flex-direction: column; gap: 12px; color: var(--text-color);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg class="svg-icon" style="width: 24px; height: 24px; color: var(--primary-color);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <h3 style="margin: 0; font-size: 20px;" data-i18n="global_settings_title">Global Settings</h3>
+        </div>
+        <button id="close-global-settings" class="btn-icon-only">
+          <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="dialog-body" style="overflow-y: auto; max-height: 60vh; font-size: 14px; line-height: 1.5; padding: 5px 0; display: flex; flex-direction: column; gap: 15px;">
+        <!-- 書庫設定 -->
+        <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--primary-color);" data-i18n="library_settings_section">Library Settings</h4>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-weight: 500;" data-i18n="cover_width_setting">Cover Width</label>
+            <span id="global-cover-width-val" style="color: var(--text-muted);">180px</span>
+          </div>
+          <input type="range" id="global-cover-width-slider" min="100" max="300" step="10" value="180" style="width: 100%;">
+        </div>
+
+        <div style="border-top: 1px dashed var(--border-color); margin: 5px 0;"></div>
+
+        <!-- AI 設定 -->
+        <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--primary-color);" data-i18n="ai_settings_section">AI Settings</h4>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_provider">AI Provider</label>
+          <select id="ai-provider-select" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <option value="builtin" data-i18n="ai_provider_builtin" selected>Built-in AI (Gemini Nano)</option>
+            <option value="openai" data-i18n="ai_provider_openai">OpenAI Compatible API</option>
+            <option value="ollama" data-i18n="ai_provider_ollama">Ollama (Local LLM)</option>
+          </select>
+        </div>
+        <div class="setting-item" id="ai-api-key-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_api_key">API Key</label>
+          <input type="password" id="ai-api-key-input" placeholder="sk-..." style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" id="ai-endpoint-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_endpoint">API Endpoint</label>
+          <input type="text" id="ai-endpoint-input" placeholder="https://api.openai.com/v1" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" id="ai-model-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
+          <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 5px;">
+          <button id="ai-save-btn" class="btn btn-primary" style="width: 100%; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save AI Settings</button>
+        </div>
       </div>
     </div>
   </dialog>
@@ -5146,6 +5186,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_translate_label": {
       "message": "AI Translate"
+    },
+    "global_settings_title": {
+      "message": "Global Settings"
+    },
+    "library_settings_section": {
+      "message": "Library Settings"
+    },
+    "ai_settings_section": {
+      "message": "AI Settings"
+    },
+    "cover_width_setting": {
+      "message": "Cover Width"
+    },
+    "ai_welcome_msg": {
+      "message": "Hi! I am your AI Reading Assistant. How can I help you today?"
+    },
+    "ai_system_prompt_summarize": {
+      "message": "You are a helpful reading assistant. Summarize the following text concisely. Respond in English."
+    },
+    "ai_system_prompt_explain": {
+      "message": "You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in English."
+    },
+    "ai_system_prompt_translate": {
+      "message": "You are a professional translator. Translate the text into $target$. Output only the translation, no explanation."
+    },
+    "ai_target_lang": {
+      "message": "English"
     }
   },
   "zh_TW": {
@@ -5719,6 +5786,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_translate_label": {
       "message": "AI 翻譯"
+    },
+    "global_settings_title": {
+      "message": "全局設置"
+    },
+    "library_settings_section": {
+      "message": "書庫設置"
+    },
+    "ai_settings_section": {
+      "message": "AI 配置"
+    },
+    "cover_width_setting": {
+      "message": "封面大小"
+    },
+    "ai_welcome_msg": {
+      "message": "你好！我是你的 AI 閱讀助手。今天有什麼我可以幫你的嗎？"
+    },
+    "ai_system_prompt_summarize": {
+      "message": "你是一位得力的閱讀助手。請簡明扼要地總結以下文本。用繁體中文回答。"
+    },
+    "ai_system_prompt_explain": {
+      "message": "你親切的詞典助手。請結合上下文，簡明扼要地解釋所選詞語的涵義。用繁體中文回答。"
+    },
+    "ai_system_prompt_translate": {
+      "message": "你是一位專業的翻譯官。請將文本翻譯為 $target$。只輸出翻譯結果，不要有任何解釋。"
+    },
+    "ai_target_lang": {
+      "message": "Traditional Chinese"
     }
   },
   "zh_CN": {
@@ -6292,6 +6386,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_translate_label": {
       "message": "AI 翻译"
+    },
+    "global_settings_title": {
+      "message": "全局设置"
+    },
+    "library_settings_section": {
+      "message": "书库设置"
+    },
+    "ai_settings_section": {
+      "message": "AI 配置"
+    },
+    "cover_width_setting": {
+      "message": "封面大小"
+    },
+    "ai_welcome_msg": {
+      "message": "你好！我是你的 AI 阅读助手。今天有什么我可以帮你的吗？"
+    },
+    "ai_system_prompt_summarize": {
+      "message": "你是一位得力的阅读助手。请简明扼要地总结以下文本。用简体中文回答。"
+    },
+    "ai_system_prompt_explain": {
+      "message": "你是一位词典助手。请结合上下文，简明扼要地解释所选词语的含义。用简体中文回答。"
+    },
+    "ai_system_prompt_translate": {
+      "message": "你是一位专业的翻译官。请将文本翻译为 $target$。只输出翻译结果，不要有任何解释。"
+    },
+    "ai_target_lang": {
+      "message": "Simplified Chinese"
     }
   }
 };
@@ -10719,6 +10840,8 @@ class TTSEngine {
 // reader/ai.js
 // AI 閱讀伴侶模組，支持瀏覽器內置的 Prompt API (Gemini Nano) 以及自定義 AI 服務商 (OpenAI / Ollama)
 
+
+
 class AIEngine {
   constructor() {
     this.session = null;
@@ -10820,21 +10943,21 @@ class AIEngine {
 
   // 1. 章節/選段摘要 (流式輸出)
   async summarize(text, onChunk) {
-    const systemPrompt = 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input (if the text is in Chinese, summarize in Chinese).';
+    const systemPrompt = getMsg('ai_system_prompt_summarize') || 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input.';
     const prompt = `Please summarize this text: \n\n${text.substring(0, 4000)}`;
     return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 2. 生詞釋義 (流式輸出)
   async explainWord(word, context, onChunk) {
-    const systemPrompt = 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in the language of the context (Chinese if Chinese, English if English).';
+    const systemPrompt = getMsg('ai_system_prompt_explain') || 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise.';
     const prompt = `Selected Word: "${word}"\nContext: "...${context.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
     return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 3. 離線翻譯 (流式輸出)
   async translate(text, targetLangName, onChunk) {
-    const systemPrompt = `You are a professional translator. Translate the text into ${targetLangName}. Output only the translation, no explanation.`;
+    const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into $target$. Output only the translation, no explanation.').replace('$target$', targetLangName);
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
     return this._chat(systemPrompt, prompt, onChunk);
   }
@@ -11683,7 +11806,7 @@ function initUIEventBindings() {
         if (!contentEl.querySelector('.ai-chat-bubble')) {
           contentEl.innerHTML = `
             <div class="ai-chat-bubble assistant-bubble">
-              Hi, I am your AI Reading Assistant. How can I help you today?
+              ${getMsg('ai_welcome_msg') || 'Hi! I am your AI Reading Assistant. How can I help you today?'}
             </div>
           `;
         }
@@ -11990,6 +12113,61 @@ function initUIEventBindings() {
   document.getElementById('close-ai-panel').addEventListener('click', () => {
     document.getElementById('ai-panel').style.display = 'none';
   });
+
+  // 全局設置對話框
+  const globalSettingsBtn = document.getElementById('global-settings-btn');
+  const readerOpenSettingsBtn = document.getElementById('reader-open-settings-btn');
+  const globalSettingsDialog = document.getElementById('global-settings-dialog');
+  const closeGlobalSettingsBtn = document.getElementById('close-global-settings');
+  const globalCoverWidthSlider = document.getElementById('global-cover-width-slider');
+  const globalCoverWidthVal = document.getElementById('global-cover-width-val');
+
+  if (globalSettingsDialog) {
+    // 綁定打開
+    if (globalSettingsBtn) {
+      globalSettingsBtn.addEventListener('click', () => {
+        const savedWidth = localStorage.getItem('coverWidth') || '180';
+        if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
+        if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
+        globalSettingsDialog.showModal();
+      });
+    }
+    if (readerOpenSettingsBtn) {
+      readerOpenSettingsBtn.addEventListener('click', () => {
+        const settingsPanel = document.getElementById('settings-panel');
+        if (settingsPanel) settingsPanel.classList.remove('active');
+        
+        const savedWidth = localStorage.getItem('coverWidth') || '180';
+        if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
+        if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
+        globalSettingsDialog.showModal();
+      });
+    }
+
+    // 關閉按鈕
+    if (closeGlobalSettingsBtn) {
+      closeGlobalSettingsBtn.addEventListener('click', () => {
+        globalSettingsDialog.close();
+      });
+    }
+
+    // 點擊背景關閉
+    globalSettingsDialog.addEventListener('click', (event) => {
+      if (event.target === globalSettingsDialog) {
+        globalSettingsDialog.close();
+      }
+    });
+
+    // 封面大小滑動條監聽
+    if (globalCoverWidthSlider) {
+      globalCoverWidthSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${val}px`;
+        document.documentElement.style.setProperty('--cover-width', `${val}px`);
+        localStorage.setItem('coverWidth', val);
+      });
+    }
+  }
 
   // 關於對話框
   const aboutBtn = document.getElementById('about-btn');
@@ -16024,7 +16202,14 @@ async function triggerAITranslate() {
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文
   const hasChinese = /[\u4e00-\u9fa5]/.test(selectedTextState);
-  const targetLang = hasChinese ? 'English' : 'Traditional Chinese';
+  let targetLang = 'English';
+  if (!hasChinese) {
+    const localeTargetLang = getMsg('ai_target_lang');
+    targetLang = (localeTargetLang && localeTargetLang !== 'ai_target_lang') ? localeTargetLang : 'Traditional Chinese';
+    if (targetLang === 'English') {
+      targetLang = 'Traditional Chinese';
+    }
+  }
 
   try {
     const bubble = document.getElementById('ai-active-assistant-bubble');

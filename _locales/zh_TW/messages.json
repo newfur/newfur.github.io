@@ -569,5 +569,32 @@
   },
   "ai_translate_label": {
     "message": "AI 翻譯"
+  },
+  "global_settings_title": {
+    "message": "全局設置"
+  },
+  "library_settings_section": {
+    "message": "書庫設置"
+  },
+  "ai_settings_section": {
+    "message": "AI 配置"
+  },
+  "cover_width_setting": {
+    "message": "封面大小"
+  },
+  "ai_welcome_msg": {
+    "message": "你好！我是你的 AI 閱讀助手。今天有什麼我可以幫你的嗎？"
+  },
+  "ai_system_prompt_summarize": {
+    "message": "你是一位得力的閱讀助手。請簡明扼要地總結以下文本。用繁體中文回答。"
+  },
+  "ai_system_prompt_explain": {
+    "message": "你親切的詞典助手。請結合上下文，簡明扼要地解釋所選詞語的涵義。用繁體中文回答。"
+  },
+  "ai_system_prompt_translate": {
+    "message": "你是一位專業的翻譯官。請將文本翻譯為 $target$。只輸出翻譯結果，不要有任何解釋。"
+  },
+  "ai_target_lang": {
+    "message": "Traditional Chinese"
   }
 }

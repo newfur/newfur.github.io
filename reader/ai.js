@@ -1,6 +1,8 @@
 // reader/ai.js
 // AI 閱讀伴侶模組，支持瀏覽器內置的 Prompt API (Gemini Nano) 以及自定義 AI 服務商 (OpenAI / Ollama)
 
+import { getMsg } from './i18n.js';
+
 export class AIEngine {
   constructor() {
     this.session = null;
@@ -102,21 +104,21 @@ export class AIEngine {
 
   // 1. 章節/選段摘要 (流式輸出)
   async summarize(text, onChunk) {
-    const systemPrompt = 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input (if the text is in Chinese, summarize in Chinese).';
+    const systemPrompt = getMsg('ai_system_prompt_summarize') || 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input.';
     const prompt = `Please summarize this text: \n\n${text.substring(0, 4000)}`;
     return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 2. 生詞釋義 (流式輸出)
   async explainWord(word, context, onChunk) {
-    const systemPrompt = 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in the language of the context (Chinese if Chinese, English if English).';
+    const systemPrompt = getMsg('ai_system_prompt_explain') || 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise.';
     const prompt = `Selected Word: "${word}"\nContext: "...${context.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
     return this._chat(systemPrompt, prompt, onChunk);
   }
 
   // 3. 離線翻譯 (流式輸出)
   async translate(text, targetLangName, onChunk) {
-    const systemPrompt = `You are a professional translator. Translate the text into ${targetLangName}. Output only the translation, no explanation.`;
+    const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into $target$. Output only the translation, no explanation.').replace('$target$', targetLangName);
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
     return this._chat(systemPrompt, prompt, onChunk);
   }

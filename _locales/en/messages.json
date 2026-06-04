@@ -569,5 +569,32 @@
   },
   "ai_translate_label": {
     "message": "AI Translate"
+  },
+  "global_settings_title": {
+    "message": "Global Settings"
+  },
+  "library_settings_section": {
+    "message": "Library Settings"
+  },
+  "ai_settings_section": {
+    "message": "AI Settings"
+  },
+  "cover_width_setting": {
+    "message": "Cover Width"
+  },
+  "ai_welcome_msg": {
+    "message": "Hi! I am your AI Reading Assistant. How can I help you today?"
+  },
+  "ai_system_prompt_summarize": {
+    "message": "You are a helpful reading assistant. Summarize the following text concisely. Respond in English."
+  },
+  "ai_system_prompt_explain": {
+    "message": "You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in English."
+  },
+  "ai_system_prompt_translate": {
+    "message": "You are a professional translator. Translate the text into $target$. Output only the translation, no explanation."
+  },
+  "ai_target_lang": {
+    "message": "English"
   }
 }
