@@ -1887,7 +1887,7 @@ textarea:focus {
 }
 
 .ai-title {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--primary-color);
 }
@@ -1895,8 +1895,8 @@ textarea:focus {
 .ai-panel-body {
   padding: 20px;
   overflow-y: auto;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .ai-loading {
@@ -3793,12 +3793,16 @@ html.transition-none .page-texture-slide {
   border: 1px solid var(--border-color);
   background-color: var(--background-color);
   color: var(--text-color);
-  font-size: 14px;
+  font-size: 15.5px;
   outline: none;
   resize: none;
   box-sizing: border-box;
   font-family: var(--font-sans);
   transition: border-color 0.2s ease;
+}
+
+.ai-panel-footer textarea::placeholder {
+  font-size: 15px;
 }
 
 .ai-panel-footer textarea:focus {
@@ -3837,12 +3841,12 @@ html.transition-none .page-texture-slide {
 /* 聊天氣泡樣式 */
 .ai-chat-bubble {
   margin-bottom: 12px;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: 14px;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.65;
   word-wrap: break-word;
-  max-width: 85%;
+  max-width: 90%;
   box-sizing: border-box;
 }
 
@@ -3860,6 +3864,21 @@ html.transition-none .page-texture-slide {
   margin-right: auto;
   border-bottom-left-radius: 4px;
   border: 1px solid var(--border-color);
+}
+
+.ai-chat-bubble code {
+  background-color: rgba(120, 120, 120, 0.12);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: var(--font-fira), Consolas, Monaco, monospace;
+  font-size: 0.9em;
+}
+
+.ai-chat-bubble pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 1em;
 }
 
 /* AI 伴侶面板在桌面端的側邊欄排版與滑入動畫 */

@@ -5072,6 +5072,108 @@ function speakSelection() {
 
 // ==================== 8. AI 伴侶流式調用 ==================== */
 
+// 輕量級 Markdown 格式化解析器，為 AI 回覆提供換行、加粗、代碼與列表的結構化渲染
+function formatMarkdown(text) {
+  if (!text) return '';
+  
+  // 1. 轉義 HTML 字符防止 XSS 注入
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+    
+  // 2. 鏈接處理：[文本](鏈接) -> <a href="鏈接" target="_blank" style="color: var(--primary-color); text-decoration: underline;">文本</a>
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color: var(--primary-color); text-decoration: underline;">$1</a>');
+
+  // 3. 加粗：**文本** -> <strong>文本</strong>
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // 4. 行內代碼：`代碼` -> <code>代碼</code>
+  html = html.replace(/`(.*?)`/g, '<code>$1</code>');
+  
+  // 5. 按行解析以支持標題、列表及多行代碼塊
+  const lines = html.split('\n');
+  let inList = false;
+  let inCodeBlock = false;
+  let codeBlockLines = [];
+  let resultLines = [];
+  
+  for (let line of lines) {
+    let trimmed = line.trim();
+    
+    // 檢查代碼塊
+    if (trimmed.startsWith('```')) {
+      if (inCodeBlock) {
+        // 代碼塊結束
+        resultLines.push(`<pre style="background: rgba(120, 120, 120, 0.08); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-family: var(--font-fira), Consolas, Monaco, monospace; font-size: 14.5px; margin: 8px 0; border: 1px solid var(--border-color);"><code style="white-space: pre-wrap; word-break: break-all;">${codeBlockLines.join('\n')}</code></pre>`);
+        codeBlockLines = [];
+        inCodeBlock = false;
+      } else {
+        // 代碼塊開始
+        if (inList) { resultLines.push('</ul>'); inList = false; }
+        inCodeBlock = true;
+      }
+      continue;
+    }
+    
+    if (inCodeBlock) {
+      codeBlockLines.push(line);
+      continue;
+    }
+
+    // 三級標題
+    if (trimmed.startsWith('### ')) {
+      if (inList) { resultLines.push('</ul>'); inList = false; }
+      resultLines.push(`<h4 style="margin: 12px 0 6px 0; font-size: 17px; font-weight: 600; color: var(--primary-color);">${trimmed.substring(4)}</h4>`);
+    }
+    // 二級標題
+    else if (trimmed.startsWith('## ')) {
+      if (inList) { resultLines.push('</ul>'); inList = false; }
+      resultLines.push(`<h3 style="margin: 14px 0 8px 0; font-size: 18px; font-weight: 600; color: var(--primary-color);">${trimmed.substring(3)}</h3>`);
+    }
+    // 一級標題
+    else if (trimmed.startsWith('# ')) {
+      if (inList) { resultLines.push('</ul>'); inList = false; }
+      resultLines.push(`<h2 style="margin: 16px 0 10px 0; font-size: 20px; font-weight: 600; color: var(--primary-color);">${trimmed.substring(2)}</h2>`);
+    }
+    // 無序列表項
+    else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      if (!inList) {
+        resultLines.push('<ul style="margin: 6px 0; padding-left: 20px; list-style-type: disc;">');
+        inList = true;
+      }
+      resultLines.push(`<li style="margin: 6px 0; line-height: 1.65;">${trimmed.substring(2)}</li>`);
+    }
+    // 有序列表項
+    else if (/^\d+\.\s/.test(trimmed)) {
+      const match = trimmed.match(/^(\d+)\.\s(.*)/);
+      if (inList) { resultLines.push('</ul>'); inList = false; }
+      resultLines.push(`<div style="margin: 6px 0; padding-left: 5px; line-height: 1.65;"><strong>${match[1]}.</strong> ${match[2]}</div>`);
+    }
+    // 空行換行
+    else if (trimmed === '') {
+      if (inList) { resultLines.push('</ul>'); inList = false; }
+      resultLines.push('<div style="height: 8px;"></div>');
+    }
+    // 普通文本行
+    else {
+      if (inList) { resultLines.push('</ul>'); inList = false; }
+      resultLines.push(`<div style="margin: 4px 0; min-height: 1em; line-height: 1.65;">${line}</div>`);
+    }
+  }
+  
+  if (inCodeBlock) {
+    resultLines.push(`<pre style="background: rgba(120, 120, 120, 0.08); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-family: var(--font-fira), Consolas, Monaco, monospace; font-size: 14.5px; margin: 8px 0; border: 1px solid var(--border-color);"><code style="white-space: pre-wrap; word-break: break-all;">${codeBlockLines.join('\n')}</code></pre>`);
+  }
+  if (inList) {
+    resultLines.push('</ul>');
+  }
+  
+  return resultLines.join('\n');
+}
+
 // 打開 AI 面板並顯示載入中
 function showAILoading(typeLabel, textContext) {
   const panel = document.getElementById('ai-panel');
@@ -5161,7 +5263,7 @@ async function sendCustomAIQuery() {
     if (badge) badge.style.display = 'none';
 
     await ai._chat(systemPrompt, query, (chunk) => {
-      assistantBubble.textContent = chunk;
+      assistantBubble.innerHTML = formatMarkdown(chunk);
       contentEl.scrollTop = contentEl.scrollHeight;
     });
   } catch (e) {
@@ -5182,7 +5284,7 @@ async function triggerAISummary() {
     const bubble = document.getElementById('ai-active-assistant-bubble');
     await ai.summarize(selectedTextState, (chunk) => {
       if (bubble) {
-        bubble.textContent = chunk;
+        bubble.innerHTML = formatMarkdown(chunk);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
@@ -5211,7 +5313,7 @@ async function triggerAIExplain() {
     const bubble = document.getElementById('ai-active-assistant-bubble');
     await ai.explainWord(selectedTextState, context, (chunk) => {
       if (bubble) {
-        bubble.textContent = chunk;
+        bubble.innerHTML = formatMarkdown(chunk);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
@@ -5247,7 +5349,7 @@ async function triggerAITranslate() {
     const bubble = document.getElementById('ai-active-assistant-bubble');
     await ai.translate(selectedTextState, targetLang, (chunk) => {
       if (bubble) {
-        bubble.textContent = chunk;
+        bubble.innerHTML = formatMarkdown(chunk);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
