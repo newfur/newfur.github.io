@@ -3775,6 +3775,97 @@ html.transition-none .page-texture-slide {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+/* ==================== AI 聊天輸入框 (AI Chat Input Panel) ==================== */
+.ai-panel-footer {
+  padding: 10px 15px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ai-panel-footer textarea {
+  flex: 1;
+  height: 38px;
+  min-height: 38px;
+  max-height: 80px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-size: 14px;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  transition: border-color 0.2s ease;
+}
+
+.ai-panel-footer textarea:focus {
+  border-color: var(--primary-color);
+}
+
+.ai-panel-footer button {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  background-color: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-panel-footer button:hover {
+  opacity: 0.9;
+}
+
+.ai-panel-footer button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 聊天氣泡樣式 */
+.ai-chat-bubble {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  max-width: 85%;
+  box-sizing: border-box;
+}
+
+.user-bubble {
+  background-color: var(--primary-color);
+  color: white;
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+  text-align: left;
+}
+
+.assistant-bubble {
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  margin-right: auto;
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+
+
 
 
 </style>
@@ -3955,6 +4046,12 @@ html.transition-none .page-texture-slide {
             <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
           </span>
         </button>
+        <!-- AI 閱讀伴侶 -->
+        <button id="ai-toggle" class="btn-icon-only ai-btn" data-i18n-title="ai_assistant" title="AI Assistant">
+          <span class="icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
+          </span>
+        </button>
         <!-- 閱讀設定切換 -->
         <button id="settings-toggle" class="btn-icon-only" data-i18n-title="settings" title="Settings">
           <span class="icon">
@@ -4125,6 +4222,9 @@ html.transition-none .page-texture-slide {
         <label data-i18n="ai_model">Model Name</label>
         <input type="text" id="ai-model-input" placeholder="gpt-4o-mini">
       </div>
+      <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 10px;">
+        <button id="ai-save-btn" class="btn-primary" style="width: 100%; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save AI Settings</button>
+      </div>
     </div>
 
     <!-- ================= 懸浮 TTS 控制面板 (TTS Control Panel) ================= -->
@@ -4266,6 +4366,12 @@ html.transition-none .page-texture-slide {
       </div>
       <div id="ai-content" class="ai-panel-body">
         <!-- AI 生成結果將在此輸出 -->
+      </div>
+      <div class="ai-panel-footer">
+        <textarea id="ai-input" data-i18n-placeholder="ai_input_placeholder" placeholder="Ask AI anything..."></textarea>
+        <button id="ai-send-btn">
+          <svg class="svg-icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -5019,6 +5125,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_model": {
       "message": "Model Name"
+    },
+    "ai_input_placeholder": {
+      "message": "Ask AI anything..."
+    },
+    "ai_save_settings": {
+      "message": "Save AI Settings"
+    },
+    "ai_settings_saved": {
+      "message": "Saved!"
+    },
+    "ai_assistant": {
+      "message": "AI Assistant"
+    },
+    "ai_summary_label": {
+      "message": "AI Summary"
+    },
+    "ai_explain_label": {
+      "message": "AI Explain"
+    },
+    "ai_translate_label": {
+      "message": "AI Translate"
     }
   },
   "zh_TW": {
@@ -5571,6 +5698,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_model": {
       "message": "模型名稱 (Model)"
+    },
+    "ai_input_placeholder": {
+      "message": "輸入問題，向 AI 提問..."
+    },
+    "ai_save_settings": {
+      "message": "保存 AI 配置"
+    },
+    "ai_settings_saved": {
+      "message": "已保存"
+    },
+    "ai_assistant": {
+      "message": "AI 助手"
+    },
+    "ai_summary_label": {
+      "message": "AI 摘要"
+    },
+    "ai_explain_label": {
+      "message": "AI 釋義"
+    },
+    "ai_translate_label": {
+      "message": "AI 翻譯"
     }
   },
   "zh_CN": {
@@ -6123,6 +6271,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_model": {
       "message": "模型名称 (Model)"
+    },
+    "ai_input_placeholder": {
+      "message": "输入问题，向 AI 提问..."
+    },
+    "ai_save_settings": {
+      "message": "保存 AI 配置"
+    },
+    "ai_settings_saved": {
+      "message": "已保存"
+    },
+    "ai_assistant": {
+      "message": "AI 助手"
+    },
+    "ai_summary_label": {
+      "message": "AI 摘要"
+    },
+    "ai_explain_label": {
+      "message": "AI 释义"
+    },
+    "ai_translate_label": {
+      "message": "AI 翻译"
     }
   }
 };
@@ -11468,6 +11637,85 @@ function initUIEventBindings() {
     });
   }
 
+  // AI 保存配置按鈕監聽
+  const aiSaveBtn = document.getElementById('ai-save-btn');
+  if (aiSaveBtn) {
+    aiSaveBtn.addEventListener('click', () => {
+      const provider = document.getElementById('ai-provider-select').value;
+      const apiKey = document.getElementById('ai-api-key-input').value;
+      const endpoint = document.getElementById('ai-endpoint-input').value;
+      const model = document.getElementById('ai-model-input').value;
+
+      ai.configure({ provider, apiKey, endpoint, model });
+      chrome.storage.local.set({ aiProvider: provider, aiApiKey: apiKey, aiEndpoint: endpoint, aiModel: model }, () => {
+        updateAIButtonsVisibility();
+        // 顯示已保存的反饋狀態
+        const originalText = aiSaveBtn.textContent;
+        aiSaveBtn.textContent = getMsg('ai_settings_saved');
+        aiSaveBtn.style.backgroundColor = '#34c759'; // green color for success
+        setTimeout(() => {
+          aiSaveBtn.textContent = originalText;
+          aiSaveBtn.style.backgroundColor = ''; // restore original background
+        }, 1500);
+      });
+    });
+  }
+
+  // AI 面板頂欄關閉按鈕監聽
+  const closeAiPanelBtn = document.getElementById('close-ai-panel');
+  if (closeAiPanelBtn) {
+    closeAiPanelBtn.addEventListener('click', () => {
+      document.getElementById('ai-panel').style.display = 'none';
+    });
+  }
+
+  // 頂欄 AI 助手切換按鈕監聽
+  const aiToggleBtn = document.getElementById('ai-toggle');
+  if (aiToggleBtn) {
+    aiToggleBtn.addEventListener('click', () => {
+      const aiPanel = document.getElementById('ai-panel');
+      if (aiPanel.style.display === 'flex' || aiPanel.style.display === 'block') {
+        aiPanel.style.display = 'none';
+      } else {
+        aiPanel.style.display = 'flex';
+        // 如果是空的，初始化歡迎詞
+        const contentEl = document.getElementById('ai-content');
+        if (!contentEl.querySelector('.ai-chat-bubble')) {
+          contentEl.innerHTML = `
+            <div class="ai-chat-bubble assistant-bubble">
+              Hi, I am your AI Reading Assistant. How can I help you today?
+            </div>
+          `;
+        }
+        document.getElementById('ai-input').focus();
+      }
+    });
+  }
+
+  // AI 聊天發送按鈕
+  const aiSendBtn = document.getElementById('ai-send-btn');
+  if (aiSendBtn) {
+    aiSendBtn.addEventListener('click', () => {
+      sendCustomAIQuery();
+    });
+  }
+
+  // AI 聊天輸入框 Keydown 監聽 (Enter 送出, Shift+Enter 換行)
+  const aiInput = document.getElementById('ai-input');
+  if (aiInput) {
+    aiInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendCustomAIQuery();
+      }
+    });
+    // 自動調整 textarea 高度
+    aiInput.addEventListener('input', (e) => {
+      e.target.style.height = 'auto';
+      e.target.style.height = `${Math.min(e.target.scrollHeight, 80)}px`;
+    });
+  }
+
   // 版面排版模式切換
   const layoutScrollBtn = document.getElementById('layout-scroll-btn');
   if (layoutScrollBtn) {
@@ -14299,6 +14547,7 @@ function updateAIConfigFieldsVisibility(provider) {
   const apiKeyContainer = document.getElementById('ai-api-key-container');
   const endpointContainer = document.getElementById('ai-endpoint-container');
   const modelContainer = document.getElementById('ai-model-container');
+  const saveContainer = document.getElementById('ai-save-container');
 
   if (!apiKeyContainer || !endpointContainer || !modelContainer) return;
 
@@ -14306,14 +14555,17 @@ function updateAIConfigFieldsVisibility(provider) {
     apiKeyContainer.style.display = 'none';
     endpointContainer.style.display = 'none';
     modelContainer.style.display = 'none';
+    if (saveContainer) saveContainer.style.display = 'none';
   } else if (provider === 'ollama') {
     apiKeyContainer.style.display = 'none';
     endpointContainer.style.display = 'flex';
     modelContainer.style.display = 'flex';
+    if (saveContainer) saveContainer.style.display = 'flex';
   } else if (provider === 'openai') {
     apiKeyContainer.style.display = 'flex';
     endpointContainer.style.display = 'flex';
     modelContainer.style.display = 'flex';
+    if (saveContainer) saveContainer.style.display = 'flex';
   }
 }
 
@@ -15635,16 +15887,76 @@ function speakSelection() {
 // ==================== 8. AI 伴侶流式調用 ==================== */
 
 // 打開 AI 面板並顯示載入中
-function showAILoading() {
+function showAILoading(typeLabel, textContext) {
   const panel = document.getElementById('ai-panel');
   const content = document.getElementById('ai-content');
   panel.style.display = 'flex';
-  content.innerHTML = `
-    <div class="ai-loading">
-      <div class="ai-loading-spinner"></div>
+  
+  content.innerHTML = '';
+
+  // 1. 插入使用者提問氣泡 (帶有操作類型)
+  const userBubble = document.createElement('div');
+  userBubble.className = 'ai-chat-bubble user-bubble';
+  userBubble.textContent = `[${typeLabel}] ${textContext.substring(0, 100)}${textContext.length > 100 ? '...' : ''}`;
+  content.appendChild(userBubble);
+
+  // 2. 插入 AI 思考氣泡
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'ai-chat-bubble assistant-bubble';
+  assistantBubble.id = 'ai-active-assistant-bubble'; // 方便串流更新
+  assistantBubble.innerHTML = `
+    <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
+      <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
       <span>${getMsg('ai_thinking')}</span>
     </div>
   `;
+  content.appendChild(assistantBubble);
+  content.scrollTop = content.scrollHeight;
+}
+
+// 向 AI 發送自定義提問
+async function sendCustomAIQuery() {
+  const inputEl = document.getElementById('ai-input');
+  const query = inputEl.value.trim();
+  if (!query) return;
+
+  inputEl.value = '';
+  inputEl.style.height = '38px'; // 恢復默認高度
+
+  const contentEl = document.getElementById('ai-content');
+
+  // 如果沒有對話氣泡，清除默認歡迎內容
+  if (!contentEl.querySelector('.ai-chat-bubble')) {
+    contentEl.innerHTML = '';
+  }
+
+  // 1. 插入使用者問題氣泡
+  const userBubble = document.createElement('div');
+  userBubble.className = 'ai-chat-bubble user-bubble';
+  userBubble.textContent = query;
+  contentEl.appendChild(userBubble);
+
+  // 2. 插入 AI 思考中/回答氣泡
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'ai-chat-bubble assistant-bubble';
+  assistantBubble.innerHTML = `
+    <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
+      <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
+      <span>${getMsg('ai_thinking')}</span>
+    </div>
+  `;
+  contentEl.appendChild(assistantBubble);
+  contentEl.scrollTop = contentEl.scrollHeight;
+
+  try {
+    const systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.';
+    await ai._chat(systemPrompt, query, (chunk) => {
+      assistantBubble.textContent = chunk;
+      contentEl.scrollTop = contentEl.scrollHeight;
+    });
+  } catch (e) {
+    assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+  }
 }
 
 // 觸發 AI 摘要
@@ -15652,14 +15964,23 @@ async function triggerAISummary() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
-  showAILoading();
+  
+  const typeLabel = getMsg('ai_summary_label') || 'Summary';
+  showAILoading(typeLabel, selectedTextState);
   
   try {
+    const bubble = document.getElementById('ai-active-assistant-bubble');
     await ai.summarize(selectedTextState, (chunk) => {
-      document.getElementById('ai-content').textContent = chunk;
+      if (bubble) {
+        bubble.textContent = chunk;
+        document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
+      }
     });
   } catch (e) {
-    document.getElementById('ai-content').innerHTML = `<p style="color:red;">${getMsg('error_prefix')}: ${e.message}</p>`;
+    const bubble = document.getElementById('ai-active-assistant-bubble');
+    if (bubble) {
+      bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    }
   }
 }
 
@@ -15668,18 +15989,27 @@ async function triggerAIExplain() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
-  showAILoading();
+  
+  const typeLabel = getMsg('ai_explain_label') || 'Explain';
+  showAILoading(typeLabel, selectedTextState);
 
   // 獲取選詞的上下文段落
   const parentPara = selectedTextRange.startContainer.parentElement.closest('p, div, li');
   const context = parentPara ? parentPara.textContent : selectedTextState;
 
   try {
+    const bubble = document.getElementById('ai-active-assistant-bubble');
     await ai.explainWord(selectedTextState, context, (chunk) => {
-      document.getElementById('ai-content').textContent = chunk;
+      if (bubble) {
+        bubble.textContent = chunk;
+        document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
+      }
     });
   } catch (e) {
-    document.getElementById('ai-content').innerHTML = `<p style="color:red;">${getMsg('error_prefix')}: ${e.message}</p>`;
+    const bubble = document.getElementById('ai-active-assistant-bubble');
+    if (bubble) {
+      bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    }
   }
 }
 
@@ -15688,18 +16018,27 @@ async function triggerAITranslate() {
   if (!selectedTextState) return;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
-  showAILoading();
+  
+  const typeLabel = getMsg('ai_translate_label') || 'Translate';
+  showAILoading(typeLabel, selectedTextState);
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文
   const hasChinese = /[\u4e00-\u9fa5]/.test(selectedTextState);
   const targetLang = hasChinese ? 'English' : 'Traditional Chinese';
 
   try {
+    const bubble = document.getElementById('ai-active-assistant-bubble');
     await ai.translate(selectedTextState, targetLang, (chunk) => {
-      document.getElementById('ai-content').textContent = chunk;
+      if (bubble) {
+        bubble.textContent = chunk;
+        document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
+      }
     });
   } catch (e) {
-    document.getElementById('ai-content').innerHTML = `<p style="color:red;">${getMsg('error_prefix')}: ${e.message}</p>`;
+    const bubble = document.getElementById('ai-active-assistant-bubble');
+    if (bubble) {
+      bubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+    }
   }
 }
 

@@ -3769,5 +3769,96 @@ html.transition-none .page-texture-slide {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+/* ==================== AI 聊天輸入框 (AI Chat Input Panel) ==================== */
+.ai-panel-footer {
+  padding: 10px 15px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ai-panel-footer textarea {
+  flex: 1;
+  height: 38px;
+  min-height: 38px;
+  max-height: 80px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-size: 14px;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  transition: border-color 0.2s ease;
+}
+
+.ai-panel-footer textarea:focus {
+  border-color: var(--primary-color);
+}
+
+.ai-panel-footer button {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  background-color: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-panel-footer button:hover {
+  opacity: 0.9;
+}
+
+.ai-panel-footer button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 聊天氣泡樣式 */
+.ai-chat-bubble {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  max-width: 85%;
+  box-sizing: border-box;
+}
+
+.user-bubble {
+  background-color: var(--primary-color);
+  color: white;
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+  text-align: left;
+}
+
+.assistant-bubble {
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  margin-right: auto;
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+
+
 
 

@@ -182,6 +182,12 @@
             <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
           </span>
         </button>
+        <!-- AI 閱讀伴侶 -->
+        <button id="ai-toggle" class="btn-icon-only ai-btn" data-i18n-title="ai_assistant" title="AI Assistant">
+          <span class="icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3c0 4.5 3.5 8 8 8M12 21c0-4.5 3.5-8 8-8M12 3C12 7.5 8.5 11 4 11M12 21c0-4.5-3.5-8-8-8"></path></svg>
+          </span>
+        </button>
         <!-- 閱讀設定切換 -->
         <button id="settings-toggle" class="btn-icon-only" data-i18n-title="settings" title="Settings">
           <span class="icon">
@@ -352,6 +358,9 @@
         <label data-i18n="ai_model">Model Name</label>
         <input type="text" id="ai-model-input" placeholder="gpt-4o-mini">
       </div>
+      <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 10px;">
+        <button id="ai-save-btn" class="btn-primary" style="width: 100%; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex;" data-i18n="ai_save_settings">Save AI Settings</button>
+      </div>
     </div>
 
     <!-- ================= 懸浮 TTS 控制面板 (TTS Control Panel) ================= -->
@@ -493,6 +502,12 @@
       </div>
       <div id="ai-content" class="ai-panel-body">
         <!-- AI 生成結果將在此輸出 -->
+      </div>
+      <div class="ai-panel-footer">
+        <textarea id="ai-input" data-i18n-placeholder="ai_input_placeholder" placeholder="Ask AI anything..."></textarea>
+        <button id="ai-send-btn">
+          <svg class="svg-icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
       </div>
     </div>
   </div>

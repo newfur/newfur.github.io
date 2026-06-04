@@ -548,5 +548,26 @@
   },
   "ai_model": {
     "message": "Model Name"
+  },
+  "ai_input_placeholder": {
+    "message": "Ask AI anything..."
+  },
+  "ai_save_settings": {
+    "message": "Save AI Settings"
+  },
+  "ai_settings_saved": {
+    "message": "Saved!"
+  },
+  "ai_assistant": {
+    "message": "AI Assistant"
+  },
+  "ai_summary_label": {
+    "message": "AI Summary"
+  },
+  "ai_explain_label": {
+    "message": "AI Explain"
+  },
+  "ai_translate_label": {
+    "message": "AI Translate"
   }
 }

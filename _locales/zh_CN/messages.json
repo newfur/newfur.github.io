@@ -548,5 +548,26 @@
   },
   "ai_model": {
     "message": "模型名称 (Model)"
+  },
+  "ai_input_placeholder": {
+    "message": "输入问题，向 AI 提问..."
+  },
+  "ai_save_settings": {
+    "message": "保存 AI 配置"
+  },
+  "ai_settings_saved": {
+    "message": "已保存"
+  },
+  "ai_assistant": {
+    "message": "AI 助手"
+  },
+  "ai_summary_label": {
+    "message": "AI 摘要"
+  },
+  "ai_explain_label": {
+    "message": "AI 释义"
+  },
+  "ai_translate_label": {
+    "message": "AI 翻译"
   }
 }
