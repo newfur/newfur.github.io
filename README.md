@@ -1,5 +1,7 @@
 # Edge 网页版电子书阅读器 (Edge E-Book Reader)
 
+Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en.md)
+
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web-blue)](javascript:;)
 [![License](https://img.shields.io/badge/license-ISC-green)](javascript:;)
 
