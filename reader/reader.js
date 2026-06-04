@@ -566,12 +566,15 @@ function initUIEventBindings() {
       
       const endpointInput = document.getElementById('ai-endpoint-input');
       const modelInput = document.getElementById('ai-model-input');
+      const apiKeyInput = document.getElementById('ai-api-key-input');
       if (provider === 'openai') {
         if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
         if (modelInput) modelInput.placeholder = 'gpt-4o-mini';
+        if (apiKeyInput) apiKeyInput.placeholder = 'sk-...';
       } else if (provider === 'ollama') {
         if (endpointInput) endpointInput.placeholder = 'http://localhost:11434';
         if (modelInput) modelInput.placeholder = 'llama3';
+        if (apiKeyInput) apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
       }
 
       updateAIConfigFieldsVisibility(provider);
@@ -634,6 +637,63 @@ function initUIEventBindings() {
       } catch (err) {
         aiTestResult.style.color = '#ff3b30'; // red color for error
         aiTestResult.textContent = `${getMsg('ai_test_fail') || 'Failed'}: ${err.message || err}`;
+      }
+    });
+  }
+
+  // AI 獲取模型列表按鈕監聽
+  const aiFetchModelsBtn = document.getElementById('ai-fetch-models-btn');
+  const aiModelSelect = document.getElementById('ai-model-select');
+  const aiModelInput = document.getElementById('ai-model-input');
+  if (aiFetchModelsBtn && aiModelSelect && aiModelInput) {
+    aiFetchModelsBtn.addEventListener('click', async () => {
+      const provider = document.getElementById('ai-provider-select').value;
+      const endpoint = document.getElementById('ai-endpoint-input').value;
+      const apiKey = document.getElementById('ai-api-key-input').value;
+
+      const originalText = aiFetchModelsBtn.textContent;
+      aiFetchModelsBtn.textContent = getMsg('ai_fetching_models') || 'Fetching...';
+      aiFetchModelsBtn.disabled = true;
+
+      try {
+        const models = await ai.fetchModels(provider, endpoint, apiKey);
+        if (models && models.length > 0) {
+          aiModelSelect.innerHTML = '';
+          const placeholderOpt = document.createElement('option');
+          placeholderOpt.value = '';
+          placeholderOpt.textContent = '-- Select --';
+          aiModelSelect.appendChild(placeholderOpt);
+
+          models.forEach(model => {
+            const opt = document.createElement('option');
+            opt.value = model;
+            opt.textContent = model;
+            aiModelSelect.appendChild(opt);
+          });
+          aiModelSelect.style.display = 'inline-block';
+          aiFetchModelsBtn.textContent = getMsg('ai_fetch_models_success') || 'Success';
+          aiFetchModelsBtn.style.color = '#34c759';
+        } else {
+          throw new Error('No models returned');
+        }
+      } catch (err) {
+        console.error('Failed to fetch models:', err);
+        alert((getMsg('ai_fetch_models_fail') || 'Failed to fetch models') + ': ' + (err.message || err));
+        aiFetchModelsBtn.textContent = originalText;
+        aiFetchModelsBtn.style.color = '';
+      } finally {
+        aiFetchModelsBtn.disabled = false;
+        setTimeout(() => {
+          aiFetchModelsBtn.textContent = originalText;
+          aiFetchModelsBtn.style.color = '';
+        }, 3000);
+      }
+    });
+
+    aiModelSelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        aiModelInput.value = e.target.value;
+        aiModelInput.dispatchEvent(new Event('input'));
       }
     });
   }
@@ -3567,7 +3627,14 @@ async function initAISettings() {
       const modelInput = document.getElementById('ai-model-input');
 
       if (providerSelect) providerSelect.value = provider;
-      if (apiKeyInput) apiKeyInput.value = apiKey;
+      if (apiKeyInput) {
+        apiKeyInput.value = apiKey;
+        if (provider === 'ollama') {
+          apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
+        } else {
+          apiKeyInput.placeholder = 'sk-...';
+        }
+      }
       if (endpointInput) {
         endpointInput.value = endpoint;
         if (provider === 'openai') {
@@ -3613,7 +3680,7 @@ function updateAIConfigFieldsVisibility(provider) {
     modelContainer.style.display = 'none';
     if (saveContainer) saveContainer.style.display = 'none';
   } else if (provider === 'ollama') {
-    apiKeyContainer.style.display = 'none';
+    apiKeyContainer.style.display = 'flex';
     endpointContainer.style.display = 'flex';
     modelContainer.style.display = 'flex';
     if (saveContainer) saveContainer.style.display = 'flex';

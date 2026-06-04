@@ -4588,8 +4588,15 @@ html.transition-none .page-texture-slide {
           <input type="text" id="ai-endpoint-input" placeholder="https://api.openai.com/v1" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
         </div>
         <div class="setting-item" id="ai-model-container" style="display: none; flex-direction: column; gap: 6px;">
-          <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
-          <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+          <div style="display: flex; width: 100%; justify-content: space-between; align-items: center;">
+            <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
+            <button id="ai-fetch-models-btn" class="btn btn-secondary" style="padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-color); display: inline-flex; align-items: center; justify-content: center; background: none; color: var(--text-color);" data-i18n="ai_fetch_models">Get Models</button>
+          </div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <select id="ai-model-select" style="display: none; width: auto; max-width: 150px; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            </select>
+          </div>
         </div>
         <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 15px; gap: 10px;">
           <button id="ai-test-btn" class="btn btn-secondary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex; border: 1px solid var(--border-color);" data-i18n="ai_test_settings">Test Connection</button>
@@ -5227,6 +5234,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_target_lang": {
       "message": "English"
+    },
+    "ai_fetch_models": {
+      "message": "Get Models"
+    },
+    "ai_fetching_models": {
+      "message": "Fetching..."
+    },
+    "ai_fetch_models_success": {
+      "message": "Models loaded successfully!"
+    },
+    "ai_fetch_models_fail": {
+      "message": "Failed to load models"
+    },
+    "ai_api_key_optional": {
+      "message": "Optional (e.g. for proxy auth)"
     }
   },
   "zh_TW": {
@@ -5839,6 +5861,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_target_lang": {
       "message": "Traditional Chinese"
+    },
+    "ai_fetch_models": {
+      "message": "獲取模型"
+    },
+    "ai_fetching_models": {
+      "message": "獲取中..."
+    },
+    "ai_fetch_models_success": {
+      "message": "模型列表獲取成功！"
+    },
+    "ai_fetch_models_fail": {
+      "message": "模型列表獲取失敗"
+    },
+    "ai_api_key_optional": {
+      "message": "可選 (例如本地代理認證)"
     }
   },
   "zh_CN": {
@@ -6451,6 +6488,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "ai_target_lang": {
       "message": "Simplified Chinese"
+    },
+    "ai_fetch_models": {
+      "message": "获取模型"
+    },
+    "ai_fetching_models": {
+      "message": "获取中..."
+    },
+    "ai_fetch_models_success": {
+      "message": "模型列表获取成功！"
+    },
+    "ai_fetch_models_fail": {
+      "message": "模型列表获取失败"
+    },
+    "ai_api_key_optional": {
+      "message": "可选 (例如本地代理认证)"
     }
   }
 };
@@ -11216,6 +11268,67 @@ class AIEngine {
       this.configure({ provider: prevProvider, apiKey: prevApiKey, endpoint: prevEndpoint, model: prevModel });
     }
   }
+
+  // 獲取模型列表
+  async fetchModels(provider, url, apiKey) {
+    const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
+    if (useExtension) {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'fetchModels', provider, url, apiKey }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success) {
+            resolve(response.models);
+          } else {
+            reject(new Error(response?.error || 'Failed to fetch models'));
+          }
+        });
+      });
+    } else {
+      // 獨立離線 HTML 環境下直接 Fetch
+      let fetchUrl = (url ? url.trim() : "");
+      if (!fetchUrl) {
+        fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434';
+      }
+      const headers = {};
+      if (apiKey && provider === 'openai') {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      if (provider === 'openai') {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/models';
+      } else if (provider === 'ollama') {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/api/tags';
+      }
+
+      try {
+        const response = await fetch(fetchUrl, { headers });
+        if (!response.ok) throw new Error("Status " + response.status);
+        const data = await response.json();
+        let models = [];
+        if (provider === 'openai' && data.data) {
+          models = data.data.map(m => m.id);
+        } else if (provider === 'ollama' && data.models) {
+          models = data.models.map(m => m.name);
+        }
+        return models;
+      } catch (err) {
+        if (provider === 'ollama') {
+          try {
+            let fallbackUrl = (url ? url.trim() : 'http://localhost:11434').replace(/\/+$/, '') + '/v1/models';
+            const response = await fetch(fallbackUrl, { headers });
+            if (response.ok) {
+              const data = await response.json();
+              if (data.data) {
+                return data.data.map(m => m.id);
+              }
+            }
+          } catch(e) {}
+        }
+        throw err;
+      }
+    }
+  }
 }
 
 
@@ -11790,12 +11903,15 @@ function initUIEventBindings() {
       
       const endpointInput = document.getElementById('ai-endpoint-input');
       const modelInput = document.getElementById('ai-model-input');
+      const apiKeyInput = document.getElementById('ai-api-key-input');
       if (provider === 'openai') {
         if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
         if (modelInput) modelInput.placeholder = 'gpt-4o-mini';
+        if (apiKeyInput) apiKeyInput.placeholder = 'sk-...';
       } else if (provider === 'ollama') {
         if (endpointInput) endpointInput.placeholder = 'http://localhost:11434';
         if (modelInput) modelInput.placeholder = 'llama3';
+        if (apiKeyInput) apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
       }
 
       updateAIConfigFieldsVisibility(provider);
@@ -11858,6 +11974,63 @@ function initUIEventBindings() {
       } catch (err) {
         aiTestResult.style.color = '#ff3b30'; // red color for error
         aiTestResult.textContent = `${getMsg('ai_test_fail') || 'Failed'}: ${err.message || err}`;
+      }
+    });
+  }
+
+  // AI 獲取模型列表按鈕監聽
+  const aiFetchModelsBtn = document.getElementById('ai-fetch-models-btn');
+  const aiModelSelect = document.getElementById('ai-model-select');
+  const aiModelInput = document.getElementById('ai-model-input');
+  if (aiFetchModelsBtn && aiModelSelect && aiModelInput) {
+    aiFetchModelsBtn.addEventListener('click', async () => {
+      const provider = document.getElementById('ai-provider-select').value;
+      const endpoint = document.getElementById('ai-endpoint-input').value;
+      const apiKey = document.getElementById('ai-api-key-input').value;
+
+      const originalText = aiFetchModelsBtn.textContent;
+      aiFetchModelsBtn.textContent = getMsg('ai_fetching_models') || 'Fetching...';
+      aiFetchModelsBtn.disabled = true;
+
+      try {
+        const models = await ai.fetchModels(provider, endpoint, apiKey);
+        if (models && models.length > 0) {
+          aiModelSelect.innerHTML = '';
+          const placeholderOpt = document.createElement('option');
+          placeholderOpt.value = '';
+          placeholderOpt.textContent = '-- Select --';
+          aiModelSelect.appendChild(placeholderOpt);
+
+          models.forEach(model => {
+            const opt = document.createElement('option');
+            opt.value = model;
+            opt.textContent = model;
+            aiModelSelect.appendChild(opt);
+          });
+          aiModelSelect.style.display = 'inline-block';
+          aiFetchModelsBtn.textContent = getMsg('ai_fetch_models_success') || 'Success';
+          aiFetchModelsBtn.style.color = '#34c759';
+        } else {
+          throw new Error('No models returned');
+        }
+      } catch (err) {
+        console.error('Failed to fetch models:', err);
+        alert((getMsg('ai_fetch_models_fail') || 'Failed to fetch models') + ': ' + (err.message || err));
+        aiFetchModelsBtn.textContent = originalText;
+        aiFetchModelsBtn.style.color = '';
+      } finally {
+        aiFetchModelsBtn.disabled = false;
+        setTimeout(() => {
+          aiFetchModelsBtn.textContent = originalText;
+          aiFetchModelsBtn.style.color = '';
+        }, 3000);
+      }
+    });
+
+    aiModelSelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        aiModelInput.value = e.target.value;
+        aiModelInput.dispatchEvent(new Event('input'));
       }
     });
   }
@@ -14791,7 +14964,14 @@ async function initAISettings() {
       const modelInput = document.getElementById('ai-model-input');
 
       if (providerSelect) providerSelect.value = provider;
-      if (apiKeyInput) apiKeyInput.value = apiKey;
+      if (apiKeyInput) {
+        apiKeyInput.value = apiKey;
+        if (provider === 'ollama') {
+          apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
+        } else {
+          apiKeyInput.placeholder = 'sk-...';
+        }
+      }
       if (endpointInput) {
         endpointInput.value = endpoint;
         if (provider === 'openai') {
@@ -14837,7 +15017,7 @@ function updateAIConfigFieldsVisibility(provider) {
     modelContainer.style.display = 'none';
     if (saveContainer) saveContainer.style.display = 'none';
   } else if (provider === 'ollama') {
-    apiKeyContainer.style.display = 'none';
+    apiKeyContainer.style.display = 'flex';
     endpointContainer.style.display = 'flex';
     modelContainer.style.display = 'flex';
     if (saveContainer) saveContainer.style.display = 'flex';

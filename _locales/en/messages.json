@@ -608,5 +608,20 @@
   },
   "ai_target_lang": {
     "message": "English"
+  },
+  "ai_fetch_models": {
+    "message": "Get Models"
+  },
+  "ai_fetching_models": {
+    "message": "Fetching..."
+  },
+  "ai_fetch_models_success": {
+    "message": "Models loaded successfully!"
+  },
+  "ai_fetch_models_fail": {
+    "message": "Failed to load models"
+  },
+  "ai_api_key_optional": {
+    "message": "Optional (e.g. for proxy auth)"
   }
 }

@@ -65,6 +65,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true; // 保持異步通道開啟
   }
+
+  if (request.action === "fetchModels") {
+    const { provider, url, apiKey } = request;
+    let fetchUrl = (url ? url.trim() : "");
+    if (!fetchUrl) {
+      fetchUrl = provider === "openai" ? "https://api.openai.com/v1" : "http://localhost:11434";
+    }
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (apiKey && provider === "openai") {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
+    if (provider === "openai") {
+      fetchUrl = fetchUrl.replace(/\/+$/, "") + "/models";
+    } else if (provider === "ollama") {
+      fetchUrl = fetchUrl.replace(/\/+$/, "") + "/api/tags";
+    }
+
+    fetch(fetchUrl, { headers })
+      .then(r => {
+        if (!r.ok) throw new Error("Status " + r.status);
+        return r.json();
+      })
+      .then(data => {
+        let models = [];
+        if (provider === "openai" && data.data) {
+          models = data.data.map(m => m.id);
+        } else if (provider === "ollama" && data.models) {
+          models = data.models.map(m => m.name);
+        }
+        sendResponse({ success: true, models });
+      })
+      .catch(err => {
+        if (provider === "ollama") {
+          let fallbackUrl = (url ? url.trim() : "http://localhost:11434").replace(/\/+$/, "") + "/v1/models";
+          fetch(fallbackUrl, { headers })
+            .then(r => r.json())
+            .then(data => {
+              if (data.data) {
+                const models = data.data.map(m => m.id);
+                sendResponse({ success: true, models });
+              } else {
+                sendResponse({ success: false, error: err.message });
+              }
+            })
+            .catch(() => sendResponse({ success: false, error: err.message }));
+        } else {
+          sendResponse({ success: false, error: err.message });
+        }
+      });
+    return true; // 保持異步通道開啟
+  }
 });
 
 // 監聽來自前台的長連接，用於流式傳輸 AI 回答 (繞過 CORS 限制)

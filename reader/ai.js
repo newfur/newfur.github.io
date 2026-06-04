@@ -339,4 +339,65 @@ export class AIEngine {
       this.configure({ provider: prevProvider, apiKey: prevApiKey, endpoint: prevEndpoint, model: prevModel });
     }
   }
+
+  // 獲取模型列表
+  async fetchModels(provider, url, apiKey) {
+    const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
+    if (useExtension) {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'fetchModels', provider, url, apiKey }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response && response.success) {
+            resolve(response.models);
+          } else {
+            reject(new Error(response?.error || 'Failed to fetch models'));
+          }
+        });
+      });
+    } else {
+      // 獨立離線 HTML 環境下直接 Fetch
+      let fetchUrl = (url ? url.trim() : "");
+      if (!fetchUrl) {
+        fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434';
+      }
+      const headers = {};
+      if (apiKey && provider === 'openai') {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      if (provider === 'openai') {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/models';
+      } else if (provider === 'ollama') {
+        fetchUrl = fetchUrl.replace(/\/+$/, '') + '/api/tags';
+      }
+
+      try {
+        const response = await fetch(fetchUrl, { headers });
+        if (!response.ok) throw new Error("Status " + response.status);
+        const data = await response.json();
+        let models = [];
+        if (provider === 'openai' && data.data) {
+          models = data.data.map(m => m.id);
+        } else if (provider === 'ollama' && data.models) {
+          models = data.models.map(m => m.name);
+        }
+        return models;
+      } catch (err) {
+        if (provider === 'ollama') {
+          try {
+            let fallbackUrl = (url ? url.trim() : 'http://localhost:11434').replace(/\/+$/, '') + '/v1/models';
+            const response = await fetch(fallbackUrl, { headers });
+            if (response.ok) {
+              const data = await response.json();
+              if (data.data) {
+                return data.data.map(m => m.id);
+              }
+            }
+          } catch(e) {}
+        }
+        throw err;
+      }
+    }
+  }
 }

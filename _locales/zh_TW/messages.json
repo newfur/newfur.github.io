@@ -608,5 +608,20 @@
   },
   "ai_target_lang": {
     "message": "Traditional Chinese"
+  },
+  "ai_fetch_models": {
+    "message": "獲取模型"
+  },
+  "ai_fetching_models": {
+    "message": "獲取中..."
+  },
+  "ai_fetch_models_success": {
+    "message": "模型列表獲取成功！"
+  },
+  "ai_fetch_models_fail": {
+    "message": "模型列表獲取失敗"
+  },
+  "ai_api_key_optional": {
+    "message": "可選 (例如本地代理認證)"
   }
 }

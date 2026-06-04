@@ -724,8 +724,15 @@
           <input type="text" id="ai-endpoint-input" placeholder="https://api.openai.com/v1" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
         </div>
         <div class="setting-item" id="ai-model-container" style="display: none; flex-direction: column; gap: 6px;">
-          <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
-          <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+          <div style="display: flex; width: 100%; justify-content: space-between; align-items: center;">
+            <label style="font-weight: 500;" data-i18n="ai_model">Model Name</label>
+            <button id="ai-fetch-models-btn" class="btn btn-secondary" style="padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-color); display: inline-flex; align-items: center; justify-content: center; background: none; color: var(--text-color);" data-i18n="ai_fetch_models">Get Models</button>
+          </div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <input type="text" id="ai-model-input" placeholder="gpt-4o-mini" style="flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <select id="ai-model-select" style="display: none; width: auto; max-width: 150px; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            </select>
+          </div>
         </div>
         <div class="setting-item" id="ai-save-container" style="display: none; margin-top: 15px; gap: 10px;">
           <button id="ai-test-btn" class="btn btn-secondary" style="flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; text-align: center; justify-content: center; display: inline-flex; border: 1px solid var(--border-color);" data-i18n="ai_test_settings">Test Connection</button>

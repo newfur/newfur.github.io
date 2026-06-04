@@ -608,5 +608,20 @@
   },
   "ai_target_lang": {
     "message": "Simplified Chinese"
+  },
+  "ai_fetch_models": {
+    "message": "获取模型"
+  },
+  "ai_fetching_models": {
+    "message": "获取中..."
+  },
+  "ai_fetch_models_success": {
+    "message": "模型列表获取成功！"
+  },
+  "ai_fetch_models_fail": {
+    "message": "模型列表获取失败"
+  },
+  "ai_api_key_optional": {
+    "message": "可选 (例如本地代理认证)"
   }
 }
