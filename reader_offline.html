@@ -782,11 +782,26 @@ button, select, input {
 }
 
 /* 用戶自訂左右邊距優化（重設書籍內建的 left/right margin 与 padding 以確保邊距完全受閱讀器控制） */
-#book-content *:not(ol):not(ul):not(li):not(blockquote):not(table):not(code):not(pre):not(kbd):not(img):not(svg):not(image) {
+#book-content *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(ol):not(ul):not(li):not(blockquote):not(table):not(code):not(pre):not(kbd):not(img):not(svg):not(image) {
   margin-left: 0 !important;
   margin-right: 0 !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 確保標題元素與區塊自適應，不超出列寬/頁面範圍，自動折行 */
+#book-content h1,
+#book-content h2,
+#book-content h3,
+#book-content h4,
+#book-content h5,
+#book-content h6 {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow-wrap: break-word !important;
+  word-wrap: break-word !important;
 }
 
 /* ==================== 左右分欄翻頁自適應與插圖排版 ==================== */
