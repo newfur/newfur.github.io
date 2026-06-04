@@ -709,6 +709,12 @@ button, select, input {
   max-height: 2.8em;
   overflow: hidden;
   word-break: break-all;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: static !important;
+  transform: none !important;
+  text-align: left !important;
+  display: block !important;
 }
 
 .reader-header-actions {

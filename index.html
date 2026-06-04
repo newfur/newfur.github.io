@@ -715,6 +715,12 @@ button, select, input {
   max-height: 2.8em;
   overflow: hidden;
   word-break: break-all;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: static !important;
+  transform: none !important;
+  text-align: left !important;
+  display: block !important;
 }
 
 .reader-header-actions {
@@ -3890,7 +3896,7 @@ html.transition-none .page-texture-slide {
           <svg class="svg-icon" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
         </span>
       </button>
-      <h2 id="reader-book-title" class="reader-title">Book Title</h2>
+      <div id="reader-book-title" class="reader-title">Book Title</div>
       <div class="reader-header-actions">
         <!-- 側邊欄切換 -->
         <button id="sidebar-toggle" class="btn-icon-only" data-i18n-title="toc" title="Table of Contents">
