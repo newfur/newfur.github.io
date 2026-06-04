@@ -16421,7 +16421,23 @@ async function sendCustomAIQuery() {
   contentEl.scrollTop = contentEl.scrollHeight;
 
   try {
-    const systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.';
+    const bookTitle = document.getElementById('reader-book-title')?.textContent?.trim() || '';
+    const bookContentEl = document.getElementById('book-content');
+    
+    // 獲取目前章節/頁面內容並截斷到合理長度（15,000 字符，約 5,000-8,000 字），以防超出模型上下文限制
+    let bookContext = '';
+    if (bookContentEl) {
+      bookContext = bookContentEl.textContent.trim().substring(0, 15000);
+    }
+
+    let systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.\n';
+    if (bookTitle) {
+      systemPrompt += `Current Book: "${bookTitle}"\n`;
+    }
+    if (bookContext) {
+      systemPrompt += `\n[Current Chapter/Page Content Context]\n${bookContext}\n[End of Context]\n\nPlease use the above book context to answer any questions related to the book, this chapter, or this page. If the user\'s question is unrelated to the book, you can ignore the book context and answer generally.\n`;
+    }
+
     await ai._chat(systemPrompt, query, (chunk) => {
       assistantBubble.textContent = chunk;
       contentEl.scrollTop = contentEl.scrollHeight;
