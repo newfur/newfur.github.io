@@ -765,6 +765,16 @@ button, select, input {
   font-family: system-ui, -apple-system, sans-serif !important;
 }
 
+/* 用戶自訂行距設定（強制覆蓋書籍內聯或內建 class 樣式） */
+#book-content {
+  --book-line-height: 1.5;
+}
+
+#book-content,
+#book-content *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(code):not(pre):not(kbd):not(img):not(svg):not(image) {
+  line-height: var(--book-line-height) !important;
+}
+
 /* ==================== 左右分欄翻頁自適應與插圖排版 ==================== */
 /* 翻頁模式專屬樣式 */
 body.layout-paginated {

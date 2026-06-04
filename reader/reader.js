@@ -3472,7 +3472,9 @@ function setFontSize(size, writeToStorage = true) {
 // 變更行距樣式並重算佈局
 function setLineHeight(val, writeToStorage = true) {
   const topIdx = getTopVisibleElementIndex();
-  document.getElementById('book-content').style.lineHeight = val;
+  const bookContent = document.getElementById('book-content');
+  bookContent.style.lineHeight = val;
+  bookContent.style.setProperty('--book-line-height', val);
   document.getElementById('line-height-val').textContent = val;
   if (writeToStorage) {
     chrome.storage.local.set({ lineHeight: val });
