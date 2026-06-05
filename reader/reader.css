@@ -4131,6 +4131,11 @@ html.transition-none .page-texture-slide {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
 }
 
+.assistant-bubble:has(.mermaid) {
+  width: 100%;
+  padding: 10px;
+}
+
 /* AI 聊天內容 Markdown 排版微調 */
 .ai-chat-bubble a {
   color: var(--primary-color);
