@@ -585,6 +585,9 @@
   "ai_provider_ollama": {
     "message": "Ollama (Local LLM)"
   },
+  "ai_add_prompt": {
+    "message": "Add"
+  },
   "ai_api_key": {
     "message": "API Key"
   },
@@ -757,13 +760,13 @@
     "message": "Chapter Mind Map"
   },
   "ai_suggest_chapter_map_prt": {
-    "message": "Please structure the content of the current chapter and output a clear mind map in Markdown tree list or Mermaid format."
+    "message": "Please structure the content of the current chapter and output a Mermaid mindmap diagram. Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Reference format: mindmap\n  root(Topic)\n    Branch 1\n      Point A\n      Point B\n    Branch 2\n      Point C"
   },
   "ai_suggest_book_map_lbl": {
     "message": "Book Mind Map"
   },
   "ai_suggest_book_map_prt": {
-    "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic of this book, and output a mind map of the entire book."
+    "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic, and output a Mermaid mindmap diagram. Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Reference format: mindmap\n  root(Book Title)\n    Part 1\n      Key Point 1\n      Key Point 2\n    Part 2\n      Key Point 3"
   },
   "ai_suggest_takeaways_lbl": {
     "message": "Key Takeaways"
@@ -788,5 +791,41 @@
   },
   "ai_suggest_quiz_prt": {
     "message": "Based on the content of the current chapter, design 3 reading comprehension or self-test thinking questions for me to help deepen my understanding."
+  },
+  "ai_toggle_suggestions_title": {
+    "message": "Toggle prompt suggestions"
+  },
+  "ai_prompts_section": {
+    "message": "AI Prompt Templates"
+  },
+  "ai_add_prompt": {
+    "message": "Add"
+  },
+  "ai_prompt_name_placeholder": {
+    "message": "Name"
+  },
+  "ai_prompt_content_placeholder": {
+    "message": "Prompt template content"
+  },
+  "ai_prompt_edit_title": {
+    "message": "Edit Prompt Template"
+  },
+  "ai_prompt_add_title": {
+    "message": "Add Prompt Template"
+  },
+  "ai_prompt_name_label": {
+    "message": "Template Name"
+  },
+  "ai_prompt_content_label": {
+    "message": "Prompt Content"
+  },
+  "confirm_delete_prompt": {
+    "message": "Are you sure you want to delete this prompt template?"
+  },
+  "btn_edit": {
+    "message": "Edit"
+  },
+  "btn_delete": {
+    "message": "Delete"
   }
 }

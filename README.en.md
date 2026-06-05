@@ -54,7 +54,13 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.0.2)
+## 🔄 Recent Updates & Optimizations (v2.0.3)
+
+*   **AI Assistant Prompt Template Editing & Management**:
+    - Moved the prompt template configuration interface directly into the AI Reading Assistant panel, merging custom templates with default ones.
+    - Both default and custom prompt chips now support in-line hover/click edit and delete actions.
+    - The prompt suggestions container is expanded by default, appending a dashed "+" chip for adding new templates.
+    - Removed the duplicate plus sign prefix in the Add button text label.
 
 *   **Mobile Selection Menu AI Buttons Stacking & Labels**:
     - Restructured the text selection popup HTML, grouping highlight styles, delete, note, and speak actions in a top row (icon-only to prevent squeeze).

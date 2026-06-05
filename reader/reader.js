@@ -87,6 +87,20 @@ const DEFAULT_AI_PROFILES = [
 let aiProfilesList = [];
 let activeAIProfileId = 'builtin';
 
+// AI prompt templates global state
+let aiPromptsTemplatesList = [];
+let currentEditingPromptIndex = -1;
+const DEFAULT_CUSTOM_ICON = `<svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>`;
+const AI_SUGGESTION_ICONS = {
+  'ai_suggest_sum_chapter': `<svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
+  'ai_suggest_chapter_map': `<svg class="svg-icon" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3zM6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M18 8h-3v8h3M6 8h3v8H6"></path></svg>`,
+  'ai_suggest_book_map': `<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>`,
+  'ai_suggest_takeaways': `<svg class="svg-icon" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`,
+  'ai_suggest_characters': `<svg class="svg-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
+  'ai_suggest_explain_concept': `<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`,
+  'ai_suggest_quiz': `<svg class="svg-icon" viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`
+};
+
 // 閱讀時間統計全局狀態
 let readingSessionTimer = null;
 let lastReadingHeartbeat = 0;
@@ -1059,6 +1073,84 @@ function initUIEventBindings() {
     });
   }
 
+  // Toggle prompt suggestions drawer
+  const toggleSuggestionsBtn = document.getElementById('ai-toggle-suggestions-btn');
+  const suggestionsContainer = document.getElementById('ai-suggestions-container');
+  if (toggleSuggestionsBtn && suggestionsContainer) {
+    toggleSuggestionsBtn.addEventListener('click', () => {
+      const isShow = suggestionsContainer.classList.toggle('show');
+      toggleSuggestionsBtn.classList.toggle('active', isShow);
+    });
+  }
+
+  // AI Prompt Edit Dialog event listeners
+  const aiPromptForm = document.getElementById('ai-prompt-edit-form');
+  const aiPromptCancel = document.getElementById('ai-prompt-dialog-cancel');
+  const aiPromptDelete = document.getElementById('ai-prompt-dialog-delete');
+  const aiPromptDialog = document.getElementById('ai-prompt-edit-dialog');
+
+  if (aiPromptForm) {
+    aiPromptForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const nameInput = document.getElementById('ai-prompt-name-input');
+      const contentInput = document.getElementById('ai-prompt-content-input');
+      if (!nameInput || !contentInput) return;
+      
+      const newLabel = nameInput.value.trim();
+      const newPrompt = contentInput.value.trim();
+      if (!newLabel || !newPrompt) return;
+      
+      if (currentEditingPromptIndex >= 0) {
+        const item = aiPromptsTemplatesList[currentEditingPromptIndex];
+        item.label = newLabel;
+        item.prompt = newPrompt;
+      } else {
+        const newItem = {
+          key: 'ai_suggest_custom_' + Date.now(),
+          icon: DEFAULT_CUSTOM_ICON,
+          label: newLabel,
+          prompt: newPrompt,
+          isDefault: false
+        };
+        aiPromptsTemplatesList.push(newItem);
+      }
+      
+      chrome.storage.local.set({ aiPromptsTemplates: aiPromptsTemplatesList }, () => {
+        initAISuggestions();
+        aiPromptDialog.close();
+      });
+    });
+  }
+
+  if (aiPromptCancel) {
+    aiPromptCancel.addEventListener('click', () => {
+      if (aiPromptDialog) aiPromptDialog.close();
+    });
+  }
+
+  if (aiPromptDelete) {
+    aiPromptDelete.addEventListener('click', () => {
+      if (currentEditingPromptIndex >= 0) {
+        const confirmMsg = getMsg('confirm_delete_prompt') || 'Are you sure you want to delete this prompt template?';
+        if (confirm(confirmMsg)) {
+          aiPromptsTemplatesList.splice(currentEditingPromptIndex, 1);
+          chrome.storage.local.set({ aiPromptsTemplates: aiPromptsTemplatesList }, () => {
+            initAISuggestions();
+            if (aiPromptDialog) aiPromptDialog.close();
+          });
+        }
+      }
+    });
+  }
+
+  if (aiPromptDialog) {
+    aiPromptDialog.addEventListener('click', (e) => {
+      if (e.target === aiPromptDialog) {
+        aiPromptDialog.close();
+      }
+    });
+  }
+
   // 版面排版模式切換
   const layoutScrollBtn = document.getElementById('layout-scroll-btn');
   if (layoutScrollBtn) {
@@ -1414,10 +1506,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.0.2';
+            versionDisplay.textContent = 'v2.0.3';
           }
         } else {
-          versionDisplay.textContent = 'v2.0.2';
+          versionDisplay.textContent = 'v2.0.3';
         }
       }
       aboutDialog.showModal();
@@ -3923,7 +4015,7 @@ function isMobileDevice() {
 
 async function initAISettings() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['aiProfiles', 'activeAIProfileId', 'aiProvider', 'aiApiKey', 'aiEndpoint', 'aiModel'], async (res) => {
+    chrome.storage.local.get(['aiProfiles', 'activeAIProfileId', 'aiProvider', 'aiApiKey', 'aiEndpoint', 'aiModel', 'aiPromptsTemplates'], async (res) => {
       // 1. 载入并进行数据迁移
       if (res.aiProfiles && res.aiProfiles.length > 0) {
         aiProfilesList = res.aiProfiles;
@@ -3974,6 +4066,22 @@ async function initAISettings() {
 
       // 7. 更新 AI 功能按钮可见度
       updateAIButtonsVisibility();
+
+      // 8. 载入 AI 提示词模板
+      if (res.aiPromptsTemplates && Array.isArray(res.aiPromptsTemplates)) {
+        aiPromptsTemplatesList = res.aiPromptsTemplates;
+      } else {
+        // 首次加载，写入默认的提示词列表
+        aiPromptsTemplatesList = getAISuggestions().map(item => ({
+          key: item.key,
+          icon: item.icon,
+          label: item.label,
+          prompt: item.prompt,
+          isDefault: true
+        }));
+        chrome.storage.local.set({ aiPromptsTemplates: aiPromptsTemplatesList });
+      }
+      initAISuggestions();
 
       resolve();
     });
@@ -5576,13 +5684,14 @@ function formatMarkdown(text) {
   html = html.replace(/\[\[([^\]]+?)\|([^\]]+?)\]\]/g, '<span class="obsidian-wikilink">$2</span>');
   html = html.replace(/\[\[([^\]]+?)\]\]/g, '<span class="obsidian-wikilink">$1</span>');
 
-  // 4. 行內代碼：`代碼` -> <code>代碼</code>
-  html = html.replace(/`(.*?)`/g, '<code>$1</code>');
+  // 4. 行內代碼：`代碼` -> <code>代碼</code> (使用斷言避免破壞 ``` 代碼塊圍欄)
+  html = html.replace(/(?<!`)`(?!`)([^`\n]+?)`(?!`)/g, '<code>$1</code>');
   
   // 5. 按行解析以支持標題、列表、多行代碼塊、表格及 Callout
   const lines = html.split('\n');
-  let inList = false;
+  let listStack = []; // stores { type: 'ul'|'ol', indent: number }
   let inCodeBlock = false;
+  let codeBlockLanguage = '';
   let inBlockquote = false;
   let inCallout = false;
   let inTable = false;
@@ -5593,6 +5702,13 @@ function formatMarkdown(text) {
   let tableAlignments = [];
   let resultLines = [];
   
+  function closeAllLists(resArr) {
+    while (listStack.length > 0) {
+      const popped = listStack.pop();
+      resArr.push(popped.type === 'ul' ? '</ul>' : '</ol>');
+    }
+  }
+
   // 表格輔助解析函數
   function splitTableCells(lineStr) {
     let cells = lineStr.trim().split('|');
@@ -5619,16 +5735,22 @@ function formatMarkdown(text) {
     if (trimmed.startsWith('```')) {
       if (inCodeBlock) {
         // 代碼塊結束
-        resultLines.push(`<pre><code class="language-code">${codeBlockLines.join('\n')}</code></pre>`);
+        if (codeBlockLanguage === 'mermaid') {
+          resultLines.push(`<div class="mermaid">${codeBlockLines.join('\n')}</div>`);
+        } else {
+          resultLines.push(`<pre><code class="language-${codeBlockLanguage || 'code'}">${codeBlockLines.join('\n')}</code></pre>`);
+        }
         codeBlockLines = [];
         inCodeBlock = false;
+        codeBlockLanguage = '';
       } else {
         // 代碼塊開始
-        if (inList) { resultLines.push('</ul>'); inList = false; }
+        closeAllLists(resultLines);
         if (inBlockquote) { resultLines.push('</blockquote>'); inBlockquote = false; }
         if (inCallout) { closeCallout(resultLines); inCallout = false; }
         if (inTable) { resultLines.push('</tbody></table>'); inTable = false; }
         inCodeBlock = true;
+        codeBlockLanguage = trimmed.substring(3).trim().toLowerCase();
       }
       continue;
     }
@@ -5640,7 +5762,7 @@ function formatMarkdown(text) {
 
     // 檢查表格
     if (trimmed.startsWith('|') || (inTable && trimmed.includes('|'))) {
-      if (inList) { resultLines.push('</ul>'); inList = false; }
+      closeAllLists(resultLines);
       if (inBlockquote) { resultLines.push('</blockquote>'); inBlockquote = false; }
       if (inCallout) { closeCallout(resultLines); inCallout = false; }
 
@@ -5685,7 +5807,7 @@ function formatMarkdown(text) {
 
     // 檢查分隔線
     if (trimmed === '---' || trimmed === '***') {
-      if (inList) { resultLines.push('</ul>'); inList = false; }
+      closeAllLists(resultLines);
       if (inBlockquote) { resultLines.push('</blockquote>'); inBlockquote = false; }
       if (inCallout) { closeCallout(resultLines); inCallout = false; }
       resultLines.push('<hr>');
@@ -5693,7 +5815,6 @@ function formatMarkdown(text) {
     }
 
     // 檢查引用區塊 & Callout
-    // 由於 HTML 轉義，`>` 會變成 `&gt;`
     let isBlockquote = false;
     let quoteContent = '';
     if (trimmed.startsWith('&gt;')) {
@@ -5706,7 +5827,7 @@ function formatMarkdown(text) {
     }
 
     if (isBlockquote) {
-      if (inList) { resultLines.push('</ul>'); inList = false; }
+      closeAllLists(resultLines);
       
       const calloutMatch = quoteContent.match(/^\[!(.*?)\]\s*(.*)/);
       if (calloutMatch && !inCallout && !inBlockquote) {
@@ -5740,7 +5861,7 @@ function formatMarkdown(text) {
     for (let h = 6; h >= 1; h--) {
       const prefix = '#'.repeat(h) + ' ';
       if (trimmed.startsWith(prefix)) {
-        if (inList) { resultLines.push('</ul>'); inList = false; }
+        closeAllLists(resultLines);
         const headingText = trimmed.substring(h + 1).trim();
         resultLines.push(`<h${h}>${headingText}</h${h}>`);
         isHeading = true;
@@ -5751,59 +5872,97 @@ function formatMarkdown(text) {
       continue;
     }
 
-    // 無序列表項與任務列表項
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      const rest = trimmed.substring(2).trim();
-      let isTask = false;
-      let isChecked = false;
-      let taskText = rest;
-      
-      if (rest.startsWith('[ ] ')) {
-        isTask = true;
-        isChecked = false;
-        taskText = rest.substring(4);
-      } else if (rest.startsWith('[x] ') || rest.startsWith('[X] ')) {
-        isTask = true;
-        isChecked = true;
-        taskText = rest.substring(4);
+    // 列表解析 (支持嵌套)
+    const unorderedMatch = line.match(/^(\s*)([-*]|\+)\s+(.*)/);
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/);
+
+    if (unorderedMatch || orderedMatch) {
+      const isUnordered = !!unorderedMatch;
+      const match = isUnordered ? unorderedMatch : orderedMatch;
+      const indentStr = match[1];
+      let indent = 0;
+      for (let char of indentStr) {
+        if (char === '\t') indent += 4;
+        else indent += 1;
       }
       
-      if (!inList) {
-        resultLines.push('<ul>');
-        inList = true;
-      }
+      const type = isUnordered ? 'ul' : 'ol';
+      const content = match[3].trim();
       
-      if (isTask) {
-        resultLines.push(`<li class="task-list-item"><input type="checkbox" disabled ${isChecked ? 'checked' : ''}> <span>${taskText}</span></li>`);
+      if (listStack.length === 0) {
+        resultLines.push(type === 'ul' ? '<ul>' : '<ol>');
+        listStack.push({ type, indent });
       } else {
-        resultLines.push(`<li>${rest}</li>`);
+        let top = listStack[listStack.length - 1];
+        if (indent > top.indent) {
+          resultLines.push(type === 'ul' ? '<ul>' : '<ol>');
+          listStack.push({ type, indent });
+        } else {
+          while (listStack.length > 0 && listStack[listStack.length - 1].indent > indent) {
+            const popped = listStack.pop();
+            resultLines.push(popped.type === 'ul' ? '</ul>' : '</ol>');
+          }
+          if (listStack.length === 0) {
+            resultLines.push(type === 'ul' ? '<ul>' : '<ol>');
+            listStack.push({ type, indent });
+          } else {
+            top = listStack[listStack.length - 1];
+            if (top.type !== type) {
+              resultLines.push(top.type === 'ul' ? '</ul>' : '</ol>');
+              listStack.pop();
+              resultLines.push(type === 'ul' ? '<ul>' : '<ol>');
+              listStack.push({ type, indent });
+            }
+          }
+        }
       }
+      
+      if (isUnordered) {
+        let isTask = false;
+        let isChecked = false;
+        let taskText = content;
+        if (content.startsWith('[ ] ')) {
+          isTask = true;
+          isChecked = false;
+          taskText = content.substring(4);
+        } else if (content.startsWith('[x] ') || content.startsWith('[X] ')) {
+          isTask = true;
+          isChecked = true;
+          taskText = content.substring(4);
+        }
+        
+        if (isTask) {
+          resultLines.push(`<li class="task-list-item"><input type="checkbox" disabled ${isChecked ? 'checked' : ''}> <span>${taskText}</span></li>`);
+        } else {
+          resultLines.push(`<li>${content}</li>`);
+        }
+      } else {
+        resultLines.push(`<li>${content}</li>`);
+      }
+      continue;
     }
-    // 有序列表項
-    else if (/^\d+\.\s/.test(trimmed)) {
-      const match = trimmed.match(/^(\d+)\.\s(.*)/);
-      if (inList) { resultLines.push('</ul>'); inList = false; }
-      resultLines.push(`<div class="ordered-list-item"><strong>${match[1]}.</strong> ${match[2]}</div>`);
-    }
+
     // 空行
-    else if (trimmed === '') {
-      if (inList) { resultLines.push('</ul>'); inList = false; }
+    if (trimmed === '') {
+      closeAllLists(resultLines);
       resultLines.push('<div class="empty-line"></div>');
     }
     // 普通正文行
     else {
-      if (inList) { resultLines.push('</ul>'); inList = false; }
+      closeAllLists(resultLines);
       resultLines.push(`<p>${line}</p>`);
     }
   }
 
   // 閉合所有未結束的狀態
   if (inCodeBlock) {
-    resultLines.push(`<pre><code class="language-code">${codeBlockLines.join('\n')}</code></pre>`);
+    if (codeBlockLanguage === 'mermaid') {
+      resultLines.push(`<div class="mermaid">${codeBlockLines.join('\n')}</div>`);
+    } else {
+      resultLines.push(`<pre><code class="language-${codeBlockLanguage || 'code'}">${codeBlockLines.join('\n')}</code></pre>`);
+    }
   }
-  if (inList) {
-    resultLines.push('</ul>');
-  }
+  closeAllLists(resultLines);
   if (inTable) {
     resultLines.push('</tbody></table>');
   }
@@ -5816,7 +5975,7 @@ function formatMarkdown(text) {
   
   return resultLines.join('\n');
 
-  // 關閉 Callout 的輔助方法
+  // 關閉 Callout 的輔支方法
   function closeCallout(resArr) {
     const icon = getCalloutIcon(calloutType);
     resArr.push(`<div class="obsidian-callout callout-${calloutType}">`);
@@ -5837,6 +5996,78 @@ function formatMarkdown(text) {
   }
 }
 
+let mermaidLoaded = false;
+async function renderMermaidBlocks() {
+  const containers = document.querySelectorAll('.mermaid:not([data-processed="true"])');
+  if (containers.length === 0) return;
+
+  if (!mermaidLoaded) {
+    if (typeof mermaid === 'undefined') {
+      // 動態載入 fallback（僅用於 Web/PWA 版本，擴充功能版已在 HTML 中靜態引入）
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'libs/mermaid.min.js';
+          script.onload = () => {
+            mermaidLoaded = true;
+            resolve();
+          };
+          script.onerror = () => {
+            // Web 版本嘗試 reader/libs/ 路徑
+            const script2 = document.createElement('script');
+            script2.src = 'reader/libs/mermaid.min.js';
+            script2.onload = () => {
+              mermaidLoaded = true;
+              resolve();
+            };
+            script2.onerror = () => {
+              console.error('Failed to load mermaid library');
+              reject(new Error('Mermaid load error'));
+            };
+            document.body.appendChild(script2);
+          };
+          document.body.appendChild(script);
+        });
+      } catch (err) {
+        console.error(err);
+        // 載入失敗時，將所有 mermaid 容器降級為代碼塊顯示
+        for (const container of containers) {
+          container.setAttribute('data-processed', 'true');
+          const code = container.textContent.trim();
+          container.innerHTML = `<pre class="mermaid-fallback"><code>${code}</code></pre>`;
+        }
+        return;
+      }
+    } else {
+      mermaidLoaded = true;
+    }
+    if (mermaidLoaded) {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: document.body.classList.contains('theme-dark') ? 'dark' : 'default',
+        securityLevel: 'loose'
+      });
+    }
+  }
+
+  if (mermaidLoaded) {
+    // 逐個容器渲染，單個失敗不影響其他
+    for (const container of containers) {
+      container.setAttribute('data-processed', 'true');
+      const code = container.textContent.trim();
+      try {
+        const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
+        const { svg } = await mermaid.render(id, code);
+        container.innerHTML = svg;
+      } catch (err) {
+        console.warn('Mermaid render failed for block, falling back to code display:', err.message || err);
+        // 渲染失敗時降級為帶格式的代碼塊
+        container.innerHTML = `<pre class="mermaid-fallback"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+      }
+    }
+  }
+}
+
 // 獲取預設的 AI 提問提示詞列表
 function getAISuggestions() {
   return [
@@ -5850,13 +6081,13 @@ function getAISuggestions() {
       key: 'ai_suggest_chapter_map',
       icon: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3zM6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M18 8h-3v8h3M6 8h3v8H6"></path></svg>',
       label: getMsg('ai_suggest_chapter_map_lbl') || '本章思维导图',
-      prompt: getMsg('ai_suggest_chapter_map_prt') || '请梳理当前章节的内容结构，并以 Markdown 树状列表或 Mermaid 格式输出一份清晰的思维导图。'
+      prompt: getMsg('ai_suggest_chapter_map_prt') || '请梳理当前章节的内容结构，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 参考格式：mindmap\n  root(主题)\n    分支1\n      子节点A\n      子节点B\n    分支2\n      子节点C'
     },
     {
       key: 'ai_suggest_book_map',
       icon: '<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
       label: getMsg('ai_suggest_book_map_lbl') || '全书思维导图',
-      prompt: getMsg('ai_suggest_book_map_prt') || '请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，并输出一份全书的思维导图。'
+      prompt: getMsg('ai_suggest_book_map_prt') || '请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 参考格式：mindmap\n  root(书名)\n    第一部分\n      要点1\n      要点2\n    第二部分\n      要点3'
     },
     {
       key: 'ai_suggest_takeaways',
@@ -5886,17 +6117,39 @@ function getAISuggestions() {
 }
 
 // 初始化快捷提示词标标签栏
+// 初始化快捷提示词标签栏
 function initAISuggestions() {
   const container = document.getElementById('ai-suggestions-container');
   if (!container) return;
 
   container.innerHTML = '';
   
-  const suggestions = getAISuggestions();
-  suggestions.forEach(item => {
+  aiPromptsTemplatesList.forEach((item, index) => {
     const chip = document.createElement('div');
     chip.className = 'ai-suggestion-chip';
-    chip.innerHTML = `${item.icon}<span>${item.label}</span>`;
+    
+    // Set custom or default icon
+    let iconHTML = item.icon || DEFAULT_CUSTOM_ICON;
+    if (item.key && AI_SUGGESTION_ICONS[item.key]) {
+      iconHTML = AI_SUGGESTION_ICONS[item.key];
+    }
+    
+    chip.innerHTML = `${iconHTML}<span>${item.label}</span>`;
+    
+    // Add edit button (pencil icon)
+    const editBtn = document.createElement('button');
+    editBtn.className = 'chip-edit-btn';
+    editBtn.type = 'button';
+    editBtn.title = getMsg('btn_edit') || 'Edit';
+    editBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+    
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent executing prompt query
+      openPromptEditDialog(item, index);
+    });
+    
+    chip.appendChild(editBtn);
+    
     chip.addEventListener('click', () => {
       const inputEl = document.getElementById('ai-input');
       if (inputEl) {
@@ -5907,8 +6160,55 @@ function initAISuggestions() {
         sendCustomAIQuery();
       }
     });
+    
     container.appendChild(chip);
   });
+  
+  // Add "+" dashed chip at the end
+  const addChip = document.createElement('div');
+  addChip.className = 'ai-suggestion-chip add-prompt-chip';
+  addChip.innerHTML = `<svg class="svg-icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span>${getMsg('ai_add_prompt') || 'Add'}</span>`;
+  addChip.addEventListener('click', () => {
+    openPromptEditDialog(null, -1);
+  });
+  container.appendChild(addChip);
+}
+
+function openPromptEditDialog(item, index) {
+  currentEditingPromptIndex = index;
+  const dialog = document.getElementById('ai-prompt-edit-dialog');
+  const form = document.getElementById('ai-prompt-edit-form');
+  const title = document.getElementById('ai-prompt-dialog-title');
+  const nameInput = document.getElementById('ai-prompt-name-input');
+  const contentInput = document.getElementById('ai-prompt-content-input');
+  const deleteBtn = document.getElementById('ai-prompt-dialog-delete');
+  
+  if (!dialog || !form || !nameInput || !contentInput || !deleteBtn) return;
+  
+  // Reset form validation styles or messages if any
+  form.reset();
+  
+  if (item) {
+    // Edit mode
+    if (title) {
+      title.textContent = getMsg('ai_prompt_edit_title') || 'Edit Prompt Template';
+      title.setAttribute('data-i18n', 'ai_prompt_edit_title');
+    }
+    nameInput.value = item.label;
+    contentInput.value = item.prompt;
+    deleteBtn.style.display = 'block';
+  } else {
+    // Add mode
+    if (title) {
+      title.textContent = getMsg('ai_prompt_add_title') || 'Add Prompt Template';
+      title.setAttribute('data-i18n', 'ai_prompt_add_title');
+    }
+    nameInput.value = '';
+    contentInput.value = '';
+    deleteBtn.style.display = 'none';
+  }
+  
+  dialog.showModal();
 }
 
 // 渲染本書的 AI 溝通歷史記錄
@@ -5953,6 +6253,7 @@ function renderAIChatHistory() {
   });
 
   contentEl.scrollTop = contentEl.scrollHeight;
+  renderMermaidBlocks();
 }
 
 // 給對話組添加刪除按鈕
@@ -6153,6 +6454,7 @@ async function sendCustomAIQuery() {
 
     const updatedChats = await library.saveAIChat(currentBook.id, newChat);
     currentBook.aiChats = updatedChats;
+    renderMermaidBlocks();
   } catch (e) {
     assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix') || 'Error'}: ${e.message}</span>`;
   }
@@ -6188,6 +6490,7 @@ async function triggerAISummary() {
 
     const updatedChats = await library.saveAIChat(currentBook.id, newChat);
     currentBook.aiChats = updatedChats;
+    renderMermaidBlocks();
   } catch (e) {
     if (assistantBubble) {
       assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
@@ -6229,6 +6532,7 @@ async function triggerAIExplain() {
 
     const updatedChats = await library.saveAIChat(currentBook.id, newChat);
     currentBook.aiChats = updatedChats;
+    renderMermaidBlocks();
   } catch (e) {
     if (assistantBubble) {
       assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
@@ -6277,6 +6581,7 @@ async function triggerAITranslate() {
 
     const updatedChats = await library.saveAIChat(currentBook.id, newChat);
     currentBook.aiChats = updatedChats;
+    renderMermaidBlocks();
   } catch (e) {
     if (assistantBubble) {
       assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
@@ -6571,6 +6876,7 @@ async function handleExportBackup() {
         bookmarks: book.bookmarks || [],
         notes: book.notes || [],
         stats: book.stats || null,
+        aiChats: book.aiChats || [],
         folder: book.folder || null,
         hasFile: false,
         coverType: 'none',
@@ -6600,7 +6906,8 @@ async function handleExportBackup() {
       version: '2.0',
       backupAt: Date.now(),
       books: serializedBooks,
-      customFolders: getCustomFolders()
+      customFolders: getCustomFolders(),
+      aiPromptsTemplates: aiPromptsTemplatesList
     };
 
     zip.file('metadata.json', JSON.stringify(backupPayload));
@@ -6717,7 +7024,8 @@ function handleImportBackup(e) {
             progress: b.progress,
             bookmarks: b.bookmarks || [],
             notes: b.notes || [],
-            stats: b.stats || null
+            stats: b.stats || null,
+            aiChats: b.aiChats || []
           };
 
           await library.importBook(book);
@@ -6728,6 +7036,36 @@ function handleImportBackup(e) {
           const existingFolders = getCustomFolders();
           const mergedFolders = Array.from(new Set([...existingFolders, ...data.customFolders]));
           saveCustomFolders(mergedFolders);
+        }
+
+        // 合併並還原自定義 AI 提示詞模板
+        if (data.aiPromptsTemplates && Array.isArray(data.aiPromptsTemplates)) {
+          const currentTemplates = aiPromptsTemplatesList;
+          data.aiPromptsTemplates.forEach(importedItem => {
+            const isDuplicate = currentTemplates.some(curr => 
+              curr.label === importedItem.label && curr.prompt === importedItem.prompt
+            );
+            if (!isDuplicate) {
+              const existingIndex = currentTemplates.findIndex(curr => curr.key && curr.key === importedItem.key);
+              if (existingIndex >= 0) {
+                currentTemplates[existingIndex].label = importedItem.label;
+                currentTemplates[existingIndex].prompt = importedItem.prompt;
+              } else {
+                const key = importedItem.key || ('ai_suggest_custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+                currentTemplates.push({
+                  key: key,
+                  icon: importedItem.icon || DEFAULT_CUSTOM_ICON,
+                  label: importedItem.label,
+                  prompt: importedItem.prompt,
+                  isDefault: importedItem.isDefault || false
+                });
+              }
+            }
+          });
+          chrome.storage.local.set({ aiPromptsTemplates: currentTemplates }, () => {
+            aiPromptsTemplatesList = currentTemplates;
+            initAISuggestions();
+          });
         }
       } else {
         // 否則為舊版 JSON 備份 (v1.0)
@@ -6769,7 +7107,8 @@ function handleImportBackup(e) {
             progress: b.progress,
             bookmarks: b.bookmarks || [],
             notes: b.notes || [],
-            stats: b.stats || null
+            stats: b.stats || null,
+            aiChats: b.aiChats || []
           };
 
           await library.importBook(book);

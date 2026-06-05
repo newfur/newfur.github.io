@@ -508,8 +508,11 @@
           <svg class="svg-icon svg-icon-sm" style="width: 12px; height: 12px;" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <div id="ai-suggestions-container" class="ai-suggestions-container"></div>
+      <div id="ai-suggestions-container" class="ai-suggestions-container show"></div>
       <div class="ai-panel-footer">
+        <button id="ai-toggle-suggestions-btn" class="toggle-suggestions-btn active" data-i18n-title="ai_toggle_suggestions_title" title="Toggle prompt suggestions">
+          <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="12" r="1.5"></circle><circle cx="5" cy="12" r="1.5"></circle></svg>
+        </button>
         <textarea id="ai-input" data-i18n-placeholder="ai_input_placeholder" placeholder="Ask AI anything..."></textarea>
         <button id="ai-send-btn">
           <svg class="svg-icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -668,7 +671,7 @@
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
         <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
-        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.2</span></div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.3</span></div>
         
         <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
         
@@ -698,6 +701,30 @@
         </ol>
       </div>
     </div>
+  </dialog>
+
+  <!-- ==================== AI 提示詞編輯對話框 ==================== -->
+  <dialog id="ai-prompt-edit-dialog" class="custom-dialog panel-glass" style="max-height: 85vh; width: 400px; border-radius: 20px;">
+    <form method="dialog" class="dialog-form" id="ai-prompt-edit-form">
+      <h3 id="ai-prompt-dialog-title" data-i18n="ai_prompt_edit_title">Edit Prompt Template</h3>
+      <div class="dialog-body" style="display: flex; flex-direction: column; gap: 12px; margin-top: 15px;">
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_prompt_name_label">Prompt Name</label>
+          <input type="text" id="ai-prompt-name-input" data-i18n-placeholder="ai_prompt_name_placeholder" placeholder="Name" required autocomplete="off" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_prompt_content_label">Prompt Content</label>
+          <textarea id="ai-prompt-content-input" data-i18n-placeholder="ai_prompt_content_placeholder" placeholder="Prompt content" required style="width: 100%; min-height: 120px; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px; resize: vertical;"></textarea>
+        </div>
+      </div>
+      <div class="dialog-actions" style="margin-top: 20px; display: flex; justify-content: space-between; gap: 10px; align-items: center;">
+        <button type="button" id="ai-prompt-dialog-delete" class="btn btn-secondary" style="color: var(--error-color, #ff453a); border-color: var(--error-color, #ff453a); background: none; font-weight: 600;" data-i18n="btn_delete">Delete</button>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" id="ai-prompt-dialog-cancel" class="btn" data-i18n="btn_cancel">Cancel</button>
+          <button type="submit" id="ai-prompt-dialog-submit" class="btn btn-primary" data-i18n="btn_save">Save</button>
+        </div>
+      </div>
+    </form>
   </dialog>
 
   <!-- ==================== 全局設置對話框 (Global Settings Modal) ==================== -->
@@ -829,6 +856,7 @@
 
   <!-- ==================== 引入 JS 庫 ==================== -->
   <script src="libs/jszip.min.js"></script>
+  <script src="libs/mermaid.min.js"></script>
 
   <!-- 引入主應用邏輯 (作為 ES Module 載入) -->
   <script type="module" src="reader.js"></script>

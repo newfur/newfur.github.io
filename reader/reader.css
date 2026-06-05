@@ -1810,6 +1810,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
   .ai-panel-footer {
     padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
   }
+
+  /* Prompt suggestions toggle state is now handled globally */
 }
 
 @keyframes popScale {
@@ -3959,13 +3961,51 @@ html.transition-none .page-texture-slide {
 }
 
 /* 快捷提示詞標籤樣式 */
-.ai-suggestions-container {
+.ai-panel-footer #ai-toggle-suggestions-btn {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background-color: var(--background-color);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-panel-footer #ai-toggle-suggestions-btn:hover {
+  background-color: var(--border-color);
+}
+
+.ai-panel-footer #ai-toggle-suggestions-btn.active {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.ai-panel-footer #ai-toggle-suggestions-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor !important;
+  stroke: none !important;
+}
+
+/* Collapse suggestions by default on all devices (desktop & mobile) */
+.ai-suggestions-container {
+  display: none !important;
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--border-color);
   background-color: var(--bg-color);
+}
+
+/* Show suggestions when active/expanded */
+.ai-suggestions-container.show {
+  display: flex !important;
 }
 
 .ai-suggestion-chip {
@@ -3999,6 +4039,52 @@ html.transition-none .page-texture-slide {
   color: var(--primary-color);
   stroke-width: 2;
   fill: none;
+}
+
+/* 提示詞晶片編輯按鈕 */
+.ai-suggestion-chip .chip-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  margin-left: 6px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-suggestion-chip .chip-edit-btn:hover {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+  opacity: 1;
+}
+
+.ai-suggestion-chip .chip-edit-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 2;
+}
+
+/* 新增提示詞晶片樣式 */
+.ai-suggestion-chip.add-prompt-chip {
+  border-style: dashed !important;
+  background-color: transparent !important;
+  opacity: 0.8;
+}
+
+.ai-suggestion-chip.add-prompt-chip:hover {
+  border-color: var(--primary-color) !important;
+  color: var(--primary-color) !important;
+  opacity: 1;
 }
 
 /* 聊天氣泡樣式 */
@@ -4532,8 +4618,104 @@ html.transition-none .page-texture-slide {
     overscroll-behavior: none !important;
   }
 }
+/* AI 助手聊天气泡内嵌套列表树状脑图样式 */
+.ai-chat-bubble ul {
+  list-style-type: none;
+  padding-left: 16px;
+  margin: 6px 0;
+  position: relative;
+}
 
+.ai-chat-bubble ul ul {
+  margin-left: 4px;
+}
 
+.ai-chat-bubble ul ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -8px;
+  bottom: 10px; /* 停在最后一个子节点的正中间 */
+  width: 1.5px;
+  background-color: var(--primary-color);
+  opacity: 0.35;
+}
 
+.ai-chat-bubble li {
+  position: relative;
+  padding-left: 6px;
+  margin: 6px 0;
+}
 
+.ai-chat-bubble ul ul > li::before {
+  content: "";
+  position: absolute;
+  top: 11px; /* 对齐文本中线 */
+  left: -8px;
+  width: 8px;
+  height: 1.5px;
+  background-color: var(--primary-color);
+  opacity: 0.35;
+}
+
+.ai-chat-bubble ul ul > li::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  border: 1px solid var(--surface-color);
+  transform: translateX(-5px);
+}
+
+/* Mermaid 图表渲染容器微调 */
+.mermaid {
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px;
+  margin: 10px 0;
+  overflow-x: auto;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  /* 渲染前保留換行，渲染後由 SVG 接管 */
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 渲染成功後的 SVG 樣式 */
+.mermaid[data-processed="true"] {
+  white-space: normal;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.mermaid svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Mermaid 渲染失敗時的降級代碼塊 */
+.mermaid-fallback {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+}
+
+.mermaid-fallback code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
 

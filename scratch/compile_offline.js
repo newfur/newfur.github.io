@@ -60,6 +60,14 @@ const scriptModuleRegex = /<script type="module" src="reader\.js"><\/script>/i;
 html = html.replace(scriptJszipRegex, () => `<script>${jszipJs}</script>`);
 html = html.replace(scriptModuleRegex, () => `<script>${combinedJs}</script>`);
 
+// Mermaid: 不內聯（3.2MB 太大），僅修正路徑指向 reader/libs/
+const scriptMermaidRegex = /<script src="libs\/mermaid\.min\.js"><\/script>/i;
+html = html.replace(scriptMermaidRegex, '<script src="reader/libs/mermaid.min.js"></script>');
+
+// Fix relative paths: inline JS uses paths relative to reader/ dir,
+// but the output HTML files live at root, so rewrite libs/ -> reader/libs/
+html = html.replace(/script\.src\s*=\s*'libs\//g, "script.src = 'reader/libs/");
+
 // 6. Write final offline files to root
 fs.writeFileSync(path.join(rootDir, 'reader_offline.html'), html, 'utf8');
 fs.writeFileSync(path.join(rootDir, 'index.html'), html, 'utf8');
