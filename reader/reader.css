@@ -4720,9 +4720,7 @@ html.transition-none .page-texture-slide {
 }
 
 .mermaid-wrapper svg {
-  max-width: 95% !important;
-  max-height: 95% !important;
-  width: auto !important;
+  max-width: 100% !important;
   height: auto !important;
   display: block;
 }
