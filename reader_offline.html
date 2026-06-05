@@ -19299,8 +19299,28 @@ async function renderMermaidBlocks() {
               resolve();
             };
             script2.onerror = () => {
-              console.error('Failed to load mermaid library');
-              reject(new Error('Mermaid load error'));
+              // CDN 載入備用方式 1 (jsDelivr)
+              const script3 = document.createElement('script');
+              script3.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+              script3.onload = () => {
+                mermaidLoaded = true;
+                resolve();
+              };
+              script3.onerror = () => {
+                // CDN 載入備用方式 2 (cdnjs)
+                const script4 = document.createElement('script');
+                script4.src = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js';
+                script4.onload = () => {
+                  mermaidLoaded = true;
+                  resolve();
+                };
+                script4.onerror = () => {
+                  console.error('Failed to load mermaid library from local and CDNs');
+                  reject(new Error('Mermaid load error'));
+                };
+                document.body.appendChild(script4);
+              };
+              document.body.appendChild(script3);
             };
             document.body.appendChild(script2);
           };
