@@ -528,6 +528,48 @@
   "texture_grid": {
     "message": "Retro Grid"
   },
+  "ai_profile": {
+    "message": "AI Profile"
+  },
+  "ai_profile_name": {
+    "message": "Profile Name"
+  },
+  "ai_profile_add": {
+    "message": "Add Profile"
+  },
+  "ai_profile_delete": {
+    "message": "Delete Profile"
+  },
+  "ai_profile_default_custom_name": {
+    "message": "New Custom AI"
+  },
+  "ai_profile_migrated": {
+    "message": "Migrated Profile"
+  },
+  "ai_profile_builtin": {
+    "message": "Built-in AI (Gemini Nano)"
+  },
+  "ai_profile_openai": {
+    "message": "OpenAI (Official)"
+  },
+  "ai_profile_deepseek": {
+    "message": "DeepSeek"
+  },
+  "ai_profile_gemini": {
+    "message": "Google Gemini API"
+  },
+  "ai_profile_siliconflow": {
+    "message": "SiliconFlow (DeepSeek)"
+  },
+  "ai_profile_ollama": {
+    "message": "Ollama (Local)"
+  },
+  "ai_profile_lmstudio": {
+    "message": "LM Studio"
+  },
+  "confirm_delete_profile": {
+    "message": "Are you sure you want to delete this AI profile?"
+  },
   "ai_provider": {
     "message": "AI Provider"
   },

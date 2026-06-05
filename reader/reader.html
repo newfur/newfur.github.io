@@ -727,7 +727,24 @@
         <!-- AI 設定 -->
         <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--primary-color);" data-i18n="ai_settings_section">AI Settings</h4>
         <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
-          <label style="font-weight: 500;" data-i18n="ai_provider">AI Provider</label>
+          <label style="font-weight: 500;" data-i18n="ai_profile">AI Profile / Provider</label>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <select id="ai-profile-select" style="flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            </select>
+            <button id="ai-profile-add-btn" class="btn btn-secondary" style="padding: 0 10px; border-radius: 10px; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; background-color: var(--surface-color); color: var(--text-color); border: 1px solid var(--border-color); cursor: pointer;" data-i18n-title="ai_profile_add" title="Add Profile">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="width:16px; height:16px; stroke: currentColor; fill: none; stroke-width: 2.5;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button id="ai-profile-delete-btn" class="btn btn-secondary" style="padding: 0 10px; border-radius: 10px; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; background-color: var(--surface-color); color: #ff3b30; border: 1px solid var(--border-color); cursor: pointer;" data-i18n-title="ai_profile_delete" title="Delete Profile">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="width:16px; height:16px; stroke: currentColor; fill: none; stroke-width: 2.5;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="setting-item" id="ai-profile-name-container" style="display: none; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_profile_name">Profile Name</label>
+          <input type="text" id="ai-profile-name-input" placeholder="My Custom AI" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+        </div>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="ai_provider">API Provider Type</label>
           <select id="ai-provider-select" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
             <option value="builtin" data-i18n="ai_provider_builtin" selected>Built-in AI (Gemini Nano)</option>
             <option value="openai" data-i18n="ai_provider_openai">OpenAI Compatible API</option>

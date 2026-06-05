@@ -74,6 +74,19 @@ let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
 let lastChapterChangeTime = 0;
 
+// AI 服务商配置管理全局状态
+const DEFAULT_AI_PROFILES = [
+  { id: 'builtin', name: 'Built-in AI (Gemini Nano)', provider: 'builtin', apiKey: '', endpoint: '', model: '' },
+  { id: 'default_openai', name: 'OpenAI (Official)', provider: 'openai', apiKey: '', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { id: 'default_deepseek', name: 'DeepSeek', provider: 'openai', apiKey: '', endpoint: 'https://api.deepseek.com', model: 'deepseek-chat' },
+  { id: 'default_gemini', name: 'Google Gemini API', provider: 'openai', apiKey: '', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
+  { id: 'default_siliconflow', name: 'SiliconFlow (DeepSeek)', provider: 'openai', apiKey: '', endpoint: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+  { id: 'default_ollama', name: 'Ollama (Local)', provider: 'ollama', apiKey: '', endpoint: 'http://localhost:11434', model: 'llama3' },
+  { id: 'default_lmstudio', name: 'LM Studio', provider: 'openai', apiKey: '', endpoint: 'http://localhost:1234/v1', model: 'meta-llama-3-8b-instruct' }
+];
+let aiProfilesList = [];
+let activeAIProfileId = 'builtin';
+
 // 閱讀時間統計全局狀態
 let readingSessionTimer = null;
 let lastReadingHeartbeat = 0;
@@ -572,30 +585,94 @@ function initUIEventBindings() {
     });
   }
 
-  // AI 設定變更監聽
+  // AI 配置与服务商变动监听
+  const profileSelect = document.getElementById('ai-profile-select');
+  if (profileSelect) {
+    profileSelect.addEventListener('change', (e) => {
+      const profileId = e.target.value;
+      activeAIProfileId = profileId;
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile) {
+        loadActiveAIProfileToUI(activeProfile);
+      }
+    });
+  }
+
+  const profileNameInput = document.getElementById('ai-profile-name-input');
+  if (profileNameInput) {
+    profileNameInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile && activeProfile.isCustom) {
+        activeProfile.name = val;
+        // 即时同步更新下拉选单中的文字
+        const profileSelect = document.getElementById('ai-profile-select');
+        if (profileSelect) {
+          const activeOpt = profileSelect.querySelector(`option[value="${activeAIProfileId}"]`);
+          if (activeOpt) activeOpt.textContent = val || getMsg('ai_profile_default_custom_name') || 'New Custom AI';
+        }
+      }
+    });
+  }
+
+  const profileAddBtn = document.getElementById('ai-profile-add-btn');
+  if (profileAddBtn) {
+    profileAddBtn.addEventListener('click', () => {
+      const newId = 'custom_' + Date.now();
+      const defaultName = (getMsg('ai_profile_default_custom_name') || 'New Custom AI') + ' ' + (aiProfilesList.filter(p => p.isCustom).length + 1);
+      const newProfile = {
+        id: newId,
+        name: defaultName,
+        provider: 'openai',
+        apiKey: '',
+        endpoint: '',
+        model: '',
+        isCustom: true
+      };
+      aiProfilesList.push(newProfile);
+      activeAIProfileId = newId;
+      renderAIProfileOptions();
+      loadActiveAIProfileToUI(newProfile);
+      
+      // 自动聚焦到名称输入框
+      const nameInput = document.getElementById('ai-profile-name-input');
+      if (nameInput) {
+        nameInput.focus();
+        nameInput.select();
+      }
+    });
+  }
+
+  const profileDeleteBtn = document.getElementById('ai-profile-delete-btn');
+  if (profileDeleteBtn) {
+    profileDeleteBtn.addEventListener('click', () => {
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (!activeProfile || !activeProfile.isCustom) return;
+      
+      const confirmMsg = getMsg('confirm_delete_profile') || '确定要删除此 AI 配置吗？';
+      if (confirm(confirmMsg)) {
+        aiProfilesList = aiProfilesList.filter(p => p.id !== activeAIProfileId);
+        // 回退到第一个配置 (通常是 builtin)
+        activeAIProfileId = aiProfilesList[0] ? aiProfilesList[0].id : 'builtin';
+        renderAIProfileOptions();
+        const nextProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+        if (nextProfile) {
+          loadActiveAIProfileToUI(nextProfile);
+        }
+      }
+    });
+  }
+
   const providerSelect = document.getElementById('ai-provider-select');
   if (providerSelect) {
     providerSelect.addEventListener('change', (e) => {
       const provider = e.target.value;
-      
-      const endpointInput = document.getElementById('ai-endpoint-input');
-      const modelInput = document.getElementById('ai-model-input');
-      const apiKeyInput = document.getElementById('ai-api-key-input');
-      if (provider === 'openai') {
-        if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
-        if (modelInput) modelInput.placeholder = 'gpt-4o-mini';
-        if (apiKeyInput) apiKeyInput.placeholder = 'sk-...';
-      } else if (provider === 'ollama') {
-        if (endpointInput) endpointInput.placeholder = 'http://localhost:11434';
-        if (modelInput) modelInput.placeholder = 'llama3';
-        if (apiKeyInput) apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile) {
+        activeProfile.provider = provider;
+        updateAIConfigPlaceholders(provider);
+        updateAIConfigFieldsVisibility(provider);
       }
-
-      updateAIConfigFieldsVisibility(provider);
-      ai.configure({ provider });
-      chrome.storage.local.set({ aiProvider: provider }, () => {
-        updateAIButtonsVisibility();
-      });
     });
   }
 
@@ -603,8 +680,10 @@ function initUIEventBindings() {
   if (apiKeyInput) {
     apiKeyInput.addEventListener('input', (e) => {
       const val = e.target.value;
-      ai.configure({ apiKey: val });
-      chrome.storage.local.set({ aiApiKey: val });
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile) {
+        activeProfile.apiKey = val;
+      }
     });
   }
 
@@ -612,8 +691,10 @@ function initUIEventBindings() {
   if (endpointInput) {
     endpointInput.addEventListener('input', (e) => {
       const val = e.target.value;
-      ai.configure({ endpoint: val });
-      chrome.storage.local.set({ aiEndpoint: val });
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile) {
+        activeProfile.endpoint = val;
+      }
     });
   }
 
@@ -621,8 +702,10 @@ function initUIEventBindings() {
   if (modelInput) {
     modelInput.addEventListener('input', (e) => {
       const val = e.target.value;
-      ai.configure({ model: val });
-      chrome.storage.local.set({ aiModel: val });
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile) {
+        activeProfile.model = val;
+      }
     });
   }
 
@@ -838,10 +921,27 @@ function initUIEventBindings() {
   const aiSaveBtn = document.getElementById('ai-save-btn');
   if (aiSaveBtn) {
     aiSaveBtn.addEventListener('click', () => {
-      const provider = document.getElementById('ai-provider-select').value;
-      const apiKey = document.getElementById('ai-api-key-input').value;
-      const endpoint = document.getElementById('ai-endpoint-input').value;
-      const model = document.getElementById('ai-model-input').value;
+      const activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (activeProfile) {
+        activeProfile.provider = document.getElementById('ai-provider-select').value;
+        activeProfile.apiKey = document.getElementById('ai-api-key-input').value;
+        activeProfile.endpoint = document.getElementById('ai-endpoint-input').value;
+        activeProfile.model = document.getElementById('ai-model-input').value;
+        if (activeProfile.isCustom) {
+          const nameVal = document.getElementById('ai-profile-name-input').value.trim();
+          activeProfile.name = nameVal || getMsg('ai_profile_default_custom_name') || 'New Custom AI';
+          document.getElementById('ai-profile-name-input').value = activeProfile.name;
+          renderAIProfileOptions();
+        }
+
+        // 配置 AI 引擎
+        ai.configure({
+          provider: activeProfile.provider,
+          apiKey: activeProfile.apiKey,
+          endpoint: activeProfile.endpoint,
+          model: activeProfile.model
+        });
+      }
 
       const ttsProvider = document.getElementById('tts-provider-select').value;
       const ttsApiKey = document.getElementById('tts-api-key-input').value;
@@ -850,16 +950,13 @@ function initUIEventBindings() {
       const ttsLanguage = document.getElementById('tts-language-select').value;
       const ttsVoice = document.getElementById('tts-voice-input').value.trim();
 
-      ai.configure({ provider, apiKey, endpoint, model });
       tts.configure({ provider: ttsProvider, apiKey: ttsApiKey, endpoint: ttsEndpoint, model: ttsModel });
       currentTTSLanguage = ttsLanguage;
       ttsDefaultVoice = ttsVoice;
 
       chrome.storage.local.set({ 
-        aiProvider: provider, 
-        aiApiKey: apiKey, 
-        aiEndpoint: endpoint, 
-        aiModel: model,
+        aiProfiles: aiProfilesList,
+        activeAIProfileId: activeAIProfileId,
         ttsProvider: ttsProvider,
         ttsApiKey: ttsApiKey,
         ttsEndpoint: ttsEndpoint,
@@ -871,7 +968,7 @@ function initUIEventBindings() {
         initTTSPanelVoices();
         // 顯示已保存的反饋狀態
         const originalText = aiSaveBtn.textContent;
-        aiSaveBtn.textContent = getMsg('ai_settings_saved');
+        aiSaveBtn.textContent = getMsg('ai_settings_saved') || 'Saved';
         aiSaveBtn.style.backgroundColor = '#34c759'; // green color for success
         setTimeout(() => {
           aiSaveBtn.textContent = originalText;
@@ -3826,59 +3923,136 @@ function isMobileDevice() {
 
 async function initAISettings() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['aiProvider', 'aiApiKey', 'aiEndpoint', 'aiModel'], async (res) => {
-      const provider = res.aiProvider || 'builtin';
-      const apiKey = res.aiApiKey || '';
-      const endpoint = res.aiEndpoint || '';
-      const model = res.aiModel || '';
-
-      // 配置 AI 引擎
-      ai.configure({ provider, apiKey, endpoint, model });
-
-      // 初始化 UI 控制項值
-      const providerSelect = document.getElementById('ai-provider-select');
-      const apiKeyInput = document.getElementById('ai-api-key-input');
-      const endpointInput = document.getElementById('ai-endpoint-input');
-      const modelInput = document.getElementById('ai-model-input');
-
-      if (providerSelect) providerSelect.value = provider;
-      if (apiKeyInput) {
-        apiKeyInput.value = apiKey;
-        if (provider === 'ollama') {
-          apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
+    chrome.storage.local.get(['aiProfiles', 'activeAIProfileId', 'aiProvider', 'aiApiKey', 'aiEndpoint', 'aiModel'], async (res) => {
+      // 1. 载入并进行数据迁移
+      if (res.aiProfiles && res.aiProfiles.length > 0) {
+        aiProfilesList = res.aiProfiles;
+        activeAIProfileId = res.activeAIProfileId || 'builtin';
+      } else {
+        // 没有多服务商配置，检查是否有旧的单一配置以进行迁移
+        aiProfilesList = JSON.parse(JSON.stringify(DEFAULT_AI_PROFILES));
+        if (res.aiProvider) {
+          const migratedProfile = {
+            id: 'migrated_custom',
+            name: getMsg('ai_profile_migrated') || 'Migrated Profile',
+            provider: res.aiProvider,
+            apiKey: res.aiApiKey || '',
+            endpoint: res.aiEndpoint || '',
+            model: res.aiModel || '',
+            isCustom: true
+          };
+          aiProfilesList.push(migratedProfile);
+          activeAIProfileId = 'migrated_custom';
         } else {
-          apiKeyInput.placeholder = 'sk-...';
-        }
-      }
-      if (endpointInput) {
-        endpointInput.value = endpoint;
-        if (provider === 'openai') {
-          endpointInput.placeholder = 'https://api.openai.com/v1';
-        } else if (provider === 'ollama') {
-          endpointInput.placeholder = 'http://localhost:11434';
-        }
-      }
-      if (modelInput) {
-        modelInput.value = model;
-        if (provider === 'openai') {
-          modelInput.placeholder = 'gpt-4o-mini';
-        } else if (provider === 'ollama') {
-          modelInput.placeholder = 'llama3';
+          activeAIProfileId = 'builtin';
         }
       }
 
-      // 根據 provider 顯示/隱藏對應的輸入框容器
-      updateAIConfigFieldsVisibility(provider);
+      // 2. 确保 activeAIProfileId 的配置是存在的，如果不存在则降级为 builtin
+      let activeProfile = aiProfilesList.find(p => p.id === activeAIProfileId);
+      if (!activeProfile) {
+        activeProfile = aiProfilesList[0] || DEFAULT_AI_PROFILES[0];
+        activeAIProfileId = activeProfile.id;
+      }
 
-      // 檢測內置 AI 支持狀態
+      // 3. 配置 AI 引擎
+      ai.configure({
+        provider: activeProfile.provider,
+        apiKey: activeProfile.apiKey,
+        endpoint: activeProfile.endpoint,
+        model: activeProfile.model
+      });
+
+      // 4. 初始化 UI 下拉选单与各项控制器
+      renderAIProfileOptions();
+
+      // 5. 载入当前 active profile 的值到输入框中
+      loadActiveAIProfileToUI(activeProfile);
+
+      // 6. 检测内置 AI 支持状态
       await ai.checkAvailability();
 
-      // 更新 AI 功能按鈕可見度
+      // 7. 更新 AI 功能按钮可见度
       updateAIButtonsVisibility();
 
       resolve();
     });
   });
+}
+
+function renderAIProfileOptions() {
+  const profileSelect = document.getElementById('ai-profile-select');
+  if (!profileSelect) return;
+  profileSelect.innerHTML = '';
+  aiProfilesList.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    // 如果是内置/预设的且有翻译，使用翻译，否则使用内嵌名称
+    let displayName = p.name;
+    if (p.id === 'builtin') displayName = getMsg('ai_profile_builtin') || getMsg('ai_provider_builtin') || p.name;
+    else if (p.id === 'default_openai') displayName = getMsg('ai_profile_openai') || p.name;
+    else if (p.id === 'default_deepseek') displayName = getMsg('ai_profile_deepseek') || p.name;
+    else if (p.id === 'default_gemini') displayName = getMsg('ai_profile_gemini') || p.name;
+    else if (p.id === 'default_siliconflow') displayName = getMsg('ai_profile_siliconflow') || p.name;
+    else if (p.id === 'default_ollama') displayName = getMsg('ai_profile_ollama') || p.name;
+    else if (p.id === 'default_lmstudio') displayName = getMsg('ai_profile_lmstudio') || p.name;
+    opt.textContent = displayName;
+    profileSelect.appendChild(opt);
+  });
+  profileSelect.value = activeAIProfileId;
+}
+
+function loadActiveAIProfileToUI(profile) {
+  const providerSelect = document.getElementById('ai-provider-select');
+  const apiKeyInput = document.getElementById('ai-api-key-input');
+  const endpointInput = document.getElementById('ai-endpoint-input');
+  const modelInput = document.getElementById('ai-model-input');
+  const nameInput = document.getElementById('ai-profile-name-input');
+  const nameContainer = document.getElementById('ai-profile-name-container');
+  const deleteBtn = document.getElementById('ai-profile-delete-btn');
+
+  if (providerSelect) providerSelect.value = profile.provider;
+  if (apiKeyInput) apiKeyInput.value = profile.apiKey || '';
+  if (endpointInput) endpointInput.value = profile.endpoint || '';
+  if (modelInput) modelInput.value = profile.model || '';
+
+  // 更新 placeholder
+  updateAIConfigPlaceholders(profile.provider);
+
+  // 根据是否为自定义 profile 显示/隐藏名称栏位和删除按钮
+  if (profile.isCustom) {
+    if (nameContainer) nameContainer.style.display = 'flex';
+    if (nameInput) nameInput.value = profile.name;
+    if (deleteBtn) {
+      deleteBtn.style.display = 'inline-flex';
+      deleteBtn.disabled = false;
+    }
+  } else {
+    if (nameContainer) nameContainer.style.display = 'none';
+    if (deleteBtn) {
+      deleteBtn.style.display = 'none';
+      deleteBtn.disabled = true;
+    }
+  }
+
+  // 根据 provider 显示/隐藏对应的输入框容器
+  updateAIConfigFieldsVisibility(profile.provider);
+}
+
+function updateAIConfigPlaceholders(provider) {
+  const apiKeyInput = document.getElementById('ai-api-key-input');
+  const endpointInput = document.getElementById('ai-endpoint-input');
+  const modelInput = document.getElementById('ai-model-input');
+  
+  if (provider === 'openai') {
+    if (endpointInput) endpointInput.placeholder = 'https://api.openai.com/v1';
+    if (modelInput) modelInput.placeholder = 'gpt-4o-mini';
+    if (apiKeyInput) apiKeyInput.placeholder = 'sk-...';
+  } else if (provider === 'ollama') {
+    if (endpointInput) endpointInput.placeholder = 'http://localhost:11434';
+    if (modelInput) modelInput.placeholder = 'llama3';
+    if (apiKeyInput) apiKeyInput.placeholder = getMsg('ai_api_key_optional') || 'Optional (e.g. for proxy auth)';
+  }
 }
 
 function updateAIConfigFieldsVisibility(provider) {

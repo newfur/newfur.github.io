@@ -528,6 +528,48 @@
   "texture_grid": {
     "message": "复古格子"
   },
+  "ai_profile": {
+    "message": "AI 配置 / 服务商"
+  },
+  "ai_profile_name": {
+    "message": "配置名称"
+  },
+  "ai_profile_add": {
+    "message": "新建配置"
+  },
+  "ai_profile_delete": {
+    "message": "删除配置"
+  },
+  "ai_profile_default_custom_name": {
+    "message": "新自定义 AI"
+  },
+  "ai_profile_migrated": {
+    "message": "已迁移配置"
+  },
+  "ai_profile_builtin": {
+    "message": "内置 AI (Gemini Nano)"
+  },
+  "ai_profile_openai": {
+    "message": "OpenAI (官方)"
+  },
+  "ai_profile_deepseek": {
+    "message": "DeepSeek"
+  },
+  "ai_profile_gemini": {
+    "message": "Google Gemini API"
+  },
+  "ai_profile_siliconflow": {
+    "message": "硅基流动 (SiliconFlow)"
+  },
+  "ai_profile_ollama": {
+    "message": "Ollama (本地)"
+  },
+  "ai_profile_lmstudio": {
+    "message": "LM Studio"
+  },
+  "confirm_delete_profile": {
+    "message": "确定要删除此 AI 配置吗？"
+  },
   "ai_provider": {
     "message": "AI 服务商"
   },
