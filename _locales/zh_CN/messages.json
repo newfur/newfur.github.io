@@ -570,6 +570,9 @@
   "confirm_delete_profile": {
     "message": "确定要删除此 AI 配置吗？"
   },
+  "ai_builtin_not_supported": {
+    "message": "当前浏览器不支持内置 AI (Gemini Nano)。请在全局设置（点击齿轮图标）中配置自定义 AI 服务商（如 DeepSeek、OpenAI 或 Ollama）。"
+  },
   "ai_provider": {
     "message": "AI 服务商"
   },

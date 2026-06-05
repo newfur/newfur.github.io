@@ -1414,10 +1414,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.0.0';
+            versionDisplay.textContent = 'v2.0.1';
           }
         } else {
-          versionDisplay.textContent = 'v2.0.0';
+          versionDisplay.textContent = 'v2.0.1';
         }
       }
       aboutDialog.showModal();
@@ -4149,12 +4149,7 @@ function updateTTSConfigFieldsVisibility(provider) {
 }
 
 function updateAIButtonsVisibility() {
-  const hasCustomAI = ai.provider !== 'builtin';
-  if (!ai.isSupported && !hasCustomAI) {
-    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'none');
-  } else {
-    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'inline-flex');
-  }
+  document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'inline-flex');
 }
 
 function initThemeAndStyles() {
@@ -5011,11 +5006,9 @@ function handleTextSelection(e) {
       if (deleteBtn) deleteBtn.style.display = 'none';
     }
 
-    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況或自定義 AI 配置
-    const hasCustomAI = ai.provider !== 'builtin';
-    const showAI = ai.isSupported || hasCustomAI;
+    // 確保 AI 按鈕的顯示狀態為顯示
     document.querySelectorAll('.ai-btn').forEach(btn => {
-      btn.style.display = showAI ? 'inline-flex' : 'none';
+      btn.style.display = 'inline-flex';
     });
 
     menu.style.display = 'flex';

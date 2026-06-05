@@ -570,6 +570,9 @@
   "confirm_delete_profile": {
     "message": "Are you sure you want to delete this AI profile?"
   },
+  "ai_builtin_not_supported": {
+    "message": "Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog."
+  },
   "ai_provider": {
     "message": "AI Provider"
   },

@@ -54,13 +54,16 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.0.0)
+## 🔄 Recent Updates & Optimizations (v2.0.1)
 
-*   **Custom AI & Local LLM Integration**:
-    - Support for connecting to cloud LLMs like OpenAI, DeepSeek, and locally deployed Ollama instances.
-    - Uses background Service Worker proxy streaming in the extension environment to completely bypass cross-origin (CORS) limits.
-    - Added a dedicated "Save AI Config" button with visual feedback to make configuration saving intuitive.
-    - Global "AI Assistant" chat entry in the top navigation bar, with a conversation input field at the bottom of the AI panel, supporting free text query inputs and rendering history/stream replies as exquisite chat bubble flows.
+*   **Fixed Desktop AI Buttons Visibility**:
+    - Ensured that both the main AI assistant header button and selection popover AI query buttons (Summary, Explain, Translate, Ask) remain permanently visible on desktop/standard browsers that do not natively support built-in AI (Gemini Nano), allowing users to use third-party custom providers.
+    - Added localized setup guidance/error prompts when using the default built-in AI in unsupported environments to guide users on selecting a custom provider (e.g. DeepSeek, OpenAI, Ollama).
+*   **Multi-Profile AI Configuration Support**:
+    - Support for saving multiple AI provider profiles, pre-populated with popular presets: OpenAI (Official), DeepSeek, Google Gemini API, SiliconFlow (DeepSeek), Ollama (Local), and LM Studio.
+    - Custom profiles can be created, deleted, and renamed.
+    - Legacy configurations automatically migrate to a custom profile named "Migrated Profile" to prevent credentials loss.
+    - Fixed empty profile name saves and placeholder updates.
 *   **Sidebar Styles & Font Hierarchy Optimization**:
     - Forces sidebar buttons and section headers (Add Bookmark, Bookmarks, Notes & Highlights) to use stable system UI fonts to prevent book-internal CSS from polluting UI elements.
     - Scaled sidebar typography (tabs 18px, buttons/headers 16px) to establish a clean visual hierarchy.

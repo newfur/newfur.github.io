@@ -5169,7 +5169,7 @@ html.transition-none .page-texture-slide {
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
         <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
-        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.0</span></div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.1</span></div>
         
         <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
         
@@ -5916,6 +5916,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "confirm_delete_profile": {
       "message": "Are you sure you want to delete this AI profile?"
+    },
+    "ai_builtin_not_supported": {
+      "message": "Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog."
     },
     "ai_provider": {
       "message": "AI Provider"
@@ -6706,6 +6709,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "confirm_delete_profile": {
       "message": "確定要刪除此 AI 設定嗎？"
     },
+    "ai_builtin_not_supported": {
+      "message": "目前瀏覽器不支援內建 AI (Gemini Nano)。請在全域設定（點擊齒輪圖示）中配置自訂 AI 服務商（如 DeepSeek、OpenAI 或 Ollama）。"
+    },
     "ai_provider": {
       "message": "AI 服務商"
     },
@@ -7494,6 +7500,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     },
     "confirm_delete_profile": {
       "message": "确定要删除此 AI 配置吗？"
+    },
+    "ai_builtin_not_supported": {
+      "message": "当前浏览器不支持内置 AI (Gemini Nano)。请在全局设置（点击齿轮图标）中配置自定义 AI 服务商（如 DeepSeek、OpenAI 或 Ollama）。"
     },
     "ai_provider": {
       "message": "AI 服务商"
@@ -12431,7 +12440,10 @@ class AIEngine {
 
   // 建立內置 AI 會話
   async _createSession(systemPrompt = '') {
-    if (!this.isSupported) throw new Error('Built-in AI is not supported in this browser.');
+    if (!this.isSupported) {
+      const errMsg = getMsg('ai_builtin_not_supported') || 'Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog.';
+      throw new Error(errMsg);
+    }
     
     // 如果已有會話，先關閉釋放內存
     if (this.session) {
@@ -14211,10 +14223,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.0.0';
+            versionDisplay.textContent = 'v2.0.1';
           }
         } else {
-          versionDisplay.textContent = 'v2.0.0';
+          versionDisplay.textContent = 'v2.0.1';
         }
       }
       aboutDialog.showModal();
@@ -16946,12 +16958,7 @@ function updateTTSConfigFieldsVisibility(provider) {
 }
 
 function updateAIButtonsVisibility() {
-  const hasCustomAI = ai.provider !== 'builtin';
-  if (!ai.isSupported && !hasCustomAI) {
-    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'none');
-  } else {
-    document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'inline-flex');
-  }
+  document.querySelectorAll('.ai-btn').forEach(btn => btn.style.display = 'inline-flex');
 }
 
 function initThemeAndStyles() {
@@ -17808,11 +17815,9 @@ function handleTextSelection(e) {
       if (deleteBtn) deleteBtn.style.display = 'none';
     }
 
-    // 確保 AI 按鈕的顯示狀態符合瀏覽器支持情況或自定義 AI 配置
-    const hasCustomAI = ai.provider !== 'builtin';
-    const showAI = ai.isSupported || hasCustomAI;
+    // 確保 AI 按鈕的顯示狀態為顯示
     document.querySelectorAll('.ai-btn').forEach(btn => {
-      btn.style.display = showAI ? 'inline-flex' : 'none';
+      btn.style.display = 'inline-flex';
     });
 
     menu.style.display = 'flex';

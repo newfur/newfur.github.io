@@ -570,6 +570,9 @@
   "confirm_delete_profile": {
     "message": "確定要刪除此 AI 設定嗎？"
   },
+  "ai_builtin_not_supported": {
+    "message": "目前瀏覽器不支援內建 AI (Gemini Nano)。請在全域設定（點擊齒輪圖示）中配置自訂 AI 服務商（如 DeepSeek、OpenAI 或 Ollama）。"
+  },
   "ai_provider": {
     "message": "AI 服務商"
   },

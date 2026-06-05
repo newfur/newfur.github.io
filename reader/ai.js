@@ -57,7 +57,10 @@ export class AIEngine {
 
   // 建立內置 AI 會話
   async _createSession(systemPrompt = '') {
-    if (!this.isSupported) throw new Error('Built-in AI is not supported in this browser.');
+    if (!this.isSupported) {
+      const errMsg = getMsg('ai_builtin_not_supported') || 'Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog.';
+      throw new Error(errMsg);
+    }
     
     // 如果已有會話，先關閉釋放內存
     if (this.session) {
