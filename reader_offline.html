@@ -1770,11 +1770,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
     left: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    height: 100vh !important;
-    max-height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
     border-radius: 0 !important;
     margin: 0 !important;
     animation: slideUpFullScreen 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  .ai-panel-footer {
+    padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
   }
 }
 
@@ -2842,6 +2845,14 @@ html.transition-none .page-texture-slide {
   }
 
   /* 側邊欄標題欄與按鈕在移動端的響應式對齊優化 */
+  .reader-sidebar {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    width: 320px !important;
+    max-width: 85% !important;
+    border-radius: 0 !important;
+    bottom: 0 !important;
+  }
   .sidebar-header {
     padding: 0 12px !important;
   }
@@ -13797,6 +13808,7 @@ function initUIEventBindings() {
 
   document.getElementById('close-sidebar-btn').addEventListener('click', () => {
     document.getElementById('reader-sidebar').classList.remove('active');
+    updateHeaderActiveStates();
   });
 
   document.getElementById('add-bookmark-btn').addEventListener('click', handleAddBookmark);
@@ -14949,6 +14961,7 @@ function renderTOC(chapters) {
     
     li.addEventListener('click', () => {
       document.getElementById('reader-sidebar').classList.remove('active');
+      updateHeaderActiveStates();
       loadChapter(idx);
     });
     tocList.appendChild(li);
@@ -17891,6 +17904,7 @@ async function renderHighlightsList() {
       `;
       li.addEventListener('click', () => {
         document.getElementById('reader-sidebar').classList.remove('active');
+        updateHeaderActiveStates();
         loadChapter(b.chapterIndex, false, false, true, false, b.currentPageIndex, b.elementIndex);
       });
       // 動態綁定刪除書籤事件 (解決 CSP 阻擋 inline onclick 問題)
@@ -17924,6 +17938,7 @@ async function renderHighlightsList() {
       `;
       li.addEventListener('click', () => {
         document.getElementById('reader-sidebar').classList.remove('active');
+        updateHeaderActiveStates();
         loadChapter(n.chapterIndex, false, false, true, false, null, null, n.sentenceIndex);
       });
       // 動態綁定刪除筆記事件 (解決 CSP 阻擋 inline onclick 問題)

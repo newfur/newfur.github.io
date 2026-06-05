@@ -1154,6 +1154,7 @@ function initUIEventBindings() {
 
   document.getElementById('close-sidebar-btn').addEventListener('click', () => {
     document.getElementById('reader-sidebar').classList.remove('active');
+    updateHeaderActiveStates();
   });
 
   document.getElementById('add-bookmark-btn').addEventListener('click', handleAddBookmark);
@@ -2306,6 +2307,7 @@ function renderTOC(chapters) {
     
     li.addEventListener('click', () => {
       document.getElementById('reader-sidebar').classList.remove('active');
+      updateHeaderActiveStates();
       loadChapter(idx);
     });
     tocList.appendChild(li);
@@ -5248,6 +5250,7 @@ async function renderHighlightsList() {
       `;
       li.addEventListener('click', () => {
         document.getElementById('reader-sidebar').classList.remove('active');
+        updateHeaderActiveStates();
         loadChapter(b.chapterIndex, false, false, true, false, b.currentPageIndex, b.elementIndex);
       });
       // 動態綁定刪除書籤事件 (解決 CSP 阻擋 inline onclick 問題)
@@ -5281,6 +5284,7 @@ async function renderHighlightsList() {
       `;
       li.addEventListener('click', () => {
         document.getElementById('reader-sidebar').classList.remove('active');
+        updateHeaderActiveStates();
         loadChapter(n.chapterIndex, false, false, true, false, null, null, n.sentenceIndex);
       });
       // 動態綁定刪除筆記事件 (解決 CSP 阻擋 inline onclick 問題)
