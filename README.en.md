@@ -54,8 +54,11 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.0.1)
+## 🔄 Recent Updates & Optimizations (v2.0.2)
 
+*   **Mobile Selection Menu AI Buttons Stacking & Labels**:
+    - Restructured the text selection popup HTML, grouping highlight styles, delete, note, and speak actions in a top row (icon-only to prevent squeeze).
+    - Wrapped the 4 AI actions (Summary, Explain, Translate, Ask) in a dedicated bottom row, enabling visible text labels on mobile screens with compact icons and paddings.
 *   **Fixed Desktop AI Buttons Visibility**:
     - Ensured that both the main AI assistant header button and selection popover AI query buttons (Summary, Explain, Translate, Ask) remain permanently visible on desktop/standard browsers that do not natively support built-in AI (Gemini Nano), allowing users to use third-party custom providers.
     - Added localized setup guidance/error prompts when using the default built-in AI in unsupported environments to guide users on selecting a custom provider (e.g. DeepSeek, OpenAI, Ollama).

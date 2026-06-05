@@ -1705,27 +1705,41 @@ input[type="range"]::-webkit-slider-thumb:hover {
   top: auto !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
-  flex-direction: row !important;
-  flex-wrap: wrap !important;
+  flex-direction: column !important;
   justify-content: center !important;
   gap: 8px !important;
-  width: min(340px, 90vw) !important;
+  width: min(350px, 92vw) !important;
   align-items: center !important;
-  padding: 12px 16px !important;
+  padding: 12px 14px !important;
   border-radius: 20px !important;
   animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
   box-shadow: 0 10px 40px var(--glass-shadow) !important;
 }
 
 .selection-menu.mobile-bottom-menu .menu-row {
-  display: contents !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  gap: 8px !important;
 }
 
-.selection-menu.mobile-bottom-menu .menu-divider {
+.selection-menu.mobile-bottom-menu #selection-row-main .menu-divider {
   width: 1px !important;
   height: 20px !important;
   background-color: var(--border-color);
   margin: 0 4px !important;
+  display: inline-block !important;
+}
+
+.selection-menu.mobile-bottom-menu #selection-divider-2 {
+  width: 100% !important;
+  height: 1px !important;
+  background-color: var(--border-color);
+  margin: 4px 0 !important;
+  display: block !important;
 }
 
 @keyframes slideUpMobile {
@@ -1740,20 +1754,43 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 /* 行動端選單排版微調：隱藏文字、放大圖標與色點，使佈局精簡且易於觸控 */
 @media (max-width: 768px) {
-  .selection-menu .menu-btn span {
+  /* 隱藏主操作列按鈕的文字（色塊刪除、筆記、朗讀） */
+  .selection-menu #selection-row-main .menu-btn span {
     display: none !important;
   }
-  .selection-menu .menu-btn .svg-icon {
+  /* 顯示 AI 按鈕的文字，另起一行 */
+  .selection-menu #selection-row-ai .menu-btn span {
+    display: inline-block !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+  }
+  /* 主操作列按鈕大圖標，方便觸控 */
+  .selection-menu #selection-row-main .menu-btn .svg-icon {
     margin-right: 0 !important;
     width: 22px !important;
     height: 22px !important;
   }
-  .selection-menu .menu-btn {
+  /* AI 按鈕使用較小圖標，並與文字保持間距 */
+  .selection-menu #selection-row-ai .menu-btn .svg-icon {
+    margin-right: 4px !important;
+    width: 15px !important;
+    height: 15px !important;
+  }
+  /* 主按鈕和 AI 按鈕的內邊距調整 */
+  .selection-menu #selection-row-main .menu-btn {
     padding: 8px !important;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 10px !important;
+  }
+  .selection-menu #selection-row-ai .menu-btn {
+    padding: 6px 8px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px !important;
+    font-size: 11px !important;
   }
   .selection-menu .color-dot {
     width: 24px !important;
@@ -4930,7 +4967,7 @@ html.transition-none .page-texture-slide {
 
     <!-- ================= 文字選取懸浮菜單 (Text Selection Menu) ================= -->
     <div id="selection-menu" class="selection-menu panel-glass">
-      <div class="menu-row">
+      <div class="menu-row" id="selection-row-main">
         <div class="highlight-colors">
           <button class="color-dot color-yellow" data-color="yellow"></button>
           <button class="color-dot color-green" data-color="green"></button>
@@ -4941,9 +4978,7 @@ html.transition-none .page-texture-slide {
           <svg class="svg-icon svg-icon-sm" style="color:red; margin-right: 3px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
           <span data-i18n="selection_delete">Delete</span>
         </button>
-      </div>
-      <div class="menu-divider"></div>
-      <div class="menu-row">
+        <div class="menu-divider" id="selection-divider-1"></div>
         <button id="selection-note-btn" class="menu-btn">
           <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           <span data-i18n="note_title">Note</span>
@@ -4952,6 +4987,9 @@ html.transition-none .page-texture-slide {
           <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
           <span data-i18n="selection_speak">Speak</span>
         </button>
+      </div>
+      <div class="menu-divider" id="selection-divider-2"></div>
+      <div class="menu-row" id="selection-row-ai">
         <button id="selection-ai-summary" class="menu-btn ai-btn">
           <svg class="svg-icon svg-icon-sm" style="margin-right: 3px;" viewBox="0 0 24 24"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
           <span data-i18n="ai_summary">Summary</span>
@@ -5169,7 +5207,7 @@ html.transition-none .page-texture-slide {
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
         <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
-        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.1</span></div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.0.2</span></div>
         
         <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
         
@@ -14223,10 +14261,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.0.1';
+            versionDisplay.textContent = 'v2.0.2';
           }
         } else {
-          versionDisplay.textContent = 'v2.0.1';
+          versionDisplay.textContent = 'v2.0.2';
         }
       }
       aboutDialog.showModal();

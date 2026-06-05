@@ -1699,27 +1699,41 @@ input[type="range"]::-webkit-slider-thumb:hover {
   top: auto !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
-  flex-direction: row !important;
-  flex-wrap: wrap !important;
+  flex-direction: column !important;
   justify-content: center !important;
   gap: 8px !important;
-  width: min(340px, 90vw) !important;
+  width: min(350px, 92vw) !important;
   align-items: center !important;
-  padding: 12px 16px !important;
+  padding: 12px 14px !important;
   border-radius: 20px !important;
   animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
   box-shadow: 0 10px 40px var(--glass-shadow) !important;
 }
 
 .selection-menu.mobile-bottom-menu .menu-row {
-  display: contents !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  gap: 8px !important;
 }
 
-.selection-menu.mobile-bottom-menu .menu-divider {
+.selection-menu.mobile-bottom-menu #selection-row-main .menu-divider {
   width: 1px !important;
   height: 20px !important;
   background-color: var(--border-color);
   margin: 0 4px !important;
+  display: inline-block !important;
+}
+
+.selection-menu.mobile-bottom-menu #selection-divider-2 {
+  width: 100% !important;
+  height: 1px !important;
+  background-color: var(--border-color);
+  margin: 4px 0 !important;
+  display: block !important;
 }
 
 @keyframes slideUpMobile {
@@ -1734,20 +1748,43 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 /* 行動端選單排版微調：隱藏文字、放大圖標與色點，使佈局精簡且易於觸控 */
 @media (max-width: 768px) {
-  .selection-menu .menu-btn span {
+  /* 隱藏主操作列按鈕的文字（色塊刪除、筆記、朗讀） */
+  .selection-menu #selection-row-main .menu-btn span {
     display: none !important;
   }
-  .selection-menu .menu-btn .svg-icon {
+  /* 顯示 AI 按鈕的文字，另起一行 */
+  .selection-menu #selection-row-ai .menu-btn span {
+    display: inline-block !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+  }
+  /* 主操作列按鈕大圖標，方便觸控 */
+  .selection-menu #selection-row-main .menu-btn .svg-icon {
     margin-right: 0 !important;
     width: 22px !important;
     height: 22px !important;
   }
-  .selection-menu .menu-btn {
+  /* AI 按鈕使用較小圖標，並與文字保持間距 */
+  .selection-menu #selection-row-ai .menu-btn .svg-icon {
+    margin-right: 4px !important;
+    width: 15px !important;
+    height: 15px !important;
+  }
+  /* 主按鈕和 AI 按鈕的內邊距調整 */
+  .selection-menu #selection-row-main .menu-btn {
     padding: 8px !important;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 10px !important;
+  }
+  .selection-menu #selection-row-ai .menu-btn {
+    padding: 6px 8px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px !important;
+    font-size: 11px !important;
   }
   .selection-menu .color-dot {
     width: 24px !important;
