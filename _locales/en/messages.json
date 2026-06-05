@@ -827,5 +827,14 @@
   },
   "btn_delete": {
     "message": "Delete"
+  },
+  "zoom_in": {
+    "message": "Zoom In"
+  },
+  "zoom_out": {
+    "message": "Zoom Out"
+  },
+  "zoom_reset": {
+    "message": "Reset"
   }
 }

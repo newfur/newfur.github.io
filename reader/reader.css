@@ -4688,16 +4688,82 @@ html.transition-none .page-texture-slide {
   line-height: 1.5;
 }
 
-/* 渲染成功後的 SVG 樣式 */
+/* 渲染成功後的 SVG 樣式與交互容器 */
 .mermaid[data-processed="true"] {
   white-space: normal;
   font-family: inherit;
   font-size: inherit;
+  position: relative;
+  overflow: hidden;
+  height: 380px;
+  padding: 0;
+  cursor: grab;
+  user-select: none;
 }
 
-.mermaid svg {
-  max-width: 100% !important;
+.mermaid[data-processed="true"]:active {
+  cursor: grabbing;
+}
+
+.mermaid-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  transition: transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.mermaid-wrapper.dragging {
+  transition: none;
+}
+
+.mermaid-wrapper svg {
+  max-width: 95% !important;
+  max-height: 95% !important;
+  width: auto !important;
   height: auto !important;
+  display: block;
+}
+
+.mermaid-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.mermaid:hover .mermaid-toolbar {
+  opacity: 1;
+}
+
+.mermaid-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.mermaid-btn:hover {
+  background-color: var(--hover-color);
 }
 
 /* Mermaid 渲染失敗時的降級代碼塊 */

@@ -6076,12 +6076,200 @@ async function renderMermaidBlocks() {
         const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
         const { svg } = await mermaid.render(id, code);
         container.innerHTML = svg;
+        setupMermaidPanZoom(container);
       } catch (err) {
         console.warn('Mermaid render failed for block, falling back to code display:', err.message || err);
         // 渲染失敗時降級為帶格式的代碼塊
         container.innerHTML = `<pre class="mermaid-fallback"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
       }
     }
+  }
+}
+
+// 設置 Mermaid 思維導圖拖曳、縮放與自適應
+function setupMermaidPanZoom(container) {
+  const svgEl = container.querySelector('svg');
+  if (!svgEl) return;
+
+  // 用 wrapper 包裹 SVG
+  const wrapper = document.createElement('div');
+  wrapper.className = 'mermaid-wrapper';
+  
+  // 將 SVG 移動到 wrapper 中
+  svgEl.parentNode.insertBefore(wrapper, svgEl);
+  wrapper.appendChild(svgEl);
+
+  // 添加悬浮控制工具栏
+  const toolbar = document.createElement('div');
+  toolbar.className = 'mermaid-toolbar';
+  
+  const zoomInTip = (typeof getMsg === 'function' && getMsg('zoom_in')) || '放大';
+  const zoomOutTip = (typeof getMsg === 'function' && getMsg('zoom_out')) || '縮小';
+  const resetTip = (typeof getMsg === 'function' && getMsg('zoom_reset')) || '重置';
+  
+  toolbar.innerHTML = `
+    <button class="mermaid-btn zoom-in" title="${zoomInTip}">＋</button>
+    <button class="mermaid-btn zoom-out" title="${zoomOutTip}">－</button>
+    <button class="mermaid-btn zoom-reset" title="${resetTip}">↺</button>
+  `;
+  container.appendChild(toolbar);
+
+  let scale = 1;
+  let translateX = 0;
+  let translateY = 0;
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+
+  function updateTransform() {
+    wrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+  }
+
+  // 鼠標拖拽事件
+  container.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 僅限左鍵
+    if (e.target.closest('.mermaid-toolbar')) return;
+    e.preventDefault();
+    
+    isDragging = true;
+    startX = e.clientX - translateX;
+    startY = e.clientY - translateY;
+    wrapper.classList.add('dragging');
+  });
+
+  const onMouseMove = (e) => {
+    if (!container.isConnected) {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      return;
+    }
+    if (!isDragging) return;
+    translateX = e.clientX - startX;
+    translateY = e.clientY - startY;
+    updateTransform();
+  };
+
+  const onMouseUp = () => {
+    if (!container.isConnected) {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      return;
+    }
+    if (isDragging) {
+      isDragging = false;
+      wrapper.classList.remove('dragging');
+    }
+  };
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+
+  // 觸摸拖拽事件
+  container.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.mermaid-toolbar')) return;
+    if (e.touches.length === 1) {
+      isDragging = true;
+      startX = e.touches[0].clientX - translateX;
+      startY = e.touches[0].clientY - translateY;
+      wrapper.classList.add('dragging');
+    }
+  }, { passive: true });
+
+  const onTouchMove = (e) => {
+    if (!container.isConnected) {
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      return;
+    }
+    if (!isDragging) return;
+    if (e.touches.length === 1) {
+      translateX = e.touches[0].clientX - startX;
+      translateY = e.touches[0].clientY - startY;
+      updateTransform();
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (!container.isConnected) {
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      return;
+    }
+    if (isDragging) {
+      isDragging = false;
+      wrapper.classList.remove('dragging');
+    }
+  };
+
+  window.addEventListener('touchmove', onTouchMove, { passive: true });
+  window.addEventListener('touchend', onTouchEnd);
+
+  // 滾輪縮放事件
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zoomFactor = 1.1;
+    const oldScale = scale;
+
+    if (e.deltaY < 0) {
+      scale = Math.min(scale * zoomFactor, 5);
+    } else {
+      scale = Math.max(scale / zoomFactor, 0.3);
+    }
+
+    const rect = container.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    translateX = mouseX - (mouseX - translateX) * (scale / oldScale);
+    translateY = mouseY - (mouseY - translateY) * (scale / oldScale);
+
+    updateTransform();
+  }, { passive: false });
+
+  // 工具欄按鈕事件
+  toolbar.querySelector('.zoom-in').addEventListener('click', (e) => {
+    e.stopPropagation();
+    scale = Math.min(scale * 1.2, 5);
+    updateTransform();
+  });
+
+  toolbar.querySelector('.zoom-out').addEventListener('click', (e) => {
+    e.stopPropagation();
+    scale = Math.max(scale / 1.2, 0.3);
+    updateTransform();
+  });
+
+  toolbar.querySelector('.zoom-reset').addEventListener('click', (e) => {
+    e.stopPropagation();
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+    updateTransform();
+  });
+
+  // 雙擊重置
+  container.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.mermaid-toolbar')) return;
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+    updateTransform();
+  });
+
+  // 使用 ResizeObserver 監聽容器大小變化（例如 AI 伴侶面板拖曳拉寬/窄時，若處於預設比例則重置位置以保持置中）
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => {
+      if (!container.isConnected) {
+        observer.disconnect();
+        return;
+      }
+      if (scale === 1 && (translateX !== 0 || translateY !== 0)) {
+        translateX = 0;
+        translateY = 0;
+        updateTransform();
+      }
+    });
+    observer.observe(container);
   }
 }
 

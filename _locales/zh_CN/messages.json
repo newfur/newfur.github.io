@@ -824,5 +824,14 @@
   },
   "btn_delete": {
     "message": "删除"
+  },
+  "zoom_in": {
+    "message": "放大"
+  },
+  "zoom_out": {
+    "message": "缩小"
+  },
+  "zoom_reset": {
+    "message": "重置"
   }
 }
