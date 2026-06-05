@@ -17235,6 +17235,23 @@ async function initAISettings() {
       // 8. 载入 AI 提示词模板
       if (res.aiPromptsTemplates && Array.isArray(res.aiPromptsTemplates)) {
         aiPromptsTemplatesList = res.aiPromptsTemplates;
+        // 同步更新默認提示詞：用最新的 locale 值覆蓋 isDefault=true 的項目
+        const latestDefaults = getAISuggestions();
+        let needsSync = false;
+        for (const defaultItem of latestDefaults) {
+          const stored = aiPromptsTemplatesList.find(t => t.isDefault && t.key === defaultItem.key);
+          if (stored) {
+            // 更新 label 和 prompt 為最新翻譯值
+            if (stored.prompt !== defaultItem.prompt || stored.label !== defaultItem.label) {
+              stored.prompt = defaultItem.prompt;
+              stored.label = defaultItem.label;
+              needsSync = true;
+            }
+          }
+        }
+        if (needsSync) {
+          chrome.storage.local.set({ aiPromptsTemplates: aiPromptsTemplatesList });
+        }
       } else {
         // 首次加载，写入默认的提示词列表
         aiPromptsTemplatesList = getAISuggestions().map(item => ({
