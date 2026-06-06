@@ -23750,6 +23750,21 @@ function initAIResize() {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   });
+
+  window.addEventListener('resize', () => {
+    const currentWidthStr = document.documentElement.style.getPropertyValue('--ai-panel-width');
+    if (currentWidthStr) {
+      const currentWidth = parseInt(currentWidthStr);
+      if (!isNaN(currentWidth)) {
+        const maxWidth = Math.round(window.innerWidth * 0.95);
+        if (currentWidth > maxWidth) {
+          const newWidth = Math.max(280, maxWidth);
+          document.documentElement.style.setProperty('--ai-panel-width', `${newWidth}px`);
+          localStorage.setItem('aiPanelWidth', `${newWidth}px`);
+        }
+      }
+    }
+  });
 }
 
 // ==================== 備份與還原功能 ====================
