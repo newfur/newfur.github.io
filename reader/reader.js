@@ -1471,6 +1471,27 @@ function initUIEventBindings() {
     document.getElementById('ai-panel').style.display = 'none';
     updateHeaderActiveStates();
   });
+  const maxBtn = document.getElementById('maximize-ai-panel');
+  if (maxBtn) {
+    maxBtn.addEventListener('click', () => {
+      const panel = document.getElementById('ai-panel');
+      if (panel) {
+        panel.classList.toggle('maximized');
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+          if (panel.classList.contains('maximized')) {
+            if (typeof activeMindElixirs !== 'undefined') {
+              activeMindElixirs.forEach(({ mind }) => {
+                try {
+                  mind.toCenter();
+                } catch (e) {}
+              });
+            }
+          }
+        }, 100);
+      }
+    });
+  }
 
   // 全局設置對話框
   const globalSettingsBtn = document.getElementById('global-settings-btn');
@@ -7647,9 +7668,9 @@ function initAIResize() {
     const deltaX = startX - e.clientX;
     let newWidth = startWidth + deltaX;
 
-    // 設定寬度邊界限制：280px 到 70% 螢幕寬度 (最大 800px)
+    // 設定寬度邊界限制：280px 到 95% 螢幕寬度，解除原有的最大 800px 限制
     const minWidth = 280;
-    const maxWidth = Math.min(800, window.innerWidth * 0.7);
+    const maxWidth = window.innerWidth * 0.95;
     if (newWidth < minWidth) newWidth = minWidth;
     if (newWidth > maxWidth) newWidth = maxWidth;
 
