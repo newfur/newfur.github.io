@@ -709,7 +709,7 @@
     "message": "你是一位词典助手。请结合上下文，简明扼要地解释所选词语的含义。用简体中文回答。"
   },
   "ai_system_prompt_translate": {
-    "message": "你是一位专业的翻译官。请将文本翻译为 $$target$$。只输出翻译结果，不要有任何解释。"
+    "message": "你是一位专业的翻译官。请将文本翻译为 {target}。只输出翻译结果，不要有任何解释。"
   },
   "ai_target_lang": {
     "message": "Simplified Chinese"

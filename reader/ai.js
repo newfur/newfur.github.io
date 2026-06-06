@@ -136,7 +136,7 @@ export class AIEngine {
 
   // 3. 離線翻譯 (流式輸出)
   async translate(text, targetLangName, onChunk) {
-    const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into $target$. Output only the translation, no explanation.').replace('$target$', targetLangName);
+    const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into {target}. Output only the translation, no explanation.').replace('$target$', targetLangName).replace('{target}', targetLangName);
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
     return this._chat(systemPrompt, prompt, onChunk);
   }

@@ -712,7 +712,7 @@
     "message": "You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in English."
   },
   "ai_system_prompt_translate": {
-    "message": "You are a professional translator. Translate the text into $$target$$. Output only the translation, no explanation."
+    "message": "You are a professional translator. Translate the text into {target}. Output only the translation, no explanation."
   },
   "ai_target_lang": {
     "message": "English"

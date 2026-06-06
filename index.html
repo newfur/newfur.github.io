@@ -6376,7 +6376,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in English."
     },
     "ai_system_prompt_translate": {
-      "message": "You are a professional translator. Translate the text into $$target$$. Output only the translation, no explanation."
+      "message": "You are a professional translator. Translate the text into {target}. Output only the translation, no explanation."
     },
     "ai_target_lang": {
       "message": "English"
@@ -7210,7 +7210,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "你親切的詞典助手。請結合上下文，簡明扼要地解釋所選詞語的涵義。用繁體中文回答。"
     },
     "ai_system_prompt_translate": {
-      "message": "你是一位專業的翻譯官。請將文本翻譯為 $$target$$。只輸出翻譯結果，不要有任何解釋。"
+      "message": "你是一位專業的翻譯官。請將文本翻譯為 {target}。只輸出翻譯結果，不要有任何解釋。"
     },
     "ai_target_lang": {
       "message": "Traditional Chinese"
@@ -8047,7 +8047,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       "message": "你是一位词典助手。请结合上下文，简明扼要地解释所选词语的含义。用简体中文回答。"
     },
     "ai_system_prompt_translate": {
-      "message": "你是一位专业的翻译官。请将文本翻译为 $$target$$。只输出翻译结果，不要有任何解释。"
+      "message": "你是一位专业的翻译官。请将文本翻译为 {target}。只输出翻译结果，不要有任何解释。"
     },
     "ai_target_lang": {
       "message": "Simplified Chinese"
@@ -12981,7 +12981,7 @@ class AIEngine {
 
   // 3. 離線翻譯 (流式輸出)
   async translate(text, targetLangName, onChunk) {
-    const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into $target$. Output only the translation, no explanation.').replace('$target$', targetLangName);
+    const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into {target}. Output only the translation, no explanation.').replace('$target$', targetLangName).replace('{target}', targetLangName);
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
     return this._chat(systemPrompt, prompt, onChunk);
   }
