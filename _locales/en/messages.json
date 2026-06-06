@@ -836,5 +836,17 @@
   },
   "zoom_reset": {
     "message": "Reset"
+  },
+  "ai_deep_analysis_title": {
+    "message": "Deep Book Analysis"
+  },
+  "ai_deep_analysis_trigger": {
+    "message": "Deep Book Analysis"
+  },
+  "confirm_reanalyze_book": {
+    "message": "This book already has a deep analysis report. Are you sure you want to regenerate it? This will consume more API Tokens."
+  },
+  "confirm_deep_analysis": {
+    "message": "Deep Book Analysis will scan the entire book and consume a significant amount of API Tokens. Do you want to continue?"
   }
 }

@@ -833,5 +833,17 @@
   },
   "zoom_reset": {
     "message": "重置"
+  },
+  "ai_deep_analysis_title": {
+    "message": "一键全书深度分析"
+  },
+  "ai_deep_analysis_trigger": {
+    "message": "一键全书深度分析"
+  },
+  "confirm_reanalyze_book": {
+    "message": "这本书已经有深度分析报告了，确定要重新生成吗？这将会消耗较多 API Token。"
+  },
+  "confirm_deep_analysis": {
+    "message": "「深度分析全书」将会分析本书，并消耗较多 API Token。是否继续？"
   }
 }

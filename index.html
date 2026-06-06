@@ -5346,6 +5346,9 @@ me-tpc {
           <span data-i18n="ai_assistant_title">AI Reading Assistant</span>
         </span>
         <div style="display: flex; gap: 8px;">
+          <button id="deep-analysis-btn" class="btn-icon-only" data-i18n-title="ai_deep_analysis_title" title="Deep Book Analysis (一鍵分析全書)">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+          </button>
           <button id="clear-ai-history-btn" class="btn-icon-only" data-i18n-title="ai_clear_history_title" title="Clear all chat history">
             <svg class="svg-icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
           </button>
@@ -9291,6 +9294,18 @@ MindElixir.DARK_THEME = ue;
     },
     "zoom_reset": {
       "message": "Reset"
+    },
+    "ai_deep_analysis_title": {
+      "message": "Deep Book Analysis"
+    },
+    "ai_deep_analysis_trigger": {
+      "message": "Deep Book Analysis"
+    },
+    "confirm_reanalyze_book": {
+      "message": "This book already has a deep analysis report. Are you sure you want to regenerate it? This will consume more API Tokens."
+    },
+    "confirm_deep_analysis": {
+      "message": "Deep Book Analysis will scan the entire book and consume a significant amount of API Tokens. Do you want to continue?"
     }
   },
   "zh_TW": {
@@ -10128,6 +10143,18 @@ MindElixir.DARK_THEME = ue;
     },
     "zoom_reset": {
       "message": "重置"
+    },
+    "ai_deep_analysis_title": {
+      "message": "一鍵全書深度分析"
+    },
+    "ai_deep_analysis_trigger": {
+      "message": "一鍵全書深度分析"
+    },
+    "confirm_reanalyze_book": {
+      "message": "這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。"
+    },
+    "confirm_deep_analysis": {
+      "message": "「深度分析全書」將會分析本書，並消耗較多 API Token。是否繼續？"
     }
   },
   "zh_CN": {
@@ -10965,6 +10992,18 @@ MindElixir.DARK_THEME = ue;
     },
     "zoom_reset": {
       "message": "重置"
+    },
+    "ai_deep_analysis_title": {
+      "message": "一键全书深度分析"
+    },
+    "ai_deep_analysis_trigger": {
+      "message": "一键全书深度分析"
+    },
+    "confirm_reanalyze_book": {
+      "message": "这本书已经有深度分析报告了，确定要重新生成吗？这将会消耗较多 API Token。"
+    },
+    "confirm_deep_analysis": {
+      "message": "「深度分析全书」将会分析本书，并消耗较多 API Token。是否继续？"
     }
   }
 };
@@ -11714,6 +11753,24 @@ class BookLibrary {
       const request = store.put(book);
 
       request.onsuccess = () => resolve(book.aiChats);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 保存全書深度分析摘要
+  async saveBookSummary(id, summary) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.bookSummary = summary;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.bookSummary);
       request.onerror = () => reject(request.error);
     });
   }
@@ -17096,6 +17153,30 @@ function initUIEventBindings() {
     closeAiPanelBtn.addEventListener('click', () => {
       document.getElementById('ai-panel').style.display = 'none';
       updateHeaderActiveStates();
+    });
+  }
+
+  // AI 面板一鍵全書深度分析按鈕監聽
+  const deepAnalysisBtn = document.getElementById('deep-analysis-btn');
+  if (deepAnalysisBtn) {
+    deepAnalysisBtn.addEventListener('click', async () => {
+      if (!currentBook) {
+        alert(getMsg('no_book_open') || '請先打開一本書！');
+        return;
+      }
+      
+      if (currentBook.bookSummary) {
+        const reAnalyze = confirm(getMsg('confirm_reanalyze_book') || '這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。');
+        if (!reAnalyze) {
+          displayBookSummary(currentBook.bookSummary);
+          return;
+        }
+      } else {
+        const confirmAnalysis = confirm(getMsg('confirm_deep_analysis') || '「深度分析全书」將會逐章分析本書，並消耗較多 API Token。是否繼續？');
+        if (!confirmAnalysis) return;
+      }
+      
+      await runDeepBookAnalysis();
     });
   }
 
@@ -23237,6 +23318,221 @@ function getCurrentPageText() {
   return getCurrentChapterText();
 }
 
+// 本地分析實體及共現矩陣 (0 Token)
+function extractEntitiesAndCooccurrence(chunks) {
+  if (!chunks || chunks.length === 0) return '';
+
+  const nameMap = {};
+  const conceptMap = {};
+  
+  // 對話標記人名提取及專有名词匹配 (Chinese Dialogue & English Capitalized names)
+  const chDialogueRegex = /([\u4e00-\u9fa5]{2,3})(?:说|道|喊|叫|笑|叹|问道|回答|冷笑|怒道)/g;
+  const quoteRegex = /“([\u4e00-\u9fa5]{2,6})”/g;
+  const titleRegex = /《([\u4e00-\u9fa5]{2,12})》/g;
+  const enNameRegex = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/g;
+
+  // 1. 掃描所有段落，提取實體候選
+  for (const chunk of chunks) {
+    const text = chunk.text;
+    
+    let match;
+    chDialogueRegex.lastIndex = 0;
+    while ((match = chDialogueRegex.exec(text)) !== null) {
+      const name = match[1];
+      if (!/我|你|他|她|它|谁|这|那|您|咱|哥|姐|爸|妈|阿/.test(name)) {
+        nameMap[name] = (nameMap[name] || 0) + 1;
+      }
+    }
+    
+    quoteRegex.lastIndex = 0;
+    while ((match = quoteRegex.exec(text)) !== null) {
+      const term = match[1];
+      if (term.length >= 2 && !/我|你|他|她|它|这|那|什么|怎么/.test(term)) {
+        conceptMap[term] = (conceptMap[term] || 0) + 0.5;
+      }
+    }
+
+    titleRegex.lastIndex = 0;
+    while ((match = titleRegex.exec(text)) !== null) {
+      const title = match[1];
+      conceptMap[title] = (conceptMap[title] || 0) + 2.0;
+    }
+
+    enNameRegex.lastIndex = 0;
+    while ((match = enNameRegex.exec(text)) !== null) {
+      const enName = match[1];
+      if (!/^(The|And|But|For|Or|So|Yet|To|At|By|In|On|Of|With|He|She|It|They|We|You|I|This|That)$/.test(enName)) {
+        nameMap[enName] = (nameMap[enName] || 0) + 1;
+      }
+    }
+  }
+
+  // 2. 篩選高頻實體
+  const topNames = Object.entries(nameMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 25)
+    .map(x => x[0]);
+
+  const topConcepts = Object.entries(conceptMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(x => x[0]);
+
+  const allEntities = [...topNames, ...topConcepts];
+  if (allEntities.length === 0) return '';
+
+  // 3. 計算共現頻次
+  const matrix = {};
+  for (const entity of allEntities) {
+    matrix[entity] = {};
+  }
+
+  for (const chunk of chunks) {
+    const text = chunk.text;
+    const present = allEntities.filter(entity => text.includes(entity));
+    
+    for (let i = 0; i < present.length; i++) {
+      for (let j = i + 1; j < present.length; j++) {
+        const e1 = present[i];
+        const e2 = present[j];
+        matrix[e1][e2] = (matrix[e1][e2] || 0) + 1;
+        matrix[e2][e1] = (matrix[e2][e1] || 0) + 1;
+      }
+    }
+  }
+
+  // 4. 格式化輸出報告
+  let summary = '[Local Entity Co-occurrence Analysis]\n';
+  if (topNames.length > 0) {
+    summary += `Top Characters/Entities: ${topNames.join(', ')}\n`;
+  }
+  if (topConcepts.length > 0) {
+    summary += `Top Concepts/Book Terms: ${topConcepts.join(', ')}\n`;
+  }
+  
+  summary += '\nEntity Associations (Frequent Paragraph Co-occurrences):\n';
+  let associationsCount = 0;
+  for (const e1 of allEntities) {
+    const rels = Object.entries(matrix[e1])
+      .filter(x => x[1] >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    
+    if (rels.length > 0) {
+      summary += `- ${e1} ➔ ${rels.map(r => `${r[0]} (${r[1]} times)`).join(', ')}\n`;
+      associationsCount++;
+    }
+  }
+
+  if (associationsCount === 0) return '';
+  return summary + '[End of Local Entity Analysis]\n';
+}
+
+// 顯示本地保存的深度分析摘要
+function displayBookSummary(summary) {
+  const contentEl = document.getElementById('ai-content');
+  if (!contentEl) return;
+  
+  if (contentEl.querySelectorAll('.ai-chat-group').length === 0) {
+    contentEl.innerHTML = '';
+  }
+  
+  const groupEl = document.createElement('div');
+  groupEl.className = 'ai-chat-group';
+  contentEl.appendChild(groupEl);
+  
+  const userBubble = document.createElement('div');
+  userBubble.className = 'ai-chat-bubble user-bubble';
+  userBubble.textContent = getMsg('ai_deep_analysis_trigger') || '一鍵全書深度分析';
+  groupEl.appendChild(userBubble);
+  
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'ai-chat-bubble assistant-bubble';
+  assistantBubble.innerHTML = formatMarkdown(summary);
+  groupEl.appendChild(assistantBubble);
+  
+  contentEl.scrollTop = contentEl.scrollHeight;
+  renderMermaidBlocks();
+}
+
+// 執行全書深度分析報告
+async function runDeepBookAnalysis() {
+  const panel = document.getElementById('ai-panel');
+  const contentEl = document.getElementById('ai-content');
+  if (!panel || !contentEl) return;
+  
+  panel.style.display = 'flex';
+  updateHeaderActiveStates();
+  
+  if (contentEl.querySelectorAll('.ai-chat-group').length === 0) {
+    contentEl.innerHTML = '';
+  }
+  
+  const groupEl = document.createElement('div');
+  groupEl.className = 'ai-chat-group';
+  contentEl.appendChild(groupEl);
+  
+  const userBubble = document.createElement('div');
+  userBubble.className = 'ai-chat-bubble user-bubble';
+  userBubble.textContent = getMsg('ai_deep_analysis_trigger') || '一鍵全書深度分析';
+  groupEl.appendChild(userBubble);
+  
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'ai-chat-bubble assistant-bubble';
+  groupEl.appendChild(assistantBubble);
+  
+  contentEl.scrollTop = contentEl.scrollHeight;
+  
+  try {
+    assistantBubble.innerHTML = `
+      <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
+        <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
+        <span>正在掃描全書實體與關聯網 (0 Token)...</span>
+      </div>
+    `;
+    
+    if (bookChunksCache.length === 0) {
+      await buildBookSearchIndex();
+    }
+    
+    const entitySummary = extractEntitiesAndCooccurrence(bookChunksCache);
+    const chapters = (epubBookData && epubBookData.chapters) ? epubBookData.chapters : [];
+    const chapterTitles = chapters.map((ch, idx) => `${idx + 1}. ${ch.title}`).join('\n');
+    
+    assistantBubble.innerHTML = `
+      <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
+        <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
+        <span>正在生成全書深度分析報告...</span>
+      </div>
+    `;
+    
+    const systemPrompt = "You are a professional literary critic and research assistant. Write a comprehensive book analysis report based on the book metadata, table of contents, and a client-side entity co-occurrence association network.";
+    const query = `Book Title: "${epubBookData?.title || 'Unknown'}"\nAuthor: "${epubBookData?.author || 'Unknown'}"\n\n[Table of Contents (Chapters)]\n${chapterTitles}\n\n${entitySummary}\n\nPlease generate a "Deep Book Analysis Report" in Chinese (or matching reader language) containing:\n1. **全书主要人物性格与复杂关系网** (using the co-occurrence associations above)\n2. **核心章节脉络与大事件节点**\n3. **核心思想、主题与学术价值/文学特色**\n\nFormat your output nicely with markdown. Make sure it is highly professional and detailed.`;
+    
+    let reportText = '';
+    const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
+      reportText = chunk;
+      assistantBubble.innerHTML = formatMarkdown(chunk);
+      contentEl.scrollTop = contentEl.scrollHeight;
+    });
+    
+    await library.saveBookSummary(currentBook.id, finalReply);
+    currentBook.bookSummary = finalReply;
+    
+    const newChat = {
+      chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      query: getMsg('ai_deep_analysis_trigger') || '一鍵全書深度分析',
+      reply: finalReply
+    };
+    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
+    currentBook.aiChats = updatedChats;
+    
+    renderMermaidBlocks();
+  } catch (err) {
+    assistantBubble.innerHTML = `<span style="color:red;">分析失敗: ${err.message}</span>`;
+  }
+}
+
 // 向 AI 發送自定義提問
 async function sendCustomAIQuery() {
   const inputEl = document.getElementById('ai-input');
@@ -23279,6 +23575,16 @@ async function sendCustomAIQuery() {
   contentEl.appendChild(groupEl);
   contentEl.scrollTop = contentEl.scrollHeight;
 
+  // --- 本地快取查找 (0 Token 阻斷重複網絡調用) ---
+  const allChats = (currentBook && currentBook.aiChats) ? currentBook.aiChats : [];
+  const cachedChat = allChats.find(c => c.query === query);
+  if (cachedChat) {
+    assistantBubble.innerHTML = formatMarkdown(cachedChat.reply);
+    contentEl.scrollTop = contentEl.scrollHeight;
+    renderMermaidBlocks();
+    return;
+  }
+
   try {
     const bookTitle = document.getElementById('reader-book-title')?.textContent?.trim() || '';
     const bookContentEl = document.getElementById('book-content');
@@ -23301,22 +23607,25 @@ async function sendCustomAIQuery() {
     let contextScope = 'none'; // 'page' | 'chapter' | 'fullbook' | 'none'
     
     // === 三層查詢分類 ===
-    // 層級 1：是否明確指向全書
     const isFullBookQuery = /全书|整本|整本书|全部章节|整个文件|全局/.test(query);
-    // 層級 2：是否明確指向當前頁面
     const isPageQuery = /本页|当前页|这一页|这页|当前页面|该页|这页上/.test(query);
-    // 層級 3：是否指向當前章節或需要局部章節脈絡的操作
     const isChapterQuery = /本章|当前章|这一章|这章|该章|这个章节|当前章节|本章节|这一节|这节|本节|当前节|总结|大纲|思维导图|脑图|核心观点|核心要点|结构|提纲|脉络|梳理/.test(query);
     
-    // 獲取當前章節標題（如果可用）
+    // 獲取當前章節標題
     const currentChapterTitle = (epubBookData && epubBookData.chapters && epubBookData.chapters[currentChapterIndex])
       ? epubBookData.chapters[currentChapterIndex].title
       : '';
 
+    // --- 根據問題複雜度動態調整 Top-K 召回量 ---
+    let topK = 4;
+    if (isFullBookQuery || /关系|人物|角色|性格|大事件|脉络|结构|关联|联系|图谱/.test(query)) {
+      topK = 10;
+    }
+
     if (isFullBookQuery) {
       // ===== 全書檢索模式 =====
       if (bookChunksCache.length > 0) {
-        const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
+        const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, topK);
         if (relevantChunks.length > 0) {
           bookContext = relevantChunks.map((chunk, idx) => 
             `[Source Context ${idx + 1}] (Chapter: "${chunk.chapterTitle}"):\n${chunk.text}\n`
@@ -23341,7 +23650,7 @@ async function sendCustomAIQuery() {
     } else {
       // ===== 一般提問：優先嘗試全書檢索，回退到章節上下文 =====
       if (bookChunksCache.length > 0) {
-        const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
+        const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, topK);
         if (relevantChunks.length > 0) {
           bookContext = relevantChunks.map((chunk, idx) => 
             `[Source Context ${idx + 1}] (Chapter: "${chunk.chapterTitle}"):\n${chunk.text}\n`
@@ -23355,6 +23664,17 @@ async function sendCustomAIQuery() {
           bookContext = chapterText.substring(0, 25000);
           contextScope = 'chapter';
         }
+      }
+    }
+
+    // --- 本地實體共現矩陣生成 (0 Token 輔助人物關係分析) ---
+    let cooccurrenceSummary = '';
+    const isRelationshipQuery = /关系|人物|角色|性格|大事件|脉络|结构|关联|联系|图谱/.test(query);
+    if (isRelationshipQuery && bookChunksCache.length > 0) {
+      try {
+        cooccurrenceSummary = extractEntitiesAndCooccurrence(bookChunksCache);
+      } catch (err) {
+        console.warn('Failed to extract co-occurrences:', err);
       }
     }
 
@@ -23377,6 +23697,10 @@ async function sendCustomAIQuery() {
       } else if (contextScope === 'chapter') {
         systemPrompt += `\n[Current Chapter Content: "${currentChapterTitle || 'Untitled'}"]\n${bookContext}\n[End of Current Chapter]\n\nThe above text is the complete content of the current chapter the user is reading. Use ONLY this text to answer questions about this chapter. Do not invent or include content from other chapters.\n`;
       }
+    }
+    
+    if (cooccurrenceSummary) {
+      systemPrompt += `\n${cooccurrenceSummary}\nUse the local entity co-occurrence mapping above to accurately link characters, events, and concepts. It represents the physical text association structure of the book. Make sure your relationship and character descriptions align with these findings.\n`;
     }
 
     // 發送後清除針對性選取上下文並隱藏提示欄

@@ -589,4 +589,22 @@ export class BookLibrary {
       request.onerror = () => reject(request.error);
     });
   }
+
+  // 保存全書深度分析摘要
+  async saveBookSummary(id, summary) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.bookSummary = summary;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.bookSummary);
+      request.onerror = () => reject(request.error);
+    });
+  }
 }
