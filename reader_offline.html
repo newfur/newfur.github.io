@@ -19895,10 +19895,15 @@ async function sendCustomAIQuery() {
     let bookContext = '';
     let isFullBookContext = false;
     
-    // 判斷是否為針對「本章」或「本頁」的特定提問
-    const isChapterOrPageQuery = /本章|当前章|这一章|这个章节|当前章节|本页|当前页|这一页|这页|当前页面/.test(query);
+    // 判斷是否為針對全書的特定提問
+    const isFullBookQuery = /全书|整本|整本书|全部章节|整个文件|全局/.test(query);
     
-    if (bookChunksCache.length > 0 && !isChapterOrPageQuery) {
+    // 判斷是否為針對「本章」、「本頁」或需要局部章節脈絡的特定提問（包括總結、思維導圖等）
+    const isChapterOrPageQuery = /本章|当前章|这一章|这章|该章|这个章节|当前章节|本章节|这一节|这节|本节|当前节|本页|当前页|这一页|这页|当前页面|该页|总结|大纲|思维导图|脑图|核心观点|核心要点|结构|提纲|脉络/.test(query);
+    
+    const shouldDoFullBookSearch = bookChunksCache.length > 0 && (isFullBookQuery || !isChapterOrPageQuery);
+    
+    if (shouldDoFullBookSearch) {
       // 進行全書檢索
       const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
       if (relevantChunks.length > 0) {
@@ -19910,8 +19915,10 @@ async function sendCustomAIQuery() {
     }
     
     if (!bookContext && bookContentEl) {
-      // 退回局部章節上下文
-      bookContext = bookContentEl.textContent.trim().substring(0, 25000);
+      // 退回局部章節上下文，克隆並清理非文字標籤以防樣式表 CSS 污染上下文
+      const clone = bookContentEl.cloneNode(true);
+      clone.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+      bookContext = clone.textContent.trim().substring(0, 25000);
     }
 
     let systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.\n';
