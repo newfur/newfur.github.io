@@ -4397,6 +4397,24 @@ function setTheme(theme, writeToStorage = true) {
   const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
   classesToRemove.forEach(c => document.body.classList.remove(c));
   document.body.classList.add(`theme-${theme}`);
+  
+  // Update active vis-network mindmaps to match theme
+  if (typeof activeVisNetworks !== 'undefined') {
+    const active = activeVisNetworks.filter(item => document.body.contains(item.container));
+    activeVisNetworks.length = 0;
+    activeVisNetworks.push(...active);
+
+    const isDark = theme === 'dark' || theme === 'oled';
+    activeVisNetworks.forEach(({ network, nodes }) => {
+      try {
+        const updatedNodes = nodes.map(n => getVisNodeOptions(n, isDark));
+        network.body.data.nodes.update(updatedNodes);
+      } catch (err) {
+        console.warn('Failed to update vis-network node theme:', err);
+      }
+    });
+  }
+
   if (writeToStorage) {
     chrome.storage.local.set({ theme });
     if (currentBook) {
@@ -6204,6 +6222,257 @@ function preprocessMermaidMindmap(code) {
   return processedLines.join('\n');
 }
 
+const activeVisNetworks = [];
+let visNetworkLoaded = false;
+
+async function loadVisNetworkLibrary() {
+  if (typeof vis !== 'undefined') {
+    visNetworkLoaded = true;
+    return;
+  }
+  if (visNetworkLoaded) return;
+  
+  try {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'libs/vis-network.min.js';
+      script.onload = () => { visNetworkLoaded = true; resolve(); };
+      script.onerror = () => {
+        const script2 = document.createElement('script');
+        script2.src = 'reader/libs/vis-network.min.js';
+        script2.onload = () => { visNetworkLoaded = true; resolve(); };
+        script2.onerror = () => {
+          const script3 = document.createElement('script');
+          script3.src = 'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js';
+          script3.onload = () => { visNetworkLoaded = true; resolve(); };
+          script3.onerror = reject;
+          document.body.appendChild(script3);
+        };
+        document.body.appendChild(script2);
+      };
+      document.body.appendChild(script);
+    });
+  } catch (err) {
+    console.error('Failed to load vis-network library:', err);
+    throw err;
+  }
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getVisNodeOptions(node, isDark) {
+  const colors = [
+    '#ff2d55', // Pink
+    '#5856d6', // Purple
+    '#ff9500', // Orange
+    '#4cd964', // Green
+    '#007aff', // Blue
+    '#5ac8fa', // Cyan
+    '#af52de'  // Indigo
+  ];
+  
+  const branchColor = colors[node.branchIndex % colors.length];
+  
+  if (node.level === 0) {
+    return {
+      id: node.id,
+      label: node.label,
+      shape: 'ellipse',
+      margin: { top: 12, bottom: 12, left: 16, right: 16 },
+      font: {
+        size: 16,
+        color: '#ffffff',
+        bold: true,
+        face: 'system-ui, -apple-system, sans-serif'
+      },
+      color: {
+        background: isDark ? '#0a84ff' : '#007aff',
+        border: isDark ? '#0a84ff' : '#007aff',
+        highlight: {
+          background: isDark ? '#359aff' : '#359aff',
+          border: isDark ? '#359aff' : '#359aff'
+        }
+      },
+      borderWidth: 2,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.1)',
+        size: 6,
+        x: 0,
+        y: 3
+      }
+    };
+  } else if (node.level === 1) {
+    return {
+      id: node.id,
+      label: node.label,
+      shape: 'box',
+      margin: { top: 8, bottom: 8, left: 12, right: 12 },
+      font: {
+        size: 14,
+        color: isDark ? '#ffffff' : '#1c1c1e',
+        bold: true,
+        face: 'system-ui, -apple-system, sans-serif'
+      },
+      color: {
+        background: hexToRgba(branchColor, isDark ? 0.2 : 0.1),
+        border: branchColor,
+        highlight: {
+          background: hexToRgba(branchColor, isDark ? 0.3 : 0.2),
+          border: branchColor
+        }
+      },
+      borderWidth: 2,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.05)',
+        size: 4,
+        x: 0,
+        y: 2
+      }
+    };
+  } else {
+    return {
+      id: node.id,
+      label: node.label,
+      shape: 'box',
+      margin: { top: 6, bottom: 6, left: 10, right: 10 },
+      font: {
+        size: 13,
+        color: isDark ? '#e5e5ea' : '#3a3a3c',
+        face: 'system-ui, -apple-system, sans-serif'
+      },
+      color: {
+        background: isDark ? '#2c2c2e' : '#f2f2f7',
+        border: hexToRgba(branchColor, 0.3),
+        highlight: {
+          background: isDark ? '#3a3a3c' : '#e5e5ea',
+          border: branchColor
+        }
+      },
+      borderWidth: 1,
+      shadow: {
+        enabled: false
+      }
+    };
+  }
+}
+
+function parseMermaidMindmapToVis(code) {
+  const lines = code.split('\n');
+  const nodes = [];
+  const edges = [];
+  const parentStack = [];
+  
+  let isMindmap = false;
+  
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === 'mindmap' || trimmed.startsWith('mindmap ') || trimmed.startsWith('%%') || trimmed.startsWith('---')) {
+      continue;
+    }
+    
+    const match = line.match(/^(\s*)(node_\d+)(?:\({1,2}|\[{1,2}|\{{1,2}|\){1,2})"`([\s\S]*?)`"(?:\){1,2}|\]{1,2}|\{1,2\}|\({1,2})/);
+    if (!match) continue;
+    
+    const indent = match[1].length;
+    const id = match[2];
+    const text = match[3];
+    
+    while (parentStack.length > 0 && parentStack[parentStack.length - 1].indent >= indent) {
+      parentStack.pop();
+    }
+    
+    const parentId = parentStack.length > 0 ? parentStack[parentStack.length - 1].id : null;
+    const level = parentStack.length;
+    
+    nodes.push({
+      id,
+      label: text,
+      level,
+      parentId,
+      branchIndex: 0
+    });
+    
+    if (parentId) {
+      edges.push({
+        from: parentId,
+        to: id
+      });
+    }
+    
+    parentStack.push({ id, indent });
+  }
+  
+  const nodeMap = {};
+  for (let node of nodes) {
+    nodeMap[node.id] = node;
+  }
+  
+  const rootNode = nodes.find(n => n.level === 0);
+  const rootId = rootNode ? rootNode.id : null;
+  
+  let branchCounter = 0;
+  for (let node of nodes) {
+    if (node.parentId === rootId && node.level === 1) {
+      node.branchIndex = branchCounter;
+      branchCounter++;
+    }
+  }
+  
+  for (let node of nodes) {
+    if (node.level > 1) {
+      let ancestor = node;
+      while (ancestor && ancestor.level > 1) {
+        ancestor = nodeMap[ancestor.parentId];
+      }
+      if (ancestor && ancestor.level === 1) {
+        node.branchIndex = ancestor.branchIndex;
+      }
+    }
+  }
+  
+  return { nodes, edges };
+}
+
+function setupVisMindmapToolbar(container, network) {
+  const toolbar = document.createElement('div');
+  toolbar.className = 'mermaid-toolbar';
+  
+  const zoomInTip = (typeof getMsg === 'function' && getMsg('zoom_in')) || '放大';
+  const zoomOutTip = (typeof getMsg === 'function' && getMsg('zoom_out')) || '縮小';
+  const resetTip = (typeof getMsg === 'function' && getMsg('zoom_reset')) || '重置';
+  
+  toolbar.innerHTML = `
+    <button class="mermaid-btn zoom-in" title="${zoomInTip}">＋</button>
+    <button class="mermaid-btn zoom-out" title="${zoomOutTip}">－</button>
+    <button class="mermaid-btn zoom-reset" title="${resetTip}">↺</button>
+  `;
+  container.appendChild(toolbar);
+  
+  toolbar.querySelector('.zoom-in').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const currentScale = network.getScale();
+    network.moveTo({ scale: Math.min(currentScale * 1.2, 3) });
+  });
+  
+  toolbar.querySelector('.zoom-out').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const currentScale = network.getScale();
+    network.moveTo({ scale: Math.max(currentScale / 1.2, 0.2) });
+  });
+  
+  toolbar.querySelector('.zoom-reset').addEventListener('click', (e) => {
+    e.stopPropagation();
+    network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
+  });
+}
+
 let mermaidLoaded = false;
 async function renderMermaidBlocks() {
   const panel = document.getElementById('ai-panel');
@@ -6289,43 +6558,145 @@ async function renderMermaidBlocks() {
     }
   }
 
-  if (mermaidLoaded) {
+  if (mermaidLoaded || typeof vis !== 'undefined' || visNetworkLoaded) {
     // 逐個容器渲染，單個失敗不影響其他
     for (const container of containers) {
-      container.setAttribute('data-processed', 'true');
       let code = container.textContent.trim();
       
-      // Auto-inject layout configuration for mindmap blocks to prevent nodes overlapping
+      // Check if it's a mindmap block, render with Vis-Network for dynamic physics layout
       if (code.startsWith('mindmap') || code.includes('\nmindmap')) {
-        // Run preprocessing to wrap text, clean subgraphs/ends, and assign safe node IDs
-        code = preprocessMermaidMindmap(code);
-        
-        // Count nodes to determine spacing dynamically
-        const nodeCount = (code.match(/node_\d+/g) || []).length;
-        let nodeSpacing = 120;
-        let rankSpacing = 90;
-        
-        if (nodeCount > 30) {
-          nodeSpacing = 160;
-          rankSpacing = 120;
-        } else if (nodeCount > 15) {
-          nodeSpacing = 140;
-          rankSpacing = 100;
-        }
-        
-        if (!code.includes('%%{init') && !code.startsWith('---')) {
-          code = `%%{init: { "mindmap": { "nodeSpacing": ${nodeSpacing}, "rankSpacing": ${rankSpacing}, "padding": 15 } } }%%\n` + code;
+        container.setAttribute('data-processed', 'true');
+        try {
+          await loadVisNetworkLibrary();
+          
+          // Preprocess to wrap labels and clean subgraphs
+          const preprocessedCode = preprocessMermaidMindmap(code);
+          const { nodes, edges } = parseMermaidMindmapToVis(preprocessedCode);
+          
+          container.innerHTML = '';
+          container.style.position = 'relative';
+          container.style.overflow = 'hidden';
+          container.style.height = '480px';
+          container.style.userSelect = 'none';
+          
+          const canvasContainer = document.createElement('div');
+          canvasContainer.className = 'vis-mindmap-canvas';
+          canvasContainer.style.width = '100%';
+          canvasContainer.style.height = '100%';
+          container.appendChild(canvasContainer);
+          
+          const isDark = document.body.classList.contains('theme-dark') || document.body.classList.contains('theme-oled');
+          const visNodes = nodes.map(n => getVisNodeOptions(n, isDark));
+          
+          const colors = [
+            '#ff2d55', // Pink
+            '#5856d6', // Purple
+            '#ff9500', // Orange
+            '#4cd964', // Green
+            '#007aff', // Blue
+            '#5ac8fa', // Cyan
+            '#af52de'  // Indigo
+          ];
+          
+          const visEdges = edges.map(e => {
+            const targetNode = nodes.find(n => n.id === e.to);
+            const branchColor = targetNode ? colors[targetNode.branchIndex % colors.length] : '#8e8e93';
+            return {
+              from: e.from,
+              to: e.to,
+              color: {
+                color: branchColor,
+                highlight: branchColor,
+                hover: branchColor,
+                inherit: false
+              },
+              width: targetNode && targetNode.level === 1 ? 3 : 1.5,
+              hoverWidth: targetNode && targetNode.level === 1 ? 4 : 2.5
+            };
+          });
+          
+          const visData = {
+            nodes: new vis.DataSet(visNodes),
+            edges: new vis.DataSet(visEdges)
+          };
+          
+          const options = {
+            nodes: {
+              font: {
+                face: 'system-ui, -apple-system, sans-serif'
+              }
+            },
+            edges: {
+              smooth: {
+                type: 'cubicBezier',
+                forceDirection: 'horizontal',
+                roundness: 0.5
+              }
+            },
+            physics: {
+              solver: 'forceAtlas2Based',
+              forceAtlas2Based: {
+                gravitationalConstant: -120,
+                centralGravity: 0.015,
+                springLength: 90,
+                springConstant: 0.08,
+                avoidOverlap: 1.0
+              }
+            },
+            interaction: {
+              dragNodes: true,
+              dragView: true,
+              zoomView: true,
+              hover: true
+            }
+          };
+          
+          const network = new vis.Network(canvasContainer, visData, options);
+          activeVisNetworks.push({ network, container, nodes, edges });
+          
+          setupVisMindmapToolbar(container, network);
+          
+          network.once('stabilized', () => {
+            network.fit();
+          });
+          
+          continue; // Rendered successfully, skip Mermaid flow
+        } catch (err) {
+          console.warn('Vis-Network mindmap render failed, falling back to Mermaid:', err);
+          // Fall back to Mermaid rendering flow below
         }
       }
       
-      try {
-        const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
-        const { svg } = await mermaid.render(id, code, container);
-        container.innerHTML = svg;
-        setupMermaidPanZoom(container);
-      } catch (err) {
-        console.warn('Mermaid render failed for block, falling back to code display:', err.message || err);
-        // 渲染失敗時降級為帶格式的代碼塊
+      // Normal Mermaid rendering flow (e.g. flowcharts, sequence diagrams, or mindmap fallback)
+      container.setAttribute('data-processed', 'true');
+      if (mermaidLoaded) {
+        if (code.startsWith('mindmap') || code.includes('\nmindmap')) {
+          code = preprocessMermaidMindmap(code);
+          const nodeCount = (code.match(/node_\d+/g) || []).length;
+          let nodeSpacing = 120;
+          let rankSpacing = 90;
+          if (nodeCount > 30) {
+            nodeSpacing = 160;
+            rankSpacing = 120;
+          } else if (nodeCount > 15) {
+            nodeSpacing = 140;
+            rankSpacing = 100;
+          }
+          if (!code.includes('%%{init') && !code.startsWith('---')) {
+            code = `%%{init: { "mindmap": { "nodeSpacing": ${nodeSpacing}, "rankSpacing": ${rankSpacing}, "padding": 15 } } }%%\n` + code;
+          }
+        }
+        
+        try {
+          const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
+          const { svg } = await mermaid.render(id, code, container);
+          container.innerHTML = svg;
+          setupMermaidPanZoom(container);
+        } catch (err) {
+          console.warn('Mermaid render failed for block, falling back to code display:', err.message || err);
+          container.innerHTML = `<pre class="mermaid-fallback"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+        }
+      } else {
         container.innerHTML = `<pre class="mermaid-fallback"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
       }
     }

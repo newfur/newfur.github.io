@@ -41,8 +41,9 @@ for (const modPath of modules) {
   combinedJs += content + '\n\n';
 }
 
-// 3. Read jszip.min.js
+// 3. Read jszip.min.js and vis-network.min.js
 const jszipJs = fs.readFileSync(path.join(rootDir, 'reader/libs/jszip.min.js'), 'utf8');
+const visNetworkJs = fs.readFileSync(path.join(rootDir, 'reader/libs/vis-network.min.js'), 'utf8');
 
 // 4. Read reader.css
 const readerCss = fs.readFileSync(path.join(rootDir, 'reader/reader.css'), 'utf8');
@@ -53,11 +54,13 @@ let html = fs.readFileSync(path.join(rootDir, 'reader/reader.html'), 'utf8');
 // Inline CSS
 html = html.replace('<link rel="stylesheet" href="reader.css">', () => `<style>${readerCss}</style>`);
 
-// Inline JSZIP and module scripts
+// Inline JSZIP, Vis-Network and module scripts
 const scriptJszipRegex = /<script src="libs\/jszip\.min\.js"><\/script>/i;
+const scriptVisNetworkRegex = /<script src="libs\/vis-network\.min\.js"><\/script>/i;
 const scriptModuleRegex = /<script type="module" src="reader\.js"><\/script>/i;
 
 html = html.replace(scriptJszipRegex, () => `<script>${jszipJs}</script>`);
+html = html.replace(scriptVisNetworkRegex, () => `<script>${visNetworkJs}</script>`);
 html = html.replace(scriptModuleRegex, () => `<script>${combinedJs}</script>`);
 
 // Mermaid: 不內聯（3.2MB 太大），僅修正路徑指向 reader/libs/
