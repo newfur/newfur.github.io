@@ -21900,6 +21900,75 @@ function formatMarkdown(text) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
     
+  // 1.1 LaTeX Math Formula Extraction (placeholder replacement to protect from markdown formatting)
+  const mathBlocks = [];
+  const latexMap = {
+    '\\rightarrow': '→',
+    '\\to': '→',
+    '\\leftarrow': '←',
+    '\\leftrightarrow': '↔',
+    '\\Rightarrow': '⇒',
+    '\\Leftarrow': '⇐',
+    '\\Leftrightarrow': '⇔',
+    '\\implies': '⇒',
+    '\\iff': '⇔',
+    '\\pm': '±',
+    '\\times': '×',
+    '\\div': '÷',
+    '\\leq': '≤',
+    '\\le': '≤',
+    '\\geq': '≥',
+    '\\ge': '≥',
+    '\\neq': '≠',
+    '\\ne': '≠',
+    '\\approx': '≈',
+    '\\infty': '∞',
+    '\\in': '∈',
+    '\\alpha': 'α',
+    '\\beta': 'β',
+    '\\gamma': 'γ',
+    '\\delta': 'δ',
+    '\\theta': 'θ',
+    '\\lambda': 'λ',
+    '\\mu': 'μ',
+    '\\pi': 'π',
+    '\\sigma': 'σ',
+    '\\phi': 'φ',
+    '\\omega': 'ω',
+    '\\Delta': 'Δ',
+    '\\Sigma': 'Σ',
+    '\\Omega': 'Ω'
+  };
+
+  // Replace $$ block formulas first
+  html = html.replace(/\$\$(.*?)\$\$/gs, (match, formula) => {
+    let clean = formula;
+    for (const [key, val] of Object.entries(latexMap)) {
+      clean = clean.split(key).join(val);
+    }
+    const placeholder = `__MATH_BLOCK_PLACEHOLDER_${mathBlocks.length}__`;
+    mathBlocks.push({
+      placeholder,
+      html: `<span class="math-block" style="display: block; text-align: center; margin: 0.5em 0; font-family: 'Lora', Georgia, serif; font-style: italic;">${clean}</span>`
+    });
+    return placeholder;
+  });
+
+  // Replace $ inline formulas next
+  html = html.replace(/\$(.*?)\$/g, (match, formula) => {
+    if (!formula || formula.trim() === '') return match;
+    let clean = formula;
+    for (const [key, val] of Object.entries(latexMap)) {
+      clean = clean.split(key).join(val);
+    }
+    const placeholder = `__MATH_INLINE_PLACEHOLDER_${mathBlocks.length}__`;
+    mathBlocks.push({
+      placeholder,
+      html: `<span class="math-inline" style="font-family: 'Lora', Georgia, serif; font-style: italic;">${clean}</span>`
+    });
+    return placeholder;
+  });
+    
   // 1.5 圖片處理：![alt](url) -> <img src="url" alt="alt" class="obsidian-image" loading="lazy">
   html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="obsidian-image" loading="lazy">');
 
@@ -22208,7 +22277,11 @@ function formatMarkdown(text) {
     resultLines.push('</blockquote>');
   }
   
-  return resultLines.join('\n');
+  let finalHtml = resultLines.join('\n');
+  for (const block of mathBlocks) {
+    finalHtml = finalHtml.split(block.placeholder).join(block.html);
+  }
+  return finalHtml;
 
   // 關閉 Callout 的輔支方法
   function closeCallout(resArr) {
