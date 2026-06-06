@@ -204,6 +204,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 5. 初始化 AI 面板調整大小
   initAIResize();
+
+  // 5.5 監聽 AI 面板的可見性，當面板顯示時立即渲染 Mermaid 圖表
+  const aiPanel = document.getElementById('ai-panel');
+  if (aiPanel) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'style') {
+          const display = aiPanel.style.display;
+          if (display === 'flex' || display === 'block') {
+            renderMermaidBlocks();
+          }
+        }
+      });
+    });
+    observer.observe(aiPanel, { attributes: true, attributeFilter: ['style'] });
+  }
 });
 
 // UI 事件綁定
@@ -6024,6 +6040,11 @@ function formatMarkdown(text) {
 
 let mermaidLoaded = false;
 async function renderMermaidBlocks() {
+  const panel = document.getElementById('ai-panel');
+  if (!panel || (panel.style.display !== 'flex' && panel.style.display !== 'block')) {
+    return; // Skip rendering if the AI panel is hidden to avoid SVG measurement errors
+  }
+
   const containers = document.querySelectorAll('#ai-content .mermaid:not([data-processed="true"])');
   if (containers.length === 0) return;
 
