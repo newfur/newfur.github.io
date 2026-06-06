@@ -6042,6 +6042,10 @@ function formatMarkdown(text) {
       });
       resArr.push(`  </div>`);
     }
+    resArr.push(`</div>`);
+  }
+}
+
 // Helper to wrap Mermaid text to prevent overlapping node boundaries
 function wrapMermaidText(text, maxLen = 10) {
   if (!text || text.length <= maxLen) return text;
