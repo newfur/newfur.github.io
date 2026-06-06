@@ -4398,19 +4398,19 @@ function setTheme(theme, writeToStorage = true) {
   classesToRemove.forEach(c => document.body.classList.remove(c));
   document.body.classList.add(`theme-${theme}`);
   
-  // Update active vis-network mindmaps to match theme
-  if (typeof activeVisNetworks !== 'undefined') {
-    const active = activeVisNetworks.filter(item => document.body.contains(item.container));
-    activeVisNetworks.length = 0;
-    activeVisNetworks.push(...active);
+  // Update active mind-elixir mindmaps to match theme
+  if (typeof activeMindElixirs !== 'undefined') {
+    const active = activeMindElixirs.filter(item => document.body.contains(item.container));
+    activeMindElixirs.length = 0;
+    activeMindElixirs.push(...active);
 
     const isDark = theme === 'dark' || theme === 'oled';
-    activeVisNetworks.forEach(({ network, nodes }) => {
+    const targetTheme = isDark ? MindElixir.DARK_THEME : MindElixir.THEME;
+    activeMindElixirs.forEach(({ mind }) => {
       try {
-        const updatedNodes = nodes.map(n => getVisNodeOptions(n, isDark));
-        network.body.data.nodes.update(updatedNodes);
+        mind.changeTheme(targetTheme);
       } catch (err) {
-        console.warn('Failed to update vis-network node theme:', err);
+        console.warn('Failed to update mind-elixir theme:', err);
       }
     });
   }
@@ -6222,29 +6222,42 @@ function preprocessMermaidMindmap(code, shouldWrap = true) {
   return processedLines.join('\n');
 }
 
-const activeVisNetworks = [];
-let visNetworkLoaded = false;
+const activeMindElixirs = [];
+let mindElixirLoaded = false;
 
-async function loadVisNetworkLibrary() {
-  if (typeof vis !== 'undefined') {
-    visNetworkLoaded = true;
+async function loadMindElixirLibrary() {
+  if (typeof MindElixir !== 'undefined') {
+    mindElixirLoaded = true;
     return;
   }
-  if (visNetworkLoaded) return;
+  if (mindElixirLoaded) return;
   
   try {
     await new Promise((resolve, reject) => {
+      // Load CSS
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'libs/mind-elixir.css';
+      link.onerror = () => {
+        link.href = 'reader/libs/mind-elixir.css';
+        link.onerror = () => {
+          link.href = 'https://cdn.jsdelivr.net/npm/mind-elixir/dist/style.css';
+        };
+      };
+      document.head.appendChild(link);
+      
+      // Load JS
       const script = document.createElement('script');
-      script.src = 'libs/vis-network.min.js';
-      script.onload = () => { visNetworkLoaded = true; resolve(); };
+      script.src = 'libs/mind-elixir.js';
+      script.onload = () => { mindElixirLoaded = true; resolve(); };
       script.onerror = () => {
         const script2 = document.createElement('script');
-        script2.src = 'reader/libs/vis-network.min.js';
-        script2.onload = () => { visNetworkLoaded = true; resolve(); };
+        script2.src = 'reader/libs/mind-elixir.js';
+        script2.onload = () => { mindElixirLoaded = true; resolve(); };
         script2.onerror = () => {
           const script3 = document.createElement('script');
-          script3.src = 'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js';
-          script3.onload = () => { visNetworkLoaded = true; resolve(); };
+          script3.src = 'https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.js';
+          script3.onload = () => { mindElixirLoaded = true; resolve(); };
           script3.onerror = reject;
           document.body.appendChild(script3);
         };
@@ -6253,126 +6266,15 @@ async function loadVisNetworkLibrary() {
       document.body.appendChild(script);
     });
   } catch (err) {
-    console.error('Failed to load vis-network library:', err);
+    console.error('Failed to load mind-elixir library:', err);
     throw err;
   }
 }
 
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function getVisNodeOptions(node, isDark) {
-  const colors = [
-    '#ff2d55', // Pink
-    '#5856d6', // Purple
-    '#ff9500', // Orange
-    '#4cd964', // Green
-    '#007aff', // Blue
-    '#5ac8fa', // Cyan
-    '#af52de'  // Indigo
-  ];
-  
-  const branchColor = colors[node.branchIndex % colors.length];
-  const label = wrapMermaidText(node.label, 12);
-  
-  if (node.level === 0) {
-    return {
-      id: node.id,
-      label: label,
-      shape: 'ellipse',
-      margin: { top: 14, bottom: 14, left: 20, right: 20 },
-      font: {
-        size: 16,
-        color: '#ffffff',
-        bold: true,
-        face: 'system-ui, -apple-system, sans-serif'
-      },
-      color: {
-        background: isDark ? '#5856d6' : '#4e4cc2', // Rich Indigo/violet central topic
-        border: isDark ? '#5856d6' : '#4e4cc2',
-        highlight: {
-          background: isDark ? '#7d7aff' : '#6462d6',
-          border: isDark ? '#7d7aff' : '#6462d6'
-        }
-      },
-      borderWidth: 2,
-      shadow: {
-        enabled: true,
-        color: 'rgba(88,86,214,0.4)', // Deep indigo glow shadow
-        size: 12,
-        x: 0,
-        y: 4
-      }
-    };
-  } else if (node.level === 1) {
-    return {
-      id: node.id,
-      label: label,
-      shape: 'box',
-      margin: { top: 10, bottom: 10, left: 16, right: 16 },
-      font: {
-        size: 15,
-        color: isDark ? '#ffffff' : branchColor, // Branch color text for light theme
-        bold: true,
-        face: 'system-ui, -apple-system, sans-serif'
-      },
-      color: {
-        background: isDark ? '#2c2c2e' : '#ffffff', // Clean white/dark gray card background
-        border: branchColor, // Thick branch-color border
-        highlight: {
-          background: isDark ? '#3a3a3c' : '#f2f2f7',
-          border: branchColor
-        }
-      },
-      borderWidth: 3, // Thicker border matching branch lines
-      shadow: {
-        enabled: true,
-        color: hexToRgba(branchColor, isDark ? 0.3 : 0.15), // Tinted glow matching branch
-        size: 8,
-        x: 0,
-        y: 3
-      }
-    };
-  } else {
-    return {
-      id: node.id,
-      label: label,
-      shape: 'box',
-      margin: { top: 6, bottom: 6, left: 10, right: 10 },
-      font: {
-        size: 12,
-        color: isDark ? '#e5e5ea' : '#3a3a3c',
-        face: 'system-ui, -apple-system, sans-serif'
-      },
-      color: {
-        background: isDark ? '#1c1c1e' : '#ffffff', // Simple clean details card
-        border: hexToRgba(branchColor, 0.45), // Thin branch border
-        highlight: {
-          background: isDark ? '#2c2c2e' : '#f2f2f7',
-          border: branchColor
-        }
-      },
-      borderWidth: 1.2,
-      shadow: {
-        enabled: true,
-        color: 'rgba(0,0,0,0.04)', // Very subtle shadow
-        size: 3,
-        x: 0,
-        y: 1.5
-      }
-    };
-  }
-}
-
-function parseMermaidMindmapToVis(code) {
+function parseMermaidMindmapToMindElixir(code) {
   const lines = code.split('\n');
-  const nodes = [];
-  const edges = [];
-  const parentStack = [];
+  const parentStack = []; // stores { node, indent }
+  let rootNode = null;
   
   for (let line of lines) {
     const trimmed = line.trim();
@@ -6388,63 +6290,30 @@ function parseMermaidMindmapToVis(code) {
     const id = match[2];
     const text = match[3];
     
+    const node = {
+      id: id,
+      topic: text,
+      children: []
+    };
+    
     while (parentStack.length > 0 && parentStack[parentStack.length - 1].indent >= indent) {
       parentStack.pop();
     }
     
-    const parentId = parentStack.length > 0 ? parentStack[parentStack.length - 1].id : null;
-    const level = parentStack.length;
-    
-    nodes.push({
-      id,
-      label: text,
-      level,
-      parentId,
-      branchIndex: 0
-    });
-    
-    if (parentId) {
-      edges.push({
-        from: parentId,
-        to: id
-      });
+    if (parentStack.length === 0) {
+      node.root = true;
+      rootNode = node;
+    } else {
+      parentStack[parentStack.length - 1].node.children.push(node);
     }
     
-    parentStack.push({ id, indent });
+    parentStack.push({ node, indent });
   }
   
-  const nodeMap = {};
-  for (let node of nodes) {
-    nodeMap[node.id] = node;
-  }
-  
-  const rootNode = nodes.find(n => n.level === 0);
-  const rootId = rootNode ? rootNode.id : null;
-  
-  let branchCounter = 0;
-  for (let node of nodes) {
-    if (node.parentId === rootId && node.level === 1) {
-      node.branchIndex = branchCounter;
-      branchCounter++;
-    }
-  }
-  
-  for (let node of nodes) {
-    if (node.level > 1) {
-      let ancestor = node;
-      while (ancestor && ancestor.level > 1) {
-        ancestor = nodeMap[ancestor.parentId];
-      }
-      if (ancestor && ancestor.level === 1) {
-        node.branchIndex = ancestor.branchIndex;
-      }
-    }
-  }
-  
-  return { nodes, edges };
+  return { nodeData: rootNode };
 }
 
-function setupVisMindmapToolbar(container, network) {
+function setupMindElixirToolbar(container, mind) {
   const toolbar = document.createElement('div');
   toolbar.className = 'mermaid-toolbar';
   
@@ -6461,19 +6330,17 @@ function setupVisMindmapToolbar(container, network) {
   
   toolbar.querySelector('.zoom-in').addEventListener('click', (e) => {
     e.stopPropagation();
-    const currentScale = network.getScale();
-    network.moveTo({ scale: Math.min(currentScale * 1.2, 3) });
+    mind.scale(mind.scaleVal + 0.1);
   });
   
   toolbar.querySelector('.zoom-out').addEventListener('click', (e) => {
     e.stopPropagation();
-    const currentScale = network.getScale();
-    network.moveTo({ scale: Math.max(currentScale / 1.2, 0.2) });
+    mind.scale(mind.scaleVal - 0.1);
   });
   
   toolbar.querySelector('.zoom-reset').addEventListener('click', (e) => {
     e.stopPropagation();
-    network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
+    mind.toCenter();
   });
 }
 
@@ -6562,20 +6429,20 @@ async function renderMermaidBlocks() {
     }
   }
 
-  if (mermaidLoaded || typeof vis !== 'undefined' || visNetworkLoaded) {
+  if (mermaidLoaded || typeof MindElixir !== 'undefined' || mindElixirLoaded) {
     // 逐個容器渲染，單個失敗不影響其他
     for (const container of containers) {
       let code = container.textContent.trim();
       
-      // Check if it's a mindmap block, render with Vis-Network for dynamic physics layout
+      // Check if it's a mindmap block, render with Mind-Elixir
       if (code.startsWith('mindmap') || code.includes('\nmindmap')) {
         container.setAttribute('data-processed', 'true');
         try {
-          await loadVisNetworkLibrary();
+          await loadMindElixirLibrary();
           
-          // Preprocess to wrap labels and clean subgraphs (bypassing wrap to keep single-line nodes)
+          // Preprocess (bypassing wrap to keep single-line nodes)
           const preprocessedCode = preprocessMermaidMindmap(code, false);
-          const { nodes, edges } = parseMermaidMindmapToVis(preprocessedCode);
+          const parsedData = parseMermaidMindmapToMindElixir(preprocessedCode);
           
           container.innerHTML = '';
           container.style.position = 'relative';
@@ -6584,7 +6451,7 @@ async function renderMermaidBlocks() {
           container.style.userSelect = 'none';
           
           const canvasContainer = document.createElement('div');
-          canvasContainer.className = 'vis-mindmap-canvas';
+          canvasContainer.className = 'mindelixir-canvas';
           canvasContainer.style.width = '100%';
           canvasContainer.style.height = '100%';
           container.appendChild(canvasContainer);
@@ -6596,160 +6463,57 @@ async function renderMermaidBlocks() {
               hash = (hash << 5) - hash + str.charCodeAt(i);
               hash |= 0;
             }
-            return 'mindmap_pos_' + hash;
+            return 'mindelixir_data_' + hash;
           };
           const storageKey = getHashCode(code);
-          const savedPositions = JSON.parse(localStorage.getItem(storageKey) || '{}');
+          
+          // Check if we have saved data in localStorage
+          let data = null;
+          const savedStr = localStorage.getItem(storageKey);
+          if (savedStr) {
+            try {
+              data = JSON.parse(savedStr);
+            } catch (err) {
+              console.warn('Failed to parse cached mind-elixir data:', err);
+            }
+          }
+          
+          if (!data) {
+            data = parsedData;
+          }
           
           const isDark = document.body.classList.contains('theme-dark') || document.body.classList.contains('theme-oled');
-          const visNodes = nodes.map(n => {
-            const opts = getVisNodeOptions(n, isDark);
-            if (savedPositions[n.id]) {
-              opts.x = savedPositions[n.id].x;
-              opts.y = savedPositions[n.id].y;
-              opts.fixed = true; // Lock the position so it is fully static!
-            }
-            return opts;
+          
+          const mind = new MindElixir({
+            el: canvasContainer,
+            direction: MindElixir.SIDE,
+            editable: true,
+            toolBar: false,
+            contextMenu: false,
+            theme: isDark ? MindElixir.DARK_THEME : MindElixir.THEME
           });
           
-          const colors = [
-            '#ff2d55', // Pink
-            '#5856d6', // Purple
-            '#ff9500', // Orange
-            '#4cd964', // Green
-            '#007aff', // Blue
-            '#5ac8fa', // Cyan
-            '#af52de'  // Indigo
-          ];
+          mind.init(data);
+          activeMindElixirs.push({ mind, container });
           
-          const visEdges = edges.map(e => {
-            const targetNode = nodes.find(n => n.id === e.to);
-            const branchColor = targetNode ? colors[targetNode.branchIndex % colors.length] : '#8e8e93';
-            
-            // Width and spring length scale down with depth to match mockup branch thickness hierarchy
-            let width = 1.5;
-            let length = 50;
-            if (targetNode) {
-              if (targetNode.level === 1) {
-                width = 8.0;   // Very thick pipe for main idea branches
-                length = 110;  // Long spring to push main ideas away from center
-              } else if (targetNode.level === 2) {
-                width = 4.0;   // Medium pipe for sub-ideas
-                length = 65;   // Shorter spring to keep sub-ideas clustered
-              } else {
-                width = 1.5;   // Thin pipe for details
-                length = 50;   // Short spring for tight detail grouping
-              }
-            }
-            
-            return {
-              from: e.from,
-              to: e.to,
-              color: {
-                color: branchColor, // Solid vibrant branch color to look like mockup pipes
-                highlight: branchColor,
-                hover: branchColor,
-                inherit: false
-              },
-              width: width,
-              hoverWidth: width + 1.5,
-              length: length // Override global spring length per edge
-            };
-          });
+          setupMindElixirToolbar(container, mind);
           
-          const visData = {
-            nodes: new vis.DataSet(visNodes),
-            edges: new vis.DataSet(visEdges)
-          };
-          
-          const options = {
-            nodes: {
-              font: {
-                face: 'system-ui, -apple-system, sans-serif'
-              }
-            },
-            edges: {
-              smooth: {
-                type: 'cubicBezier',
-                roundness: 0.6
-              }
-            },
-            physics: {
-              solver: 'forceAtlas2Based',
-              forceAtlas2Based: {
-                gravitationalConstant: -180, // Repulsion pushes different branches away
-                centralGravity: 0.015,        // Keeps it centered in canvas
-                springLength: 70,             // Default spring length fallback
-                springConstant: 0.08,         // Softened spring to prevent excessive vibration
-                damping: 0.8,                 // High damping (friction) to stop oscillations
-                avoidOverlap: 1.0
-              },
-              minVelocity: 0.75,             // Settle/stop the simulation much sooner
-              stabilization: {
-                enabled: true,
-                iterations: 200,             // Pre-calculate more iterations for instant settled rendering
-                updateInterval: 30
-              }
-            },
-            interaction: {
-              dragNodes: true,
-              dragView: true,
-              zoomView: true,
-              hover: true
+          // Listen to operations and auto-save
+          const saveState = () => {
+            try {
+              const currentData = mind.getData();
+              localStorage.setItem(storageKey, JSON.stringify(currentData));
+            } catch (err) {
+              console.warn('Failed to save mind-elixir data:', err);
             }
           };
           
-          const network = new vis.Network(canvasContainer, visData, options);
-          activeVisNetworks.push({ network, container, nodes, edges });
+          mind.bus.addListener('operation', saveState);
+          mind.bus.addListener('expandNode', saveState);
           
-          setupVisMindmapToolbar(container, network);
-          
-          network.once('stabilized', () => {
-            // Disable physics globally to freeze the layout so nodes only move when dragged
-            network.setOptions({ physics: false });
-            
-            // Cache all positions on first stabilization if not saved yet
-            if (!localStorage.getItem(storageKey)) {
-              const allPositions = network.getPositions();
-              const positionsToSave = {};
-              for (const nodeId in allPositions) {
-                positionsToSave[nodeId] = {
-                  x: Math.round(allPositions[nodeId].x),
-                  y: Math.round(allPositions[nodeId].y)
-                };
-              }
-              localStorage.setItem(storageKey, JSON.stringify(positionsToSave));
-              
-              // Freeze the nodes in place
-              const updates = nodes.map(n => ({ id: n.id, fixed: true }));
-              network.body.data.nodes.update(updates);
-            }
-            
-            network.fit();
-          });
-          
-          // Save node position after dragging
-          network.on('dragEnd', function (params) {
-            if (params.nodes.length > 0) {
-              const draggedNodeId = params.nodes[0];
-              const position = network.getPositions([draggedNodeId])[draggedNodeId];
-              if (position) {
-                const currentPositions = JSON.parse(localStorage.getItem(storageKey) || '{}');
-                currentPositions[draggedNodeId] = {
-                  x: Math.round(position.x),
-                  y: Math.round(position.y)
-                };
-                localStorage.setItem(storageKey, JSON.stringify(currentPositions));
-                
-                // Ensure the node stays fixed at its new coordinate
-                network.body.data.nodes.update({ id: draggedNodeId, fixed: true });
-              }
-            }
-          });
-          
-          continue; // Rendered successfully, skip Mermaid flow
+          continue; // Rendered successfully, skip Mermaid flowchart flow
         } catch (err) {
-          console.warn('Vis-Network mindmap render failed, falling back to Mermaid:', err);
+          console.warn('Mind-Elixir mindmap render failed, falling back to Mermaid:', err);
           // Fall back to Mermaid rendering flow below
         }
       }
