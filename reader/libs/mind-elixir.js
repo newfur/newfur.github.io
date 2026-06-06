@@ -1268,25 +1268,29 @@ const A = "http://www.w3.org/2000/svg", re = function(e) {
   this.lines.innerHTML = "";
   for (let c = 0; c < l.length; c++) {
     const r = l[c], a = r.querySelector("me-tpc"), { offsetLeft: d, offsetTop: h } = M(this.nodes, a), u = a.offsetWidth, b = a.offsetHeight, v = r.parentNode.className, p = this.generateMainBranch({ pT: n, pL: o, pW: s, pH: i, cT: h, cL: d, cW: u, cH: b, direction: v, containerHeight: this.nodes.offsetHeight }), g = this.theme.palette, m = a.nodeObj.branchColor || g[c % g.length];
-    if (a.style.borderColor = m, this.lines.appendChild(it(p, m, "3")), e && e !== r)
+    if (a.style.borderColor = m, this.lines.appendChild(it(p, m, "10")), e && e !== r)
       continue;
     const w = z("subLines"), E = r.lastChild;
-    E.tagName === "svg" && E.remove(), r.appendChild(w), lt(this, w, m, r, v, !0);
+    E.tagName === "svg" && E.remove(), r.appendChild(w), lt(this, w, m, r, v, 1);
   }
   this.labelContainer.innerHTML = "", this.renderArrow(), this.renderSummary(), this.bus.fire("linkDiv");
-}, lt = function(e, t, n, o, s, i) {
+}, lt = function(e, t, n, o, s, level) {
   const l = o.firstChild, c = o.children[1].children;
   if (c.length === 0) return;
   const r = l.offsetTop, a = l.offsetLeft, d = l.offsetWidth, h = l.offsetHeight;
   for (let u = 0; u < c.length; u++) {
-    const b = c[u], v = b.firstChild, p = v.offsetTop, g = v.offsetLeft, m = v.offsetWidth, w = v.offsetHeight, E = v.firstChild.nodeObj.branchColor || n, N = e.generateSubBranch({ pT: r, pL: a, pW: d, pH: h, cT: p, cL: g, cW: m, cH: w, direction: s, isFirst: i });
-    t.appendChild(it(N, E, "2"));
+    const b = c[u], v = b.firstChild, p = v.offsetTop, g = v.offsetLeft, m = v.offsetWidth, w = v.offsetHeight, E = v.firstChild.nodeObj.branchColor || n, N = e.generateSubBranch({ pT: r, pL: a, pW: d, pH: h, cT: p, cL: g, cW: m, cH: w, direction: s, isFirst: level === 1 });
+    let strokeWidth = "2";
+    if (level === 1) strokeWidth = "5.5";
+    else if (level === 2) strokeWidth = "3";
+    else strokeWidth = "1.5";
+    t.appendChild(it(N, E, strokeWidth));
     const f = v.children[1];
     if (f) {
       if (!f.expanded) continue;
     } else
       continue;
-    lt(e, t, E, b, s);
+    lt(e, t, E, b, s, level + 1);
   }
 }, Rn = {
   addChild: "Add child",
