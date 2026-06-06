@@ -1268,7 +1268,7 @@ const A = "http://www.w3.org/2000/svg", re = function(e) {
   this.lines.innerHTML = "";
   for (let c = 0; c < l.length; c++) {
     const r = l[c], a = r.querySelector("me-tpc"), { offsetLeft: d, offsetTop: h } = M(this.nodes, a), u = a.offsetWidth, b = a.offsetHeight, v = r.parentNode.className, p = this.generateMainBranch({ pT: n, pL: o, pW: s, pH: i, cT: h, cL: d, cW: u, cH: b, direction: v, containerHeight: this.nodes.offsetHeight }), g = this.theme.palette, m = a.nodeObj.branchColor || g[c % g.length];
-    if (a.style.borderColor = m, this.lines.appendChild(it(p, m, "30")), e && e !== r)
+    if (a.style.borderColor = m, this.lines.appendChild(it(p, m, "20")), e && e !== r)
       continue;
     const w = z("subLines"), E = r.lastChild;
     E.tagName === "svg" && E.remove(), r.appendChild(w), lt(this, w, m, r, v, 1);
@@ -1281,10 +1281,10 @@ const A = "http://www.w3.org/2000/svg", re = function(e) {
   for (let u = 0; u < c.length; u++) {
     const b = c[u], v = b.firstChild, p = v.offsetTop, g = v.offsetLeft, m = v.offsetWidth, w = v.offsetHeight, E = v.firstChild.nodeObj.branchColor || n, N = e.generateSubBranch({ pT: r, pL: a, pW: d, pH: h, cT: p, cL: g, cW: m, cH: w, direction: s, isFirst: level === 1 });
     let strokeWidth = "1.5";
-    if (level === 1) strokeWidth = "18";
-    else if (level === 2) strokeWidth = "10";
-    else if (level === 3) strokeWidth = "5";
-    else if (level === 4) strokeWidth = "2.5";
+    if (level === 1) strokeWidth = "12";
+    else if (level === 2) strokeWidth = "7";
+    else if (level === 3) strokeWidth = "4";
+    else if (level === 4) strokeWidth = "2.2";
     t.appendChild(it(N, E, strokeWidth));
     const f = v.children[1];
     if (f) {
