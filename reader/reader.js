@@ -6589,8 +6589,28 @@ async function renderMermaidBlocks() {
           canvasContainer.style.height = '100%';
           container.appendChild(canvasContainer);
           
+          // Generate a deterministic storage key based on the raw Mermaid mindmap code text
+          const getHashCode = (str) => {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+              hash = (hash << 5) - hash + str.charCodeAt(i);
+              hash |= 0;
+            }
+            return 'mindmap_pos_' + hash;
+          };
+          const storageKey = getHashCode(code);
+          const savedPositions = JSON.parse(localStorage.getItem(storageKey) || '{}');
+          
           const isDark = document.body.classList.contains('theme-dark') || document.body.classList.contains('theme-oled');
-          const visNodes = nodes.map(n => getVisNodeOptions(n, isDark));
+          const visNodes = nodes.map(n => {
+            const opts = getVisNodeOptions(n, isDark);
+            if (savedPositions[n.id]) {
+              opts.x = savedPositions[n.id].x;
+              opts.y = savedPositions[n.id].y;
+              opts.fixed = true; // Lock the position so it is fully static!
+            }
+            return opts;
+          });
           
           const colors = [
             '#ff2d55', // Pink
@@ -6685,7 +6705,46 @@ async function renderMermaidBlocks() {
           setupVisMindmapToolbar(container, network);
           
           network.once('stabilized', () => {
+            // Disable physics globally to freeze the layout so nodes only move when dragged
+            network.setOptions({ physics: false });
+            
+            // Cache all positions on first stabilization if not saved yet
+            if (!localStorage.getItem(storageKey)) {
+              const allPositions = network.getPositions();
+              const positionsToSave = {};
+              for (const nodeId in allPositions) {
+                positionsToSave[nodeId] = {
+                  x: Math.round(allPositions[nodeId].x),
+                  y: Math.round(allPositions[nodeId].y)
+                };
+              }
+              localStorage.setItem(storageKey, JSON.stringify(positionsToSave));
+              
+              // Freeze the nodes in place
+              const updates = nodes.map(n => ({ id: n.id, fixed: true }));
+              network.body.data.nodes.update(updates);
+            }
+            
             network.fit();
+          });
+          
+          // Save node position after dragging
+          network.on('dragEnd', function (params) {
+            if (params.nodes.length > 0) {
+              const draggedNodeId = params.nodes[0];
+              const position = network.getPositions([draggedNodeId])[draggedNodeId];
+              if (position) {
+                const currentPositions = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                currentPositions[draggedNodeId] = {
+                  x: Math.round(position.x),
+                  y: Math.round(position.y)
+                };
+                localStorage.setItem(storageKey, JSON.stringify(currentPositions));
+                
+                // Ensure the node stays fixed at its new coordinate
+                network.body.data.nodes.update({ id: draggedNodeId, fixed: true });
+              }
+            }
           });
           
           continue; // Rendered successfully, skip Mermaid flow
