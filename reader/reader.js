@@ -6624,7 +6624,10 @@ async function sendCustomAIQuery() {
     let bookContext = '';
     let isFullBookContext = false;
     
-    if (bookChunksCache.length > 0) {
+    // 判斷是否為針對「本章」或「本頁」的特定提問
+    const isChapterOrPageQuery = /本章|当前章|这一章|这个章节|当前章节|本页|当前页|这一页|这页|当前页面/.test(query);
+    
+    if (bookChunksCache.length > 0 && !isChapterOrPageQuery) {
       // 進行全書檢索
       const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
       if (relevantChunks.length > 0) {
@@ -6637,7 +6640,7 @@ async function sendCustomAIQuery() {
     
     if (!bookContext && bookContentEl) {
       // 退回局部章節上下文
-      bookContext = bookContentEl.textContent.trim().substring(0, 15000);
+      bookContext = bookContentEl.textContent.trim().substring(0, 25000);
     }
 
     let systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.\n';
