@@ -6468,8 +6468,8 @@ async function renderMermaidBlocks() {
           container.innerHTML = '';
           container.style.position = 'relative';
           container.style.overflow = 'hidden';
-          container.style.height = '480px';
           container.style.userSelect = 'none';
+          container.classList.add('mindelixir-container');
           
           const canvasContainer = document.createElement('div');
           canvasContainer.className = 'mindelixir-canvas';

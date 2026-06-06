@@ -4841,5 +4841,15 @@ me-tpc {
   display: none !important;
 }
 
+/* Default height for the mindmap container */
+.mindelixir-container {
+  height: 480px;
+}
+
+/* Stretch the mindmap container to fill the screen in maximized mode */
+.ai-panel.maximized .mindelixir-container {
+  height: calc(100vh - 200px) !important;
+}
+
 
 
