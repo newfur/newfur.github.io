@@ -6015,7 +6015,7 @@ function formatMarkdown(text) {
 
 let mermaidLoaded = false;
 async function renderMermaidBlocks() {
-  const containers = document.querySelectorAll('.mermaid:not([data-processed="true"])');
+  const containers = document.querySelectorAll('#ai-content .mermaid:not([data-processed="true"])');
   if (containers.length === 0) return;
 
   if (!mermaidLoaded) {
