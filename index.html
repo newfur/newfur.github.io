@@ -4706,7 +4706,7 @@ html.transition-none .page-texture-slide {
   font-size: inherit;
   position: relative;
   overflow: hidden;
-  height: 380px;
+  height: 480px;
   padding: 0;
   cursor: grab;
   user-select: none;
@@ -11973,13 +11973,14 @@ class TTSEngine {
   }
 
   // 4. 預加載控制與播放隊列
-  _fetchSentence(index) {
+  _fetchSentence(index, retryCount = 0) {
     const voice = this.selectedVoice;
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
     if (index >= this.sentences.length) return;
-    if (this.audioCache.has(index) || this.fetchingIndices.has(index)) return;
+    if (this.audioCache.has(index)) return;
+    if (retryCount === 0 && this.fetchingIndices.has(index)) return;
     
     this.fetchingIndices.add(index);
     const sentence = this.sentences[index];
@@ -12023,13 +12024,22 @@ class TTSEngine {
         }
       }
     }).catch(err => {
-      console.error(`Failed to prefetch sentence ${index}:`, err);
+      console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
       this.fetchingIndices.delete(index);
       
-      // 增加失敗計數 (任何在這裡捕獲的錯誤都是 WebSocket/網絡加載失敗)
+      // 網路波動重試機制
+      if (retryCount < 2) {
+        console.log(`Retrying prefetch for sentence ${index} in 1500ms...`);
+        setTimeout(() => {
+          this._fetchSentence(index, retryCount + 1);
+        }, 1500);
+        return;
+      }
+      
+      // 增加失敗計數 (任何在這裡捕獲的錯誤都是 WebSocket/網絡加載失敗，在多次重試失敗後才計入)
       this.consecutiveWsFailures = (this.consecutiveWsFailures || 0) + 1;
-      if (this.consecutiveWsFailures >= 3) {
-        console.warn("WebSocket TTS failed 3 times consecutively. Switching to native Web Speech API.");
+      if (this.consecutiveWsFailures >= 10) {
+        console.warn("WebSocket TTS failed 10 times consecutively. Switching to native Web Speech API.");
         this.consecutiveWsFailures = 0; // 重置
         
         // 查找與當前語音（若無則默認中文）語言前綴相匹配的本地系統語音
