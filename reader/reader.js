@@ -7384,8 +7384,31 @@ async function runDeepBookAnalysis() {
       </div>
     `;
     
-    const systemPrompt = "You are a professional literary critic and research assistant. Write a comprehensive book analysis report based on the book metadata, table of contents, and a client-side entity co-occurrence association network.";
-    const query = `Book Title: "${epubBookData?.title || 'Unknown'}"\nAuthor: "${epubBookData?.author || 'Unknown'}"\n\n[Table of Contents (Chapters)]\n${chapterTitles}\n\n${entitySummary}\n\nPlease generate a "Deep Book Analysis Report" in Chinese (or matching reader language) containing:\n1. **全书主要人物性格与复杂关系网** (using the co-occurrence associations above)\n2. **核心章节脉络与大事件节点**\n3. **核心思想、主题与学术价值/文学特色**\n\nFormat your output nicely with markdown. Make sure it is highly professional and detailed.`;
+    const bookTitle = currentBook?.title || document.getElementById('reader-book-title')?.textContent?.trim() || epubBookData?.title || 'Unknown';
+    const bookAuthor = currentBook?.author || epubBookData?.author || 'Unknown';
+    
+    const systemPrompt = "You are an expert research assistant and professional book critic. You excel at analyzing both fiction (novels, literature) and non-fiction (history, social science, philosophy, science, business, technology). Your task is to write a highly professional, comprehensive book analysis report based on the book metadata, table of contents, and a client-side entity co-occurrence association network.";
+    const query = `Book Title: "${bookTitle}"
+Author: "${bookAuthor}"
+
+[Table of Contents (Chapters)]
+${chapterTitles}
+
+[Client-Side Entity Co-occurrence Data]
+${entitySummary}
+
+Please generate a comprehensive "Deep Book Analysis Report" in Chinese (or matching reader language). Adapt the structure, sections, and terminology based on whether the book is fiction (novel, story) or non-fiction (academic, history, social science, philosophy, etc.):
+
+1. **书籍定位与类型** (Briefly determine the genre, style, and subject matter of this book).
+2. **核心概念/主要人物与关联网络** (Using the co-occurrence data above:
+   - If fiction/biography: Analyze main characters/figures, their roles, and their relationship network.
+   - If academic/social science/technical: Define core concepts, key terminology, primary figures/theories, and how they relate to one another).
+3. **脉络节点与论证/情节框架** (Using the table of contents:
+   - If fiction/narrative: Identify major plot arcs, narrative milestones, and key timeline events.
+   - If academic/non-fiction: Outline the logical progression, primary arguments, chapter-by-chapter thesis, and structural layout of the book's reasoning).
+4. **核心思想、价值与文学特色/学术贡献** (Discuss the main takeaways, themes, methodology/writing style, and the overall academic, practical, or literary contribution).
+
+Format your output nicely with markdown. Make sure it is highly professional, insightful, and detailed.`;
     
     let reportText = '';
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
