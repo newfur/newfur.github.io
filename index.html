@@ -19966,12 +19966,14 @@ async function renderMermaidBlocks() {
                 gravitationalConstant: -180, // Repulsion pushes different branches away
                 centralGravity: 0.015,        // Keeps it centered in canvas
                 springLength: 70,             // Default spring length fallback
-                springConstant: 0.09,         // Stronger springs pull nodes tightly together
+                springConstant: 0.08,         // Softened spring to prevent excessive vibration
+                damping: 0.8,                 // High damping (friction) to stop oscillations
                 avoidOverlap: 1.0
               },
+              minVelocity: 0.75,             // Settle/stop the simulation much sooner
               stabilization: {
                 enabled: true,
-                iterations: 180,
+                iterations: 200,             // Pre-calculate more iterations for instant settled rendering
                 updateInterval: 30
               }
             },
