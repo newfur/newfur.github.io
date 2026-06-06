@@ -1043,14 +1043,18 @@ function initUIEventBindings() {
         return;
       }
       
+      const chaptersCount = (epubBookData && epubBookData.chapters) ? epubBookData.chapters.length : 0;
+      
       if (currentBook.bookSummary) {
-        const reAnalyze = confirm(getMsg('confirm_reanalyze_book') || '這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。');
+        const reAnalyze = confirm((getMsg('confirm_reanalyze_book') || '這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。')
+          + `\n\n(提示：本電子書共有 ${chaptersCount} 個章節，重新生成將分析所有章節，約消耗 10万~20万 Token)`);
         if (!reAnalyze) {
           displayBookSummary(currentBook.bookSummary);
           return;
         }
       } else {
-        const confirmAnalysis = confirm(getMsg('confirm_deep_analysis') || '「深度分析全书」將會逐章分析本書，並消耗較多 API Token。是否繼續？');
+        const confirmAnalysis = confirm((getMsg('confirm_deep_analysis') || '「深度分析全書」將會分析本書，並消耗較多 API Token。是否繼續？')
+          + `\n\n(提示：本電子書共有 ${chaptersCount} 個章節，將逐章生成摘要後進行全局分析，約消耗 10万~20万 Token)`);
         if (!confirmAnalysis) return;
       }
       
@@ -1584,10 +1588,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.2.0';
+            versionDisplay.textContent = 'v2.2.1';
           }
         } else {
-          versionDisplay.textContent = 'v2.2.0';
+          versionDisplay.textContent = 'v2.2.1';
         }
       }
       aboutDialog.showModal();
@@ -7450,12 +7454,78 @@ async function runDeepBookAnalysis() {
     const chapters = (epubBookData && epubBookData.chapters) ? epubBookData.chapters : [];
     const chapterTitles = chapters.map((ch, idx) => `${idx + 1}. ${ch.title}`).join('\n');
     
+    // ===== 階段一：Map 階段（逐章進行增量內容分析與摘要） =====
+    const tempParser = new DOMParser();
+    const chapterSummaries = currentBook.chapterSummaries || {};
+    
+    for (let i = 0; i < chapters.length; i++) {
+      const ch = chapters[i];
+      
+      // 如果該章節摘要已存儲在 IndexedDB 中，直接跳過 AI 調用
+      if (chapterSummaries[i] && !chapterSummaries[i].startsWith('[章節摘要分析失敗')) {
+        console.log(`Chapter ${i + 1} summary loaded from local IndexedDB cache.`);
+        continue;
+      }
+      
+      if (typeof ch.getContent !== 'function') continue;
+      
+      // 顯示閱讀進度
+      assistantBubble.innerHTML = `
+        <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
+          <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
+          <span>正在閱讀與增量分析：第 ${i + 1}/${chapters.length} 章 [${Math.round((i / chapters.length) * 100)}%]...</span>
+        </div>
+      `;
+      contentEl.scrollTop = contentEl.scrollHeight;
+      
+      try {
+        const html = await ch.getContent();
+        const doc = tempParser.parseFromString(html, 'text/html');
+        doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+        const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
+        
+        if (plainText.length < 50) {
+          chapterSummaries[i] = `本章節無實質內容或字數過少。`;
+          await library.saveChapterSummary(currentBook.id, i, chapterSummaries[i]);
+          continue;
+        }
+        
+        // 限制長度，防止極長章節引發 context 溢出 (限制在 15,000 字符内)
+        const truncatedText = plainText.length > 15000 ? plainText.substring(0, 15000) + '... [已截斷]' : plainText;
+        
+        const chSystemPrompt = "You are an expert reading assistant. Summarize the provided chapter text. Extract the main events, characters/entities, core concepts, and key arguments. Keep it strictly factual, clear, and do not exceed 300 words. Respond in Traditional Chinese (or Simplified Chinese if the book is in simplified CJK).";
+        const chQuery = `Chapter Title: "${ch.title}"\n\nChapter Content:\n${truncatedText}`;
+        
+        const chSummary = await ai._chat(chSystemPrompt, chQuery, null);
+        chapterSummaries[i] = chSummary;
+        
+        // 增量寫入本地 IndexedDB
+        await library.saveChapterSummary(currentBook.id, i, chSummary);
+      } catch (err) {
+        console.warn(`Failed to summarize chapter ${i} (${ch.title}):`, err);
+        chapterSummaries[i] = `[章節摘要分析失敗: ${err.message}]`;
+      }
+    }
+    
+    // 更新內存中的章節摘要映射
+    currentBook.chapterSummaries = chapterSummaries;
+    
+    // 彙總所有章節的摘要內容
+    let compiledChapterSummaries = '';
+    for (let i = 0; i < chapters.length; i++) {
+      if (chapterSummaries[i]) {
+        compiledChapterSummaries += `[Chapter ${i + 1}: ${chapters[i].title}]\n${chapterSummaries[i]}\n\n`;
+      }
+    }
+    
+    // ===== 階段二：Reduce 階段（結合章節摘要、目錄和關聯矩陣生成最終分析報告） =====
     assistantBubble.innerHTML = `
       <div class="ai-loading" style="padding: 0; justify-content: flex-start; gap: 6px;">
         <div class="ai-loading-spinner" style="width: 14px; height: 14px;"></div>
-        <span>正在生成全書深度分析報告...</span>
+        <span>正在彙總章節脈絡，生成全書深度分析報告...</span>
       </div>
     `;
+    contentEl.scrollTop = contentEl.scrollHeight;
     
     const bookTitle = currentBook?.title || document.getElementById('reader-book-title')?.textContent?.trim() || epubBookData?.title || 'Unknown';
     const bookAuthor = currentBook?.author || epubBookData?.author || 'Unknown';
@@ -7470,13 +7540,16 @@ ${chapterTitles}
 [Client-Side Entity Co-occurrence Data]
 ${entitySummary}
 
+[Chapter-by-Chapter Summaries]
+${compiledChapterSummaries}
+
 Please generate a comprehensive "Deep Book Analysis Report" in Chinese (or matching reader language). Adapt the structure, sections, and terminology based on whether the book is fiction (novel, story) or non-fiction (academic, history, social science, philosophy, etc.):
 
 1. **书籍定位与类型** (Briefly determine the genre, style, and subject matter of this book).
-2. **核心概念/主要人物与关联网络** (Using the co-occurrence data above:
+2. **核心概念/主要人物与关联网络** (Using the co-occurrence data and chapter summaries above:
    - If fiction/biography: Analyze main characters/figures, their roles, and their relationship network.
    - If academic/social science/technical: Define core concepts, key terminology, primary figures/theories, and how they relate to one another).
-3. **脉络节点与论证/情节框架** (Using the table of contents:
+3. **脉络节点与论证/情节框架** (Using the chapter summaries and table of contents:
    - If fiction/narrative: Identify major plot arcs, narrative milestones, and key timeline events.
    - If academic/non-fiction: Outline the logical progression, primary arguments, chapter-by-chapter thesis, and structural layout of the book's reasoning).
 4. **核心思想、价值与文学特色/学术贡献** (Discuss the main takeaways, themes, methodology/writing style, and the overall academic, practical, or literary contribution).
@@ -8139,6 +8212,8 @@ async function handleExportBackup() {
         notes: book.notes || [],
         stats: book.stats || null,
         aiChats: book.aiChats || [],
+        bookSummary: book.bookSummary || '',
+        chapterSummaries: book.chapterSummaries || {},
         folder: book.folder || null,
         hasFile: false,
         coverType: 'none',
@@ -8287,7 +8362,9 @@ function handleImportBackup(e) {
             bookmarks: b.bookmarks || [],
             notes: b.notes || [],
             stats: b.stats || null,
-            aiChats: b.aiChats || []
+            aiChats: b.aiChats || [],
+            bookSummary: b.bookSummary || '',
+            chapterSummaries: b.chapterSummaries || {}
           };
 
           await library.importBook(book);
@@ -8370,7 +8447,9 @@ function handleImportBackup(e) {
             bookmarks: b.bookmarks || [],
             notes: b.notes || [],
             stats: b.stats || null,
-            aiChats: b.aiChats || []
+            aiChats: b.aiChats || [],
+            bookSummary: b.bookSummary || '',
+            chapterSummaries: b.chapterSummaries || {}
           };
 
           await library.importBook(book);

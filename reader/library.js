@@ -207,7 +207,9 @@ export class BookLibrary {
         bookmarks: mergedBookmarks,
         notes: mergedNotes,
         aiChats: mergedAIChats,
-        stats: mergedStats
+        stats: mergedStats,
+        bookSummary: existingBook.bookSummary || backupBook.bookSummary || '',
+        chapterSummaries: { ...(existingBook.chapterSummaries || {}), ...(backupBook.chapterSummaries || {}) }
       };
     } else {
       // 沒找到相同的書籍，直接使用導入的書籍
@@ -604,6 +606,25 @@ export class BookLibrary {
       const request = store.put(book);
 
       request.onsuccess = () => resolve(book.bookSummary);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 保存單個章節的摘要
+  async saveChapterSummary(id, index, summary) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    if (!book.chapterSummaries) book.chapterSummaries = {};
+    book.chapterSummaries[index] = summary;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(book);
+
+      request.onsuccess = () => resolve(book.chapterSummaries);
       request.onerror = () => reject(request.error);
     });
   }
