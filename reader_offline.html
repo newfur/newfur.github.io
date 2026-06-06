@@ -19590,7 +19590,7 @@ function getVisNodeOptions(node, isDark) {
       id: node.id,
       label: label,
       shape: 'ellipse',
-      margin: { top: 14, bottom: 14, left: 18, right: 18 },
+      margin: { top: 14, bottom: 14, left: 20, right: 20 },
       font: {
         size: 16,
         color: '#ffffff',
@@ -19598,18 +19598,18 @@ function getVisNodeOptions(node, isDark) {
         face: 'system-ui, -apple-system, sans-serif'
       },
       color: {
-        background: isDark ? '#007aff' : '#0055d6',
-        border: isDark ? '#007aff' : '#0055d6',
+        background: isDark ? '#5856d6' : '#4e4cc2', // Rich Indigo/violet central topic
+        border: isDark ? '#5856d6' : '#4e4cc2',
         highlight: {
-          background: isDark ? '#359aff' : '#359aff',
-          border: isDark ? '#359aff' : '#359aff'
+          background: isDark ? '#7d7aff' : '#6462d6',
+          border: isDark ? '#7d7aff' : '#6462d6'
         }
       },
       borderWidth: 2,
       shadow: {
         enabled: true,
-        color: isDark ? 'rgba(0,122,255,0.25)' : 'rgba(0,122,255,0.15)',
-        size: 8,
+        color: 'rgba(88,86,214,0.4)', // Deep indigo glow shadow
+        size: 12,
         x: 0,
         y: 4
       }
@@ -19619,26 +19619,26 @@ function getVisNodeOptions(node, isDark) {
       id: node.id,
       label: label,
       shape: 'box',
-      margin: { top: 10, bottom: 10, left: 14, right: 14 },
+      margin: { top: 10, bottom: 10, left: 16, right: 16 },
       font: {
-        size: 14,
-        color: isDark ? '#ffffff' : branchColor,
+        size: 15,
+        color: isDark ? '#ffffff' : branchColor, // Branch color text for light theme
         bold: true,
         face: 'system-ui, -apple-system, sans-serif'
       },
       color: {
-        background: hexToRgba(branchColor, isDark ? 0.2 : 0.06),
-        border: branchColor,
+        background: isDark ? '#2c2c2e' : '#ffffff', // Clean white/dark gray card background
+        border: branchColor, // Thick branch-color border
         highlight: {
-          background: hexToRgba(branchColor, isDark ? 0.3 : 0.12),
+          background: isDark ? '#3a3a3c' : '#f2f2f7',
           border: branchColor
         }
       },
-      borderWidth: 2.5,
+      borderWidth: 3, // Thicker border matching branch lines
       shadow: {
         enabled: true,
-        color: hexToRgba(branchColor, isDark ? 0.2 : 0.1),
-        size: 6,
+        color: hexToRgba(branchColor, isDark ? 0.3 : 0.15), // Tinted glow matching branch
+        size: 8,
         x: 0,
         y: 3
       }
@@ -19648,27 +19648,27 @@ function getVisNodeOptions(node, isDark) {
       id: node.id,
       label: label,
       shape: 'box',
-      margin: { top: 8, bottom: 8, left: 12, right: 12 },
+      margin: { top: 6, bottom: 6, left: 10, right: 10 },
       font: {
-        size: 13,
+        size: 12,
         color: isDark ? '#e5e5ea' : '#3a3a3c',
         face: 'system-ui, -apple-system, sans-serif'
       },
       color: {
-        background: isDark ? '#242426' : '#ffffff',
-        border: hexToRgba(branchColor, 0.45),
+        background: isDark ? '#1c1c1e' : '#ffffff', // Simple clean details card
+        border: hexToRgba(branchColor, 0.45), // Thin branch border
         highlight: {
           background: isDark ? '#2c2c2e' : '#f2f2f7',
           border: branchColor
         }
       },
-      borderWidth: 1.5,
+      borderWidth: 1.2,
       shadow: {
         enabled: true,
-        color: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.05)',
-        size: 4,
+        color: 'rgba(0,0,0,0.04)', // Very subtle shadow
+        size: 3,
         x: 0,
-        y: 2
+        y: 1.5
       }
     };
   }
@@ -19912,24 +19912,34 @@ async function renderMermaidBlocks() {
             const targetNode = nodes.find(n => n.id === e.to);
             const branchColor = targetNode ? colors[targetNode.branchIndex % colors.length] : '#8e8e93';
             
-            // Width scales down with depth: Level 1 (from root) is thickest, Level 2 is medium, Level 3+ is thin
-            let width = 1.2;
+            // Width and spring length scale down with depth to match mockup branch thickness hierarchy
+            let width = 1.5;
+            let length = 50;
             if (targetNode) {
-              if (targetNode.level === 1) width = 3.5;
-              else if (targetNode.level === 2) width = 2.2;
+              if (targetNode.level === 1) {
+                width = 8.0;   // Very thick pipe for main idea branches
+                length = 110;  // Long spring to push main ideas away from center
+              } else if (targetNode.level === 2) {
+                width = 4.0;   // Medium pipe for sub-ideas
+                length = 65;   // Shorter spring to keep sub-ideas clustered
+              } else {
+                width = 1.5;   // Thin pipe for details
+                length = 50;   // Short spring for tight detail grouping
+              }
             }
             
             return {
               from: e.from,
               to: e.to,
               color: {
-                color: hexToRgba(branchColor, 0.8), // Slightly transparent line for elegance
+                color: branchColor, // Solid vibrant branch color to look like mockup pipes
                 highlight: branchColor,
                 hover: branchColor,
                 inherit: false
               },
               width: width,
-              hoverWidth: width + 1
+              hoverWidth: width + 1.5,
+              length: length // Override global spring length per edge
             };
           });
           
@@ -19953,16 +19963,16 @@ async function renderMermaidBlocks() {
             physics: {
               solver: 'forceAtlas2Based',
               forceAtlas2Based: {
-                gravitationalConstant: -220, // Increased repulsion to spread nodes out
-                centralGravity: 0.01,         // Slight gravity to keep it grouped
-                springLength: 130,            // Longer spring length for more spacing
-                springConstant: 0.05,
+                gravitationalConstant: -180, // Repulsion pushes different branches away
+                centralGravity: 0.015,        // Keeps it centered in canvas
+                springLength: 70,             // Default spring length fallback
+                springConstant: 0.09,         // Stronger springs pull nodes tightly together
                 avoidOverlap: 1.0
               },
               stabilization: {
                 enabled: true,
-                iterations: 150,
-                updateInterval: 25
+                iterations: 180,
+                updateInterval: 30
               }
             },
             interaction: {
