@@ -19831,6 +19831,148 @@ function showAILoading(typeLabel, textContext) {
 
   return { groupEl, queryText, assistantBubble };
 }
+// ==================== AI 精準上下文提取輔助函數 ====================
+
+/**
+ * 獲取當前邏輯章節的純文本內容。
+ * 利用 TTS 引擎已解析的 sentences 陣列精確過濾出 currentChapterIndex 對應的文本，
+ * 解決多個 TOC 條目共享同一 XHTML 文件時，#book-content 包含跨章內容的問題。
+ */
+function getCurrentChapterText() {
+  // 方法 1：利用 tts.sentences（最精確，每個句子都標記了所屬的 chapterIndex）
+  if (tts && tts.sentences && tts.sentences.length > 0) {
+    const chapterSentences = tts.sentences.filter(s => s.chapterIndex === currentChapterIndex);
+    if (chapterSentences.length > 0) {
+      return chapterSentences.map(s => s.text).join('\n');
+    }
+  }
+
+  // 方法 2：利用 DOM 中的 hash 錨點邊界手動截取子章節文本
+  const bookContentEl = document.getElementById('book-content');
+  if (!bookContentEl) return '';
+
+  if (epubBookData && epubBookData.chapters && currentChapterIndex >= 0) {
+    const currentChapter = epubBookData.chapters[currentChapterIndex];
+    if (currentChapter) {
+      // 找出同一物理文件的所有子章節
+      const siblings = [];
+      epubBookData.chapters.forEach((ch, idx) => {
+        if (ch.cleanHref === currentChapter.cleanHref) {
+          siblings.push({ chapter: ch, index: idx });
+        }
+      });
+
+      // 如果有多個子章節共用一個文件，需要精確截取
+      if (siblings.length > 1 && currentChapter.hash) {
+        const startAnchor = document.getElementById(currentChapter.hash) ||
+                            bookContentEl.querySelector(`[name="${currentChapter.hash.replace(/"/g, '\\"')}"]`);
+        if (startAnchor) {
+          // 找下一個子章節的錨點作為結束邊界
+          const currentSiblingIdx = siblings.findIndex(s => s.index === currentChapterIndex);
+          let endAnchor = null;
+          if (currentSiblingIdx >= 0 && currentSiblingIdx < siblings.length - 1) {
+            const nextSibling = siblings[currentSiblingIdx + 1];
+            if (nextSibling.chapter.hash) {
+              endAnchor = document.getElementById(nextSibling.chapter.hash) ||
+                          bookContentEl.querySelector(`[name="${nextSibling.chapter.hash.replace(/"/g, '\\"')}"]`);
+            }
+          }
+
+          // 收集 startAnchor 到 endAnchor 之間的所有文字
+          const texts = [];
+          const walker = document.createTreeWalker(bookContentEl, NodeFilter.SHOW_TEXT, null);
+          let inRange = false;
+          let node;
+          while ((node = walker.nextNode())) {
+            if (!inRange) {
+              if (startAnchor.contains(node) || startAnchor === node.parentNode ||
+                  startAnchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                inRange = true;
+              }
+            }
+            if (inRange) {
+              if (endAnchor && (endAnchor.contains(node) || endAnchor === node.parentNode ||
+                  endAnchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING ||
+                  endAnchor === node)) {
+                break;
+              }
+              const txt = node.textContent.trim();
+              if (txt) texts.push(txt);
+            }
+          }
+          if (texts.length > 0) {
+            return texts.join('\n');
+          }
+        }
+      }
+    }
+  }
+
+  // 方法 3：回退到清理後的整個 #book-content 文本
+  const clone = bookContentEl.cloneNode(true);
+  clone.querySelectorAll('script, style, noscript, iframe, link[rel="stylesheet"]').forEach(el => el.remove());
+  return clone.textContent.trim();
+}
+
+/**
+ * 獲取當前可見頁面的純文本內容。
+ * 在翻頁模式下，根據 currentPageIndex 計算可見視口範圍並提取對應句子；
+ * 在連續滾動模式下，提取視口範圍內可見的句子。
+ */
+function getCurrentPageText() {
+  const isPaginated = document.body.classList.contains('layout-paginated');
+
+  // 利用 TTS sentences 進行精準提取
+  if (tts && tts.sentences && tts.sentences.length > 0) {
+    const container = document.getElementById('reader-container');
+    const bookContentEl = document.getElementById('book-content');
+    if (!container || !bookContentEl) return getCurrentChapterText();
+
+    if (isPaginated) {
+      // 翻頁模式：根據 currentPageIndex 和容器寬度計算可見區域
+      const { containerWidth, columnGap } = getPaginatedPagesInfo();
+      if (containerWidth <= 0) return getCurrentChapterText();
+
+      const containerRect = container.getBoundingClientRect();
+      const paddingLeft = parseFloat(window.getComputedStyle(container).paddingLeft) || 0;
+      
+      // 可見區域的左右邊界（相對於 viewport）
+      const viewportLeft = containerRect.left + paddingLeft;
+      const viewportRight = viewportLeft + containerWidth;
+
+      const visibleTexts = [];
+      for (const sentence of tts.sentences) {
+        if (!sentence.element) continue;
+        const rect = sentence.element.getBoundingClientRect();
+        // 元素至少部分在可見視口內
+        if (rect.right > viewportLeft && rect.left < viewportRight && rect.height > 0) {
+          visibleTexts.push(sentence.text);
+        }
+      }
+      if (visibleTexts.length > 0) {
+        return visibleTexts.join('\n');
+      }
+    } else {
+      // 連續滾動模式：提取視口內可見的句子
+      const viewportTop = 0;
+      const viewportBottom = window.innerHeight;
+      const visibleTexts = [];
+      for (const sentence of tts.sentences) {
+        if (!sentence.element) continue;
+        const rect = sentence.element.getBoundingClientRect();
+        if (rect.bottom > viewportTop && rect.top < viewportBottom && rect.height > 0) {
+          visibleTexts.push(sentence.text);
+        }
+      }
+      if (visibleTexts.length > 0) {
+        return visibleTexts.join('\n');
+      }
+    }
+  }
+
+  // 回退：使用章節全文
+  return getCurrentChapterText();
+}
 
 // 向 AI 發送自定義提問
 async function sendCustomAIQuery() {
@@ -19893,46 +20035,84 @@ async function sendCustomAIQuery() {
     }
 
     let bookContext = '';
-    let isFullBookContext = false;
+    let contextScope = 'none'; // 'page' | 'chapter' | 'fullbook' | 'none'
     
-    // 判斷是否為針對全書的特定提問
+    // === 三層查詢分類 ===
+    // 層級 1：是否明確指向全書
     const isFullBookQuery = /全书|整本|整本书|全部章节|整个文件|全局/.test(query);
+    // 層級 2：是否明確指向當前頁面
+    const isPageQuery = /本页|当前页|这一页|这页|当前页面|该页|这页上/.test(query);
+    // 層級 3：是否指向當前章節或需要局部章節脈絡的操作
+    const isChapterQuery = /本章|当前章|这一章|这章|该章|这个章节|当前章节|本章节|这一节|这节|本节|当前节|总结|大纲|思维导图|脑图|核心观点|核心要点|结构|提纲|脉络|梳理/.test(query);
     
-    // 判斷是否為針對「本章」、「本頁」或需要局部章節脈絡的特定提問（包括總結、思維導圖等）
-    const isChapterOrPageQuery = /本章|当前章|这一章|这章|该章|这个章节|当前章节|本章节|这一节|这节|本节|当前节|本页|当前页|这一页|这页|当前页面|该页|总结|大纲|思维导图|脑图|核心观点|核心要点|结构|提纲|脉络/.test(query);
-    
-    const shouldDoFullBookSearch = bookChunksCache.length > 0 && (isFullBookQuery || !isChapterOrPageQuery);
-    
-    if (shouldDoFullBookSearch) {
-      // 進行全書檢索
-      const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
-      if (relevantChunks.length > 0) {
-        bookContext = relevantChunks.map((chunk, idx) => 
-          `[Source Context ${idx + 1}] (Chapter: "${chunk.chapterTitle}"):\n${chunk.text}\n`
-        ).join('\n');
-        isFullBookContext = true;
+    // 獲取當前章節標題（如果可用）
+    const currentChapterTitle = (epubBookData && epubBookData.chapters && epubBookData.chapters[currentChapterIndex])
+      ? epubBookData.chapters[currentChapterIndex].title
+      : '';
+
+    if (isFullBookQuery) {
+      // ===== 全書檢索模式 =====
+      if (bookChunksCache.length > 0) {
+        const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
+        if (relevantChunks.length > 0) {
+          bookContext = relevantChunks.map((chunk, idx) => 
+            `[Source Context ${idx + 1}] (Chapter: "${chunk.chapterTitle}"):\n${chunk.text}\n`
+          ).join('\n');
+          contextScope = 'fullbook';
+        }
+      }
+    } else if (isPageQuery) {
+      // ===== 當前頁面模式 =====
+      const pageText = getCurrentPageText();
+      if (pageText) {
+        bookContext = pageText.substring(0, 25000);
+        contextScope = 'page';
+      }
+    } else if (isChapterQuery) {
+      // ===== 當前章節模式 =====
+      const chapterText = getCurrentChapterText();
+      if (chapterText) {
+        bookContext = chapterText.substring(0, 25000);
+        contextScope = 'chapter';
+      }
+    } else {
+      // ===== 一般提問：優先嘗試全書檢索，回退到章節上下文 =====
+      if (bookChunksCache.length > 0) {
+        const relevantChunks = retrieveRelevantChunks(query, bookChunksCache, 4);
+        if (relevantChunks.length > 0) {
+          bookContext = relevantChunks.map((chunk, idx) => 
+            `[Source Context ${idx + 1}] (Chapter: "${chunk.chapterTitle}"):\n${chunk.text}\n`
+          ).join('\n');
+          contextScope = 'fullbook';
+        }
+      }
+      if (!bookContext) {
+        const chapterText = getCurrentChapterText();
+        if (chapterText) {
+          bookContext = chapterText.substring(0, 25000);
+          contextScope = 'chapter';
+        }
       }
     }
-    
-    if (!bookContext && bookContentEl) {
-      // 退回局部章節上下文，克隆並清理非文字標籤以防樣式表 CSS 污染上下文
-      const clone = bookContentEl.cloneNode(true);
-      clone.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
-      bookContext = clone.textContent.trim().substring(0, 25000);
-    }
 
+    // === 構建系統提示詞 ===
     let systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.\n';
     if (bookTitle) {
       systemPrompt += `Current Book: "${bookTitle}"\n`;
+    }
+    if (currentChapterTitle) {
+      systemPrompt += `Current Chapter: "${currentChapterTitle}"\n`;
     }
     if (activeSelectedTextContext) {
       systemPrompt += `\n[User's Highlighted/Selected Text Focus]\n"${activeSelectedTextContext}"\n[End of Highlighted Text]\n\nThe user has selected the specific portion of text above. Please focus your answer specifically on this selected text if the user's question relates to it.\n`;
     }
     if (bookContext) {
-      if (isFullBookContext) {
+      if (contextScope === 'fullbook') {
         systemPrompt += `\n[Relevant Paragraphs from the Entire Book]\n${bookContext}\n[End of Full Book Context]\n\nThe paragraphs above have been retrieved from the entire book using a TF-IDF semantic search for the user's query. Use them as the factual context to answer the user's question accurately and prevent hallucinations. Keep your answers grounded in these source texts.\n`;
-      } else {
-        systemPrompt += `\n[Current Chapter/Page Content Context]\n${bookContext}\n[End of Context]\n\nPlease use the above book context to answer any questions related to the book, this chapter, or this page. If the user\'s question is unrelated to the book, you can ignore the book context and answer generally.\n`;
+      } else if (contextScope === 'page') {
+        systemPrompt += `\n[Current Visible Page Content]\n${bookContext}\n[End of Current Page]\n\nThe above text is the exact content currently displayed on the user's screen (visible page). Use ONLY this text to answer the user's question about the current page. Do not invent or include content not shown above.\n`;
+      } else if (contextScope === 'chapter') {
+        systemPrompt += `\n[Current Chapter Content: "${currentChapterTitle || 'Untitled'}"]\n${bookContext}\n[End of Current Chapter]\n\nThe above text is the complete content of the current chapter the user is reading. Use ONLY this text to answer questions about this chapter. Do not invent or include content from other chapters.\n`;
       }
     }
 
