@@ -5535,7 +5535,7 @@ me-tpc {
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
         <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
-        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.2.1</span></div>
+        <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.2.2</span></div>
         
         <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
         
@@ -17731,10 +17731,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.2.1';
+            versionDisplay.textContent = 'v2.2.2';
           }
         } else {
-          versionDisplay.textContent = 'v2.2.1';
+          versionDisplay.textContent = 'v2.2.2';
         }
       }
       aboutDialog.showModal();
@@ -23868,6 +23868,31 @@ async function sendCustomAIQuery() {
       }
     }
 
+    // --- 檢查是否存在本地已生成的章節摘要，如果存在且提問是全局性/大綱/思維導圖/總結類的，則將章節摘要作為背景信息提供給 AI ---
+    let summaryContext = '';
+    const hasCachedSummaries = currentBook && currentBook.chapterSummaries && Object.keys(currentBook.chapterSummaries).length > 0;
+    const isSummarizationOrMapQuery = /思维导图|脑图|总结|大纲|提纲|结构|脉络|情节|人物关系|角色关系/.test(query) || isFullBookQuery;
+    
+    if (hasCachedSummaries && isSummarizationOrMapQuery) {
+      let compiledChapterSummaries = '';
+      const chapters = (epubBookData && epubBookData.chapters) ? epubBookData.chapters : [];
+      const isBuiltin = ai.provider === 'builtin';
+      
+      for (let i = 0; i < chapters.length; i++) {
+        if (currentBook.chapterSummaries[i]) {
+          let chSum = currentBook.chapterSummaries[i];
+          // 對於瀏覽器內置模型，限制單章摘要字數以防 context window 溢出
+          if (isBuiltin && chSum.length > 80) {
+            chSum = chSum.substring(0, 80) + '...';
+          }
+          compiledChapterSummaries += `[Chapter ${i + 1}: ${chapters[i].title}]\n${chSum}\n\n`;
+        }
+      }
+      if (compiledChapterSummaries) {
+        summaryContext = compiledChapterSummaries;
+      }
+    }
+
     // === 構建系統提示詞 ===
     let systemPrompt = 'You are a helpful reading assistant. Answer the user\'s questions about the book content or general questions. Respond in the language of the prompt.\n';
     if (bookTitle) {
@@ -23891,6 +23916,10 @@ async function sendCustomAIQuery() {
     
     if (cooccurrenceSummary) {
       systemPrompt += `\n${cooccurrenceSummary}\nUse the local entity co-occurrence mapping above to accurately link characters, events, and concepts. It represents the physical text association structure of the book. Make sure your relationship and character descriptions align with these findings.\n`;
+    }
+
+    if (summaryContext) {
+      systemPrompt += `\n[Chapter-by-Chapter Summaries (Factual Foundation)]\n${summaryContext}\n[End of Chapter Summaries]\n\nThe summaries above describe each chapter of the book in detail. Use them as the factual foundation to answer the user's request (e.g., generating a mindmap, summary, outline, or plot structure). Ensure your response matches these chapter descriptions exactly.\n`;
     }
 
     // 發送後清除針對性選取上下文並隱藏提示欄

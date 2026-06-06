@@ -54,7 +54,7 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.2.1)
+## 🔄 Recent Updates & Optimizations (v2.2.2)
 
 *   **Precision AI Context Extraction**:
     - Overhauled the AI Reading Assistant's context extraction logic, supporting three-tier query classification (Global/Full-Book, Current Chapter, Current Page).
