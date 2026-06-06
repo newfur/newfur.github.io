@@ -54,7 +54,23 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.0.3)
+## 🔄 Recent Updates & Optimizations (v2.1.0)
+
+*   **Precision AI Context Extraction**:
+    - Overhauled the AI Reading Assistant's context extraction logic, supporting three-tier query classification (Global/Full-Book, Current Chapter, Current Page).
+    - Current page context extraction supports visible sentence/paragraph recognition in both double-page paginated layout and continuous scrolling viewports, avoiding context boundaries overflow or truncation.
+    - Current chapter extraction supports precise anchor boundaries detection when multiple sub-chapters share the same XHTML file, automatically stripping inline scripts/styles.
+*   **Mermaid Mindmaps Interaction & Display Optimization**:
+    - Restrained Mermaid DOM query and error blocks scanning to `#ai-content` and deferred rendering using a `MutationObserver` on `#ai-panel` until it is opened/visible, completely resolving the issue where mermaid syntax error blocks polluted the main reading page.
+    - Added zoom, pan, responsive auto-resizing, and double-click reset actions to the mindmap container.
+    - Resolved the issue where AI-generated mindmaps were not saved/persisted when exiting and re-entering a book or refreshing the page by persisting raw Mermaid source text to the database.
+*   **Layout Settings & Local Model Enhancements**:
+    - Set the default value of the "Column Count" layout setting to "Auto Adaptive".
+    - Improved local cross-origin (CORS) prompt and fallback tolerances when calling Ollama models in the standalone offline HTML version, allowing seamless connection to local LLMs.
+
+---
+
+## 🔄 Historical Updates (v2.0.3)
 
 *   **AI Assistant Prompt Template Editing & Management**:
     - Moved the prompt template configuration interface directly into the AI Reading Assistant panel, merging custom templates with default ones.

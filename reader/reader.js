@@ -1531,10 +1531,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.0.3';
+            versionDisplay.textContent = 'v2.1.0';
           }
         } else {
-          versionDisplay.textContent = 'v2.0.3';
+          versionDisplay.textContent = 'v2.1.0';
         }
       }
       aboutDialog.showModal();
