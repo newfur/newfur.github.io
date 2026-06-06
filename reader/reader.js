@@ -6042,8 +6042,162 @@ function formatMarkdown(text) {
       });
       resArr.push(`  </div>`);
     }
-    resArr.push(`</div>`);
+// Helper to wrap Mermaid text to prevent overlapping node boundaries
+function wrapMermaidText(text, maxLen = 10) {
+  if (!text || text.length <= maxLen) return text;
+
+  const isCJK = (char) => {
+    const code = char.charCodeAt(0);
+    return (code >= 0x4E00 && code <= 0x9FFF) || 
+           (code >= 0x3400 && code <= 0x4DBF) || 
+           (code >= 0xF900 && code <= 0xFAFF) || 
+           (code >= 0x3040 && code <= 0x309F) || 
+           (code >= 0x30A0 && code <= 0x30FF) || 
+           (code >= 0xac00 && code <= 0xd7af);
+  };
+
+  let result = '';
+  let lineLen = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '\n') {
+      result += '\n';
+      lineLen = 0;
+      continue;
+    }
+
+    result += char;
+    lineLen += isCJK(char) ? 2 : 1;
+
+    if (lineLen >= maxLen * 2) {
+      if (i + 1 < text.length) {
+        const nextChar = text[i + 1];
+        if (nextChar === ' ') {
+          result += '\n';
+          lineLen = 0;
+          i++; 
+        } else if (isCJK(char) || isCJK(nextChar)) {
+          result += '\n';
+          lineLen = 0;
+        } else {
+          let hasSpaceSoon = false;
+          for (let j = 1; j <= 5; j++) {
+            if (i + j < text.length && text[i + j] === ' ') {
+              hasSpaceSoon = true;
+              break;
+            }
+          }
+          if (!hasSpaceSoon) {
+            result += '\n';
+            lineLen = 0;
+          }
+        }
+      }
+    }
   }
+
+  return result.replace(/\n+/g, '\n').trim();
+}
+
+// Preprocessor for Mermaid mindmap code to resolve overlaps and mixed-syntax errors
+function preprocessMermaidMindmap(code) {
+  const lines = code.split('\n');
+  const processedLines = [];
+  let isMindmap = false;
+  let nodeCounter = 0;
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      processedLines.push(line);
+      continue;
+    }
+
+    if (trimmed === 'mindmap' || trimmed.startsWith('mindmap ')) {
+      isMindmap = true;
+      processedLines.push(line);
+      continue;
+    }
+
+    if (!isMindmap) {
+      processedLines.push(line);
+      continue;
+    }
+
+    if (trimmed.startsWith('%%') || trimmed.startsWith('---')) {
+      processedLines.push(line);
+      continue;
+    }
+
+    if (trimmed.toLowerCase() === 'end') {
+      continue;
+    }
+
+    const indentMatch = line.match(/^(\s*)/);
+    const indent = indentMatch ? indentMatch[1] : '';
+
+    let text = trimmed;
+    if (text.toLowerCase().startsWith('subgraph ')) {
+      text = text.substring(9).trim();
+    }
+
+    let shapeOpen = '';
+    let shapeClose = '';
+
+    const hasSpaceBefore = (char) => {
+      const idx = text.indexOf(char);
+      if (idx === -1) return true;
+      return text.substring(0, idx).trim().includes(' ');
+    };
+
+    if (text.includes('((') && text.endsWith('))') && !hasSpaceBefore('((')) {
+      const idx = text.indexOf('((');
+      text = text.substring(idx + 2, text.length - 2);
+      shapeOpen = '(("`';
+      shapeClose = '`"))';
+    } else if (text.includes('(') && text.endsWith(')') && !hasSpaceBefore('(')) {
+      const idx = text.indexOf('(');
+      text = text.substring(idx + 1, text.length - 1);
+      shapeOpen = '("`';
+      shapeClose = '`")';
+    } else if (text.includes('[') && text.endsWith(']') && !hasSpaceBefore('[')) {
+      const idx = text.indexOf('[');
+      text = text.substring(idx + 1, text.length - 1);
+      shapeOpen = '["`';
+      shapeClose = '`"]';
+    } else if (text.includes('{{') && text.endsWith('}}') && !hasSpaceBefore('{{')) {
+      const idx = text.indexOf('{{');
+      text = text.substring(idx + 2, text.length - 2);
+      shapeOpen = '{"`';
+      shapeClose = '`"}';
+    } else if (text.includes(')') && text.endsWith('(') && !hasSpaceBefore(')')) {
+      const idx = text.indexOf(')');
+      text = text.substring(idx + 1, text.length - 1);
+      shapeOpen = ')"`';
+      shapeClose = '`(';
+    } else {
+      if (indent.length <= 2) {
+        shapeOpen = '(("`';
+        shapeClose = '`"))';
+      } else {
+        shapeOpen = '("`';
+        shapeClose = '`")';
+      }
+    }
+
+    text = text.replace(/^"`|`$/g, '').replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
+    text = text.replace(/`/g, "'");
+
+    const wrappedText = wrapMermaidText(text, 10);
+
+    nodeCounter++;
+    const nodeId = 'node_' + nodeCounter;
+
+    processedLines.push(`${indent}${nodeId}${shapeOpen}${wrappedText}${shapeClose}`);
+  }
+
+  return processedLines.join('\n');
 }
 
 let mermaidLoaded = false;
@@ -6139,8 +6293,24 @@ async function renderMermaidBlocks() {
       
       // Auto-inject layout configuration for mindmap blocks to prevent nodes overlapping
       if (code.startsWith('mindmap') || code.includes('\nmindmap')) {
+        // Run preprocessing to wrap text, clean subgraphs/ends, and assign safe node IDs
+        code = preprocessMermaidMindmap(code);
+        
+        // Count nodes to determine spacing dynamically
+        const nodeCount = (code.match(/node_\d+/g) || []).length;
+        let nodeSpacing = 120;
+        let rankSpacing = 90;
+        
+        if (nodeCount > 30) {
+          nodeSpacing = 160;
+          rankSpacing = 120;
+        } else if (nodeCount > 15) {
+          nodeSpacing = 140;
+          rankSpacing = 100;
+        }
+        
         if (!code.includes('%%{init') && !code.startsWith('---')) {
-          code = `%%{init: { "mindmap": { "nodeSpacing": 120, "rankSpacing": 90, "padding": 15 } } }%%\n` + code;
+          code = `%%{init: { "mindmap": { "nodeSpacing": ${nodeSpacing}, "rankSpacing": ${rankSpacing}, "padding": 15 } } }%%\n` + code;
         }
       }
       
