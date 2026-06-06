@@ -31,6 +31,15 @@ if (!chrome.storage) {
   };
 }
 
+// Pre-initialize mermaid to disable automatic scan on window load event
+if (typeof mermaid !== 'undefined') {
+  try {
+    mermaid.initialize({ startOnLoad: false });
+  } catch (e) {
+    console.warn('Failed to pre-initialize mermaid:', e);
+  }
+}
+
 import { BookLibrary } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
@@ -6094,7 +6103,7 @@ async function renderMermaidBlocks() {
       const code = container.textContent.trim();
       try {
         const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
-        const { svg } = await mermaid.render(id, code);
+        const { svg } = await mermaid.render(id, code, container);
         container.innerHTML = svg;
         setupMermaidPanZoom(container);
       } catch (err) {
