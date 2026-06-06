@@ -757,13 +757,13 @@
     "message": "本章思維導圖"
   },
   "ai_suggest_chapter_map_prt": {
-    "message": "請梳理當前章節的內容結構，輸出一份 Mermaid mindmap 思維導圖。嚴格要求：1) 必須以 ```mermaid 代碼塊包裹；2) 第一行寫 mindmap；3) 純縮進表示層級，禁止使用箭頭 -->、::icon()、subgraph 等語法；4) 節點文字不要包含括號或特殊符號；5) 參考格式：mindmap\n  root(主題)\n    分支1\n      子節點 A\n      子節點 B\n    分支2\n      子節點 C"
+    "message": "請梳理當前章節的內容結構，輸出一份 Mermaid mindmap 思維導圖。嚴格要求：1) 必須以 ```mermaid 代碼塊包裹；2) 第一行寫 mindmap；3) 純縮進表示層級，禁止使用箭頭 -->、::icon()、subgraph 等語法；4) 節點文字不要包含括號或特殊符號；5) 節點文字必須非常簡短（建議不超過 10 個字，最好 2-4 個字），絕對不要輸出長句或段落以防止節點重疊；6) 參考格式：mindmap\n  root(主題)\n    分支1\n      子節點 A\n      子節點 B\n    分支2\n      子節點 C"
   },
   "ai_suggest_book_map_lbl": {
     "message": "全書思維導圖"
   },
   "ai_suggest_book_map_prt": {
-    "message": "請結合全書檢索到的脈絡，梳理本書的整體架構與核心章節邏輯，輸出一份 Mermaid mindmap 思維導圖。嚴格要求：1) 必須以 ```mermaid 代碼塊包裹；2) 第一行寫 mindmap；3) 純縮進表示層級，禁止使用箭頭 -->、::icon()、subgraph 等語法；4) 節點文字不要包含括號或特殊符號；5) 參考格式：mindmap\n  root(書名)\n    第一部分\n      要點1\n      要點2\n    第二部分\n      要點3"
+    "message": "請結合全書檢索到的脈絡，梳理本書的整體架構與核心章節邏輯，輸出一份 Mermaid mindmap 思維導圖。嚴格要求：1) 必須以 ```mermaid 代碼塊包裹；2) 第一行寫 mindmap；3) 純縮進表示層級，禁止使用箭頭 -->、::icon()、subgraph 等語法；4) 節點文字不要包含括號或特殊符號；5) 節點文字必須非常簡短（建議不超過 10 個字，最好 2-4 個字），絕對不要輸出長句或段落以防止節點重疊；6) 參考格式：mindmap\n  root(書名)\n    第一部分\n      要點1\n      要點2\n    第二部分\n      要點3"
   },
   "ai_suggest_takeaways_lbl": {
     "message": "核心要點"

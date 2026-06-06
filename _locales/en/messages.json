@@ -760,13 +760,13 @@
     "message": "Chapter Mind Map"
   },
   "ai_suggest_chapter_map_prt": {
-    "message": "Please structure the content of the current chapter and output a Mermaid mindmap diagram. Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Reference format: mindmap\n  root(Topic)\n    Branch 1\n      Point A\n      Point B\n    Branch 2\n      Point C"
+    "message": "Please structure the content of the current chapter and output a Mermaid mindmap diagram. Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Keep node text extremely brief (recommended 2-5 words/characters, maximum 10) and avoid long sentences to prevent node overlapping; 6) Reference format: mindmap\n  root(Topic)\n    Branch 1\n      Point A\n      Point B\n    Branch 2\n      Point C"
   },
   "ai_suggest_book_map_lbl": {
     "message": "Book Mind Map"
   },
   "ai_suggest_book_map_prt": {
-    "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic, and output a Mermaid mindmap diagram. Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Reference format: mindmap\n  root(Book Title)\n    Part 1\n      Key Point 1\n      Key Point 2\n    Part 2\n      Key Point 3"
+    "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic, and output a Mermaid mindmap diagram. Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Keep node text extremely brief (recommended 2-5 words/characters, maximum 10) and avoid long sentences to prevent node overlapping; 6) Reference format: mindmap\n  root(Book Title)\n    Part 1\n      Key Point 1\n      Key Point 2\n    Part 2\n      Key Point 3"
   },
   "ai_suggest_takeaways_lbl": {
     "message": "Key Takeaways"

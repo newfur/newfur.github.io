@@ -757,13 +757,13 @@
     "message": "本章思维导图"
   },
   "ai_suggest_chapter_map_prt": {
-    "message": "请梳理当前章节的内容结构，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 参考格式：mindmap\n  root(主题)\n    分支1\n      子节点A\n      子节点B\n    分支2\n      子节点C"
+    "message": "请梳理当前章节的内容结构，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 节点文本必须非常简短（建议不超过 10 个字，最好 2-4 个字），绝对不要输出长句或段落以防止节点重叠；6) 参考格式：mindmap\n  root(主题)\n    分支1\n      子节点A\n      子节点B\n    分支2\n      子节点C"
   },
   "ai_suggest_book_map_lbl": {
     "message": "全书思维导图"
   },
   "ai_suggest_book_map_prt": {
-    "message": "请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 参考格式：mindmap\n  root(书名)\n    第一部分\n      要点1\n      要点2\n    第二部分\n      要点3"
+    "message": "请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 节点文本必须非常简短（建议不超过 10 个字，最好 2-4 个字），绝对不要输出长句或段落以防止节点重叠；6) 参考格式：mindmap\n  root(书名)\n    第一部分\n      要点1\n      要点2\n    第二部分\n      要点3"
   },
   "ai_suggest_takeaways_lbl": {
     "message": "核心要点"

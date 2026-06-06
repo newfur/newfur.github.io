@@ -34,7 +34,15 @@ if (!chrome.storage) {
 // Pre-initialize mermaid to disable automatic scan on window load event
 if (typeof mermaid !== 'undefined') {
   try {
-    mermaid.initialize({ startOnLoad: false });
+    mermaid.initialize({
+      startOnLoad: false,
+      mindmap: {
+        useMaxWidth: false,
+        nodeSpacing: 120,
+        rankSpacing: 90,
+        padding: 15
+      }
+    });
   } catch (e) {
     console.warn('Failed to pre-initialize mermaid:', e);
   }
@@ -6112,7 +6120,13 @@ async function renderMermaidBlocks() {
       mermaid.initialize({
         startOnLoad: false,
         theme: document.body.classList.contains('theme-dark') ? 'dark' : 'default',
-        securityLevel: 'loose'
+        securityLevel: 'loose',
+        mindmap: {
+          useMaxWidth: false,
+          nodeSpacing: 120,
+          rankSpacing: 90,
+          padding: 15
+        }
       });
     }
   }
@@ -6121,7 +6135,15 @@ async function renderMermaidBlocks() {
     // 逐個容器渲染，單個失敗不影響其他
     for (const container of containers) {
       container.setAttribute('data-processed', 'true');
-      const code = container.textContent.trim();
+      let code = container.textContent.trim();
+      
+      // Auto-inject layout configuration for mindmap blocks to prevent nodes overlapping
+      if (code.startsWith('mindmap') || code.includes('\nmindmap')) {
+        if (!code.includes('%%{init') && !code.startsWith('---')) {
+          code = `%%{init: { "mindmap": { "nodeSpacing": 120, "rankSpacing": 90, "padding": 15 } } }%%\n` + code;
+        }
+      }
+      
       try {
         const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
         const { svg } = await mermaid.render(id, code, container);
@@ -6336,13 +6358,13 @@ function getAISuggestions() {
       key: 'ai_suggest_chapter_map',
       icon: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3zM6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z"></path><path d="M18 8h-3v8h3M6 8h3v8H6"></path></svg>',
       label: getMsg('ai_suggest_chapter_map_lbl') || '本章思维导图',
-      prompt: getMsg('ai_suggest_chapter_map_prt') || '请梳理当前章节的内容结构，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 参考格式：mindmap\n  root(主题)\n    分支1\n      子节点A\n      子节点B\n    分支2\n      子节点C'
+      prompt: getMsg('ai_suggest_chapter_map_prt') || '请梳理当前章节的内容结构，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 节点文本必须非常简短（建议不超过 10 个字，最好 2-4 个字），绝对不要输出长句或段落以防止节点重叠；6) 参考格式：mindmap\n  root(主题)\n    分支1\n      子节点A\n      子节点B\n    分支2\n      子节点C'
     },
     {
       key: 'ai_suggest_book_map',
       icon: '<svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
       label: getMsg('ai_suggest_book_map_lbl') || '全书思维导图',
-      prompt: getMsg('ai_suggest_book_map_prt') || '请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 参考格式：mindmap\n  root(书名)\n    第一部分\n      要点1\n      要点2\n    第二部分\n      要点3'
+      prompt: getMsg('ai_suggest_book_map_prt') || '请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，输出一份 Mermaid mindmap 思维导图。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 节点文本必须非常简短（建议不超过 10 个字，最好 2-4 个字），绝对不要输出长句或段落以防止节点重叠；6) 参考格式：mindmap\n  root(书名)\n    第一部分\n      要点1\n      要点2\n    第二部分\n      要点3'
     },
     {
       key: 'ai_suggest_takeaways',
