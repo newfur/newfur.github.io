@@ -355,7 +355,7 @@ export class EpubParser {
       }
     }
 
-    // 2. 處理 CSS 樣式表
+    // 2. 處理 CSS 樣式表 (進行 CSS 隔離，防止書籍樣式污染全域 body/html)
     const stylesheets = doc.querySelectorAll('link[rel="stylesheet"]');
     for (const link of stylesheets) {
       const href = link.getAttribute('href');
@@ -365,7 +365,8 @@ export class EpubParser {
         if (cssFile) {
           try {
             const cssText = await cssFile.async('string');
-            const cssBlob = new Blob([cssText], { type: 'text/css' });
+            const scopedCss = this._scopeCSS(cssText, '.book-content');
+            const cssBlob = new Blob([scopedCss], { type: 'text/css' });
             const cssUrl = URL.createObjectURL(cssBlob);
             this.resourceUrls.push(cssUrl);
             link.setAttribute('href', cssUrl);
@@ -400,13 +401,112 @@ export class EpubParser {
       }
     });
 
-    // 提取 head 中的所有樣式標籤 (link / style) 並前置於 body.innerHTML，以加載書籍原有排版
-    const headStyles = doc.querySelectorAll('head link[rel="stylesheet"], head style');
+    // 提取並隔離所有樣式標籤 (link / style)，防止書籍內部樣式污染全域 body/html/div 等
+    const styleElements = doc.querySelectorAll('link[rel="stylesheet"], style');
     let stylesHtml = '';
-    headStyles.forEach(style => {
-      stylesHtml += style.outerHTML + '\n';
+    styleElements.forEach(style => {
+      if (style.tagName.toLowerCase() === 'style') {
+        const cssText = style.textContent;
+        const scopedCssText = this._scopeCSS(cssText, '.book-content');
+        stylesHtml += `<style>${scopedCssText}</style>\n`;
+        style.remove(); // 從 DOM 中移除，防止 body.innerHTML 中殘留未被隔離的原始樣式
+      } else if (style.tagName.toLowerCase() === 'link') {
+        stylesHtml += style.outerHTML + '\n';
+        style.remove();
+      }
     });
 
     return stylesHtml + body.innerHTML;
+  }
+
+  // CSS 隔離助手函數：利用狀態機解析 CSS，以便正確處理 @media/keyframes 嵌套大括號
+  _scopeCSS(cssText, scopeSelector = '.book-content') {
+    if (!cssText) return '';
+    
+    // 1. 移除註釋
+    let cleanCss = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
+    
+    // 2. 解析 CSS
+    let result = '';
+    let i = 0;
+    const len = cleanCss.length;
+    let buffer = '';
+    let braceDepth = 0;
+    let inKeyframes = false;
+    
+    while (i < len) {
+      const char = cleanCss[i];
+      
+      if (char === '{') {
+        braceDepth++;
+        if (braceDepth === 1) {
+          let selector = buffer.trim();
+          buffer = '';
+          if (selector.startsWith('@')) {
+            result += selector + ' {';
+            if (selector.toLowerCase().includes('keyframes')) {
+              inKeyframes = true;
+            }
+          } else {
+            const scopedSelector = this._scopeSelectorList(selector, scopeSelector);
+            result += scopedSelector + ' {';
+          }
+        } else {
+          let content = buffer.trim();
+          buffer = '';
+          if (braceDepth === 2 && !inKeyframes) {
+            const scopedSelector = this._scopeSelectorList(content, scopeSelector);
+            result += scopedSelector + ' {';
+          } else {
+            result += content + ' {';
+          }
+        }
+      } else if (char === '}') {
+        braceDepth--;
+        result += buffer.trim() + ' }';
+        buffer = '';
+        if (braceDepth === 0) {
+          inKeyframes = false;
+        }
+      } else {
+        buffer += char;
+      }
+      i++;
+    }
+    
+    result += buffer.trim();
+    return result;
+  }
+
+  // 輔助函數：將選擇器列表（逗號分隔）中的每個選擇器進行 scope 化
+  _scopeSelectorList(selectorList, scopeSelector) {
+    return selectorList.split(',')
+      .map(sel => {
+        let trimmed = sel.trim();
+        if (!trimmed) return '';
+        
+        const lower = trimmed.toLowerCase();
+        if (lower === 'body' || lower === 'html' || lower === ':root') {
+          return scopeSelector;
+        }
+        
+        if (lower.startsWith('body ') || lower.startsWith('body.')) {
+          return scopeSelector + trimmed.substring(4);
+        }
+        if (lower.startsWith('html ') || lower.startsWith('html.')) {
+          return scopeSelector + trimmed.substring(4);
+        }
+        if (lower.startsWith(':root ') || lower.startsWith(':root.')) {
+          return scopeSelector + trimmed.substring(5);
+        }
+        
+        if (trimmed.includes(scopeSelector)) {
+          return trimmed;
+        }
+        
+        return `${scopeSelector} ${trimmed}`;
+      })
+      .filter(Boolean)
+      .join(', ');
   }
 }
