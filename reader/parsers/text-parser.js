@@ -5,7 +5,7 @@ export class TextParser {
   constructor(fileBlob, format) {
     this.fileBlob = fileBlob;
     this.format = format.toLowerCase();
-    this.title = this.fileBlob.name.replace(/\.[a-z0-9]+$/i, '');
+    this.title = (this.fileBlob && this.fileBlob.name) ? this.fileBlob.name.replace(/\.[a-z0-9]+$/i, '') : 'Unknown Text';
     this.author = 'Unknown Author';
   }
 

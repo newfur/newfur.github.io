@@ -2404,7 +2404,21 @@ async function openBook(id) {
 
   // 清理舊的資源 Object URL 與預載快取
   clearResourceUrls();
-  prefetchedChapterCache = null;
+  // 自動修復：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），將其轉換並保存回資料庫，防止解析時 crash
+  if (book.file && !(book.file instanceof File) && !book.file.name) {
+    console.log('[openBook] Automatically repairing plain Blob file to File object for book:', book.title);
+    const fileName = book.title ? `${book.title}.${book.format}` : `${book.id}.${book.format}`;
+    book.file = new File([book.file], fileName, { type: book.file.type });
+    try {
+      await library._ensureOpen();
+      const transaction = library.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      store.put(book);
+      console.log('[openBook] Book file repaired and saved successfully.');
+    } catch (e) {
+      console.error('[openBook] Failed to save repaired book file:', e);
+    }
+  }
 
   currentBook = book;
   currentChapterIndex = book.progress?.chapterIndex || 0;
@@ -8493,12 +8507,18 @@ function handleImportBackup(e) {
             coverBlobOrString = b.coverValue;
           }
 
+          let fileObj = fileBlob;
+          if (fileBlob && !(fileBlob instanceof File)) {
+            const fileName = b.title ? `${b.title}.${b.format}` : `${b.id}.${b.format}`;
+            fileObj = new File([fileBlob], fileName, { type: fileBlob.type });
+          }
+
           const book = {
             id: b.id,
             title: b.title,
             author: b.author,
             format: b.format,
-            file: fileBlob,
+            file: fileObj,
             cover: coverBlobOrString,
             folder: b.folder || null,
             size: b.size,
@@ -8579,12 +8599,18 @@ function handleImportBackup(e) {
             coverBlobOrString = dataURLtoBlob(b.cover);
           }
 
+          let fileObj = fileBlob;
+          if (fileBlob && !(fileBlob instanceof File)) {
+            const fileName = b.title ? `${b.title}.${b.format}` : `${b.id}.${b.format}`;
+            fileObj = new File([fileBlob], fileName, { type: fileBlob.type });
+          }
+
           const book = {
             id: b.id,
             title: b.title,
             author: b.author,
             format: b.format,
-            file: fileBlob,
+            file: fileObj,
             cover: coverBlobOrString,
             size: b.size,
             addedAt: b.addedAt,

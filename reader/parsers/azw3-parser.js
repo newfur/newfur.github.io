@@ -222,7 +222,7 @@ export class Azw3Parser {
   async parse() {
     this.arrayBuffer = await this.fileBlob.arrayBuffer();
     this.view = new DataView(this.arrayBuffer);
-    this.title = this.fileBlob.name.replace(/\.(mobi|azw3)$/i, '');
+    this.title = (this.fileBlob && this.fileBlob.name) ? this.fileBlob.name.replace(/\.(mobi|azw3)$/i, '') : 'Unknown MOBI Book';
 
     // 1. 解析 PDB 頭資訊
     const numRecords = this.view.getUint16(76);

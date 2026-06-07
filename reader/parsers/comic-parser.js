@@ -4,7 +4,7 @@
 export class ComicParser {
   constructor(fileBlob) {
     this.fileBlob = fileBlob;
-    this.title = this.fileBlob.name.replace(/\.cbz$/i, '');
+    this.title = (this.fileBlob && this.fileBlob.name) ? this.fileBlob.name.replace(/\.cbz$/i, '') : 'Unknown Comic';
     this.zip = null;
     this.pages = []; // 存儲每個圖片的 href/文件名
   }
