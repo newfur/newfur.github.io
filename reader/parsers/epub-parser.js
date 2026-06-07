@@ -433,6 +433,7 @@ export class EpubParser {
     let buffer = '';
     let braceDepth = 0;
     let inKeyframes = false;
+    let isGlobalLayoutSelector = false; // 記錄當前規則塊是否屬於 body / html / :root 選擇器
     
     while (i < len) {
       const char = cleanCss[i];
@@ -442,6 +443,12 @@ export class EpubParser {
         if (braceDepth === 1) {
           let selector = buffer.trim();
           buffer = '';
+          
+          // 判斷是否為全局排版選擇器
+          const lowerSel = selector.toLowerCase();
+          isGlobalLayoutSelector = (lowerSel === 'body' || lowerSel === 'html' || lowerSel === ':root' || 
+                                    lowerSel.startsWith('body ') || lowerSel.startsWith('html ') || lowerSel.startsWith(':root '));
+          
           if (selector.startsWith('@')) {
             result += selector + ' {';
             if (selector.toLowerCase().includes('keyframes')) {
@@ -455,6 +462,10 @@ export class EpubParser {
           let content = buffer.trim();
           buffer = '';
           if (braceDepth === 2 && !inKeyframes) {
+            const lowerSel = content.toLowerCase();
+            isGlobalLayoutSelector = (lowerSel === 'body' || lowerSel === 'html' || lowerSel === ':root' || 
+                                      lowerSel.startsWith('body ') || lowerSel.startsWith('html ') || lowerSel.startsWith(':root '));
+            
             const scopedSelector = this._scopeSelectorList(content, scopeSelector);
             result += scopedSelector + ' {';
           } else {
@@ -463,10 +474,18 @@ export class EpubParser {
         }
       } else if (char === '}') {
         braceDepth--;
-        result += buffer.trim() + ' }';
+        let rulesText = buffer.trim();
+        
+        // 如果是 body/html/:root 選擇器的規則塊，過濾掉 margin 和 padding 屬性，防範書籍重疊外邊距
+        if (isGlobalLayoutSelector && rulesText) {
+          rulesText = this._filterMarginsAndPaddings(rulesText);
+        }
+        
+        result += rulesText + ' }';
         buffer = '';
         if (braceDepth === 0) {
           inKeyframes = false;
+          isGlobalLayoutSelector = false;
         }
       } else {
         buffer += char;
@@ -476,6 +495,27 @@ export class EpubParser {
     
     result += buffer.trim();
     return result;
+  }
+
+  // 過濾掉規則文字中的 margin 與 padding 宣告
+  _filterMarginsAndPaddings(rulesText) {
+    return rulesText.split(';')
+      .map(decl => {
+        const trimmed = decl.trim();
+        if (!trimmed) return '';
+        
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx === -1) return decl;
+        
+        const propName = trimmed.substring(0, colonIdx).trim().toLowerCase();
+        // 如果屬性是 margin 或 padding 相關的，丟棄它以防止疊加邊距
+        if (propName.startsWith('margin') || propName.startsWith('padding')) {
+          return '';
+        }
+        return decl;
+      })
+      .filter(Boolean)
+      .join(';');
   }
 
   // 輔助函數：將選擇器列表（逗號分隔）中的每個選擇器進行 scope 化
