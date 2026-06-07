@@ -54,7 +54,15 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 
 ---
 
-## 🔄 最近更新與優化 (v2.2.8)
+## 🔄 最近更新與優化 (v2.2.9)
+
+*   **修復書庫備份還原後閱讀時間重複累計的 Bug**：
+    - 重構了 `importBook()` 中的閱讀統計合併策略：對於同一天（`readingDays`）及同一小時（`hourlyDist`）的閱讀秒數，由原先的「直接相加」改為取兩份資料中的「最大値（max）」，避免同一段閱讀時間因備份還原被重複計入。
+    - `totalTime` 改為從合併後的 `readingDays` 逐日重新彙總計算，確保總時間與每日明細完全一致，杜絕虚報。
+
+---
+
+## 🔄 歷史更新 (v2.2.8)
 
 *   **修復 TTS 背景預加載斷句與正文 DOM 斷句不一致導致高亮錯位的 Bug**：
     - 重構了 `_extractSentencesFromHtml()` 函數，不再將 HTML 的 TEXT 節點孤立切分，而是採用與 `prepareContainer()` 相同的 DOM 遍歷和分塊合併邏輯，支援跨行內元素合併未結束的句子。

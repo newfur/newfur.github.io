@@ -54,7 +54,15 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.2.8)
+## 🔄 Recent Updates & Optimizations (v2.2.9)
+
+*   **Fixed reading time double-counting after library backup & restore**:
+    - Refactored the reading stats merge in `importBook()`: for the same calendar day (`readingDays`) or the same hour (`hourlyDist`), the merge now takes the **maximum** of the two values instead of naively adding them together, preventing the same reading session from being counted twice when restoring a backup from the same device.
+    - `totalTime` is now **recalculated** by summing the merged `readingDays` entries rather than adding the two stored totals, guaranteeing the aggregate is always consistent with the per-day breakdown and cannot be artificially inflated.
+
+---
+
+## 🔄 Historical Updates (v2.2.8)
 
 *   **Fixed misalignment of TTS highlighting caused by sentence count mismatch in asynchronous pre-fetching**:
     - Refactored `_extractSentencesFromHtml()` to traverse the parsed DOM document tree using the exact same inline grouping algorithm as `prepareContainer()`, merging text nodes across formatting elements (spans, anchors, bold, italics, etc.).

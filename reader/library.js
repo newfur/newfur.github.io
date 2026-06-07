@@ -175,22 +175,32 @@ export class BookLibrary {
       }
 
       // 合併閱讀統計資訊
-      const mergedStats = {
-        totalTime: (existingBook.stats?.totalTime || 0) + (backupBook.stats?.totalTime || 0),
-        readingDays: { ...(existingBook.stats?.readingDays || {}) },
-        hourlyDist: { ...(existingBook.stats?.hourlyDist || {}) }
-      };
-
+      // 策略：同一天的閱讀時間取兩份資料中的「最大值」而非直接相加，
+      //       以防備份-還原後同一段閱讀時間被重複累計（例如同設備備份後還原）。
+      //       hourlyDist 同理，同一個小時取最大值。
+      //       totalTime 最後從合併後的 readingDays 重新加總，確保與明細一致。
+      const mergedReadingDays = { ...(existingBook.stats?.readingDays || {}) };
       if (backupBook.stats?.readingDays) {
         for (const [date, sec] of Object.entries(backupBook.stats.readingDays)) {
-          mergedStats.readingDays[date] = (mergedStats.readingDays[date] || 0) + sec;
+          mergedReadingDays[date] = Math.max(mergedReadingDays[date] || 0, sec);
         }
       }
+
+      const mergedHourlyDist = { ...(existingBook.stats?.hourlyDist || {}) };
       if (backupBook.stats?.hourlyDist) {
         for (const [hour, sec] of Object.entries(backupBook.stats.hourlyDist)) {
-          mergedStats.hourlyDist[hour] = (mergedStats.hourlyDist[hour] || 0) + sec;
+          mergedHourlyDist[hour] = Math.max(mergedHourlyDist[hour] || 0, sec);
         }
       }
+
+      // totalTime 從合併後的每日資料重新彙總，確保不出現因直接相加導致的虛報時間
+      const recalculatedTotalTime = Object.values(mergedReadingDays).reduce((sum, sec) => sum + sec, 0);
+
+      const mergedStats = {
+        totalTime: recalculatedTotalTime,
+        readingDays: mergedReadingDays,
+        hourlyDist: mergedHourlyDist
+      };
 
       mergedBook = {
         id: existingBook.id, // 使用現有書籍的 ID 以免重複
