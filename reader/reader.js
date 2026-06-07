@@ -1590,10 +1590,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.2.6';
+            versionDisplay.textContent = 'v2.2.7';
           }
         } else {
-          versionDisplay.textContent = 'v2.2.6';
+          versionDisplay.textContent = 'v2.2.7';
         }
       }
       aboutDialog.showModal();
@@ -4881,7 +4881,15 @@ function applyLayoutDimensions() {
   const transitionEffectContainer = document.getElementById('transition-effect-container');
   if (transitionEffectContainer) transitionEffectContainer.style.display = 'block';
 
-  const viewportWidth = window.innerWidth;
+  // 根據側邊欄/AI面板開啟狀態，動態計算剩餘的可用視窗寬度
+  const readerView = document.getElementById('reader-view');
+  let viewportWidth = window.innerWidth;
+  if (readerView) {
+    const computedStyle = window.getComputedStyle(readerView);
+    const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+    const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+    viewportWidth = window.innerWidth - paddingLeft - paddingRight;
+  }
   
   const gap = 80;
   container.style.boxSizing = 'content-box';
@@ -5148,9 +5156,21 @@ function updateHeaderActiveStates() {
   if (settingsToggle) settingsToggle.classList.toggle('active', settingsActive);
   if (aiToggle) aiToggle.classList.toggle('active', aiActive);
 
+  const wasSidebarActive = document.body.classList.contains('sidebar-active');
+  const wasAIActive = document.body.classList.contains('ai-active');
+
   // Sync state classes to document body
   document.body.classList.toggle('sidebar-active', sidebarActive);
   document.body.classList.toggle('ai-active', aiActive);
+
+  // 當側邊欄或 AI 面板的開啟狀態改變，且為分頁排版模式時，重新計算排版尺寸
+  if (document.body.classList.contains('layout-paginated')) {
+    if (wasSidebarActive !== sidebarActive || wasAIActive !== aiActive) {
+      applyLayoutDimensions();
+      // 因為有 350ms 的 CSS transition，在動畫結束後再次調用以確保完美對齊
+      setTimeout(applyLayoutDimensions, 350);
+    }
+  }
 }
 
 
@@ -8226,6 +8246,10 @@ function initAIResize() {
 
     document.documentElement.style.setProperty('--ai-panel-width', `${newWidth}px`);
     localStorage.setItem('aiPanelWidth', `${newWidth}px`);
+
+    if (document.body.classList.contains('layout-paginated')) {
+      applyLayoutDimensions();
+    }
   });
 
   window.addEventListener('mouseup', () => {
@@ -8234,6 +8258,10 @@ function initAIResize() {
     handle.classList.remove('resizing');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+
+    if (document.body.classList.contains('layout-paginated')) {
+      applyLayoutDimensions();
+    }
   });
 
   window.addEventListener('resize', () => {

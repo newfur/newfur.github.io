@@ -54,7 +54,16 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.2.6)
+## 🔄 Recent Updates & Optimizations (v2.2.7)
+
+*   **Fixed layout disruption and text crossing the central spine in paginated mode when the sidebar or AI panel is opened**:
+    - Dynamically calculated the remaining viewport width in `applyLayoutDimensions()` by subtracting the computed padding of `#reader-view` caused by sidebars, preventing column calculations from failing and falling back to a single column.
+    - Bound sidebar toggle and AI panel visibility events to trigger layout recalculation instantly, with a second verification after the 350ms CSS transition finishes.
+    - Updated paginated columns dynamically during the AI panel resize drag, allowing text and margins to stretch and scale smoothly.
+
+---
+
+## 🔄 Historical Updates (v2.2.6)
 
 *   **Desktop scroll margin set to 2% by default**: The default margin width for desktop vertical scroll mode is now set to 2% to maximize screen space for text, while mobile devices and paginated layout modes retain a default of 5%.
 
