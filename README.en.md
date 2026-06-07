@@ -54,7 +54,13 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.2.5)
+## 🔄 Recent Updates & Optimizations (v2.2.6)
+
+*   **Desktop scroll margin set to 2% by default**: The default margin width for desktop vertical scroll mode is now set to 2% to maximize screen space for text, while mobile devices and paginated layout modes retain a default of 5%.
+
+---
+
+## 🔄 Historical Updates (v2.2.5)
 
 *   **Precision AI Context Extraction**:
     - Overhauled the AI Reading Assistant's context extraction logic, supporting three-tier query classification (Global/Full-Book, Current Chapter, Current Page).

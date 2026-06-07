@@ -86,6 +86,8 @@ let currentPaperTexture = 'texture-classic';
 let activeCoverUrls = [];
 let activeResourceUrls = [];
 let ttsOnlyEdge = false;
+let marginWidthScroll = 5;
+let marginWidthPaginated = 5;
 let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
@@ -1588,10 +1590,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.2.5';
+            versionDisplay.textContent = 'v2.2.6';
           }
         } else {
-          versionDisplay.textContent = 'v2.2.5';
+          versionDisplay.textContent = 'v2.2.6';
         }
       }
       aboutDialog.showModal();
@@ -4412,7 +4414,7 @@ function updateAIButtonsVisibility() {
 
 function initThemeAndStyles() {
   // 從 Storage 讀取設定，否則採用預設值
-  chrome.storage.local.get(['theme', 'fontSize', 'fontFamily', 'lineHeight', 'marginWidth', 'marginTop', 'marginBottom', 'layoutMode', 'pagesDisplayed', 'ttsHighlightStyle', 'ttsRate', 'paperTexture', 'pagePadding', 'transitionEffect', 'ttsOnlyEdge'], (res) => {
+  chrome.storage.local.get(['theme', 'fontSize', 'fontFamily', 'lineHeight', 'marginWidth', 'marginWidthScroll', 'marginWidthPaginated', 'marginTop', 'marginBottom', 'layoutMode', 'pagesDisplayed', 'ttsHighlightStyle', 'ttsRate', 'paperTexture', 'pagePadding', 'transitionEffect', 'ttsOnlyEdge'], (res) => {
     // 優先使用當前書籍個別的設定，其次使用全局設定，最後使用系統預設
     const getPref = (key, defaultVal) => {
       if (currentBook && currentBook.progress && currentBook.progress[key] !== undefined) {
@@ -4425,13 +4427,26 @@ function initThemeAndStyles() {
     const resolvedFontFamily = getPref('fontFamily', 'font-lxgw');
     const resolvedFontSize = getPref('fontSize', 19);
     const resolvedLineHeight = getPref('lineHeight', 1.5);
-    const resolvedMarginWidth = getPref('marginWidth', 5);
+    
+    // 桌面端上下滾動模式預設邊距為 2%，移動端及分頁模式預設為 5%
+    const defaultScrollMargin = isMobileDevice() ? 5 : 2;
+    const oldMarginWidth = getPref('marginWidth', 5);
+    marginWidthScroll = getPref('marginWidthScroll', getPref('marginWidth', defaultScrollMargin));
+    marginWidthPaginated = getPref('marginWidthPaginated', oldMarginWidth);
 
     setTheme(resolvedTheme, false);
     setFontFamily(resolvedFontFamily, false);
     setFontSize(resolvedFontSize, false);
     setLineHeight(resolvedLineHeight, false);
-    setMargins(resolvedMarginWidth, false);
+    
+    // Determine which layoutMode is starting
+    let layoutMode = getPref('layoutMode', 'paginated');
+    if (isMobileDevice()) {
+      layoutMode = 'scroll';
+    }
+    const activeMargin = (layoutMode === 'paginated') ? marginWidthPaginated : marginWidthScroll;
+    setMargins(activeMargin, false);
+    
     setMarginTop(50, false); // 強制設定上方留白為 50px
     setMarginBottom(50, false); // 強制設定下方留白為 50px
     setPagePadding(40, false); // 強制設定紙張邊框留白為 40px
@@ -4466,7 +4481,7 @@ function initThemeAndStyles() {
     setTransitionEffect(transitionEffect, false);
 
     // 版面排版模式初始化
-    let layoutMode = getPref('layoutMode', 'paginated');
+    layoutMode = getPref('layoutMode', 'paginated');
     if (isMobileDevice()) {
       layoutMode = 'scroll';
       // 隱藏移動端的版面排版模式選擇容器
@@ -4481,7 +4496,7 @@ function initThemeAndStyles() {
     document.getElementById('font-family-select').value = resolvedFontFamily;
     document.getElementById('font-size-slider').value = resolvedFontSize;
     document.getElementById('line-height-slider').value = resolvedLineHeight;
-    document.getElementById('margin-width-slider').value = resolvedMarginWidth;
+    document.getElementById('margin-width-slider').value = (layoutMode === 'paginated') ? marginWidthPaginated : marginWidthScroll;
     document.getElementById('margin-top-slider').value = 50;
     document.getElementById('margin-bottom-slider').value = 50;
     document.getElementById('page-padding-slider').value = 40;
@@ -4584,14 +4599,27 @@ function setMargins(val, writeToStorage = true) {
   container.style.paddingLeft = `${val}%`;
   container.style.paddingRight = `${val}%`;
   document.getElementById('margin-width-val').textContent = `${val}%`;
+  
+  const isPaginated = document.body.classList.contains('layout-paginated');
+  if (isPaginated) {
+    marginWidthPaginated = val;
+  } else {
+    marginWidthScroll = val;
+  }
+  
   if (writeToStorage) {
-    chrome.storage.local.set({ marginWidth: val });
+    const key = isPaginated ? 'marginWidthPaginated' : 'marginWidthScroll';
+    const dataToSave = {};
+    dataToSave[key] = val;
+    chrome.storage.local.set(dataToSave);
     if (currentBook) {
-      saveProgressDebounced({ marginWidth: val });
+      if (!currentBook.progress) currentBook.progress = {};
+      currentBook.progress[key] = val;
+      saveProgressDebounced(dataToSave);
     }
   }
   applyLayoutDimensions();
-  if (document.body.classList.contains('layout-paginated')) {
+  if (isPaginated) {
     restoreScrollToElementIndex(topIdx);
   }
 }
@@ -4969,17 +4997,23 @@ function toggleLayoutMode(mode, saveToStorage = true) {
   content.style.columnGap = '';
   content.style.height = '';
 
+  const activeMargin = isPaginated ? marginWidthPaginated : marginWidthScroll;
+  const slider = document.getElementById('margin-width-slider');
+  if (slider) {
+    slider.value = activeMargin;
+  }
+
   if (isPaginated) {
     scrollBtn.classList.remove('active');
     paginatedBtn.classList.add('active');
     
     const topIdx = getTopVisibleElementIndex();
-    applyLayoutDimensions();
+    setMargins(activeMargin, false);
     restoreScrollToElementIndex(topIdx);
   } else {
     scrollBtn.classList.add('active');
     paginatedBtn.classList.remove('active');
-    applyLayoutDimensions();
+    setMargins(activeMargin, false);
     content.style.transform = '';
     // 滾動模式下清空紙張底紋覆蓋層
     const overlay = document.getElementById('page-texture-overlay');

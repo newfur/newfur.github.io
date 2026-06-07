@@ -1,6 +1,6 @@
 {
   "name": "mysterious-oppenheimer",
-  "version": "2.2.5",
+  "version": "2.2.6",
   "description": "",
   "main": "service-worker.js",
   "scripts": {
