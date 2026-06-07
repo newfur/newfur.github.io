@@ -1588,10 +1588,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v2.2.2';
+            versionDisplay.textContent = 'v2.2.3';
           }
         } else {
-          versionDisplay.textContent = 'v2.2.2';
+          versionDisplay.textContent = 'v2.2.3';
         }
       }
       aboutDialog.showModal();
@@ -2412,6 +2412,30 @@ async function openBook(id) {
   document.getElementById('selection-menu').style.display = 'none';
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
+  
+  // 關閉側邊欄並重置為目錄標籤，清理內容防止殘留上一本書的內容
+  const sidebar = document.getElementById('reader-sidebar');
+  if (sidebar) {
+    sidebar.classList.remove('active');
+    
+    const tabToc = document.getElementById('tab-toc');
+    const tabHighlights = document.getElementById('tab-highlights');
+    const containerToc = document.getElementById('sidebar-toc-container');
+    const containerHighlights = document.getElementById('sidebar-highlights-container');
+    
+    if (tabToc) tabToc.classList.add('active');
+    if (tabHighlights) tabHighlights.classList.remove('active');
+    if (containerToc) containerToc.classList.add('active');
+    if (containerHighlights) containerHighlights.classList.remove('active');
+  }
+  
+  const tocList = document.getElementById('toc-list');
+  const bList = document.getElementById('bookmarks-list');
+  const nList = document.getElementById('notes-list');
+  if (tocList) tocList.innerHTML = '';
+  if (bList) bList.innerHTML = '';
+  if (nList) nList.innerHTML = '';
+
   updateHeaderActiveStates();
   renderAIChatHistory();
 
@@ -2471,6 +2495,9 @@ async function openBook(id) {
     
     // 載入高亮標記
     applySavedHighlightsToDOM();
+    
+    // 預先渲染書籤與筆記列表，防止切換書籍時殘留舊書記錄
+    await renderHighlightsList();
 
     // 啟動閱讀時間追蹤
     startReadingTracker(book.id);
@@ -2513,6 +2540,30 @@ async function closeCurrentBook(triggerBack = true) {
   document.getElementById('selection-menu').style.display = 'none';
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
+  
+  // 關閉側邊欄並重置為目錄標籤，清理 DOM 防止殘留內容
+  const sidebar = document.getElementById('reader-sidebar');
+  if (sidebar) {
+    sidebar.classList.remove('active');
+    
+    const tabToc = document.getElementById('tab-toc');
+    const tabHighlights = document.getElementById('tab-highlights');
+    const containerToc = document.getElementById('sidebar-toc-container');
+    const containerHighlights = document.getElementById('sidebar-highlights-container');
+    
+    if (tabToc) tabToc.classList.add('active');
+    if (tabHighlights) tabHighlights.classList.remove('active');
+    if (containerToc) containerToc.classList.add('active');
+    if (containerHighlights) containerHighlights.classList.remove('active');
+  }
+  
+  const tocList = document.getElementById('toc-list');
+  const bList = document.getElementById('bookmarks-list');
+  const nList = document.getElementById('notes-list');
+  if (tocList) tocList.innerHTML = '';
+  if (bList) bList.innerHTML = '';
+  if (nList) nList.innerHTML = '';
+
   bookChunksCache = [];
   isIndexingBook = false;
   updateHeaderActiveStates();
