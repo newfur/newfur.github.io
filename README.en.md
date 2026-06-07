@@ -54,7 +54,15 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.2.7)
+## 🔄 Recent Updates & Optimizations (v2.2.8)
+
+*   **Fixed misalignment of TTS highlighting caused by sentence count mismatch in asynchronous pre-fetching**:
+    - Refactored `_extractSentencesFromHtml()` to traverse the parsed DOM document tree using the exact same inline grouping algorithm as `prepareContainer()`, merging text nodes across formatting elements (spans, anchors, bold, italics, etc.).
+    - Ensured that the sentence array extracted during offline pre-fetching matches the rendered DOM structure 100% in count and content, completely resolving the highlight drift bug when reading chapters filled with short dialogs or heavily formatted sentences.
+
+---
+
+## 🔄 Historical Updates (v2.2.7)
 
 *   **Fixed layout disruption and text crossing the central spine in paginated mode when the sidebar or AI panel is opened**:
     - Dynamically calculated the remaining viewport width in `applyLayoutDimensions()` by subtracting the computed padding of `#reader-view` caused by sidebars, preventing column calculations from failing and falling back to a single column.

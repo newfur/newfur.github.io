@@ -373,6 +373,7 @@ export class TTSEngine {
 
   // 2. 將 DOM 容器中的文字節點安全拆分為句子，並包裹成 SPAN
   prepareContainer(containerElement, epubBookData = null) {
+    this.epubBookData = epubBookData;
     this.container = containerElement;
     this.sentences = [];
     this.currentIndex = 0;
@@ -507,6 +508,7 @@ export class TTSEngine {
 
   // 無縫切換章節時，將新加載的 DOM element 對應到已預加載的句子對象上
   syncDOM(containerElement, epubBookData = null) {
+    this.epubBookData = epubBookData;
     this.container = containerElement;
     let sentenceId = 0;
 
@@ -1520,7 +1522,7 @@ export class TTSEngine {
         return;
       }
       
-      const nextSentences = this._extractSentencesFromHtml(nextChapter.html);
+      const nextSentences = this._extractSentencesFromHtml(nextChapter.html, nextChapter.index);
       
       const startIdx = this.sentences.length;
       nextSentences.forEach((s, i) => {
@@ -1539,16 +1541,75 @@ export class TTSEngine {
     }
   }
 
-  _extractSentencesFromHtml(htmlStr) {
+  _extractSentencesFromHtml(htmlStr, chapterIndex = null) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlStr, 'text/html');
     const sentences = [];
     let sentenceId = 0;
 
+    const subChapters = [];
+    const epubBookData = this.epubBookData;
+    const targetChapterIdx = chapterIndex !== null ? chapterIndex : this.currentChapterIndex;
+    if (epubBookData && epubBookData.chapters && targetChapterIdx !== undefined) {
+      const currentChapter = epubBookData.chapters[targetChapterIdx];
+      if (currentChapter) {
+        epubBookData.chapters.forEach((ch, idx) => {
+          if (ch.cleanHref === currentChapter.cleanHref) {
+            subChapters.push({ hash: ch.hash || '', index: idx });
+          }
+        });
+      }
+    }
+    let activeSubChapterIndex = subChapters.length > 0 ? subChapters[0].index : targetChapterIdx;
+
+    let currentText = "";
+    let currentActiveSubChapterIndex = activeSubChapterIndex;
+    let isHeading = false;
+
+    const isBlockElement = (node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      const tagName = node.tagName.toLowerCase();
+      const blockTags = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td', 'blockquote', 'section', 'article', 'aside', 'header', 'footer', 'dt', 'dd'];
+      return blockTags.includes(tagName);
+    };
+
+    const flushCurrentSentence = () => {
+      const cleanSentence = currentText.trim();
+      if (cleanSentence.length > 0) {
+        sentences.push({
+          index: sentenceId,
+          text: cleanSentence,
+          isHeading: isHeading,
+          chapterIndex: currentActiveSubChapterIndex,
+          element: null,
+          elements: []
+        });
+        sentenceId++;
+      }
+      currentText = "";
+    };
+
     const traverse = (node) => {
+      const isBlock = isBlockElement(node);
+      if (isBlock) {
+        flushCurrentSentence();
+      }
+
       if (node.nodeType === Node.ELEMENT_NODE) {
+        const nodeId = node.getAttribute('id') || '';
+        const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
+        const matchedSub = subChapters.find(sub => 
+          sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
+        );
+        if (matchedSub) {
+          flushCurrentSentence();
+          activeSubChapterIndex = matchedSub.index;
+          currentActiveSubChapterIndex = matchedSub.index;
+        }
+
         const tagName = node.tagName.toLowerCase();
         const isNoteTag = tagName === 'sup' || tagName === 'sub';
+
         if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
           return;
         }
@@ -1559,18 +1620,19 @@ export class TTSEngine {
         if (text.trim().length === 0) return;
 
         const matches = splitTextIntoSentences(text);
-        
-        if (matches) {
+
+        if (matches && matches.length > 0) {
           matches.forEach(s => {
-            const clean = s.trim();
-            if (clean.length > 0) {
-              sentences.push({
-                index: sentenceId,
-                text: clean,
-                isHeading: this._isHeadingNode(node),
-                element: null
-              });
-              sentenceId++;
+            const cleanSentence = s.trim();
+            if (cleanSentence.length > 0) {
+              currentText += s;
+              isHeading = this._isHeadingNode(node);
+              currentActiveSubChapterIndex = activeSubChapterIndex;
+
+              const endsSentence = /[。！？.!?\r\n]/.test(s);
+              if (endsSentence) {
+                flushCurrentSentence();
+              }
             }
           });
         }
@@ -1578,9 +1640,14 @@ export class TTSEngine {
         const children = Array.from(node.childNodes);
         children.forEach(child => traverse(child));
       }
+
+      if (isBlock) {
+        flushCurrentSentence();
+      }
     };
 
     traverse(doc.body);
+    flushCurrentSentence();
     return sentences;
   }
 
