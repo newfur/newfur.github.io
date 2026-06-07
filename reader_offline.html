@@ -5486,6 +5486,7 @@ me-tpc {
       </div>
     </div>
     <div class="stats-modal-footer">
+      <button id="repair-stats-btn" class="btn btn-secondary" style="background-color: rgba(255, 170, 0, 0.08); color: #ffaa00; border-color: rgba(255, 170, 0, 0.2);" data-i18n="repair_stats">修复重复统计</button>
       <button id="clear-all-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15);" data-i18n="clear_all_stats">Clear Reading Records</button>
       <button id="clear-book-stats-btn" class="btn btn-secondary" style="background-color: rgba(220, 53, 69, 0.08); color: #ff4d4f; border-color: rgba(220, 53, 69, 0.15); display: none;" data-i18n="clear_book_stats">Clear Reading Records</button>
     </div>
@@ -8980,6 +8981,18 @@ MindElixir.DARK_THEME = ue;
     "confirm_clear_book_stats": {
       "message": "Are you sure you want to clear statistics for this book? This cannot be undone."
     },
+    "repair_stats": {
+      "message": "Repair Duplicate Stats"
+    },
+    "repairing_stats": {
+      "message": "Repairing…"
+    },
+    "repair_stats_no_issue": {
+      "message": "✅ No issues found. All book reading times look correct."
+    },
+    "confirm_repair_stats": {
+      "message": "This will automatically repair reading time inflation caused by previous backup/restore cycles.\n\nRepair strategy:\n• If any single day's reading time exceeds 12 hours, it is assumed to be doubled and will be halved.\n• Total time is then recalculated from the corrected daily data.\n\nDo you want to continue?"
+    },
     "texture_kraft": {
       "message": "Kraft Paper"
     },
@@ -9829,6 +9842,18 @@ MindElixir.DARK_THEME = ue;
     "confirm_clear_book_stats": {
       "message": "確定要清除本書的閱讀統計數據嗎？此操作無法撤销。"
     },
+    "repair_stats": {
+      "message": "修復重複統計"
+    },
+    "repairing_stats": {
+      "message": "修復中…"
+    },
+    "repair_stats_no_issue": {
+      "message": "✅ 未發現需要修復的數據，所有書籍閱讀時間均正常。"
+    },
+    "confirm_repair_stats": {
+      "message": "此操作將自動修復因備份還原導致的閱讀時間重複累計問題。\n\n修復策略：\n• 每本書的每日閱讀時間與小時分佈，若單日超過 12 小時，視為翻倍並除以 2。\n• 總時間從修復後的每日數據重新彙總計算。\n\n確定要繼續嗎？"
+    },
     "texture_kraft": {
       "message": "牛皮紙"
     },
@@ -10677,6 +10702,18 @@ MindElixir.DARK_THEME = ue;
     },
     "confirm_clear_book_stats": {
       "message": "确定要清除本书的阅读统计数据吗？此操作无法撤销。"
+    },
+    "repair_stats": {
+      "message": "修复重复统计"
+    },
+    "repairing_stats": {
+      "message": "修复中…"
+    },
+    "repair_stats_no_issue": {
+      "message": "✅ 未发现需要修复的数据，所有书籍阅读时间均正常。"
+    },
+    "confirm_repair_stats": {
+      "message": "此操作将自动修复因备份还原导致的阅读时间重复累计问题。\n\n修复策略：\n• 每本书的每日阅读时间与小时分布，若单日超过 12 小时，视为翻倍并除以 2。\n• 总时间从修复后的每日数据重新汇总计算。\n\n确定要继续吗？"
     },
     "texture_kraft": {
       "message": "牛皮纸"
@@ -11704,6 +11741,89 @@ class BookLibrary {
         };
       });
     });
+  }
+
+  /**
+   * 修復因舊版備份還原 Bug 導致的閱讀時間重複累計問題。
+   * 
+   * 檢測邏輯：
+   *   1. 首先重新從 readingDays 計算 totalTime，修正任何不一致。
+   *   2. 若某本書的 totalTime（重算後）超過合理閾值（預設：超過 divisor 倍數），
+   *      則將所有 readingDays、hourlyDist、totalTime 除以 divisor，還原到估算的真實數值。
+   *
+   * @param {number} [divisor=2] 除數（通常是 2，代表做過一次備份還原）
+   * @returns {Promise<{fixed: number, report: Array}>} 修復書籍數量及明細報告
+   */
+  async repairDuplicatedStats(divisor = 2) {
+    await this._ensureOpen();
+    const books = await this.getAllBooks();
+
+    const report = [];
+    const booksToUpdate = [];
+
+    for (const book of books) {
+      if (!book.stats) continue;
+
+      const readingDays = book.stats.readingDays || {};
+      const hourlyDist  = book.stats.hourlyDist  || {};
+      const storedTotal = book.stats.totalTime    || 0;
+
+      // Step 1: 重新從 readingDays 計算真實總時間（消除 totalTime 與明細不一致）
+      const recalcTotal = Object.values(readingDays).reduce((s, v) => s + v, 0);
+
+      // Step 2: 判斷是否疑似翻倍——若重算值超過 storedTotal 的 5% 以上，先以 recalcTotal 修正
+      // 接著，若每日最大單日讀書時間超過 86400s（一天 24 小時）/ divisor，視為已翻倍
+      const maxDaySeconds = Object.values(readingDays).reduce((m, v) => Math.max(m, v), 0);
+      const suspectDoubled = maxDaySeconds > (86400 / divisor); // 單日超過 24h/divisor 秒，高度可疑
+
+      const newDays = {};
+      for (const [date, sec] of Object.entries(readingDays)) {
+        newDays[date] = suspectDoubled ? Math.round(sec / divisor) : sec;
+      }
+
+      const newHourly = {};
+      for (const [hour, sec] of Object.entries(hourlyDist)) {
+        newHourly[hour] = suspectDoubled ? Math.round(sec / divisor) : sec;
+      }
+
+      // totalTime 最終從修正後的 readingDays 重算
+      const newTotal = Object.values(newDays).reduce((s, v) => s + v, 0);
+
+      const changed = newTotal !== storedTotal;
+      if (changed) {
+        book.stats = { totalTime: newTotal, readingDays: newDays, hourlyDist: newHourly };
+        booksToUpdate.push(book);
+        report.push({
+          title: book.title,
+          before: storedTotal,
+          after: newTotal,
+          divided: suspectDoubled
+        });
+      }
+    }
+
+    if (booksToUpdate.length === 0) {
+      return { fixed: 0, report: [] };
+    }
+
+    await new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      let completed = 0;
+      let hasError = false;
+      booksToUpdate.forEach(book => {
+        const req = store.put(book);
+        req.onsuccess = () => {
+          completed++;
+          if (completed === booksToUpdate.length && !hasError) resolve(true);
+        };
+        req.onerror = () => {
+          if (!hasError) { hasError = true; reject(req.error); }
+        };
+      });
+    });
+
+    return { fixed: booksToUpdate.length, report };
   }
 
   // 保存 AI 溝通記錄
@@ -16803,6 +16923,47 @@ function initUIEventBindings() {
   if (statsBookSelect) {
     statsBookSelect.addEventListener('change', (e) => {
       renderBookStats(e.target.value);
+    });
+  }
+
+  // 修復因備份還原導致的閱讀時間重複累計問題
+  const repairStatsBtn = document.getElementById('repair-stats-btn');
+  if (repairStatsBtn) {
+    repairStatsBtn.addEventListener('click', async () => {
+      const confirmed = confirm(
+        getMsg('confirm_repair_stats') ||
+        '此操作將自動修復因備份還原導致的閱讀時間重複累計問題。\n\n修復策略：\n• 每本書的每日閱讀時間與小時分佈，若單日超過 12 小時，視為翻倍並除以 2。\n• 總時間從修復後的每日數據重新彙總計算。\n\n確定要繼續嗎？'
+      );
+      if (!confirmed) return;
+
+      repairStatsBtn.disabled = true;
+      repairStatsBtn.textContent = getMsg('repairing_stats') || '修復中…';
+
+      try {
+        const { fixed, report } = await library.repairDuplicatedStats(2);
+
+        if (fixed === 0) {
+          alert(getMsg('repair_stats_no_issue') || '✅ 未發現需要修復的數據，所有書籍閱讀時間均正常。');
+        } else {
+          const lines = report.map(r => {
+            const before = formatDuration(r.before);
+            const after  = formatDuration(r.after);
+            const tag = r.divided ? '（已除以 2）' : '（已重算）';
+            return `• ${r.title}\n  ${before} → ${after} ${tag}`;
+          });
+          alert(
+            `✅ 已修復 ${fixed} 本書籍的閱讀統計：\n\n` +
+            lines.join('\n\n')
+          );
+          await openGlobalStatsModal();
+        }
+      } catch (e) {
+        console.error('Failed to repair stats:', e);
+        alert('修復失敗: ' + e.message);
+      } finally {
+        repairStatsBtn.disabled = false;
+        repairStatsBtn.textContent = getMsg('repair_stats') || '修復重複統計';
+      }
     });
   }
 

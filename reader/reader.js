@@ -446,6 +446,47 @@ function initUIEventBindings() {
     });
   }
 
+  // 修復因備份還原導致的閱讀時間重複累計問題
+  const repairStatsBtn = document.getElementById('repair-stats-btn');
+  if (repairStatsBtn) {
+    repairStatsBtn.addEventListener('click', async () => {
+      const confirmed = confirm(
+        getMsg('confirm_repair_stats') ||
+        '此操作將自動修復因備份還原導致的閱讀時間重複累計問題。\n\n修復策略：\n• 每本書的每日閱讀時間與小時分佈，若單日超過 12 小時，視為翻倍並除以 2。\n• 總時間從修復後的每日數據重新彙總計算。\n\n確定要繼續嗎？'
+      );
+      if (!confirmed) return;
+
+      repairStatsBtn.disabled = true;
+      repairStatsBtn.textContent = getMsg('repairing_stats') || '修復中…';
+
+      try {
+        const { fixed, report } = await library.repairDuplicatedStats(2);
+
+        if (fixed === 0) {
+          alert(getMsg('repair_stats_no_issue') || '✅ 未發現需要修復的數據，所有書籍閱讀時間均正常。');
+        } else {
+          const lines = report.map(r => {
+            const before = formatDuration(r.before);
+            const after  = formatDuration(r.after);
+            const tag = r.divided ? '（已除以 2）' : '（已重算）';
+            return `• ${r.title}\n  ${before} → ${after} ${tag}`;
+          });
+          alert(
+            `✅ 已修復 ${fixed} 本書籍的閱讀統計：\n\n` +
+            lines.join('\n\n')
+          );
+          await openGlobalStatsModal();
+        }
+      } catch (e) {
+        console.error('Failed to repair stats:', e);
+        alert('修復失敗: ' + e.message);
+      } finally {
+        repairStatsBtn.disabled = false;
+        repairStatsBtn.textContent = getMsg('repair_stats') || '修復重複統計';
+      }
+    });
+  }
+
   // 清理所有統計數據按鈕
   const clearAllStatsBtn = document.getElementById('clear-all-stats-btn');
   if (clearAllStatsBtn) {

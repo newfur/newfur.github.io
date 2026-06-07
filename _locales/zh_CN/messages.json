@@ -519,6 +519,18 @@
   "confirm_clear_book_stats": {
     "message": "确定要清除本书的阅读统计数据吗？此操作无法撤销。"
   },
+  "repair_stats": {
+    "message": "修复重复统计"
+  },
+  "repairing_stats": {
+    "message": "修复中…"
+  },
+  "repair_stats_no_issue": {
+    "message": "✅ 未发现需要修复的数据，所有书籍阅读时间均正常。"
+  },
+  "confirm_repair_stats": {
+    "message": "此操作将自动修复因备份还原导致的阅读时间重复累计问题。\n\n修复策略：\n• 每本书的每日阅读时间与小时分布，若单日超过 12 小时，视为翻倍并除以 2。\n• 总时间从修复后的每日数据重新汇总计算。\n\n确定要继续吗？"
+  },
   "texture_kraft": {
     "message": "牛皮纸"
   },

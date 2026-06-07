@@ -519,6 +519,18 @@
   "confirm_clear_book_stats": {
     "message": "Are you sure you want to clear statistics for this book? This cannot be undone."
   },
+  "repair_stats": {
+    "message": "Repair Duplicate Stats"
+  },
+  "repairing_stats": {
+    "message": "Repairing…"
+  },
+  "repair_stats_no_issue": {
+    "message": "✅ No issues found. All book reading times look correct."
+  },
+  "confirm_repair_stats": {
+    "message": "This will automatically repair reading time inflation caused by previous backup/restore cycles.\n\nRepair strategy:\n\u2022 If any single day's reading time exceeds 12 hours, it is assumed to be doubled and will be halved.\n\u2022 Total time is then recalculated from the corrected daily data.\n\nDo you want to continue?"
+  },
   "texture_kraft": {
     "message": "Kraft Paper"
   },
