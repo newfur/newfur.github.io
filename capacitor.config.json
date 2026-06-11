@@ -1,0 +1,8 @@
+{
+  "appId": "com.edgereader.app",
+  "appName": "Edge Reader",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

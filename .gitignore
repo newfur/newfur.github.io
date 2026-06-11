@@ -4,3 +4,5 @@ package-lock.json
 *.zip
 scratch/*
 !scratch/compile_offline.js
+!scratch/build_dist.js
+www/
