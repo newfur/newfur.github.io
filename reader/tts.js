@@ -1173,6 +1173,44 @@ export class TTSEngine {
     });
   }
 
+  _getGroupInfoForIndex(index) {
+    const baseIndex = this.playbackStartSessionIndex + 10;
+    if (index < baseIndex) {
+      return null;
+    }
+
+    let currentGroupStart = baseIndex;
+    while (currentGroupStart <= index && currentGroupStart < this.sentences.length) {
+      const startSentence = this.sentences[currentGroupStart];
+      const chapterIdx = startSentence.chapterIndex;
+
+      let groupLength = 1;
+      while (groupLength < 10 && (currentGroupStart + groupLength) < this.sentences.length) {
+        const nextSentence = this.sentences[currentGroupStart + groupLength];
+        if (nextSentence.chapterIndex !== chapterIdx) {
+          break;
+        }
+        groupLength++;
+      }
+
+      if (index >= currentGroupStart && index < currentGroupStart + groupLength) {
+        const groupSentences = [];
+        for (let i = 0; i < groupLength; i++) {
+          groupSentences.push(this.sentences[currentGroupStart + i]);
+        }
+        return {
+          groupStartIndex: currentGroupStart,
+          groupLength: groupLength,
+          sentences: groupSentences
+        };
+      }
+
+      currentGroupStart += groupLength;
+    }
+
+    return null;
+  }
+
   // 4. 預加載控制與播放隊列
   _fetchSentence(index, retryCount = 0) {
     const voice = this.selectedVoice;
@@ -1256,25 +1294,17 @@ export class TTSEngine {
         }
       });
     } else {
-      // 2. 合併發送階段（每次發送10句）
-      // 計算包含 index 的分組起點 index
-      const offset = index - (this.playbackStartSessionIndex + 10);
-      const groupIdx = Math.floor(offset / 10);
-      const groupStartIndex = this.playbackStartSessionIndex + 10 + groupIdx * 10;
+      // 2. 合併發送階段（動態分組，不跨越章節邊界）
+      const groupInfo = this._getGroupInfoForIndex(index);
+      if (!groupInfo) return;
+      
+      const groupStartIndex = groupInfo.groupStartIndex;
+      const groupSentences = groupInfo.sentences;
       
       if (this.audioCache.has(groupStartIndex)) return;
       if (retryCount === 0 && this.fetchingIndices.has(groupStartIndex)) return;
       
       this.fetchingIndices.add(groupStartIndex);
-      
-      // 收集該分組的10句文字
-      const groupSentences = [];
-      for (let i = 0; i < 10; i++) {
-        const targetIdx = groupStartIndex + i;
-        if (targetIdx < this.sentences.length) {
-          groupSentences.push(this.sentences[targetIdx]);
-        }
-      }
       
       if (groupSentences.length === 0) {
         this.fetchingIndices.delete(groupStartIndex);
@@ -1518,42 +1548,6 @@ export class TTSEngine {
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
     
-    // 跨章節無縫過渡檢測
-    // 用於執行高亮與回調的輔助函數（章節切換後需重新讀取句子引用以取得新 DOM 元素）
-    const doHighlightAndCallbacks = () => {
-      const sent = this.sentences[index] || sentence;
-      this._highlightSentence(sent);
-      this._updateMediaSession(sent);
-      if (this.onSentenceStart) {
-        this.onSentenceStart(index);
-      }
-    };
-
-    if (sentence.chapterIndex !== this.currentChapterIndex) {
-      this.currentChapterIndex = sentence.chapterIndex;
-      this.prefetchedChapterIndex = null;
-      
-      if (this.onChapterTransition) {
-        // onChapterTransition 是 async 函數（內部 await loadChapter 重建 DOM）
-        // 必須等待完成後再高亮，否則句子的 element 引用尚未由 syncDOM 建立
-        const transitionPromise = this.onChapterTransition(sentence.chapterIndex);
-        if (transitionPromise && typeof transitionPromise.then === 'function') {
-          transitionPromise.then(() => {
-            if (!this.isPlaying) return;
-            doHighlightAndCallbacks();
-          });
-        } else {
-          doHighlightAndCallbacks();
-        }
-      } else {
-        doHighlightAndCallbacks();
-      }
-      
-      this._prefetchNextChapter();
-    } else {
-      doHighlightAndCallbacks();
-    }
-    
     // 監聽時間更新事件：在當前句子即將結束前，提前預加載並播放下一句，實現完美無縫交替
     let hasTriggeredNext = false;
     
@@ -1692,39 +1686,82 @@ export class TTSEngine {
         }
       };
     }
-    
-    audio.play().then(() => {
-      // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
-      if (prevAudio && prevAudio !== audio) {
-        try {
-          prevAudio.pause();
-          prevAudio.ontimeupdate = null;
-          prevAudio.onended = null;
-          prevAudio.onloadedmetadata = null;
-        } catch (e) {}
+
+    const startPlay = () => {
+      if (!this.isPlaying) return;
+      audio.play().then(() => {
+        // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
+        if (prevAudio && prevAudio !== audio) {
+          try {
+            prevAudio.pause();
+            prevAudio.ontimeupdate = null;
+            prevAudio.onended = null;
+            prevAudio.onloadedmetadata = null;
+          } catch (e) {}
+        }
+        
+        // 再次強制設置播放速度，以防止部分 iOS 瀏覽器在啟動播放時強制將速度重設為 1.0
+        audio.playbackRate = this.rate;
+        
+        this.playbackStarted = true;
+        this._fillPreFetchBuffer();
+        this._prefetchNextChapter();
+        this._prewarmNextPlayer();
+      }).catch(err => {
+        console.error("Audio play error:", err);
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onloadedmetadata = null;
+        
+        // 若播放失敗，跳過該句子
+        if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = isGroupPlay ? (groupStartIndex + groupSentences.length) : (index + 1);
+          this._playActiveSentence();
+        }
+      });
+    };
+
+    // 跨章節無縫過渡檢測
+    // 用於執行高亮與回調的輔助函數（章節切換後需重新讀取句子引用以取得新 DOM 元素）
+    const doHighlightAndCallbacks = () => {
+      const sent = this.sentences[index] || sentence;
+      this._highlightSentence(sent);
+      this._updateMediaSession(sent);
+      if (this.onSentenceStart) {
+        this.onSentenceStart(index);
+      }
+    };
+
+    if (sentence.chapterIndex !== this.currentChapterIndex) {
+      this.currentChapterIndex = sentence.chapterIndex;
+      this.prefetchedChapterIndex = null;
+      
+      if (this.onChapterTransition) {
+        // onChapterTransition 是 async 函數（內部 await loadChapter 重建 DOM）
+        // 必須等待完成後再高亮，否則句子的 element 引用尚未由 syncDOM 建立
+        const transitionPromise = this.onChapterTransition(sentence.chapterIndex);
+        if (transitionPromise && typeof transitionPromise.then === 'function') {
+          transitionPromise.then(() => {
+            if (!this.isPlaying) return;
+            doHighlightAndCallbacks();
+            startPlay();
+          });
+        } else {
+          doHighlightAndCallbacks();
+          startPlay();
+        }
+      } else {
+        doHighlightAndCallbacks();
+        startPlay();
       }
       
-      // 再次強制設置播放速度，以防止部分 iOS 瀏覽器在啟動播放時強制將速度重設為 1.0
-      audio.playbackRate = this.rate;
-      
-      this.playbackStarted = true;
-      this._fillPreFetchBuffer();
       this._prefetchNextChapter();
-      this._prewarmNextPlayer();
-    }).catch(err => {
-      console.error("Audio play error:", err);
-      audio.ontimeupdate = null;
-      audio.onended = null;
-      audio.onloadedmetadata = null;
-      
-      // 若播放失敗，跳過該句子
-      if (!hasTriggeredNext) {
-        hasTriggeredNext = true;
-        this.activePlayerIdx = nextPlayerIdx;
-        this.currentIndex = isGroupPlay ? (groupStartIndex + groupSentences.length) : (index + 1);
-        this._playActiveSentence();
-      }
-    });
+    } else {
+      doHighlightAndCallbacks();
+      startPlay();
+    }
   }
 
   _speakNativeSentence(index) {
