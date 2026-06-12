@@ -124,7 +124,7 @@ public class NativeTTS extends Plugin {
             }
 
             @Override
-            public void onClose(WebSocket webSocket, int code, String reason) {
+            public void onClosed(WebSocket webSocket, int code, String reason) {
                 if (hasRejected) return;
                 byte[] audioData = audioStream.toByteArray();
                 if (audioData.length > 0) {
@@ -141,7 +141,7 @@ public class NativeTTS extends Plugin {
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
                 if (hasRejected) return;
                 hasRejected = true;
-                call.reject("WebSocket failure: " + t.getMessage(), t);
+                call.reject("WebSocket failure: " + t.getMessage());
             }
         });
     }

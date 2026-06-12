@@ -6,9 +6,6 @@ on:
       - web-version
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build-android:
     name: Build Android APK
@@ -39,20 +36,9 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug > gradle.log 2>&1 || (cat gradle.log && exit 1)
-          
-      - name: Commit and push build log on failure
-        if: failure()
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b build-logs || git checkout build-logs
-          git add android/gradle.log
-          git commit -m "build failure log" || true
-          git push origin build-logs --force
+          ./gradlew assembleDebug
 
       - name: Upload Android APK Artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
