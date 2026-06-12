@@ -241,7 +241,13 @@ export class TTSEngine {
 
       if (!list) {
         // 退化降級：若無 extension context，嘗試透過本地 API 或直接 fetch
-        const isWeb = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const isNativeApp = typeof window !== 'undefined' && (
+          window.Capacitor ||
+          window.location.protocol === 'capacitor:' ||
+          window.location.protocol === 'app:' ||
+          window.location.protocol === 'file:'
+        );
+        const isWeb = !isNativeApp && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
         const url = isWeb 
           ? "/api/voices" 
           : "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -859,7 +865,13 @@ export class TTSEngine {
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
         
-        const isWeb = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const isNativeApp = typeof window !== 'undefined' && (
+          window.Capacitor ||
+          window.location.protocol === 'capacitor:' ||
+          window.location.protocol === 'app:' ||
+          window.location.protocol === 'file:'
+        );
+        const isWeb = !isNativeApp && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
         let url;
         if (isWeb) {
           const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
