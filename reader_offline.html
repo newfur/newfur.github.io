@@ -15418,8 +15418,25 @@ class TTSEngine {
     }
   }
 
+  _getWeightedLength(text) {
+    if (!text) return 0;
+    const cleanText = text.trim();
+    if (!cleanText) return 0;
+    
+    let length = cleanText.length;
+    
+    // Count punctuation marks that cause pauses
+    const longPauses = (cleanText.match(/[。！？\.!\?\n\r]/g) || []).length;
+    const shortPauses = (cleanText.match(/[，；、,;:：]/g) || []).length;
+    
+    // Add virtual characters for pauses
+    // A long pause is about 0.5s - 0.8s, equivalent to ~3.5 Chinese characters spoken speed
+    // A short pause is about 0.2s - 0.4s, equivalent to ~1.8 Chinese characters spoken speed
+    return length + (longPauses * 3.5) + (shortPauses * 1.8);
+  }
+
   _getGroupBoundaries(sentences, duration) {
-    const lengths = sentences.map(s => (s.text || "").length);
+    const lengths = sentences.map(s => this._getWeightedLength(s.text));
     const totalLength = lengths.reduce((a, b) => a + b, 0);
     if (totalLength === 0) {
       return sentences.map((_, i) => ({
