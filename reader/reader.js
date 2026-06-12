@@ -1603,10 +1603,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.0';
+            versionDisplay.textContent = 'v3.0.1';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.0';
+          versionDisplay.textContent = 'v3.0.1';
         }
       }
       aboutDialog.showModal();
@@ -2542,6 +2542,11 @@ async function openBook(id) {
 
 // 關閉閱讀器，返回書櫃
 async function closeCurrentBook(triggerBack = true) {
+  // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動
+  isChangingChapter = false;
+  document.documentElement.style.overflow = '';
+  document.body.style.overflow = '';
+
   // 1. 停止 TTS 播放
   tts.stop();
 
@@ -3070,6 +3075,10 @@ function updateActiveSubChapterOnPage() {
 // 載入指定章節 (流式文本)
 async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
+  if (isChangingChapter) {
+    console.warn("loadChapter ignored because a chapter change is already in progress.");
+    return;
+  }
 
   const isPaginated = document.body.classList.contains('layout-paginated');
   const origHtmlOverflow = document.documentElement.style.overflow;
