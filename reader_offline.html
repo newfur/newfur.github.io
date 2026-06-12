@@ -15126,7 +15126,14 @@ class TTSEngine {
           this.voices.push(nativeVoice); // 放入語音列表以便後續 UI 同步
         }
         
-        alert("微軟雲端語音連接失敗（可能由於移動端跨域限制或無網絡），已自動為您切換為本地系統語音朗讀。");
+        let msg = "Microsoft cloud voice connection failed (possibly due to network issues or mobile restrictions), automatically switched to local system voice.";
+        let userLang = (typeof navigator !== 'undefined' && navigator.language) || 'en';
+        if (userLang.startsWith('zh-CN') || userLang.startsWith('zh_CN') || userLang.startsWith('zh-sg') || userLang.startsWith('zh-hans') || userLang.toLowerCase() === 'zh') {
+          msg = "微软云端语音连接失败（可能由于移动端跨域限制或无网络），已自动为您切换为本地系统语音朗读。";
+        } else if (userLang.startsWith('zh')) {
+          msg = "微軟雲端語音連接失敗（可能由於移動端跨域限制或無網路），已自動為您切換為本地系統語音朗讀。";
+        }
+        alert(msg);
         this.setVoice(nativeVoice.name);
         
         const selectEl = document.getElementById('tts-voice-select');
