@@ -1603,6 +1603,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: var(--primary-color);
 }
 
+.toc-item.collapsed-hidden {
+  display: none !important;
+}
+
 .toc-item.active {
   color: var(--primary-color) !important;
   font-weight: 600 !important;
@@ -19181,9 +19185,9 @@ function updateTOCListVisibility() {
     const chDepth = chItem ? (chItem.depth || 0) : 0;
     
     if (chDepth >= hideBelowDepth) {
-      itemLi.style.display = 'none';
+      itemLi.classList.add('collapsed-hidden');
     } else {
-      itemLi.style.display = '';
+      itemLi.classList.remove('collapsed-hidden');
       hideBelowDepth = 999;
       if (itemLi.classList.contains('collapsed')) {
         hideBelowDepth = chDepth + 1;

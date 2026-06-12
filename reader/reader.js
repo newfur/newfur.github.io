@@ -2636,9 +2636,9 @@ function updateTOCListVisibility() {
     const chDepth = chItem ? (chItem.depth || 0) : 0;
     
     if (chDepth >= hideBelowDepth) {
-      itemLi.style.display = 'none';
+      itemLi.classList.add('collapsed-hidden');
     } else {
-      itemLi.style.display = '';
+      itemLi.classList.remove('collapsed-hidden');
       hideBelowDepth = 999;
       if (itemLi.classList.contains('collapsed')) {
         hideBelowDepth = chDepth + 1;
