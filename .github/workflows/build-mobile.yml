@@ -36,9 +36,17 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug > gradle.log 2>&1 || (cat gradle.log && exit 1)
+          
+      - name: Upload Gradle build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/gradle.log
 
       - name: Upload Android APK Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
