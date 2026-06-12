@@ -1560,6 +1560,7 @@ export class TTSEngine {
               this.onSentenceStart(activeIdx);
             }
             this._fillPreFetchBuffer();
+            this._prewarmNextPlayer();
           }
         }
         
@@ -2221,6 +2222,9 @@ export class TTSEngine {
 
     const cached = this.audioCache.get(nextIndex);
     if (cached && cached.isReady) {
+      // 如果下一句屬於同一個合併分組，則無需預熱，因為使用的是同一個音訊源
+      if (cached.isGroupRef) return;
+      
       const nextPlayer = this.players[1 - this.activePlayerIdx];
       if (nextPlayer.dataset.srcUrl !== cached.blobUrl) {
         nextPlayer.src = cached.blobUrl;
