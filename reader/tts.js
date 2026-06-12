@@ -2295,55 +2295,47 @@ export class TTSEngine {
     this._clearHighlight();
     const styleClass = this.highlightStyle || 'highlight-style-yellow';
 
+    // 提取需要高亮的目標元素
+    let targetEl = null;
     if (sentence.elements && sentence.elements.length > 0) {
       sentence.elements.forEach(el => {
         el.classList.add('reading-sentence');
         el.classList.add(styleClass);
       });
-      const isPaginated = document.body.classList.contains('layout-paginated');
-      if (!isPaginated && sentence.elements[0]) {
-        const firstEl = sentence.elements[0];
-        // 強制瀏覽器執行同步佈局計算，以獲取最精確的坐標
-        const forceReflow = firstEl.offsetHeight;
-        const rect = firstEl.getBoundingClientRect();
-        const headerHeight = 80; 
-        const footerHeight = 80;
-        // 增加頂部 20px 和底部 100px 的安全邊距，防止高亮字出現在螢幕邊緣或被頁尾遮擋時才觸發滾動
-        const isVisible = rect.top >= (headerHeight + 20) && rect.bottom <= (window.innerHeight - footerHeight - 100);
-        
-        if (!isVisible) {
-          // 計算絕對 Y 坐標，手動精確滾動到視窗中央，避免 inline 元素調用 scrollIntoView 時定位到段落起點的瀏覽器 Bug
-          const absoluteY = rect.top + window.scrollY;
-          const targetScrollY = absoluteY - (window.innerHeight / 2) + (rect.height / 2);
-          window.scrollTo({
-            top: targetScrollY,
-            behavior: 'smooth'
-          });
-        }
-      }
+      targetEl = sentence.elements[0];
     } else if (sentence.element) {
       sentence.element.classList.add(styleClass);
       sentence.element.classList.add('reading-sentence');
-      
-      const isPaginated = document.body.classList.contains('layout-paginated');
-      if (!isPaginated) {
-        // 強制同步佈局
-        const forceReflow = sentence.element.offsetHeight;
-        const rect = sentence.element.getBoundingClientRect();
-        const headerHeight = 80;
-        const footerHeight = 80;
-        // 增加頂部 20px 和底部 100px 的安全邊距
-        const isVisible = rect.top >= (headerHeight + 20) && rect.bottom <= (window.innerHeight - footerHeight - 100);
-        
-        if (!isVisible) {
-          const absoluteY = rect.top + window.scrollY;
-          const targetScrollY = absoluteY - (window.innerHeight / 2) + (rect.height / 2);
-          window.scrollTo({
-            top: targetScrollY,
-            behavior: 'smooth'
-          });
-        }
-      }
+      targetEl = sentence.element;
+    }
+
+    // 統一滾動邏輯：所有分支共用同一套精確居中滾動
+    if (!targetEl) return;
+    const isPaginated = document.body.classList.contains('layout-paginated');
+    if (isPaginated) return;
+
+    // 【關鍵修復】先中斷任何正在進行的 smooth scroll 動畫。
+    // 如果前一句的 smooth scroll 仍在動畫中，getBoundingClientRect() 會返回動畫中間幀的坐標，
+    // 導致 isVisible 判斷錯誤（元素在動畫途中看似可見，但動畫完成後被推離視窗中央）。
+    // 透過 instant scroll 到當前位置來立即停止動畫，確保後續測量的坐標準確。
+    window.scrollTo({ top: window.scrollY, behavior: 'instant' });
+
+    // 強制同步佈局計算，確保 _clearHighlight 移除的 border 與新增的 border 都已反映到佈局中
+    const forceReflow = targetEl.offsetHeight;
+    const rect = targetEl.getBoundingClientRect();
+    const headerHeight = 80;
+    const footerHeight = 80;
+    // 頂部和底部安全邊距
+    const isVisible = rect.top >= (headerHeight + 20) && rect.bottom <= (window.innerHeight - footerHeight - 100);
+
+    if (!isVisible) {
+      // 計算絕對 Y 坐標，手動精確滾動到視窗中央
+      const absoluteY = rect.top + window.scrollY;
+      const targetScrollY = absoluteY - (window.innerHeight / 2) + (rect.height / 2);
+      window.scrollTo({
+        top: targetScrollY,
+        behavior: 'smooth'
+      });
     }
   }
 
