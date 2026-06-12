@@ -210,8 +210,24 @@ export class EpubParser {
   async _parseTOC() {
     // EPUB 3 使用 navigation document (通常在 manifest 中屬性含有 'nav')
     // EPUB 2 使用 ncx 檔案 (通常是 media-type = 'application/x-dtbncx+xml')
-    let navItem = Object.values(this.manifest).find(item => item.properties.includes('nav'));
+    let navItem = Object.values(this.manifest).find(item => item.properties && item.properties.includes('nav'));
+    if (!navItem) {
+      // 容錯降級：尋找 id 或 href 中含有 nav 或 toc 關鍵字的文件
+      navItem = Object.entries(this.manifest).find(([id, item]) => 
+        id.toLowerCase().includes('nav') || 
+        id.toLowerCase().includes('toc') || 
+        (item.href && (item.href.toLowerCase().includes('nav.xhtml') || item.href.toLowerCase().includes('toc.xhtml') || item.href.toLowerCase().includes('nav.html') || item.href.toLowerCase().includes('toc.html')))
+      )?.[1];
+    }
+
     let ncxItem = Object.values(this.manifest).find(item => item.mediaType === 'application/x-dtbncx+xml');
+    if (!ncxItem) {
+      // 容錯降級：尋找 id 或 href 含有 ncx 關鍵字的文件
+      ncxItem = Object.entries(this.manifest).find(([id, item]) => 
+        id.toLowerCase().includes('ncx') || 
+        (item.href && item.href.toLowerCase().includes('.ncx'))
+      )?.[1];
+    }
 
     const tocList = [];
 
@@ -222,10 +238,14 @@ export class EpubParser {
         navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
         const parser = new DOMParser();
         const doc = parser.parseFromString(navText, 'text/html');
-        const navLinks = doc.querySelectorAll('nav a');
+        let navLinks = doc.querySelectorAll('nav a');
+        if (navLinks.length === 0) {
+          navLinks = doc.querySelectorAll('a'); // 容錯：若無 nav 標籤，獲取所有連結
+        }
         
         navLinks.forEach(link => {
           const hrefAttr = link.getAttribute('href');
+          if (!hrefAttr) return;
           const title = link.textContent.trim();
           // navItem.href 的資料夾部分作為 resolved href 的 base
           const baseDir = this._getDirectory(navItem.href);
@@ -234,7 +254,7 @@ export class EpubParser {
           // 計算 depth: 向上尋找導航節點中的 ol/ul 父節點個數
           let depth = 0;
           let parent = link.parentElement;
-          while (parent && parent.tagName.toLowerCase() !== 'nav') {
+          while (parent && parent.tagName.toLowerCase() !== 'nav' && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html') {
             const tagName = parent.tagName.toLowerCase();
             if (tagName === 'ol' || tagName === 'ul') {
               depth++;
@@ -254,10 +274,23 @@ export class EpubParser {
         const ncxText = await this.zip.file(ncxItem.href).async('string');
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(ncxText, 'text/xml');
-        const navPoints = xmlDoc.querySelectorAll('navPoint');
+        
+        // 容錯：XML 區分大小寫，支持 navPoint 和 navpoint
+        let navPoints = xmlDoc.querySelectorAll('navPoint');
+        if (navPoints.length === 0) {
+          navPoints = xmlDoc.querySelectorAll('navpoint');
+        }
         
         navPoints.forEach(point => {
-          const labelNode = point.querySelector('navLabel > text');
+          // 容錯：支持 navLabel 和 navlabel，以及直接取節點內容
+          let labelNode = point.querySelector('navLabel > text') || 
+                            point.querySelector('navlabel > text') || 
+                            point.querySelector('navLabel text') || 
+                            point.querySelector('navlabel text');
+          if (!labelNode) {
+            labelNode = point.querySelector('navLabel') || point.querySelector('navlabel');
+          }
+          
           const contentNode = point.querySelector('content');
           if (labelNode && contentNode) {
             const title = labelNode.textContent.trim();
@@ -265,11 +298,12 @@ export class EpubParser {
             const baseDir = this._getDirectory(ncxItem.href);
             const resolvedHref = this._resolvePath(baseDir, src);
             
-            // 計算 depth: 向上尋找 navPoint 父節點個數
+            // 計算 depth: 向上尋找 navPoint/navpoint 父節點個數
             let depth = 0;
             let parent = point.parentElement;
             while (parent) {
-              if (parent.tagName && parent.tagName.toLowerCase() === 'navpoint') {
+              const pTagName = parent.tagName ? parent.tagName.toLowerCase() : '';
+              if (pTagName === 'navpoint') {
                 depth++;
               }
               parent = parent.parentElement;
