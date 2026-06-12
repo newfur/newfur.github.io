@@ -2623,8 +2623,34 @@ async function closeCurrentBook(triggerBack = true) {
 }
 
 // 渲染目錄
+// 更新目錄的可見性（基於折疊狀態）
+function updateTOCListVisibility() {
+  const tocList = document.getElementById('toc-list');
+  if (!tocList || !epubBookData || !epubBookData.chapters) return;
+  const items = Array.from(tocList.querySelectorAll('.toc-item'));
+  let hideBelowDepth = 999;
+  
+  items.forEach(itemLi => {
+    const itemIdx = parseInt(itemLi.getAttribute('data-chapter-index'), 10);
+    const chItem = epubBookData.chapters[itemIdx];
+    const chDepth = chItem ? (chItem.depth || 0) : 0;
+    
+    if (chDepth >= hideBelowDepth) {
+      itemLi.style.display = 'none';
+    } else {
+      itemLi.style.display = '';
+      hideBelowDepth = 999;
+      if (itemLi.classList.contains('collapsed')) {
+        hideBelowDepth = chDepth + 1;
+      }
+    }
+  });
+}
+
+// 渲染目錄
 function renderTOC(chapters) {
   const tocList = document.getElementById('toc-list');
+  if (!tocList) return;
   tocList.innerHTML = '';
   
   chapters.forEach((ch, idx) => {
@@ -2633,7 +2659,11 @@ function renderTOC(chapters) {
     const li = document.createElement('li');
     li.className = 'toc-item';
     li.setAttribute('data-chapter-index', idx);
-    li.textContent = ch.title ? ch.title.replace(/^[\s\u3000]+|[\s\u3000]+$/g, '') : '';
+    
+    // 建立文字容器
+    const textSpan = document.createElement('span');
+    textSpan.className = 'toc-text';
+    textSpan.textContent = ch.title ? ch.title.replace(/^[\s\u3000]+|[\s\u3000]+$/g, '') : '';
     
     // Check if this visible item is the active one or the closest preceding non-hidden active one
     let isActive = false;
@@ -2652,10 +2682,37 @@ function renderTOC(chapters) {
     if (isActive) li.classList.add('active');
     
     // 根據目錄層級（depth）添加縮排與樣式類別
-    if (ch.depth && ch.depth > 0) {
-      li.style.paddingLeft = (15 + ch.depth * 15) + 'px';
+    const depth = ch.depth || 0;
+    li.style.paddingLeft = (15 + depth * 15) + 'px';
+    if (depth > 0) {
       li.classList.add('toc-sub-item');
     }
+    
+    // 判斷是否有子章節（下一個未隱藏章節的深度大於當前章節的深度）
+    let hasChildren = false;
+    let nextVisibleIdx = idx + 1;
+    while (nextVisibleIdx < chapters.length && chapters[nextVisibleIdx].hiddenFromTOC) {
+      nextVisibleIdx++;
+    }
+    if (nextVisibleIdx < chapters.length && (chapters[nextVisibleIdx].depth || 0) > depth) {
+      hasChildren = true;
+    }
+    
+    if (hasChildren) {
+      const toggle = document.createElement('span');
+      toggle.className = 'toc-toggle';
+      toggle.innerHTML = '▼'; // 預設展開
+      
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation(); // 阻止載入章節
+        const isCollapsed = li.classList.toggle('collapsed');
+        toggle.innerHTML = isCollapsed ? '▶' : '▼';
+        updateTOCListVisibility();
+      });
+      li.appendChild(toggle);
+    }
+    
+    li.appendChild(textSpan);
     
     li.addEventListener('click', () => {
       document.getElementById('reader-sidebar').classList.remove('active');
@@ -2677,7 +2734,38 @@ function syncTOCActiveState(activeIndex) {
     }
   }
 
+  const tocList = document.getElementById('toc-list');
   const tocItems = document.querySelectorAll('#toc-list .toc-item');
+  
+  // 自動展開當前選中章節的所有父級目錄，確保在折疊狀態下當前章節是可見的
+  if (tocList && epubBookData && epubBookData.chapters && epubBookData.chapters[targetIndex]) {
+    let currentDepth = epubBookData.chapters[targetIndex].depth || 0;
+    let i = targetIndex - 1;
+    let modified = false;
+    
+    while (i >= 0 && currentDepth > 0) {
+      const ch = epubBookData.chapters[i];
+      if (ch && !ch.hiddenFromTOC) {
+        const depth = ch.depth || 0;
+        if (depth < currentDepth) {
+          const ancestorLi = tocList.querySelector(`.toc-item[data-chapter-index="${i}"]`);
+          if (ancestorLi && ancestorLi.classList.contains('collapsed')) {
+            ancestorLi.classList.remove('collapsed');
+            const toggle = ancestorLi.querySelector('.toc-toggle');
+            if (toggle) toggle.innerHTML = '▼';
+            modified = true;
+          }
+          currentDepth = depth;
+        }
+      }
+      i--;
+    }
+    
+    if (modified) {
+      updateTOCListVisibility();
+    }
+  }
+
   tocItems.forEach((item) => {
     const itemIndex = parseInt(item.getAttribute('data-chapter-index'), 10);
     if (itemIndex === targetIndex) {

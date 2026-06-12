@@ -1551,6 +1551,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .toc-item {
+  display: flex !important;
+  align-items: center !important;
   padding: 8px 16px !important;
   margin: 0 !important;
   border-radius: 8px;
@@ -1559,15 +1561,38 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: var(--text-color) !important;
   cursor: pointer;
   transition: all 0.2s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   text-align: start !important; /* 強制左對齊，防止書籍內聯/全域 CSS 洩漏造成目錄文字居中 */
 }
 
 .toc-item:hover {
   background-color: var(--border-color);
-  padding-left: 20px !important;
+}
+
+.toc-text {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toc-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-color);
+  opacity: 0.6;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  user-select: none;
+}
+
+.toc-toggle:hover {
+  opacity: 1;
+  color: var(--primary-color);
 }
 
 .toc-item.active {
