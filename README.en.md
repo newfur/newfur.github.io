@@ -54,7 +54,7 @@ Built-in lightweight pure JS parsing engines support local parsing and rendering
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v2.2.9)
+## 🔄 Recent Updates & Optimizations (v3.0.0)
 
 *   **Fixed reading time double-counting after library backup & restore**:
     - Refactored the reading stats merge in `importBook()`: for the same calendar day (`readingDays`) or the same hour (`hourlyDist`), the merge now takes the **maximum** of the two values instead of naively adding them together, preventing the same reading session from being counted twice when restoring a backup from the same device.
