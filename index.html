@@ -14876,6 +14876,34 @@ class TTSEngine {
           window.location.protocol === 'app:' ||
           window.location.protocol === 'file:'
         );
+
+        // Native Plugin delegation
+        if (isNativeApp && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
+          try {
+            const result = await window.Capacitor.Plugins.NativeTTS.downloadTTS({
+              text: sentence.text,
+              voice: voiceShortName,
+              connectionId: connectionId,
+              secMsGec: secMsGec,
+              dateStr: this._dateToString()
+            });
+            const base64ToBlob = (base64, mimeType) => {
+              const byteCharacters = atob(base64);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              return new Blob([byteArray], { type: mimeType });
+            };
+            const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
+            resolve(blob);
+            return;
+          } catch (nativeErr) {
+            console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
+          }
+        }
+
         const isWeb = !isNativeApp && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
         let url;
         if (isWeb) {
