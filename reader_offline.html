@@ -14132,6 +14132,42 @@ class TTSEngine {
     this.ttsEndpoint = '';
     this.ttsModel = 'tts-1';
 
+    // Listen for media action events from NativeTTS
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
+      try {
+        window.Capacitor.Plugins.NativeTTS.addListener('mediaAction', (data) => {
+          console.log("Received native media action:", data.action);
+          if (!this.isPlaying) return;
+          switch (data.action) {
+            case 'play':
+              if (this.isPaused) this.resume();
+              break;
+            case 'pause':
+              if (!this.isPaused) this.pause();
+              break;
+            case 'toggle':
+              if (this.isPaused) {
+                this.resume();
+              } else {
+                this.pause();
+              }
+              break;
+            case 'next':
+              this.next();
+              break;
+            case 'previous':
+              this.previous();
+              break;
+            case 'stop':
+              this.stop();
+              break;
+          }
+        });
+      } catch (e) {
+        console.warn("Failed to register NativeTTS mediaAction listener:", e);
+      }
+    }
+
     this._initVoices();
   }
 
@@ -15443,12 +15479,21 @@ class TTSEngine {
   }
 
   _updateMediaSession(sentence) {
+    const text = sentence ? sentence.text : 'TTS Reading';
+    const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
+    const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
+
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    if (isCapacitorApp) {
+      window.Capacitor.Plugins.NativeTTS.updateMetadata({
+        title: title,
+        artist: artist,
+        text: text
+      }).catch(e => console.error("Error updating native metadata:", e));
+    }
+
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
-        const text = sentence ? sentence.text : 'TTS Reading';
-        const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
-        const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
-        
         navigator.mediaSession.metadata = new MediaMetadata({
           title: text,
           artist: artist,
@@ -15541,6 +15586,19 @@ class TTSEngine {
     
     // 點擊正文後，只向 tts 引擎發送 1 句 (當前句)
     this._fetchSentence(this.currentIndex);
+
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    if (isCapacitorApp) {
+      const bookTitle = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
+      const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
+      const sentence = this.sentences[this.currentIndex];
+      window.Capacitor.Plugins.NativeTTS.startForegroundService({
+        title: bookTitle,
+        artist: bookArtist,
+        text: sentence ? sentence.text : '',
+        isPlaying: true
+      }).catch(e => console.error("Error starting native foreground service:", e));
+    }
 
     this._startSilenceKeepAlive();
     this._playActiveSentence();
@@ -15708,6 +15766,13 @@ class TTSEngine {
       this.isPaused = true;
       this._stopSilenceKeepAlive();
       
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (isCapacitorApp) {
+        window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+          isPlaying: false
+        }).catch(e => console.error("Error updating native playback state:", e));
+      }
+
       if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
@@ -15728,6 +15793,13 @@ class TTSEngine {
       this.isPaused = false;
       this._startSilenceKeepAlive();
       
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (isCapacitorApp) {
+        window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+          isPlaying: true
+        }).catch(e => console.error("Error updating native playback state:", e));
+      }
+
       if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
@@ -15750,6 +15822,11 @@ class TTSEngine {
     this.currentlyPlayingIndex = -1;
     this._stopSilenceKeepAlive();
     
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    if (isCapacitorApp) {
+      window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
+    }
+
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }

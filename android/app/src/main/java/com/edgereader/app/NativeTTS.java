@@ -1,5 +1,8 @@
 package com.edgereader.app;
 
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
 import com.getcapacitor.JSObject;
@@ -24,6 +27,83 @@ import okio.ByteString;
 public class NativeTTS extends Plugin {
 
     private static final String TAG = "NativeTTS";
+    public static NativeTTS instance;
+
+    @Override
+    public void load() {
+        super.load();
+        instance = this;
+    }
+
+    public void sendMediaAction(String action) {
+        JSObject data = new JSObject();
+        data.put("action", action);
+        notifyListeners("mediaAction", data);
+    }
+
+    @PluginMethod
+    public void startForegroundService(PluginCall call) {
+        try {
+            Context context = getContext();
+            Intent intent = new Intent(context, AudioPlayerService.class);
+            intent.setAction("ACTION_START");
+            intent.putExtra("title", call.getString("title", ""));
+            intent.putExtra("artist", call.getString("artist", ""));
+            intent.putExtra("text", call.getString("text", ""));
+            intent.putExtra("isPlaying", call.getBoolean("isPlaying", false));
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to start foreground service: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void updatePlaybackState(PluginCall call) {
+        try {
+            Context context = getContext();
+            Intent intent = new Intent(context, AudioPlayerService.class);
+            intent.setAction("ACTION_UPDATE_STATE");
+            intent.putExtra("isPlaying", call.getBoolean("isPlaying", false));
+            context.startService(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to update playback state: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void updateMetadata(PluginCall call) {
+        try {
+            Context context = getContext();
+            Intent intent = new Intent(context, AudioPlayerService.class);
+            intent.setAction("ACTION_UPDATE_METADATA");
+            intent.putExtra("title", call.getString("title", ""));
+            intent.putExtra("artist", call.getString("artist", ""));
+            intent.putExtra("text", call.getString("text", ""));
+            context.startService(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to update metadata: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void stopForegroundService(PluginCall call) {
+        try {
+            Context context = getContext();
+            Intent intent = new Intent(context, AudioPlayerService.class);
+            context.stopService(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to stop foreground service: " + e.getMessage());
+        }
+    }
 
     @PluginMethod
     public void downloadTTS(PluginCall call) {
