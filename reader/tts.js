@@ -711,10 +711,15 @@ export class TTSEngine {
     traverse(this.container);
     flushCurrentSentence();
 
-    // DOM 映射完成後，立即高亮並平移至當前正在播放的句子
-    const currentSent = this.sentences[this.currentIndex];
-    if (currentSent && currentSent.element) {
-      this._highlightSentence(currentSent);
+    // DOM 映射完成後，等瀏覽器完成佈局渲染後高亮並平移至當前正在播放的句子
+    if (this.isPlaying) {
+      setTimeout(() => {
+        if (!this.isPlaying) return;
+        const currentSent = this.sentences[this.currentIndex];
+        if (currentSent && currentSent.element) {
+          this._highlightSentence(currentSent);
+        }
+      }, 100);
     }
   }
 
