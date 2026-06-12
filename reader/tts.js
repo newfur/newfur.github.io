@@ -2297,7 +2297,8 @@ export class TTSEngine {
         const rect = firstEl.getBoundingClientRect();
         const headerHeight = 80; 
         const footerHeight = 80;
-        const isVisible = rect.top >= headerHeight && rect.bottom <= (window.innerHeight - footerHeight);
+        // 增加頂部 20px 和底部 100px 的安全邊距，防止高亮字出現在螢幕邊緣或被頁尾遮擋時才觸發滾動
+        const isVisible = rect.top >= (headerHeight + 20) && rect.bottom <= (window.innerHeight - footerHeight - 100);
         
         if (!isVisible) {
           firstEl.scrollIntoView({
@@ -2307,15 +2308,16 @@ export class TTSEngine {
         }
       }
     } else if (sentence.element) {
-      sentence.element.classList.add('reading-sentence');
       sentence.element.classList.add(styleClass);
+      sentence.element.classList.add('reading-sentence');
       
       const isPaginated = document.body.classList.contains('layout-paginated');
       if (!isPaginated) {
         const rect = sentence.element.getBoundingClientRect();
         const headerHeight = 80;
         const footerHeight = 80;
-        const isVisible = rect.top >= headerHeight && rect.bottom <= (window.innerHeight - footerHeight);
+        // 增加頂部 20px 和底部 100px 的安全邊距
+        const isVisible = rect.top >= (headerHeight + 20) && rect.bottom <= (window.innerHeight - footerHeight - 100);
         
         if (!isVisible) {
           sentence.element.scrollIntoView({
