@@ -120,6 +120,7 @@ export class TTSEngine {
 
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
+    this.playbackStartSessionIndex = null;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -1078,112 +1079,215 @@ export class TTSEngine {
     if (index >= this.sentences.length) return;
     if (this.audioCache.has(index)) return;
     if (retryCount === 0 && this.fetchingIndices.has(index)) return;
-    
-    this.fetchingIndices.add(index);
-    const sentence = this.sentences[index];
-    
-    this._downloadSentenceAudio(sentence).then(blob => {
-      this.consecutiveWsFailures = 0; // 成功加載，重置失敗計數器
+
+    // 判斷是否進入“分組（10句）發送”階段：
+    // 每當開始播放（即 playbackStartSessionIndex 已設定），前10句（index < session + 10）單句獲取以保證極速啟動，
+    // 從第11句起，轉為每10句一組進行合併請求
+    const isGroupPhase = (typeof this.playbackStartSessionIndex === 'number') && 
+                         (index >= this.playbackStartSessionIndex + 10);
+
+    if (!isGroupPhase) {
+      // 1. 單句獲取階段
+      this.fetchingIndices.add(index);
+      const sentence = this.sentences[index];
       
-      // 在本地 file:// 協議下使用 Base64 Data URL 替代 Blob URL，
-      // 以避免 Chrome 底層對 null origin 拋出 ERR_REQUEST_RANGE_NOT_SATISFIABLE 錯誤
-      if (window.location.protocol === 'file:') {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64Url = reader.result;
-          this.audioCache.set(index, {
-            blobUrl: base64Url,
-            isReady: true
-          });
-          this.fetchingIndices.delete(index);
-          
-          if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
-            this._playActiveSentence();
-          }
-          if (this.isPlaying && index === this.currentIndex + 1) {
-            this._prewarmNextPlayer();
-          }
-        };
-        reader.readAsDataURL(blob);
-      } else {
-        const blobUrl = URL.createObjectURL(blob);
-        this.audioCache.set(index, {
-          blobUrl,
-          isReady: true
-        });
+      this._downloadSentenceAudio(sentence).then(blob => {
+        this.consecutiveWsFailures = 0;
+        this._saveToCache(index, blob);
+      }).catch(err => {
+        console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         this.fetchingIndices.delete(index);
         
-        if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
+        if (retryCount < 2) {
+          setTimeout(() => {
+            this._fetchSentence(index, retryCount + 1);
+          }, 1500);
+          return;
+        }
+        
+        this.consecutiveWsFailures = (this.consecutiveWsFailures || 0) + 1;
+        if (this.consecutiveWsFailures >= 10) {
+          console.warn("WebSocket TTS failed 10 times consecutively. Switching to native Web Speech API.");
+          this.consecutiveWsFailures = 0;
+          
+          const currentLang = (voice && voice.lang) || 'zh-CN';
+          const cleanLang = currentLang.split('-')[0].toLowerCase();
+          let nativeVoice = this.voices.find(v => v.type === 'speechSynthesis' && v.lang.toLowerCase().startsWith(cleanLang));
+          
+          if (!nativeVoice) {
+            nativeVoice = {
+              name: 'System Default',
+              lang: cleanLang === 'zh' ? 'zh-CN' : 'en-US',
+              friendlyName: 'System Default',
+              isEdge: false,
+              isNative: true,
+              type: 'speechSynthesis'
+            };
+            this.voices.push(nativeVoice);
+          }
+          
+          let msg = "Microsoft cloud voice connection failed, automatically switched to local system voice.";
+          let userLang = (typeof navigator !== 'undefined' && navigator.language) || 'en';
+          if (userLang.startsWith('zh-CN') || userLang.startsWith('zh_CN') || userLang.startsWith('zh-sg') || userLang.startsWith('zh-hans') || userLang.toLowerCase() === 'zh') {
+            msg = "微软云端语音连接失败（可能由于移动端跨域限制或无网络），已自动为您切换为本地系统语音朗读。";
+          } else if (userLang.startsWith('zh')) {
+            msg = "微軟雲端語音連接失敗（可能由於移動端跨域限制或無網路），已自動為您切換為本地系統語音朗讀。";
+          }
+          alert(msg);
+          this.setVoice(nativeVoice.name);
+          
+          const selectEl = document.getElementById('tts-voice-select');
+          if (selectEl) {
+            selectEl.value = nativeVoice.name;
+          }
+          
+          if (this.isPlaying) {
+            this.play(this.currentIndex, true);
+          }
+          return;
+        }
+
+        if (this.isPlaying && this.currentIndex === index) {
+          this.currentIndex = index + 1;
           this._playActiveSentence();
         }
-        if (this.isPlaying && index === this.currentIndex + 1) {
-          this._prewarmNextPlayer();
+      });
+    } else {
+      // 2. 合併發送階段（每次發送10句）
+      // 計算包含 index 的分組起點 index
+      const offset = index - (this.playbackStartSessionIndex + 10);
+      const groupIdx = Math.floor(offset / 10);
+      const groupStartIndex = this.playbackStartSessionIndex + 10 + groupIdx * 10;
+      
+      if (this.audioCache.has(groupStartIndex)) return;
+      if (retryCount === 0 && this.fetchingIndices.has(groupStartIndex)) return;
+      
+      this.fetchingIndices.add(groupStartIndex);
+      
+      // 收集該分組的10句文字
+      const groupSentences = [];
+      for (let i = 0; i < 10; i++) {
+        const targetIdx = groupStartIndex + i;
+        if (targetIdx < this.sentences.length) {
+          groupSentences.push(this.sentences[targetIdx]);
         }
       }
-    }).catch(err => {
-      console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
-      this.fetchingIndices.delete(index);
       
-      // 網路波動重試機制
-      if (retryCount < 2) {
-        console.log(`Retrying prefetch for sentence ${index} in 1500ms...`);
-        setTimeout(() => {
-          this._fetchSentence(index, retryCount + 1);
-        }, 1500);
+      if (groupSentences.length === 0) {
+        this.fetchingIndices.delete(groupStartIndex);
         return;
       }
       
-      // 增加失敗計數 (任何在這裡捕獲的錯誤都是 WebSocket/網絡加載失敗，在多次重試失敗後才計入)
-      this.consecutiveWsFailures = (this.consecutiveWsFailures || 0) + 1;
-      if (this.consecutiveWsFailures >= 10) {
-        console.warn("WebSocket TTS failed 10 times consecutively. Switching to native Web Speech API.");
-        this.consecutiveWsFailures = 0; // 重置
+      // 合併句子的文字
+      const mergedText = groupSentences.map(s => s.text).join(' ');
+      const virtualSentence = {
+        text: mergedText,
+        chapterIndex: groupSentences[0].chapterIndex
+      };
+      
+      this._downloadSentenceAudio(virtualSentence).then(blob => {
+        this.consecutiveWsFailures = 0;
+        this._saveGroupToCache(groupStartIndex, groupSentences, blob);
+      }).catch(err => {
+        console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
+        this.fetchingIndices.delete(groupStartIndex);
         
-        // 查找與當前語音（若無則默認中文）語言前綴相匹配的本地系統語音
-        const currentLang = (voice && voice.lang) || 'zh-CN';
-        const cleanLang = currentLang.split('-')[0].toLowerCase();
-        let nativeVoice = this.voices.find(v => v.type === 'speechSynthesis' && v.lang.toLowerCase().startsWith(cleanLang));
-        
-        if (!nativeVoice) {
-          // 找不到具體語音，建立一個虛擬的系統默認語音進行降級
-          nativeVoice = {
-            name: 'System Default',
-            lang: cleanLang === 'zh' ? 'zh-CN' : 'en-US',
-            friendlyName: 'System Default',
-            isEdge: false,
-            isNative: true,
-            type: 'speechSynthesis'
-          };
-          this.voices.push(nativeVoice); // 放入語音列表以便後續 UI 同步
+        if (retryCount < 2) {
+          setTimeout(() => {
+            this._fetchSentence(groupStartIndex, retryCount + 1);
+          }, 1500);
         }
-        
-        let msg = "Microsoft cloud voice connection failed (possibly due to network issues or mobile restrictions), automatically switched to local system voice.";
-        let userLang = (typeof navigator !== 'undefined' && navigator.language) || 'en';
-        if (userLang.startsWith('zh-CN') || userLang.startsWith('zh_CN') || userLang.startsWith('zh-sg') || userLang.startsWith('zh-hans') || userLang.toLowerCase() === 'zh') {
-          msg = "微软云端语音连接失败（可能由于移动端跨域限制或无网络），已自动为您切换为本地系统语音朗读。";
-        } else if (userLang.startsWith('zh')) {
-          msg = "微軟雲端語音連接失敗（可能由於移動端跨域限制或無網路），已自動為您切換為本地系統語音朗讀。";
-        }
-        alert(msg);
-        this.setVoice(nativeVoice.name);
-        
-        const selectEl = document.getElementById('tts-voice-select');
-        if (selectEl) {
-          selectEl.value = nativeVoice.name;
-        }
-        
-        if (this.isPlaying) {
-          this.play(this.currentIndex, true);
-        }
-        return; // 終止當前失敗鏈的傳播，防止重複執行
-      }
+      });
+    }
+  }
 
-      if (this.isPlaying && this.currentIndex === index) {
-        // 容錯機制：跳過該句子
-        this.currentIndex = index + 1;
-        this._playActiveSentence();
+  _saveToCache(index, blob) {
+    if (window.location.protocol === 'file:') {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        this.audioCache.set(index, {
+          blobUrl: reader.result,
+          isReady: true,
+          isGroup: false
+        });
+        this.fetchingIndices.delete(index);
+        this._onAudioCacheReady(index);
+      };
+      reader.readAsDataURL(blob);
+    } else {
+      const blobUrl = URL.createObjectURL(blob);
+      this.audioCache.set(index, {
+        blobUrl,
+        isReady: true,
+        isGroup: false
+      });
+      this.fetchingIndices.delete(index);
+      this._onAudioCacheReady(index);
+    }
+  }
+
+  _saveGroupToCache(groupStartIndex, groupSentences, blob) {
+    const onUrlReady = (blobUrl) => {
+      // 快取分組的音訊源，記錄所包含的句子清單
+      this.audioCache.set(groupStartIndex, {
+        blobUrl,
+        isReady: true,
+        isGroup: true,
+        groupStartIndex,
+        sentences: groupSentences
+      });
+      
+      // 將分組內的其他 index 關聯指向起點，作為 references
+      for (let i = 1; i < groupSentences.length; i++) {
+        const idx = groupStartIndex + i;
+        this.audioCache.set(idx, {
+          isReady: true,
+          isGroupRef: true,
+          groupStartIndex
+        });
       }
-    });
+      
+      this.fetchingIndices.delete(groupStartIndex);
+      this._onAudioCacheReady(groupStartIndex);
+    };
+
+    if (window.location.protocol === 'file:') {
+      const reader = new FileReader();
+      reader.onloadend = () => onUrlReady(reader.result);
+      reader.readAsDataURL(blob);
+    } else {
+      onUrlReady(URL.createObjectURL(blob));
+    }
+  }
+
+  _onAudioCacheReady(index) {
+    if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
+      this._playActiveSentence();
+    }
+    if (this.isPlaying && index === this.currentIndex + 1) {
+      this._prewarmNextPlayer();
+    }
+  }
+
+  _getGroupBoundaries(sentences, duration) {
+    const lengths = sentences.map(s => (s.text || "").length);
+    const totalLength = lengths.reduce((a, b) => a + b, 0);
+    if (totalLength === 0) {
+      return sentences.map((_, i) => ({
+        start: (duration / sentences.length) * i,
+        end: (duration / sentences.length) * (i + 1)
+      }));
+    }
+    
+    let currentStart = 0;
+    const boundaries = [];
+    for (let i = 0; i < sentences.length; i++) {
+      const frac = lengths[i] / totalLength;
+      const end = currentStart + duration * frac;
+      boundaries.push({ start: currentStart, end: end });
+      currentStart = end;
+    }
+    return boundaries;
   }
 
   _fillPreFetchBuffer() {
@@ -1192,10 +1296,9 @@ export class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    // 始終保持當前播放位置後方的 10 句處於預載快取狀態。
-    // 這能自動填補因跳轉、跨章節追加新文本產生的快取空洞。
-    const bufferSize = 10;
-    for (let i = 1; i <= bufferSize; i++) {
+    // 保持當前播放位置後方的 70 句處於預載快取狀態。
+    // _fetchSentence 會自動處理前 10 句單句獲取與後續每 10 句分組獲取的邏輯。
+    for (let i = 1; i <= 70; i++) {
       const targetIndex = this.currentIndex + i;
       if (targetIndex < this.sentences.length) {
         this._fetchSentence(targetIndex);
@@ -1235,20 +1338,62 @@ export class TTSEngine {
     
     this.currentlyPlayingIndex = index;
     
+    // 判斷是否為分組播放
+    let audioUrl = cached.blobUrl;
+    let isGroupPlay = false;
+    let groupStartIndex = index;
+    let groupSentences = null;
+    let idxInGroup = 0;
+
+    if (cached.isGroup) {
+      audioUrl = cached.blobUrl;
+      isGroupPlay = true;
+      groupStartIndex = index;
+      groupSentences = cached.sentences;
+      idxInGroup = 0;
+    } else if (cached.isGroupRef) {
+      const parentCache = this.audioCache.get(cached.groupStartIndex);
+      if (parentCache && parentCache.isReady) {
+        audioUrl = parentCache.blobUrl;
+        isGroupPlay = true;
+        groupStartIndex = cached.groupStartIndex;
+        groupSentences = parentCache.sentences;
+        idxInGroup = index - groupStartIndex;
+      }
+    }
+    
     // 獲取下一個閒置的播放器
     const nextPlayerIdx = 1 - this.activePlayerIdx;
     const prevAudio = this.currentAudio;
     const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
     
-    if (audio.dataset.srcUrl !== cached.blobUrl) {
-      audio.src = cached.blobUrl;
-      audio.dataset.srcUrl = cached.blobUrl;
+    const isSameSource = (audio.dataset.srcUrl === audioUrl);
+    
+    const setupGroupSeeking = () => {
+      if (isGroupPlay && groupSentences && audio.duration) {
+        const boundaries = this._getGroupBoundaries(groupSentences, audio.duration);
+        if (boundaries[idxInGroup]) {
+          const targetTime = boundaries[idxInGroup].start;
+          if (Math.abs(audio.currentTime - targetTime) > 0.5) {
+            audio.currentTime = targetTime;
+          }
+        }
+      }
+    };
+
+    if (!isSameSource) {
+      audio.src = audioUrl;
+      audio.dataset.srcUrl = audioUrl;
       audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
+        setupGroupSeeking();
       };
+    } else {
+      audio.playbackRate = this.rate;
+      setupGroupSeeking();
     }
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
@@ -1273,45 +1418,125 @@ export class TTSEngine {
     
     // 監聽時間更新事件：在當前句子即將結束前，提前預加載並播放下一句，實現完美無縫交替
     let hasTriggeredNext = false;
-    audio.ontimeupdate = () => {
-      if (!this.isPlaying) return;
+    
+    if (isGroupPlay) {
+      audio.ontimeupdate = () => {
+        if (!this.isPlaying) return;
+        if (!audio.duration) return;
+        
+        const boundaries = this._getGroupBoundaries(groupSentences, audio.duration);
+        const currentTime = audio.currentTime;
+        
+        // 尋找當前播放時間對應分組內的哪一句
+        let currentIdxInGroup = idxInGroup;
+        for (let i = 0; i < boundaries.length; i++) {
+          if (currentTime >= boundaries[i].start && currentTime < boundaries[i].end) {
+            currentIdxInGroup = i;
+            break;
+          }
+        }
+        
+        const activeIdx = groupStartIndex + currentIdxInGroup;
+        if (activeIdx !== this.currentIndex) {
+          this.currentIndex = activeIdx;
+          const currentSentence = this.sentences[activeIdx];
+          
+          if (currentSentence) {
+            if (currentSentence.chapterIndex !== this.currentChapterIndex) {
+              this.currentChapterIndex = currentSentence.chapterIndex;
+              this.prefetchedChapterIndex = null;
+              if (this.onChapterTransition) {
+                this.onChapterTransition(currentSentence.chapterIndex);
+              }
+              this._prefetchNextChapter();
+            }
+            
+            this._highlightSentence(currentSentence);
+            this._updateMediaSession(currentSentence);
+            if (this.onSentenceStart) {
+              this.onSentenceStart(activeIdx);
+            }
+            this._fillPreFetchBuffer();
+          }
+        }
+        
+        // 計算合理的提前量
+        const threshold = Math.min(0.08, audio.duration * 0.08);
+        if (currentTime >= audio.duration - threshold) {
+          if (!hasTriggeredNext) {
+            hasTriggeredNext = true;
+            audio.ontimeupdate = null; // 避免重疊期間重複觸發
+            
+            // 切換至下一個播放器，播放下一分組的起點
+            this.activePlayerIdx = nextPlayerIdx;
+            this.currentIndex = groupStartIndex + groupSentences.length;
+            this._playActiveSentence();
+          }
+        }
+      };
       
-      // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
-      const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
-      if (audio.duration && audio.currentTime >= audio.duration - threshold) {
+      audio.onended = () => {
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onloadedmetadata = null;
+        
+        if (audioUrl && audioUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(audioUrl);
+        }
+        for (let i = 0; i < groupSentences.length; i++) {
+          this.audioCache.delete(groupStartIndex + i);
+        }
+        
+        if (!this.isPlaying) return;
+        
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
-          audio.ontimeupdate = null; // 避免重疊期間重複觸發
-          
-          // 切換至下一個播放器，並播放下一句
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = groupStartIndex + groupSentences.length;
+          this._playActiveSentence();
+        }
+      };
+    } else {
+      audio.ontimeupdate = () => {
+        if (!this.isPlaying) return;
+        
+        // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
+        const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
+        if (audio.duration && audio.currentTime >= audio.duration - threshold) {
+          if (!hasTriggeredNext) {
+            hasTriggeredNext = true;
+            audio.ontimeupdate = null; // 避免重疊期間重複觸發
+            
+            // 切換至下一個播放器，並播放下一句
+            this.activePlayerIdx = nextPlayerIdx;
+            this.currentIndex = index + 1;
+            this._playActiveSentence();
+          }
+        }
+      };
+      
+      // 容錯機制：以防 ontimeupdate 由於特殊原因未觸發（例如有些設備或格式的 duration 為空）
+      audio.onended = () => {
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onloadedmetadata = null;
+        
+        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(cached.blobUrl);
+        }
+        this.audioCache.delete(index);
+        
+        if (!this.isPlaying) return;
+        
+        // 若下一句還沒有被觸發播放，則在此手動觸發
+        if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
           this.currentIndex = index + 1;
           this._playActiveSentence();
         }
-      }
-    };
-    
-    // 容錯機制：以防 ontimeupdate 由於特殊原因未觸發（例如有些設備或格式的 duration 為空）
-    audio.onended = () => {
-      audio.ontimeupdate = null;
-      audio.onended = null;
-      audio.onloadedmetadata = null;
-      
-      if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(cached.blobUrl);
-      }
-      this.audioCache.delete(index);
-      
-      if (!this.isPlaying) return;
-      
-      // 若下一句還沒有被觸發播放，則在此手動觸發
-      if (!hasTriggeredNext) {
-        hasTriggeredNext = true;
-        this.activePlayerIdx = nextPlayerIdx;
-        this.currentIndex = index + 1;
-        this._playActiveSentence();
-      }
-    };
+      };
+    }
     
     audio.play().then(() => {
       // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
@@ -1341,7 +1566,7 @@ export class TTSEngine {
       if (!hasTriggeredNext) {
         hasTriggeredNext = true;
         this.activePlayerIdx = nextPlayerIdx;
-        this.currentIndex = index + 1;
+        this.currentIndex = isGroupPlay ? (groupStartIndex + groupSentences.length) : (index + 1);
         this._playActiveSentence();
       }
     });
@@ -1578,6 +1803,7 @@ export class TTSEngine {
     
     this.isInitialPlay = true; // 標記為點擊開始的初始播放
     this.playbackStarted = false; // 標記尚未開始播放
+    this.playbackStartSessionIndex = this.currentIndex;
     
     // 點擊正文後，只向 tts 引擎發送 1 句 (當前句)
     this._fetchSentence(this.currentIndex);
