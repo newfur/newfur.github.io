@@ -50,6 +50,7 @@ public class NativeTTS extends Plugin {
             intent.putExtra("title", call.getString("title", ""));
             intent.putExtra("artist", call.getString("artist", ""));
             intent.putExtra("text", call.getString("text", ""));
+            intent.putExtra("cover", call.getString("cover", ""));
             intent.putExtra("isPlaying", call.getBoolean("isPlaying", false));
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -7,6 +7,8 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -30,6 +32,7 @@ public class AudioPlayerService extends Service {
     private String currentTitle = "";
     private String currentArtist = "";
     private String currentText = "";
+    private Bitmap coverBitmap = null;
 
     @Override
     public void onCreate() {
@@ -111,7 +114,14 @@ public class AudioPlayerService extends Service {
                         currentTitle = intent.getStringExtra("title");
                         currentArtist = intent.getStringExtra("artist");
                         currentText = intent.getStringExtra("text");
+                        String coverBase64 = intent.getStringExtra("cover");
                         isPlaying = intent.getBooleanExtra("isPlaying", false);
+                        
+                        if (coverBase64 != null && !coverBase64.isEmpty()) {
+                            coverBitmap = decodeBase64ToBitmap(coverBase64);
+                        } else {
+                            coverBitmap = null;
+                        }
                         
                         startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
                         updatePlaybackState(isPlaying);
@@ -177,6 +187,10 @@ public class AudioPlayerService extends Service {
                .setVisibility(Notification.VISIBILITY_PUBLIC)
                .setOngoing(isPlaying);
 
+        if (coverBitmap != null) {
+            builder.setLargeIcon(coverBitmap);
+        }
+
         // Add Previous action
         Intent prevIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_PREVIOUS");
         PendingIntent prevPending = PendingIntent.getService(this, 2, prevIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
@@ -238,7 +252,27 @@ public class AudioPlayerService extends Service {
                 .putString(MediaMetadata.METADATA_KEY_TITLE, text)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, title);
+        if (coverBitmap != null) {
+            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
+            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, coverBitmap);
+        }
         mediaSession.setMetadata(metadataBuilder.build());
+    }
+
+    private Bitmap decodeBase64ToBitmap(String base64Str) {
+        try {
+            if (base64Str.startsWith("data:")) {
+                int commaIdx = base64Str.indexOf(",");
+                if (commaIdx != -1) {
+                    base64Str = base64Str.substring(commaIdx + 1);
+                }
+            }
+            byte[] decodedBytes = android.util.Base64.decode(base64Str, android.util.Base64.DEFAULT);
+            return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to decode base64 cover: " + e.getMessage());
+            return null;
+        }
     }
 
     private void acquireLocks() {
@@ -305,6 +339,10 @@ public class AudioPlayerService extends Service {
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
         releaseLocks();
+        if (coverBitmap != null) {
+            coverBitmap.recycle();
+            coverBitmap = null;
+        }
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();

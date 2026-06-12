@@ -15652,15 +15652,19 @@ class TTSEngine {
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
-      const bookTitle = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
-      const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
-      const sentence = this.sentences[this.currentIndex];
-      window.Capacitor.Plugins.NativeTTS.startForegroundService({
-        title: bookTitle,
-        artist: bookArtist,
-        text: sentence ? sentence.text : '',
-        isPlaying: true
-      }).catch(e => console.error("Error starting native foreground service:", e));
+      (async () => {
+        const bookTitle = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
+        const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
+        const sentence = this.sentences[this.currentIndex];
+        const coverBase64 = await getBookCoverBase64();
+        window.Capacitor.Plugins.NativeTTS.startForegroundService({
+          title: bookTitle,
+          artist: bookArtist,
+          text: sentence ? sentence.text : '',
+          cover: coverBase64,
+          isPlaying: true
+        }).catch(e => console.error("Error starting native foreground service:", e));
+      })();
     }
 
     this._startSilenceKeepAlive();
@@ -16115,6 +16119,31 @@ class TTSEngine {
       });
     }
   }
+}
+
+async function getBookCoverBase64() {
+  if (typeof currentBook === 'undefined' || !currentBook || !currentBook.cover) {
+    return '';
+  }
+  try {
+    if (typeof currentBook.cover === 'string') {
+      if (currentBook.cover.startsWith('data:')) {
+        return currentBook.cover;
+      }
+      return '';
+    }
+    if (currentBook.cover instanceof Blob) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(currentBook.cover);
+      });
+    }
+  } catch (e) {
+    console.warn("Failed to get book cover base64:", e);
+  }
+  return '';
 }
 
 
