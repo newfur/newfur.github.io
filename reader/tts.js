@@ -1502,21 +1502,39 @@ export class TTSEngine {
     audio.playbackRate = this.rate;
     
     // 跨章節無縫過渡檢測
+    // 用於執行高亮與回調的輔助函數（章節切換後需重新讀取句子引用以取得新 DOM 元素）
+    const doHighlightAndCallbacks = () => {
+      const sent = this.sentences[index] || sentence;
+      this._highlightSentence(sent);
+      this._updateMediaSession(sent);
+      if (this.onSentenceStart) {
+        this.onSentenceStart(index);
+      }
+    };
+
     if (sentence.chapterIndex !== this.currentChapterIndex) {
       this.currentChapterIndex = sentence.chapterIndex;
       this.prefetchedChapterIndex = null;
       
       if (this.onChapterTransition) {
-        this.onChapterTransition(sentence.chapterIndex);
+        // onChapterTransition 是 async 函數（內部 await loadChapter 重建 DOM）
+        // 必須等待完成後再高亮，否則句子的 element 引用尚未由 syncDOM 建立
+        const transitionPromise = this.onChapterTransition(sentence.chapterIndex);
+        if (transitionPromise && typeof transitionPromise.then === 'function') {
+          transitionPromise.then(() => {
+            if (!this.isPlaying) return;
+            doHighlightAndCallbacks();
+          });
+        } else {
+          doHighlightAndCallbacks();
+        }
+      } else {
+        doHighlightAndCallbacks();
       }
       
       this._prefetchNextChapter();
-    }
-    
-    this._highlightSentence(sentence);
-    this._updateMediaSession(sentence);
-    if (this.onSentenceStart) {
-      this.onSentenceStart(index);
+    } else {
+      doHighlightAndCallbacks();
     }
     
     // 監聽時間更新事件：在當前句子即將結束前，提前預加載並播放下一句，實現完美無縫交替
@@ -1545,22 +1563,38 @@ export class TTSEngine {
           const currentSentence = this.sentences[activeIdx];
           
           if (currentSentence) {
+            // 高亮與回調輔助（章節切換後重新讀取句子以取得新 DOM 元素）
+            const doGroupHighlight = () => {
+              const sent = this.sentences[activeIdx] || currentSentence;
+              this._highlightSentence(sent);
+              this._updateMediaSession(sent);
+              if (this.onSentenceStart) {
+                this.onSentenceStart(activeIdx);
+              }
+              this._fillPreFetchBuffer();
+              this._prewarmNextPlayer();
+            };
+
             if (currentSentence.chapterIndex !== this.currentChapterIndex) {
               this.currentChapterIndex = currentSentence.chapterIndex;
               this.prefetchedChapterIndex = null;
               if (this.onChapterTransition) {
-                this.onChapterTransition(currentSentence.chapterIndex);
+                const p = this.onChapterTransition(currentSentence.chapterIndex);
+                if (p && typeof p.then === 'function') {
+                  p.then(() => {
+                    if (!this.isPlaying) return;
+                    doGroupHighlight();
+                  });
+                } else {
+                  doGroupHighlight();
+                }
+              } else {
+                doGroupHighlight();
               }
               this._prefetchNextChapter();
+            } else {
+              doGroupHighlight();
             }
-            
-            this._highlightSentence(currentSentence);
-            this._updateMediaSession(currentSentence);
-            if (this.onSentenceStart) {
-              this.onSentenceStart(activeIdx);
-            }
-            this._fillPreFetchBuffer();
-            this._prewarmNextPlayer();
           }
         }
         
@@ -1722,19 +1756,34 @@ export class TTSEngine {
       this.currentIndex = index;
       
       // 跨章節無縫過渡檢測
+      const doNativeHighlight = () => {
+        const sent = this.sentences[index] || sentence;
+        this._highlightSentence(sent);
+        this._updateMediaSession(sent);
+        if (this.onSentenceStart) {
+          this.onSentenceStart(index);
+        }
+      };
+
       if (sentence.chapterIndex !== this.currentChapterIndex) {
         this.currentChapterIndex = sentence.chapterIndex;
         this.prefetchedChapterIndex = null;
         if (this.onChapterTransition) {
-          this.onChapterTransition(sentence.chapterIndex);
+          const p = this.onChapterTransition(sentence.chapterIndex);
+          if (p && typeof p.then === 'function') {
+            p.then(() => {
+              if (!this.isPlaying) return;
+              doNativeHighlight();
+            });
+          } else {
+            doNativeHighlight();
+          }
+        } else {
+          doNativeHighlight();
         }
         this._prefetchNextChapter();
-      }
-      
-      this._highlightSentence(sentence);
-      this._updateMediaSession(sentence);
-      if (this.onSentenceStart) {
-        this.onSentenceStart(index);
+      } else {
+        doNativeHighlight();
       }
 
       // 預先將「下一句」放入瀏覽器的朗讀隊列中，以實現無縫連續過渡
