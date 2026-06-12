@@ -364,32 +364,42 @@ function initUIEventBindings() {
   // 下载离线版单文件
   const downloadOfflineBtn = document.getElementById('download-offline-btn');
   if (downloadOfflineBtn) {
-    downloadOfflineBtn.addEventListener('click', () => {
-      if (window.location.protocol.startsWith('http')) {
-        const fileUrl = '/reader_offline.html';
-        fetch(fileUrl)
-          .then(response => {
-            if (!response.ok) throw new Error('Offline file not found on server.');
-            return response.blob();
-          })
-          .then(blob => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'reader_offline.html';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          })
-          .catch(err => {
-            console.error('Failed to download offline reader:', err);
-            alert('下載離線版檔案失敗：' + err.message);
-          });
-      } else {
-        alert(getMsg('already_offline') || '您目前已經處於離線版或本地執行環境中！');
-      }
-    });
+    const isNativeApp = typeof window !== 'undefined' && (
+      window.Capacitor ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'app:' ||
+      window.location.protocol === 'file:'
+    );
+    if (isNativeApp) {
+      downloadOfflineBtn.style.display = 'none';
+    } else {
+      downloadOfflineBtn.addEventListener('click', () => {
+        if (window.location.protocol.startsWith('http')) {
+          const fileUrl = '/reader_offline.html';
+          fetch(fileUrl)
+            .then(response => {
+              if (!response.ok) throw new Error('Offline file not found on server.');
+              return response.blob();
+            })
+            .then(blob => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'reader_offline.html';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            })
+            .catch(err => {
+              console.error('Failed to download offline reader:', err);
+              alert('下載離線版檔案失敗：' + err.message);
+            });
+        } else {
+          alert(getMsg('already_offline') || '您目前已經處於離線版或本地執行環境中！');
+        }
+      });
+    }
   }
 
   // 書庫行為
