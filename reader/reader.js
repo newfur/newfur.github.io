@@ -1603,10 +1603,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.1';
+            versionDisplay.textContent = 'v3.0.2';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.1';
+          versionDisplay.textContent = 'v3.0.2';
         }
       }
       aboutDialog.showModal();

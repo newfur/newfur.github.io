@@ -57,6 +57,17 @@ function splitTextIntoSentences(text) {
   return sentences;
 }
 
+// 輔助函式：判斷一個句子是否僅為用於分割段落的裝飾/分隔符號（如 ***, ---, ◆◆◆）
+function isSeparatorSentence(text) {
+  const clean = text.replace(/\s+/g, '');
+  if (clean.length === 0) return false;
+  // 1. 包含連續2個以上的 *, -, _, =, #, ~, +, ., /, \, — 等特殊符號的純符號串
+  if (/^[*\-_=#~+./\\—]{2,}$/.test(clean)) return true;
+  // 2. 包含常見的裝飾分割符號如 ◆◇●○■□▲△★☆※
+  if (/^[◆◇●○■□▲△★☆※]{1,}$/.test(clean)) return true;
+  return false;
+}
+
 export class TTSEngine {
   constructor() {
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
@@ -453,19 +464,21 @@ export class TTSEngine {
       const cleanSentence = currentText.trim();
       if (cleanSentence.length > 0) {
         if (currentElements.length > 0) {
-          this.sentences.push({
-            index: sentenceId,
-            relativeIndex: sentenceId,
-            chapterIndex: currentActiveSubChapterIndex,
-            text: cleanSentence,
-            isHeading: isHeading,
-            elements: [...currentElements],
-            element: currentElements[0]
-          });
-          currentElements.forEach(el => {
-            el.setAttribute('data-sentence-index', sentenceId);
-          });
-          sentenceId++;
+          if (!isSeparatorSentence(cleanSentence)) {
+            this.sentences.push({
+              index: sentenceId,
+              relativeIndex: sentenceId,
+              chapterIndex: currentActiveSubChapterIndex,
+              text: cleanSentence,
+              isHeading: isHeading,
+              elements: [...currentElements],
+              element: currentElements[0]
+            });
+            currentElements.forEach(el => {
+              el.setAttribute('data-sentence-index', sentenceId);
+            });
+            sentenceId++;
+          }
         }
       }
       currentText = "";
@@ -595,42 +608,44 @@ export class TTSEngine {
           const targetSentIdx = startSentenceIndex + sentenceId;
           let finalSentIdx = targetSentIdx;
 
-          const hasNoElements = (sent) => !sent.element && (!sent.elements || sent.elements.length === 0);
+          if (!isSeparatorSentence(cleanSentence)) {
+            const hasNoElements = (sent) => !sent.element && (!sent.elements || sent.elements.length === 0);
 
-          let existingSentence = this.sentences.find(sent => 
-            sent.chapterIndex === currentActiveSubChapterIndex && 
-            sent.text === cleanSentence && 
-            hasNoElements(sent)
-          );
-          if (!existingSentence) {
-            existingSentence = this.sentences.find(sent => 
+            let existingSentence = this.sentences.find(sent => 
+              sent.chapterIndex === currentActiveSubChapterIndex && 
               sent.text === cleanSentence && 
               hasNoElements(sent)
             );
-          }
-
-          if (existingSentence) {
-            existingSentence.element = currentElements[0];
-            existingSentence.elements = [...currentElements];
-            existingSentence.chapterIndex = currentActiveSubChapterIndex;
-            existingSentence.isHeading = isHeading;
-            finalSentIdx = existingSentence.index;
-          } else {
-            // 退化降級：直接按 index 對照
-            const sentByIndex = this.sentences[targetSentIdx];
-            if (sentByIndex) {
-              sentByIndex.element = currentElements[0];
-              sentByIndex.elements = [...currentElements];
-              sentByIndex.chapterIndex = currentActiveSubChapterIndex;
-              sentByIndex.isHeading = isHeading;
-              finalSentIdx = sentByIndex.index;
+            if (!existingSentence) {
+              existingSentence = this.sentences.find(sent => 
+                sent.text === cleanSentence && 
+                hasNoElements(sent)
+              );
             }
-          }
 
-          currentElements.forEach(el => {
-            el.setAttribute('data-sentence-index', finalSentIdx);
-          });
-          sentenceId++;
+            if (existingSentence) {
+              existingSentence.element = currentElements[0];
+              existingSentence.elements = [...currentElements];
+              existingSentence.chapterIndex = currentActiveSubChapterIndex;
+              existingSentence.isHeading = isHeading;
+              finalSentIdx = existingSentence.index;
+            } else {
+              // 退化降級：直接按 index 對照
+              const sentByIndex = this.sentences[targetSentIdx];
+              if (sentByIndex) {
+                sentByIndex.element = currentElements[0];
+                sentByIndex.elements = [...currentElements];
+                sentByIndex.chapterIndex = currentActiveSubChapterIndex;
+                sentByIndex.isHeading = isHeading;
+                finalSentIdx = sentByIndex.index;
+              }
+            }
+
+            currentElements.forEach(el => {
+              el.setAttribute('data-sentence-index', finalSentIdx);
+            });
+            sentenceId++;
+          }
         }
       }
       currentText = "";
@@ -734,13 +749,15 @@ export class TTSEngine {
       matches.forEach((s, index) => {
         const clean = s.trim();
         if (clean.length > 0) {
-          this.sentences.push({
-            index,
-            chapterIndex: this.currentChapterIndex,
-            text: clean,
-            isHeading: false,
-            element: null
-          });
+          if (!isSeparatorSentence(clean)) {
+            this.sentences.push({
+              index: this.sentences.length,
+              chapterIndex: this.currentChapterIndex,
+              text: clean,
+              isHeading: false,
+              element: null
+            });
+          }
         }
       });
     }
@@ -2064,15 +2081,17 @@ export class TTSEngine {
     const flushCurrentSentence = () => {
       const cleanSentence = currentText.trim();
       if (cleanSentence.length > 0) {
-        sentences.push({
-          index: sentenceId,
-          text: cleanSentence,
-          isHeading: isHeading,
-          chapterIndex: currentActiveSubChapterIndex,
-          element: null,
-          elements: []
-        });
-        sentenceId++;
+        if (!isSeparatorSentence(cleanSentence)) {
+          sentences.push({
+            index: sentenceId,
+            text: cleanSentence,
+            isHeading: isHeading,
+            chapterIndex: currentActiveSubChapterIndex,
+            element: null,
+            elements: []
+          });
+          sentenceId++;
+        }
       }
       currentText = "";
     };
