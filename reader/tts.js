@@ -781,6 +781,80 @@ export class TTSEngine {
     });
   }
 
+  _sha256PureJs(ascii) {
+    function rightRotate(value, amount) {
+      return (value >>> amount) | (value << (32 - amount));
+    }
+    
+    var mathPow = Math.pow;
+    var maxWord = mathPow(2, 32);
+    var lengthProperty = 'length';
+    var i, j;
+    var result = '';
+    var words = [];
+    var asciiBitLength = ascii[lengthProperty] * 8;
+    var hash = [];
+    var k = [];
+    var primeCounter = 0;
+    
+    var isComposite = {};
+    for (var candidate = 2; primeCounter < 64; candidate++) {
+      if (!isComposite[candidate]) {
+        for (i = 0; i < 313; i += candidate) {
+          isComposite[i] = candidate;
+        }
+        hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+        k[primeCounter++] = (mathPow(candidate, 1/3) * maxWord) | 0;
+      }
+    }
+    
+    ascii += '\x80';
+    while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
+    for (i = 0; i < ascii[lengthProperty]; i++) {
+      j = ascii.charCodeAt(i);
+      if (j >> 8) return ""; // ASCII check
+      words[i >> 2] |= j << (24 - (i % 4) * 8);
+    }
+    words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
+    words[words[lengthProperty]] = (asciiBitLength | 0);
+    
+    for (j = 0; j < words[lengthProperty]; ) {
+      var w = words.slice(j, j += 16);
+      var oldHash = hash.slice(0);
+      
+      for (i = 0; i < 64; i++) {
+        var w16 = w[i - 16], w15 = w[i - 15], w2 = w[i - 2], w7 = w[i - 7];
+        var s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3);
+        var s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10);
+        var newWord = w[i] = (i < 16) ? (w[i] || 0) : (w16 + s0 + w7 + s1) | 0;
+        
+        var s3 = rightRotate(oldHash[0], 2) ^ rightRotate(oldHash[0], 13) ^ rightRotate(oldHash[0], 22);
+        var maj = (oldHash[0] & oldHash[1]) ^ (oldHash[0] & oldHash[2]) ^ (oldHash[1] & oldHash[2]);
+        var t2 = (s3 + maj) | 0;
+        
+        var s2 = rightRotate(oldHash[4], 6) ^ rightRotate(oldHash[4], 11) ^ rightRotate(oldHash[4], 25);
+        var ch = (oldHash[4] & oldHash[5]) ^ (~oldHash[4] & oldHash[6]);
+        var t1 = (oldHash[7] + s2 + ch + k[i] + newWord) | 0;
+        
+        oldHash = [(t1 + t2) | 0].concat(oldHash);
+        oldHash[4] = (oldHash[4] + t1) | 0;
+      }
+      
+      for (i = 0; i < 8; i++) {
+        hash[i] = (hash[i] + oldHash[i]) | 0;
+      }
+    }
+    
+    for (i = 0; i < 8; i++) {
+      var word = hash[i];
+      for (j = 3; j >= 0; j--) {
+        var byte = (word >> (j * 8)) & 0xff;
+        result += byte.toString(16).padStart(2, '0');
+      }
+    }
+    return result;
+  }
+
   async _generateSecMsGecToken() {
     const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
     const WIN_EPOCH = 11644473600;
@@ -792,13 +866,20 @@ export class TTSEngine {
     const ticks = BigInt(unixSeconds) * 10000000n;
     const strToHash = ticks.toString() + TRUSTED_CLIENT_TOKEN;
     
-    const encoder = new TextEncoder();
-    const data = encoder.encode(strToHash);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(strToHash);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+        return hashHex;
+      } catch (e) {
+        console.warn("crypto.subtle failed, falling back to pure JS SHA-256:", e);
+      }
+    }
     
-    return hashHex;
+    return this._sha256PureJs(strToHash).toUpperCase();
   }
 
   _getVoiceShortName(voice) {
