@@ -19,6 +19,9 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
+import androidx.activity.result.ActivityResult;
+import android.app.Activity;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -308,6 +311,77 @@ public class NativeTTS extends Plugin {
             }
         } catch (Exception e) {
             call.reject("Copy failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void saveFileToSystem(PluginCall call) {
+        String filename = call.getString("filename");
+        String fileUri = call.getString("fileUri");
+        if (filename == null || fileUri == null) {
+            call.reject("Missing filename or fileUri");
+            return;
+        }
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_TITLE, filename);
+
+        call.put("tempFileUri", fileUri);
+        call.put("filename", filename);
+
+        startActivityForResult(call, intent, "saveFileToSystemResult");
+    }
+
+    @ActivityCallback
+    private void saveFileToSystemResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+
+        if (result.getResultCode() == Activity.RESULT_OK) {
+            Intent intent = result.getData();
+            if (intent != null && intent.getData() != null) {
+                Uri destUri = intent.getData();
+                String fileUri = call.getString("tempFileUri");
+                
+                try {
+                    Context context = getContext();
+                    Uri srcUri = Uri.parse(fileUri);
+                    
+                    InputStream is = null;
+                    if (fileUri.startsWith("content://")) {
+                        is = context.getContentResolver().openInputStream(srcUri);
+                    } else {
+                        String filePath = srcUri.getPath();
+                        is = new FileInputStream(new File(filePath));
+                    }
+                    
+                    if (is == null) {
+                        call.reject("Cannot open source file: " + fileUri);
+                        return;
+                    }
+
+                    try (OutputStream os = context.getContentResolver().openOutputStream(destUri)) {
+                        byte[] buffer = new byte[262144];
+                        int read;
+                        while ((read = is.read(buffer)) != -1) {
+                            os.write(buffer, 0, read);
+                        }
+                        
+                        JSObject ret = new JSObject();
+                        ret.put("path", destUri.toString());
+                        call.resolve(ret);
+                    } finally {
+                        is.close();
+                    }
+                } catch (Exception e) {
+                    call.reject("Copy to chosen location failed: " + e.getMessage());
+                }
+            } else {
+                call.reject("No destination file URI returned from file chooser");
+            }
+        } else {
+            call.reject("User cancelled save dialog");
         }
     }
 

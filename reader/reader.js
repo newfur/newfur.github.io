@@ -1674,10 +1674,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.5';
+            versionDisplay.textContent = 'v3.0.6';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.5';
+          versionDisplay.textContent = 'v3.0.6';
         }
       }
       aboutDialog.showModal();
@@ -8735,6 +8735,50 @@ async function handleExportBackup() {
   };
   
   try {
+    // 1. 取得所有書籍
+    const books = await library.getAllBooks();
+    if (books.length === 0) {
+      alert(getMsg('no_books'));
+      return;
+    }
+
+    // 2. 獲取備份檔名
+    const now = new Date();
+    const YYYY = now.getFullYear();
+    const MM = String(now.getMonth() + 1).padStart(2, '0');
+    const DD = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
+
+    const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+
+    // 3. 在支援的瀏覽器中，優先使用 File System Access API 直接彈出保存至文件系統對話框
+    let fileHandle = null;
+    let useSaveFilePicker = !isCapacitor && typeof window.showSaveFilePicker === 'function';
+    if (useSaveFilePicker) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{
+            description: 'ZIP Archive',
+            accept: {
+              'application/zip': ['.zip']
+            }
+          }]
+        });
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          // 使用者取消了另存新檔對話方塊，直接退出而不進行備份打包
+          console.log('User cancelled backup save picker');
+          return;
+        }
+        console.warn('showSaveFilePicker initialization failed, falling back to tag download:', err);
+        useSaveFilePicker = false;
+      }
+    }
+
     // 進入載入狀態
     backupBtn.disabled = true;
     backupBtn.innerHTML = `
@@ -8744,14 +8788,7 @@ async function handleExportBackup() {
       <span>${getMsg('backing_up')}</span>
     `;
 
-    // 1. 取得所有書籍
-    const books = await library.getAllBooks();
-    if (books.length === 0) {
-      alert(getMsg('no_books'));
-      return;
-    }
-
-    // 2. 使用 JSZip 構造壓縮包
+    // 4. 使用 JSZip 構造壓縮包
     if (typeof window.JSZip === 'undefined') {
       throw new Error('JSZip 庫未載入，無法進行備份！');
     }
@@ -8798,7 +8835,7 @@ async function handleExportBackup() {
       serializedBooks.push(meta);
     }
 
-    // 3. 構造備份 JSON 并加入 zip
+    // 5. 構造備份 JSON 并加入 zip
     const backupPayload = {
       version: '2.0',
       backupAt: Date.now(),
@@ -8812,20 +8849,86 @@ async function handleExportBackup() {
     // 生成 zip 的 Blob 檔
     const backupBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true });
     
-    // 4. 觸發下載或調用原生分享（App 版本）
-    const now = new Date();
-    const YYYY = now.getFullYear();
-    const MM = String(now.getMonth() + 1).padStart(2, '0');
-    const DD = String(now.getDate()).padStart(2, '0');
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    const ss = String(now.getSeconds()).padStart(2, '0');
-    const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
+    // 6. 優先寫入已選擇的 showSaveFilePicker 檔案路徑
+    if (useSaveFilePicker && fileHandle) {
+      try {
+        const writable = await fileHandle.createWritable();
+        await writable.write(backupBlob);
+        await writable.close();
+        alert(getMsg('backup_success'));
+        return;
+      } catch (writeErr) {
+        console.error('Writing via showSaveFilePicker failed, falling back to download tag:', writeErr);
+        // 如果寫入失敗，降級繼續跑下面的傳統下載邏輯
+      }
+    }
 
-    const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+    // 7. 觸發傳統下載或調用原生分享（App 版本/降級方案）
     const isAndroid = /android/i.test(navigator.userAgent);
 
     if (isCapacitor && isAndroid) {
+      const { NativeTTS, Filesystem } = window.Capacitor.Plugins;
+      if (NativeTTS && typeof NativeTTS.saveFileToSystem === 'function' && Filesystem) {
+        try {
+          // 先寫入暫存檔到 CACHE 檔案夾中
+          const chunkSize = 16 * 1024 * 1024;
+          const totalSize = backupBlob.size;
+          const totalChunks = Math.ceil(totalSize / chunkSize);
+          let fileUri = '';
+
+          for (let i = 0; i < totalChunks; i++) {
+            const start = i * chunkSize;
+            const end = Math.min(start + chunkSize, totalSize);
+            const chunkBlob = backupBlob.slice(start, end);
+            const base64Data = await blobToBase64(chunkBlob);
+            
+            if (i === 0) {
+              const writeResult = await Filesystem.writeFile({
+                path: filename,
+                data: base64Data,
+                directory: 'CACHE'
+              });
+              fileUri = writeResult.uri;
+            } else {
+              await Filesystem.appendFile({
+                path: filename,
+                data: base64Data,
+                directory: 'CACHE'
+              });
+            }
+          }
+
+          try {
+            // 彈出 Android 系統另存新檔對話方塊
+            await NativeTTS.saveFileToSystem({
+              filename: filename,
+              fileUri: fileUri
+            });
+            alert(getMsg('backup_success'));
+            return;
+          } catch (saveErr) {
+            if (saveErr.message && (saveErr.message.includes('cancelled') || saveErr.message.includes('Cancel') || saveErr.message.includes('cancel'))) {
+              console.log('User cancelled Android save dialog');
+              return;
+            }
+            throw saveErr;
+          } finally {
+            // 刪除 CACHE 的暫存檔案
+            try {
+              await Filesystem.deleteFile({
+                path: filename,
+                directory: 'CACHE'
+              });
+            } catch (e) {
+              console.warn('Failed to delete temp backup file:', e);
+            }
+          }
+        } catch (err) {
+          console.warn('Android saveFileToSystem failed, falling back to share:', err);
+        }
+      }
+
+      // 如果 saveFileToSystem 失敗或不可用，降級使用 Android 分享
       try {
         if (await shareBackupBlobDirectly(backupBlob, filename)) {
           alert(getMsg('backup_share_success'));
