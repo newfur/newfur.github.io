@@ -475,12 +475,16 @@ function initUIEventBindings() {
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
+  const restoreFileInput = document.getElementById('restore-file-input');
   
   // Adjust accept attribute for Android devices to avoid file picker greying out files.
-  // iOS requires public.data to select e-books, but Android WebView gets confused by it (as it's an invalid MIME type)
-  // and greys out all files. We remove iOS-specific UTIs and keep standard extensions and MIME types.
+  // iOS requires public.data to select e-books, but Android WebView gets confused by custom mime types/extensions
+  // and greys out files. We set it to '*/*' on Android, and validate extensions in handleImportFiles/handleImportBackup.
   if (fileInput && /android/i.test(navigator.userAgent)) {
-    fileInput.setAttribute('accept', '.epub,.azw3,.azw,.mobi,.txt,.md,.fb2,.cbz,application/epub+zip,application/vnd.amazon.ebook,application/x-mobipocket-ebook,text/plain,text/markdown,application/x-fictionbook+xml,application/vnd.comicbook+zip');
+    fileInput.setAttribute('accept', '*/*');
+  }
+  if (restoreFileInput && /android/i.test(navigator.userAgent)) {
+    restoreFileInput.setAttribute('accept', '*/*');
   }
 
   importBtn.addEventListener('click', () => fileInput.click());
@@ -489,7 +493,6 @@ function initUIEventBindings() {
   // 備份與還原書庫
   const backupBtn = document.getElementById('backup-btn');
   const restoreBtn = document.getElementById('restore-btn');
-  const restoreFileInput = document.getElementById('restore-file-input');
   if (backupBtn) {
     backupBtn.addEventListener('click', handleExportBackup);
   }
@@ -1684,10 +1687,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.1.1';
+            versionDisplay.textContent = 'v3.1.2';
           }
         } else {
-          versionDisplay.textContent = 'v3.1.1';
+          versionDisplay.textContent = 'v3.1.2';
         }
       }
       aboutDialog.showModal();
