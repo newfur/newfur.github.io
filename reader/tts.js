@@ -98,6 +98,7 @@ export class TTSEngine {
     this.activePlayerIdx = 0;
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
+    this.isAutoScrolling = false; // 標記是否為 TTS 自動滾動
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
@@ -2477,6 +2478,7 @@ export class TTSEngine {
     const isPaginated = document.body.classList.contains('layout-paginated');
     if (isPaginated) return;
 
+    this.isAutoScrolling = true; // 標記為自動滾動，避免觸發手動進度保存
     // 【關鍵修復】先中斷任何正在進行的 smooth scroll 動畫。
     // 如果前一句的 smooth scroll 仍在動畫中，getBoundingClientRect() 會返回動畫中間幀的坐標，
     // 導致 isVisible 判斷錯誤（元素在動畫途中看似可見，但動畫完成後被推離視窗中央）。
@@ -2499,6 +2501,11 @@ export class TTSEngine {
         top: targetScrollY,
         behavior: 'smooth'
       });
+    } else {
+      // 若不滾動，在微小延遲後安全重設 flag，以防 instant 滾動沒有觸發 scroll 事件
+      setTimeout(() => {
+        this.isAutoScrolling = false;
+      }, 50);
     }
   }
 

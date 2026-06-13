@@ -87,6 +87,8 @@ export class BookLibrary {
         chapterIndex: 0,
         elementIndex: 0,
         activeSentenceIndex: 0,
+        ttsActiveSentenceIndex: 0,
+        ttsChapterIndex: 0,
         pdfPage: 1,
         comicImageIndex: 0,
         scrollTop: 0
@@ -171,6 +173,8 @@ export class BookLibrary {
           mergedProgress.chapterIndex = existingBook.progress.chapterIndex ?? mergedProgress.chapterIndex;
           mergedProgress.elementIndex = existingBook.progress.elementIndex ?? mergedProgress.elementIndex;
           mergedProgress.activeSentenceIndex = existingBook.progress.activeSentenceIndex ?? mergedProgress.activeSentenceIndex;
+          mergedProgress.ttsChapterIndex = existingBook.progress.ttsChapterIndex ?? mergedProgress.ttsChapterIndex;
+          mergedProgress.ttsActiveSentenceIndex = existingBook.progress.ttsActiveSentenceIndex ?? mergedProgress.ttsActiveSentenceIndex;
           mergedProgress.percent = existingBook.progress.percent ?? mergedProgress.percent;
           mergedProgress.scrollTop = existingBook.progress.scrollTop ?? mergedProgress.scrollTop;
           mergedProgress.pdfPage = existingBook.progress.pdfPage ?? mergedProgress.pdfPage;

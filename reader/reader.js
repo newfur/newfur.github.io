@@ -74,6 +74,7 @@ let isIndexingBook = false; // 標記是否正在背景建立書本索引
 let currentSearchQuery = ''; // 儲存當前全書搜尋關鍵字
 let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
+let isTTSAutoPageTurning = false;
 let selectedTextState = '';
 let activeSelectedTextContext = '';
 let selectedTextRange = null;
@@ -1329,10 +1330,16 @@ function initUIEventBindings() {
         tts.pause();
       }
     } else {
-      // 從進度保存的句子索引開始朗讀
+      // 從進度保存的句子索引或當前頁面第一個可見句子開始朗讀
       let savedIndex = 0;
-      if (currentBook && currentBook.progress && currentBook.progress.chapterIndex === currentChapterIndex) {
-        savedIndex = currentBook.progress.activeSentenceIndex || 0;
+      if (currentBook && currentBook.progress) {
+        if (currentBook.progress.ttsChapterIndex === currentChapterIndex) {
+          savedIndex = currentBook.progress.ttsActiveSentenceIndex || 0;
+        } else if (currentBook.progress.ttsChapterIndex === undefined && currentBook.progress.activeSentenceIndex !== undefined && currentBook.progress.chapterIndex === currentChapterIndex) {
+          savedIndex = currentBook.progress.activeSentenceIndex || 0;
+        } else {
+          savedIndex = getFirstVisibleSentenceIndex();
+        }
       }
       tts.play(savedIndex);
       updatePlayPauseButtonIcon();
@@ -1435,13 +1442,13 @@ function initUIEventBindings() {
     // 同步播放按鈕狀態
     updatePlayPauseButtonIcon();
 
-    // 朗讀句子時更新進度
+    // 朗讀句子時更新進度 (儲存於獨立的 tts 進度欄位)
     if (currentBook) {
       const sentence = tts.sentences[index];
       const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : index) : index;
       saveProgressDebounced({ 
-        activeSentenceIndex: relativeIdx,
-        chapterIndex: currentChapterIndex
+        ttsActiveSentenceIndex: relativeIdx,
+        ttsChapterIndex: currentChapterIndex
       });
     }
 
@@ -1465,8 +1472,11 @@ function initUIEventBindings() {
               pendingGoToLastPageTimeout = null;
             }
             pendingGoToLastPage = false;
+            
+            isTTSAutoPageTurning = true;
             currentPageIndex = pageIndex;
             updatePageTranslate();
+            isTTSAutoPageTurning = false;
           }
         }
       }
@@ -1782,6 +1792,15 @@ function initUIEventBindings() {
         // 更新標題欄進度百分比 (即時更新)
         updateReaderTitle();
 
+        // 如果是由 TTS 觸發的自動滾動，則不覆寫用戶手動的閱讀進度
+        if (tts.isAutoScrolling) {
+          if (window.ttsAutoScrollTimeout) clearTimeout(window.ttsAutoScrollTimeout);
+          window.ttsAutoScrollTimeout = setTimeout(() => {
+            tts.isAutoScrolling = false;
+          }, 1000); // 1秒安全回退防呆
+          return;
+        }
+
         // 保存進度 (防抖)
         const percent = calculateCurrentProgressPercent();
         saveProgressDebounced({
@@ -1793,6 +1812,16 @@ function initUIEventBindings() {
       }
     }
   });
+
+  // 檢測用戶手動交互以清除 TTS 自動滾動標記
+  const resetAutoScroll = () => {
+    tts.isAutoScrolling = false;
+  };
+  window.addEventListener('wheel', resetAutoScroll, { passive: true });
+  window.addEventListener('touchstart', resetAutoScroll, { passive: true });
+  window.addEventListener('mousedown', resetAutoScroll, { passive: true });
+  window.addEventListener('keydown', resetAutoScroll, { passive: true });
+  window.addEventListener('scrollend', resetAutoScroll, { passive: true });
 
   // 滾輪在最頂部/最底部時切換章節 (附帶閾值過濾與 800ms 冷卻時間防抖)
   window.addEventListener('wheel', (e) => {
@@ -3464,8 +3493,12 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     let targetSentenceIdx = 0;
     if (targetSentenceIndex !== null) {
       targetSentenceIdx = targetSentenceIndex;
-    } else if (restoreProgress && currentBook && currentBook.progress && currentBook.progress.chapterIndex === finalIdx) {
-      targetSentenceIdx = currentBook.progress.activeSentenceIndex || 0;
+    } else if (restoreProgress && currentBook && currentBook.progress) {
+      if (currentBook.progress.ttsChapterIndex === finalIdx) {
+        targetSentenceIdx = currentBook.progress.ttsActiveSentenceIndex || 0;
+      } else if (currentBook.progress.ttsChapterIndex === undefined && currentBook.progress.chapterIndex === finalIdx) {
+        targetSentenceIdx = currentBook.progress.activeSentenceIndex || 0;
+      }
     }
     
     if (!isSeamless) {
@@ -3904,6 +3937,44 @@ function getTopVisibleElementIndex() {
       // 考慮到 Header 高度 64px，抓取在 Header 下方的第一個元素
       if (rect.bottom > 80) {
         return i;
+      }
+    }
+  }
+  return 0;
+}
+
+// 獲取目前第一個可見句子的索引
+function getFirstVisibleSentenceIndex() {
+  if (!tts.sentences || tts.sentences.length === 0) return 0;
+  
+  const isPaginated = document.body.classList.contains('layout-paginated');
+  if (isPaginated) {
+    const { containerWidth, columnGap } = getPaginatedPagesInfo();
+    const content = document.getElementById('book-content');
+    if (content && containerWidth > 0) {
+      const contentRect = content.getBoundingClientRect();
+      const halfGap = columnGap > 0 ? columnGap / 2 : 5;
+      for (let i = 0; i < tts.sentences.length; i++) {
+        const sent = tts.sentences[i];
+        if (sent.element) {
+          const rect = sent.element.getBoundingClientRect();
+          const relativeLeft = rect.left - contentRect.left;
+          const pageIndex = Math.floor((relativeLeft + halfGap) / (containerWidth + columnGap));
+          if (pageIndex === currentPageIndex) {
+            return i;
+          }
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < tts.sentences.length; i++) {
+      const sent = tts.sentences[i];
+      if (sent.element) {
+        const rect = sent.element.getBoundingClientRect();
+        // 考慮到 Header 高度 80px
+        if (rect.bottom > 80) {
+          return i;
+        }
       }
     }
   }
@@ -4366,7 +4437,7 @@ function updatePageTranslate(animate = true) {
   }
   
   // 保存進度并計算精確百分比
-  if (currentBook) {
+  if (currentBook && !isTTSAutoPageTurning) {
     const percent = calculateCurrentProgressPercent();
     saveProgressDebounced({
       chapterIndex: currentChapterIndex,
@@ -4448,7 +4519,8 @@ async function forceSaveCurrentProgress() {
       update.chapterIndex = currentChapterIndex;
       update.elementIndex = getTopVisibleElementIndex();
       update.scrollTop = window.scrollY;
-      update.activeSentenceIndex = tts.currentIndex;
+      update.ttsActiveSentenceIndex = tts.currentIndex;
+      update.ttsChapterIndex = tts.currentChapterIndex;
       if (document.body.classList.contains('layout-paginated')) {
         update.currentPageIndex = currentPageIndex;
       }
