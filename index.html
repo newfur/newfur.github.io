@@ -8785,6 +8785,46 @@ MindElixir.DARK_THEME = ue;
     "backing_up": {
       "message": "Backing up..."
     },
+    "backup_share_title": {
+      "message": "Raconteur Library Backup"
+    },
+    "backup_share_text": {
+      "message": "Raconteur library backup file"
+    },
+    "backup_share_dialog_title": {
+      "message": "Save or Share Backup"
+    },
+    "backup_share_success": {
+      "message": "The backup file has been handed to the system save/share panel. Choose a save location in the panel."
+    },
+    "backup_android_save_prompt": {
+      "message": "This device does not support the fast save path, so compatibility mode is required.\n\nOK: save to Downloads.\nCancel: open the system share panel.\n\nCompatibility mode is slower. Prefer the system save/share panel when available."
+    },
+    "backup_save_prompt": {
+      "message": "How would you like to save the backup file?\n\nOK: save to the app files directory.\nCancel: open the system share panel."
+    },
+    "backup_saved_to_downloads": {
+      "message": "Backup successful! File saved to Downloads:\n$path$",
+      "placeholders": {
+        "path": {
+          "content": "$1"
+        }
+      }
+    },
+    "backup_save_fallback_share": {
+      "message": "Saving directly to Downloads failed. Opening the system share panel instead."
+    },
+    "backup_native_save_unavailable": {
+      "message": "Native save is unavailable. Opening the system share panel instead."
+    },
+    "backup_saved_to_app_directory": {
+      "message": "Backup successful! File saved to the app files directory:\n$filename$",
+      "placeholders": {
+        "filename": {
+          "content": "$1"
+        }
+      }
+    },
     "restoring": {
       "message": "Restoring, please wait..."
     },
@@ -9654,6 +9694,46 @@ MindElixir.DARK_THEME = ue;
     "backing_up": {
       "message": "正在進行備份..."
     },
+    "backup_share_title": {
+      "message": "讀書人書庫備份"
+    },
+    "backup_share_text": {
+      "message": "讀書人書庫備份檔案"
+    },
+    "backup_share_dialog_title": {
+      "message": "儲存或分享備份檔案"
+    },
+    "backup_share_success": {
+      "message": "備份檔案已交給系統儲存/分享面板。請在面板中選擇儲存位置。"
+    },
+    "backup_android_save_prompt": {
+      "message": "目前裝置不支援快速儲存方式，需要使用相容模式。\n\n點「確定」：儲存到系統下載目錄。\n點「取消」：開啟系統分享面板。\n\n提示：相容模式會較慢，建議優先使用系統儲存/分享面板。"
+    },
+    "backup_save_prompt": {
+      "message": "您希望如何儲存備份檔案？\n\n點「確定」：儲存到 App 檔案目錄。\n點「取消」：開啟系統分享面板。"
+    },
+    "backup_saved_to_downloads": {
+      "message": "備份成功！檔案已儲存至系統下載目錄：\n$path$",
+      "placeholders": {
+        "path": {
+          "content": "$1"
+        }
+      }
+    },
+    "backup_save_fallback_share": {
+      "message": "直接儲存到下載目錄失敗，將改為開啟系統分享面板。"
+    },
+    "backup_native_save_unavailable": {
+      "message": "原生儲存不可用，將改為開啟系統分享面板。"
+    },
+    "backup_saved_to_app_directory": {
+      "message": "備份成功！檔案已儲存至 App 檔案目錄：\n$filename$",
+      "placeholders": {
+        "filename": {
+          "content": "$1"
+        }
+      }
+    },
     "restoring": {
       "message": "正在進行還原，請稍候..."
     },
@@ -10522,6 +10602,46 @@ MindElixir.DARK_THEME = ue;
     },
     "backing_up": {
       "message": "正在进行备份..."
+    },
+    "backup_share_title": {
+      "message": "读书人书库备份"
+    },
+    "backup_share_text": {
+      "message": "读书人书库备份文件"
+    },
+    "backup_share_dialog_title": {
+      "message": "保存或分享备份文件"
+    },
+    "backup_share_success": {
+      "message": "备份文件已交给系统保存/分享面板。请在面板中选择保存位置。"
+    },
+    "backup_android_save_prompt": {
+      "message": "当前设备不支持快速保存方式，需要使用兼容模式。\n\n点“确定”：保存到系统下载目录。\n点“取消”：打开系统分享面板。\n\n提示：兼容模式会较慢，建议优先使用系统保存/分享面板。"
+    },
+    "backup_save_prompt": {
+      "message": "您希望如何保存备份文件？\n\n点“确定”：保存到应用文件目录。\n点“取消”：打开系统分享面板。"
+    },
+    "backup_saved_to_downloads": {
+      "message": "备份成功！文件已保存至系统下载目录：\n$path$",
+      "placeholders": {
+        "path": {
+          "content": "$1"
+        }
+      }
+    },
+    "backup_save_fallback_share": {
+      "message": "直接保存到下载目录失败，将改为打开系统分享面板。"
+    },
+    "backup_native_save_unavailable": {
+      "message": "原生保存不可用，将改为打开系统分享面板。"
+    },
+    "backup_saved_to_app_directory": {
+      "message": "备份成功！文件已保存至应用文件目录：\n$filename$",
+      "placeholders": {
+        "filename": {
+          "content": "$1"
+        }
+      }
     },
     "restoring": {
       "message": "正在进行还原，请稍候..."
@@ -25970,6 +26090,19 @@ function dataURLtoBlob(dataurl) {
   }
 }
 
+async function shareBackupBlobDirectly(backupBlob, filename) {
+  if (typeof File === 'undefined' || !navigator.share) return false;
+  const backupFile = new File([backupBlob], filename, { type: 'application/zip' });
+  if (navigator.canShare && !navigator.canShare({ files: [backupFile] })) return false;
+
+  await navigator.share({
+    title: getMsg('backup_share_title'),
+    text: getMsg('backup_share_text'),
+    files: [backupFile]
+  });
+  return true;
+}
+
 // 導出書庫備份
 async function handleExportBackup() {
   const backupBtn = document.getElementById('backup-btn');
@@ -26091,7 +26224,7 @@ async function handleExportBackup() {
     zip.file('metadata.json', JSON.stringify(backupPayload));
     
     // 生成 zip 的 Blob 檔
-    const backupBlob = await zip.generateAsync({ type: 'blob' });
+    const backupBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true });
     
     // 4. 觸發下載或調用原生分享（App 版本）
     const now = new Date();
@@ -26104,18 +26237,29 @@ async function handleExportBackup() {
     const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
 
     const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+    const isAndroid = /android/i.test(navigator.userAgent);
+
+    if (isCapacitor && isAndroid) {
+      try {
+        if (await shareBackupBlobDirectly(backupBlob, filename)) {
+          alert(getMsg('backup_share_success'));
+          return;
+        }
+      } catch (shareErr) {
+        console.warn('Direct Android backup share failed, falling back to native filesystem:', shareErr);
+      }
+    }
     
     if (isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
       const { Filesystem, Share, NativeTTS } = window.Capacitor.Plugins;
       
-      const isAndroid = /android/i.test(navigator.userAgent);
       let actionChoice = 'share'; // 'share' or 'save'
       
       if (isAndroid) {
-        const confirmSave = confirm('您希望如何保存備份檔案？\n\n按「確定」：直接下載儲存到裝置的「下載 (Downloads)」資料夾。\n按「取消」：叫起系統分享選單。');
+        const confirmSave = confirm(getMsg('backup_android_save_prompt'));
         actionChoice = confirmSave ? 'save' : 'share';
       } else {
-        const confirmSave = confirm('您希望如何保存備份檔案？\n\n按「確定」：直接儲存至本機 app 檔案目錄（可在系統「檔案」App 的「我的 iPhone -> Raconteur」目錄下找到）。\n按「取消」：叫起系統分享選單。');
+        const confirmSave = confirm(getMsg('backup_save_prompt'));
         actionChoice = confirmSave ? 'save' : 'share';
       }
       
@@ -26159,16 +26303,16 @@ async function handleExportBackup() {
                 filename: filename,
                 fileUri: fileUri
               });
-              alert(`備份成功！檔案已儲存至系統下載資料夾：\n${result.path}`);
+              alert(getMsg('backup_saved_to_downloads', [result.path]));
             } catch (copyErr) {
               console.error('Copy to Downloads failed:', copyErr);
-              alert('直接儲存至下載資料夾失敗，將改為開啟系統分享面板。');
+              alert(getMsg('backup_save_fallback_share'));
               // Fallback to share
               await Share.share({
-                title: 'Raconteur Reader Backup',
-                text: 'Raconteur/读书人 书库备份文件',
+                title: getMsg('backup_share_title'),
+                text: getMsg('backup_share_text'),
                 url: fileUri,
-                dialogTitle: 'Save or Share Backup'
+                dialogTitle: getMsg('backup_share_dialog_title')
               });
             } finally {
               // Delete the temp file from CACHE
@@ -26182,25 +26326,25 @@ async function handleExportBackup() {
               }
             }
           } else {
-            alert('原生物件不支援直接儲存，將改為開啟系統分享面板。');
+            alert(getMsg('backup_native_save_unavailable'));
             await Share.share({
-              title: 'Raconteur Reader Backup',
-              text: 'Raconteur/读书人 书库备份文件',
+              title: getMsg('backup_share_title'),
+              text: getMsg('backup_share_text'),
               url: fileUri,
-              dialogTitle: 'Save or Share Backup'
+              dialogTitle: getMsg('backup_share_dialog_title')
             });
           }
         } else {
           // iOS
-          alert(`備份成功！檔案已儲存至本機應用程式目錄：\n[我的 iPhone] -> [Raconteur] -> ${filename}`);
+          alert(getMsg('backup_saved_to_app_directory', [filename]));
         }
       } else {
         // Share action
         await Share.share({
-          title: 'Raconteur Reader Backup',
-          text: 'Raconteur/读书人 书库备份文件',
+          title: getMsg('backup_share_title'),
+          text: getMsg('backup_share_text'),
           url: fileUri,
-          dialogTitle: 'Save or Share Backup'
+          dialogTitle: getMsg('backup_share_dialog_title')
         });
         
         // Delete the temp file from CACHE

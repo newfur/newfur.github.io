@@ -93,6 +93,46 @@
   "backing_up": {
     "message": "正在进行备份..."
   },
+  "backup_share_title": {
+    "message": "读书人书库备份"
+  },
+  "backup_share_text": {
+    "message": "读书人书库备份文件"
+  },
+  "backup_share_dialog_title": {
+    "message": "保存或分享备份文件"
+  },
+  "backup_share_success": {
+    "message": "备份文件已交给系统保存/分享面板。请在面板中选择保存位置。"
+  },
+  "backup_android_save_prompt": {
+    "message": "当前设备不支持快速保存方式，需要使用兼容模式。\n\n点“确定”：保存到系统下载目录。\n点“取消”：打开系统分享面板。\n\n提示：兼容模式会较慢，建议优先使用系统保存/分享面板。"
+  },
+  "backup_save_prompt": {
+    "message": "您希望如何保存备份文件？\n\n点“确定”：保存到应用文件目录。\n点“取消”：打开系统分享面板。"
+  },
+  "backup_saved_to_downloads": {
+    "message": "备份成功！文件已保存至系统下载目录：\n$path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_save_fallback_share": {
+    "message": "直接保存到下载目录失败，将改为打开系统分享面板。"
+  },
+  "backup_native_save_unavailable": {
+    "message": "原生保存不可用，将改为打开系统分享面板。"
+  },
+  "backup_saved_to_app_directory": {
+    "message": "备份成功！文件已保存至应用文件目录：\n$filename$",
+    "placeholders": {
+      "filename": {
+        "content": "$1"
+      }
+    }
+  },
   "restoring": {
     "message": "正在进行还原，请稍候..."
   },

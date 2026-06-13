@@ -7,7 +7,7 @@
     "dev": "node server.js",
     "start": "node server.js",
     "build:offline": "node scratch/compile_offline.js",
-    "build:mobile": "node scratch/build_dist.js && npx cap sync",
+    "build:mobile": "node scratch/build_dist.js && npx cap sync android",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -22,7 +22,6 @@
   },
   "devDependencies": {
     "@capacitor/android": "^6.0.0",
-    "@capacitor/cli": "^6.0.0",
-    "@capacitor/ios": "^6.0.0"
+    "@capacitor/cli": "^6.0.0"
   }
 }

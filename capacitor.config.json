@@ -9,8 +9,5 @@
     "CapacitorHttp": {
       "enabled": true
     }
-  },
-  "ios": {
-    "contentInset": "never"
   }
 }
