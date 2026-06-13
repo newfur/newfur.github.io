@@ -26138,6 +26138,26 @@ async function handleExportBackup() {
       reader.readAsDataURL(blob);
     });
   };
+
+  // Helper: 將一個 Blob 分塊寫入 Capacitor Filesystem（解決超大文件的橋接限制）
+  const writeBlobToCache = async (Filesystem, path, blob) => {
+    const chunkSize = 16 * 1024 * 1024; // 16MB chunks
+    const totalSize = blob.size;
+    const totalChunks = Math.ceil(totalSize / chunkSize);
+    
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, totalSize);
+      const chunkBlob = blob.slice(start, end);
+      const base64Data = await blobToBase64(chunkBlob);
+      
+      if (i === 0) {
+        await Filesystem.writeFile({ path, data: base64Data, directory: 'CACHE' });
+      } else {
+        await Filesystem.appendFile({ path, data: base64Data, directory: 'CACHE' });
+      }
+    }
+  };
   
   try {
     // 1. 取得所有書籍
@@ -26158,6 +26178,120 @@ async function handleExportBackup() {
     const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
 
     const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+    const isAndroid = /android/i.test(navigator.userAgent);
+
+    // =====================================================================
+    // 路徑 A：Android Capacitor — 逐文件寫入 CACHE + 原生 Java 端 ZIP 打包
+    // 優勢：避免整個 ZIP Blob 駐留 JS 記憶體，避免 Base64 橋接整個 ZIP
+    // =====================================================================
+    if (isCapacitor && isAndroid) {
+      const { NativeTTS, Filesystem } = window.Capacitor.Plugins;
+      if (NativeTTS && typeof NativeTTS.createZipFromDirectory === 'function' && Filesystem) {
+        try {
+          // 進入載入狀態
+          backupBtn.disabled = true;
+          backupBtn.innerHTML = `
+            <span class="btn-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            </span>
+            <span>${getMsg('backing_up')}</span>
+          `;
+
+          // 清理並建立暫存目錄
+          try { await Filesystem.rmdir({ path: 'backup_temp', directory: 'CACHE', recursive: true }); } catch (e) { /* ignore */ }
+          await Filesystem.mkdir({ path: 'backup_temp', directory: 'CACHE', recursive: true });
+          await Filesystem.mkdir({ path: 'backup_temp/books', directory: 'CACHE', recursive: true });
+          await Filesystem.mkdir({ path: 'backup_temp/covers', directory: 'CACHE', recursive: true });
+
+          // 逐本寫入書籍文件和封面至 CACHE（一次只有一本書的 Blob 在記憶體中）
+          const serializedBooks = [];
+          for (const book of books) {
+            const meta = {
+              id: book.id, title: book.title, author: book.author,
+              format: book.format, size: book.size, addedAt: book.addedAt,
+              lastReadAt: book.lastReadAt, progress: book.progress,
+              bookmarks: book.bookmarks || [], notes: book.notes || [],
+              stats: book.stats || null, aiChats: book.aiChats || [],
+              bookSummary: book.bookSummary || '', chapterSummaries: book.chapterSummaries || {},
+              folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
+            };
+
+            if (book.file instanceof Blob) {
+              meta.hasFile = true;
+              await writeBlobToCache(Filesystem, `backup_temp/books/${book.id}.bin`, book.file);
+            }
+
+            if (book.cover instanceof Blob) {
+              meta.coverType = 'blob';
+              await writeBlobToCache(Filesystem, `backup_temp/covers/${book.id}.bin`, book.cover);
+            } else if (typeof book.cover === 'string') {
+              meta.coverType = 'string';
+              meta.coverValue = book.cover;
+            }
+
+            serializedBooks.push(meta);
+          }
+
+          // 寫入 metadata.json
+          const backupPayload = {
+            version: '2.0', backupAt: Date.now(), books: serializedBooks,
+            customFolders: getCustomFolders(), aiPromptsTemplates: aiPromptsTemplatesList
+          };
+          await Filesystem.writeFile({
+            path: 'backup_temp/metadata.json',
+            data: btoa(unescape(encodeURIComponent(JSON.stringify(backupPayload)))),
+            directory: 'CACHE'
+          });
+
+          // 呼叫原生 Java 端 ZipOutputStream 高速打包
+          const zipResult = await NativeTTS.createZipFromDirectory({
+            sourcePath: 'backup_temp',
+            outputFilename: filename
+          });
+
+          // 彈出系統另存為對話框
+          try {
+            if (typeof NativeTTS.saveFileToSystem === 'function') {
+              await NativeTTS.saveFileToSystem({
+                filename: filename,
+                fileUri: zipResult.uri
+              });
+              alert(getMsg('backup_success'));
+            } else {
+              // 降級：使用分享
+              const { Share } = window.Capacitor.Plugins;
+              if (Share) {
+                await Share.share({
+                  title: getMsg('backup_share_title'),
+                  text: getMsg('backup_share_text'),
+                  url: zipResult.uri,
+                  dialogTitle: getMsg('backup_share_dialog_title')
+                });
+              }
+              alert(getMsg('backup_success'));
+            }
+          } catch (saveErr) {
+            if (saveErr.message && /cancel/i.test(saveErr.message)) {
+              console.log('User cancelled Android save dialog');
+            } else {
+              throw saveErr;
+            }
+          } finally {
+            // 清理暫存目錄和 ZIP 文件
+            try { await Filesystem.rmdir({ path: 'backup_temp', directory: 'CACHE', recursive: true }); } catch (e) { /* ignore */ }
+            try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
+          }
+          return;
+        } catch (err) {
+          console.warn('Android native ZIP backup failed, falling back to JSZip:', err);
+          // 降級到下面的通用 JSZip 路徑
+        }
+      }
+    }
+
+    // =====================================================================
+    // 路徑 B：瀏覽器 / 非 Android Capacitor — 使用 JSZip
+    // =====================================================================
 
     // 3. 在支援的瀏覽器中，優先使用 File System Access API 直接彈出保存至文件系統對話框
     let fileHandle = null;
@@ -26168,14 +26302,11 @@ async function handleExportBackup() {
           suggestedName: filename,
           types: [{
             description: 'ZIP Archive',
-            accept: {
-              'application/zip': ['.zip']
-            }
+            accept: { 'application/zip': ['.zip'] }
           }]
         });
       } catch (err) {
         if (err.name === 'AbortError') {
-          // 使用者取消了另存新檔對話方塊，直接退出而不進行備份打包
           console.log('User cancelled backup save picker');
           return;
         }
@@ -26202,35 +26333,22 @@ async function handleExportBackup() {
 
     for (const book of books) {
       const meta = {
-        id: book.id,
-        title: book.title,
-        author: book.author,
-        format: book.format,
-        size: book.size,
-        addedAt: book.addedAt,
-        lastReadAt: book.lastReadAt,
-        progress: book.progress,
-        bookmarks: book.bookmarks || [],
-        notes: book.notes || [],
-        stats: book.stats || null,
-        aiChats: book.aiChats || [],
-        bookSummary: book.bookSummary || '',
-        chapterSummaries: book.chapterSummaries || {},
-        folder: book.folder || null,
-        hasFile: false,
-        coverType: 'none',
-        coverValue: ''
+        id: book.id, title: book.title, author: book.author,
+        format: book.format, size: book.size, addedAt: book.addedAt,
+        lastReadAt: book.lastReadAt, progress: book.progress,
+        bookmarks: book.bookmarks || [], notes: book.notes || [],
+        stats: book.stats || null, aiChats: book.aiChats || [],
+        bookSummary: book.bookSummary || '', chapterSummaries: book.chapterSummaries || {},
+        folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
       };
 
       if (book.file instanceof Blob) {
         meta.hasFile = true;
-        // 添加書籍二進制檔案
         zip.file(`books/${book.id}.bin`, book.file);
       }
 
       if (book.cover instanceof Blob) {
         meta.coverType = 'blob';
-        // 添加封面二進制檔案
         zip.file(`covers/${book.id}.bin`, book.cover);
       } else if (typeof book.cover === 'string') {
         meta.coverType = 'string';
@@ -26240,114 +26358,43 @@ async function handleExportBackup() {
       serializedBooks.push(meta);
     }
 
-    // 5. 構造備份 JSON 并加入 zip
     const backupPayload = {
-      version: '2.0',
-      backupAt: Date.now(),
-      books: serializedBooks,
-      customFolders: getCustomFolders(),
-      aiPromptsTemplates: aiPromptsTemplatesList
+      version: '2.0', backupAt: Date.now(), books: serializedBooks,
+      customFolders: getCustomFolders(), aiPromptsTemplates: aiPromptsTemplatesList
     };
-
     zip.file('metadata.json', JSON.stringify(backupPayload));
     
-    // 生成 zip 的 Blob 檔
-    const backupBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true });
-    
-    // 6. 優先寫入已選擇的 showSaveFilePicker 檔案路徑
+    // 5. 優先使用流式寫入 showSaveFilePicker（記憶體佔用降到 O(chunk) 級別）
     if (useSaveFilePicker && fileHandle) {
       try {
         const writable = await fileHandle.createWritable();
-        await writable.write(backupBlob);
-        await writable.close();
+        await new Promise((resolve, reject) => {
+          const stream = zip.generateInternalStream({ type: 'uint8array', compression: 'STORE', streamFiles: true });
+          stream.on('data', (data) => {
+            stream.pause();
+            writable.write(data).then(() => stream.resume()).catch(reject);
+          });
+          stream.on('error', reject);
+          stream.on('end', () => {
+            writable.close().then(resolve).catch(reject);
+          });
+          stream.resume();
+        });
         alert(getMsg('backup_success'));
         return;
       } catch (writeErr) {
-        console.error('Writing via showSaveFilePicker failed, falling back to download tag:', writeErr);
-        // 如果寫入失敗，降級繼續跑下面的傳統下載邏輯
-      }
-    }
-
-    // 7. 觸發傳統下載或調用原生分享（App 版本/降級方案）
-    const isAndroid = /android/i.test(navigator.userAgent);
-
-    if (isCapacitor && isAndroid) {
-      const { NativeTTS, Filesystem } = window.Capacitor.Plugins;
-      if (NativeTTS && typeof NativeTTS.saveFileToSystem === 'function' && Filesystem) {
-        try {
-          // 先寫入暫存檔到 CACHE 檔案夾中
-          const chunkSize = 16 * 1024 * 1024;
-          const totalSize = backupBlob.size;
-          const totalChunks = Math.ceil(totalSize / chunkSize);
-          let fileUri = '';
-
-          for (let i = 0; i < totalChunks; i++) {
-            const start = i * chunkSize;
-            const end = Math.min(start + chunkSize, totalSize);
-            const chunkBlob = backupBlob.slice(start, end);
-            const base64Data = await blobToBase64(chunkBlob);
-            
-            if (i === 0) {
-              const writeResult = await Filesystem.writeFile({
-                path: filename,
-                data: base64Data,
-                directory: 'CACHE'
-              });
-              fileUri = writeResult.uri;
-            } else {
-              await Filesystem.appendFile({
-                path: filename,
-                data: base64Data,
-                directory: 'CACHE'
-              });
-            }
-          }
-
-          try {
-            // 彈出 Android 系統另存新檔對話方塊
-            await NativeTTS.saveFileToSystem({
-              filename: filename,
-              fileUri: fileUri
-            });
-            alert(getMsg('backup_success'));
-            return;
-          } catch (saveErr) {
-            if (saveErr.message && (saveErr.message.includes('cancelled') || saveErr.message.includes('Cancel') || saveErr.message.includes('cancel'))) {
-              console.log('User cancelled Android save dialog');
-              return;
-            }
-            throw saveErr;
-          } finally {
-            // 刪除 CACHE 的暫存檔案
-            try {
-              await Filesystem.deleteFile({
-                path: filename,
-                directory: 'CACHE'
-              });
-            } catch (e) {
-              console.warn('Failed to delete temp backup file:', e);
-            }
-          }
-        } catch (err) {
-          console.warn('Android saveFileToSystem failed, falling back to share:', err);
-        }
-      }
-
-      // 如果 saveFileToSystem 失敗或不可用，降級使用 Android 分享
-      try {
-        if (await shareBackupBlobDirectly(backupBlob, filename)) {
-          alert(getMsg('backup_share_success'));
-          return;
-        }
-      } catch (shareErr) {
-        console.warn('Direct Android backup share failed, falling back to native filesystem:', shareErr);
+        console.error('Streaming via showSaveFilePicker failed, falling back:', writeErr);
       }
     }
     
+    // 6. 降級路徑：生成完整 Blob
+    const backupBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true });
+    
+    // 7. Capacitor 非 Android 路徑（iOS 等）
     if (isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
       const { Filesystem, Share, NativeTTS } = window.Capacitor.Plugins;
       
-      let actionChoice = 'share'; // 'share' or 'save'
+      let actionChoice = 'share';
       
       if (isAndroid) {
         actionChoice = 'share';
@@ -26356,7 +26403,7 @@ async function handleExportBackup() {
         actionChoice = confirmSave ? 'save' : 'share';
       }
       
-      const chunkSize = isAndroid ? 16 * 1024 * 1024 : 1024 * 1024; // Android bridge calls are slow, use fewer larger writes there.
+      const chunkSize = isAndroid ? 16 * 1024 * 1024 : 1024 * 1024;
       const totalSize = backupBlob.size;
       const totalChunks = Math.ceil(totalSize / chunkSize);
       let fileUri = '';
@@ -26366,24 +26413,16 @@ async function handleExportBackup() {
         const start = i * chunkSize;
         const end = Math.min(start + chunkSize, totalSize);
         const chunkBlob = backupBlob.slice(start, end);
-        
-        // Convert the 1MB chunk to Base64 (always success and fast)
         const base64Data = await blobToBase64(chunkBlob);
         
         if (i === 0) {
-          // Write the first chunk (creates/overwrites the file)
           const writeResult = await Filesystem.writeFile({
-            path: filename,
-            data: base64Data,
-            directory: saveDirectory
+            path: filename, data: base64Data, directory: saveDirectory
           });
           fileUri = writeResult.uri;
         } else {
-          // Append subsequent chunks
           await Filesystem.appendFile({
-            path: filename,
-            data: base64Data,
-            directory: saveDirectory
+            path: filename, data: base64Data, directory: saveDirectory
           });
         }
       }
@@ -26393,38 +26432,24 @@ async function handleExportBackup() {
           if (NativeTTS && typeof NativeTTS.copyFileToDownloads === 'function') {
             try {
               const result = await NativeTTS.copyFileToDownloads({
-                filename: filename,
-                fileUri: fileUri
+                filename: filename, fileUri: fileUri
               });
               alert(getMsg('backup_saved_to_downloads', [result.path]));
             } catch (copyErr) {
               console.error('Copy to Downloads failed:', copyErr);
               alert(getMsg('backup_save_fallback_share'));
-              // Fallback to share
               await Share.share({
-                title: getMsg('backup_share_title'),
-                text: getMsg('backup_share_text'),
-                url: fileUri,
-                dialogTitle: getMsg('backup_share_dialog_title')
+                title: getMsg('backup_share_title'), text: getMsg('backup_share_text'),
+                url: fileUri, dialogTitle: getMsg('backup_share_dialog_title')
               });
             } finally {
-              // Delete the temp file from CACHE
-              try {
-                await Filesystem.deleteFile({
-                  path: filename,
-                  directory: 'CACHE'
-                });
-              } catch (e) {
-                console.warn('Failed to delete temp backup file:', e);
-              }
+              try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
             }
           } else {
             alert(getMsg('backup_native_save_unavailable'));
             await Share.share({
-              title: getMsg('backup_share_title'),
-              text: getMsg('backup_share_text'),
-              url: fileUri,
-              dialogTitle: getMsg('backup_share_dialog_title')
+              title: getMsg('backup_share_title'), text: getMsg('backup_share_text'),
+              url: fileUri, dialogTitle: getMsg('backup_share_dialog_title')
             });
           }
         } else {
@@ -26434,21 +26459,10 @@ async function handleExportBackup() {
       } else {
         // Share action
         await Share.share({
-          title: getMsg('backup_share_title'),
-          text: getMsg('backup_share_text'),
-          url: fileUri,
-          dialogTitle: getMsg('backup_share_dialog_title')
+          title: getMsg('backup_share_title'), text: getMsg('backup_share_text'),
+          url: fileUri, dialogTitle: getMsg('backup_share_dialog_title')
         });
-        
-        // Delete the temp file from CACHE
-        try {
-          await Filesystem.deleteFile({
-            path: filename,
-            directory: 'CACHE'
-          });
-        } catch (e) {
-          console.warn('Failed to delete temp backup file:', e);
-        }
+        try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
       }
     } else {
       // 瀏覽器版本使用 standard A 標籤下載

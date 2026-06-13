@@ -27,6 +27,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.Deflater;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -393,6 +396,61 @@ public class NativeTTS extends Plugin {
         ret.put("left", 0);
         ret.put("right", 0);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void createZipFromDirectory(PluginCall call) {
+        String sourcePath = call.getString("sourcePath");
+        String outputFilename = call.getString("outputFilename");
+        if (sourcePath == null || outputFilename == null) {
+            call.reject("Missing sourcePath or outputFilename");
+            return;
+        }
+
+        try {
+            File cacheDir = getContext().getCacheDir();
+            File sourceDir = new File(cacheDir, sourcePath);
+            File outputFile = new File(cacheDir, outputFilename);
+
+            if (!sourceDir.exists() || !sourceDir.isDirectory()) {
+                call.reject("Source directory does not exist: " + sourceDir.getAbsolutePath());
+                return;
+            }
+
+            try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputFile))) {
+                // Use STORED-equivalent: DEFLATED with no compression (avoids needing CRC pre-computation)
+                zos.setLevel(Deflater.NO_COMPRESSION);
+                addDirectoryToZip(zos, sourceDir, "");
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("uri", Uri.fromFile(outputFile).toString());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("ZIP creation failed: " + e.getMessage());
+        }
+    }
+
+    private void addDirectoryToZip(ZipOutputStream zos, File dir, String parentPath) throws IOException {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+
+        for (File file : files) {
+            String entryName = parentPath.isEmpty() ? file.getName() : parentPath + "/" + file.getName();
+            if (file.isDirectory()) {
+                addDirectoryToZip(zos, file, entryName);
+            } else {
+                zos.putNextEntry(new ZipEntry(entryName));
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    byte[] buffer = new byte[262144]; // 256KB buffer
+                    int len;
+                    while ((len = fis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                }
+                zos.closeEntry();
+            }
+        }
     }
 
     private String escapeXml(String unsafe) {
