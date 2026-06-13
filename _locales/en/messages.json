@@ -908,5 +908,32 @@
   },
   "indexing_book": {
     "message": "Building search index..."
+  },
+  "duplicate_dialog_title": {
+    "message": "Duplicate Book Detected"
+  },
+  "duplicate_desc_hash": {
+    "message": "A book with the exact same content already exists in your library."
+  },
+  "duplicate_desc_name": {
+    "message": "A book with the same title already exists in your library, but the content is different."
+  },
+  "duplicate_new_file": {
+    "message": "New File:"
+  },
+  "duplicate_existing_book": {
+    "message": "Existing Book:"
+  },
+  "duplicate_apply_all": {
+    "message": "Apply to all remaining conflicts"
+  },
+  "duplicate_btn_replace": {
+    "message": "Replace & Retain Progress"
+  },
+  "duplicate_btn_keep_both": {
+    "message": "Keep Both"
+  },
+  "duplicate_btn_skip": {
+    "message": "Skip"
   }
 }

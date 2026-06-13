@@ -1926,6 +1926,53 @@ function initUIEventBindings() {
 
 // ==================== 2. 書庫管理與導入 ==================== */
 
+// 計算檔案 Hash 值 (為保證大檔案效能，採用「大小+頭尾分塊」的 SHA-256，並在非安全內容下提供 fallback)
+async function computeFileHash(file) {
+  const size = file.size;
+  const name = file.name;
+  const lastModified = file.lastModified || 0;
+  
+  // 如果 Web Crypto API 不可用 (例如在某些瀏覽器中的 file:/// 協議下)
+  if (!window.crypto || !window.crypto.subtle) {
+    console.warn('[computeFileHash] crypto.subtle is not available. Falling back to metadata-based hash.');
+    const rawString = `${name}_${size}_${lastModified}`;
+    let hash = 0;
+    for (let i = 0; i < rawString.length; i++) {
+      hash = (hash << 5) - hash + rawString.charCodeAt(i);
+      hash |= 0; // Convert to 32bit integer
+    }
+    return 'fallback_' + Math.abs(hash).toString(16);
+  }
+  
+  const chunkLimit = 128 * 1024; // 128KB
+  
+  let bufferToHash;
+  if (size <= chunkLimit * 2) {
+    bufferToHash = await file.arrayBuffer();
+  } else {
+    const firstBlob = file.slice(0, chunkLimit);
+    const lastBlob = file.slice(size - chunkLimit, size);
+    
+    const [firstBuf, lastBuf] = await Promise.all([
+      firstBlob.arrayBuffer(),
+      lastBlob.arrayBuffer()
+    ]);
+    
+    const combined = new Uint8Array(8 + firstBuf.byteLength + lastBuf.byteLength);
+    const view = new DataView(combined.buffer);
+    view.setFloat64(0, size);
+    
+    combined.set(new Uint8Array(firstBuf), 8);
+    combined.set(new Uint8Array(lastBuf), 8 + firstBuf.byteLength);
+    
+    bufferToHash = combined.buffer;
+  }
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', bufferToHash);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // 處理選擇檔案
 function handleFileSelect(e) {
   if (e.target.files.length > 0) {
@@ -1933,8 +1980,103 @@ function handleFileSelect(e) {
   }
 }
 
+// 顯示重複導入確認對話框，返回 { action, applyAll }
+function showDuplicateDialog(incomingBook, existingBook, isHashMatch) {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById('duplicate-dialog');
+    
+    // 獲取 UI 元素
+    const descEl = document.getElementById('duplicate-dialog-desc');
+    const newNameEl = document.getElementById('duplicate-new-name');
+    const newMetaEl = document.getElementById('duplicate-new-meta');
+    const existingNameEl = document.getElementById('duplicate-existing-name');
+    const existingMetaEl = document.getElementById('duplicate-existing-meta');
+    const checkboxAll = document.getElementById('duplicate-apply-all-checkbox');
+    
+    const btnReplace = document.getElementById('duplicate-replace-btn');
+    const btnKeepBoth = document.getElementById('duplicate-keep-both-btn');
+    const btnSkip = document.getElementById('duplicate-skip-btn');
+    
+    // 重設狀態
+    checkboxAll.checked = false;
+    
+    // 設定文字說明與元數據
+    if (isHashMatch) {
+      descEl.textContent = getMsg('duplicate_desc_hash');
+    } else {
+      descEl.textContent = getMsg('duplicate_desc_name');
+    }
+    
+    // 新增/待導入書籍的資訊
+    newNameEl.textContent = `${incomingBook.title} (${incomingBook.format.toUpperCase()})`;
+    newMetaEl.textContent = `${getMsg('author_title') || 'Author'}: ${incomingBook.author} | Size: ${(incomingBook.size / 1024 / 1024).toFixed(2)} MB`;
+    
+    // 書庫中已存在書籍的資訊
+    existingNameEl.textContent = `${existingBook.title} (${existingBook.format.toUpperCase()})`;
+    existingMetaEl.textContent = `${getMsg('author_title') || 'Author'}: ${existingBook.author} | Size: ${(existingBook.size / 1024 / 1024).toFixed(2)} MB`;
+    
+    // 綁定點擊事件
+    function cleanup() {
+      btnReplace.removeEventListener('click', onReplace);
+      btnKeepBoth.removeEventListener('click', onKeepBoth);
+      btnSkip.removeEventListener('click', onSkip);
+      dialog.close();
+    }
+    
+    function onReplace() {
+      cleanup();
+      resolve({ action: 'replace', applyAll: checkboxAll.checked });
+    }
+    
+    function onKeepBoth() {
+      cleanup();
+      resolve({ action: 'keep_both', applyAll: checkboxAll.checked });
+    }
+    
+    function onSkip() {
+      cleanup();
+      resolve({ action: 'skip', applyAll: checkboxAll.checked });
+    }
+    
+    btnReplace.addEventListener('click', onReplace);
+    btnKeepBoth.addEventListener('click', onKeepBoth);
+    btnSkip.addEventListener('click', onSkip);
+    
+    // ESC 或其它關閉操作預設為 skip
+    dialog.oncancel = (e) => {
+      e.preventDefault();
+      cleanup();
+      resolve({ action: 'skip', applyAll: false });
+    };
+    
+    // 國際化靜態文字手動初始化（以防 chrome.i18n 沒有翻譯完畢）
+    const titleEl = dialog.querySelector('h3[data-i18n="duplicate_dialog_title"]');
+    if (titleEl) titleEl.textContent = getMsg('duplicate_dialog_title');
+    
+    const lblNew = dialog.querySelector('div[data-i18n="duplicate_new_file"]');
+    if (lblNew) lblNew.textContent = getMsg('duplicate_new_file');
+    
+    const lblEx = dialog.querySelector('div[data-i18n="duplicate_existing_book"]');
+    if (lblEx) lblEx.textContent = getMsg('duplicate_existing_book');
+    
+    const lblAll = dialog.querySelector('span[data-i18n="duplicate_apply_all"]');
+    if (lblAll) lblAll.textContent = getMsg('duplicate_apply_all');
+    
+    btnReplace.textContent = getMsg('duplicate_btn_replace');
+    btnKeepBoth.textContent = getMsg('duplicate_btn_keep_both');
+    btnSkip.textContent = getMsg('duplicate_btn_skip');
+    
+    dialog.showModal();
+  });
+}
+
 // 導入書籍
 async function handleImportFiles(files) {
+  let duplicateActionAll = null; // 用於「套用到所有剩餘衝突」的全局變量
+
+  // 1. 獲取所有現有書籍
+  let existingBooks = await library.getAllBooks();
+
   for (const file of files) {
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     const formats = ['.epub', '.azw3', '.mobi', '.txt', '.md', '.fb2', '.cbz'];
@@ -1949,54 +2091,135 @@ async function handleImportFiles(files) {
       let author = getMsg('unknown_author');
       let cover = '';
       
-      // 依格式調用對應的臨時 parser 以提取封面與元數據
       const format = ext.replace('.', '');
       
+      // 解析元數據
       if (format === 'epub') {
         const parser = new EpubParser(file);
         const res = await parser.parse();
-        title = res.metadata.title;
-        author = res.metadata.author;
-        cover = res.metadata.cover;
+        title = res.metadata.title || title;
+        author = res.metadata.author || author;
+        cover = res.metadata.cover || '';
       } else if (format === 'azw3' || format === 'mobi') {
         const parser = new Azw3Parser(file);
         const res = await parser.parse();
-        title = res.metadata.title;
-        author = res.metadata.author;
-        cover = res.metadata.cover;
+        title = res.metadata.title || title;
+        author = res.metadata.author || author;
+        cover = res.metadata.cover || '';
       } else {
-        // TXT, Markdown, FB2, CBZ 漫畫
         if (format === 'cbz') {
           const parser = new ComicParser(file);
           const res = await parser.parse();
-          title = res.metadata.title;
-          author = res.metadata.author;
-          cover = res.metadata.cover;
+          title = res.metadata.title || title;
+          author = res.metadata.author || author;
+          cover = res.metadata.cover || '';
         } else {
           const parser = new TextParser(file, format);
           const res = await parser.parse();
-          title = res.metadata.title;
-          author = res.metadata.author;
-          cover = res.metadata.cover;
+          title = res.metadata.title || title;
+          author = res.metadata.author || author;
+          cover = res.metadata.cover || '';
         }
       }
 
-      // 添加進資料庫
-      await library.addBook({
+      // 2. 計算待導入檔案的 Hash 值
+      const incomingHash = await computeFileHash(file);
+      const incomingBookData = {
         title,
         author,
         format,
-        file, // 保存原始 Blob 檔案
+        file,
         cover,
-        size: file.size
-      });
+        size: file.size,
+        fileHash: incomingHash
+      };
 
-      await renderBookshelf();
+      // 3. 校驗重複性
+      let duplicateBook = null;
+      let isHashMatch = false;
+
+      // 優先精確比對 Hash
+      for (const ex of existingBooks) {
+        if (ex.fileHash) {
+          if (ex.fileHash === incomingHash) {
+            duplicateBook = ex;
+            isHashMatch = true;
+            break;
+          }
+        } else {
+          // 如果沒有 Hash，但大小完全一致，動態計算舊書的 Hash 並存儲，以防後續誤判
+          if (ex.size === file.size) {
+            try {
+              console.log(`[handleImportFiles] Dynamically computing hash for existing book "${ex.title}" due to size match.`);
+              ex.fileHash = await computeFileHash(ex.file);
+              await library.updateBook(ex); // 寫回資料庫
+              if (ex.fileHash === incomingHash) {
+                duplicateBook = ex;
+                isHashMatch = true;
+                break;
+              }
+            } catch (hashErr) {
+              console.warn(`[handleImportFiles] Failed to compute hash for existing book "${ex.title}":`, hashErr);
+            }
+          }
+        }
+      }
+
+      // 如果未比對到 Hash，再比對標題 (不分大小寫與空白)
+      if (!duplicateBook) {
+        const normalizedIncomingTitle = title.trim().toLowerCase();
+        for (const ex of existingBooks) {
+          const normalizedExistingTitle = (ex.title || '').trim().toLowerCase();
+          if (normalizedExistingTitle === normalizedIncomingTitle) {
+            duplicateBook = ex;
+            isHashMatch = false;
+            break;
+          }
+        }
+      }
+
+      // 4. 重複項處理
+      let action = 'import'; // 默認直接導入
+      if (duplicateBook) {
+        if (duplicateActionAll) {
+          action = duplicateActionAll;
+        } else {
+          // 彈出對話框讓用戶選擇
+          const result = await showDuplicateDialog(incomingBookData, duplicateBook, isHashMatch);
+          action = result.action;
+          if (result.applyAll) {
+            duplicateActionAll = action;
+          }
+        }
+      }
+
+      // 5. 執行對應動作
+      if (action === 'skip') {
+        console.log(`[handleImportFiles] Skipped importing duplicate book: ${title}`);
+        continue;
+      } else if (action === 'replace') {
+        console.log(`[handleImportFiles] Replacing existing book: ${duplicateBook.title}`);
+        await library.replaceBookContent(duplicateBook.id, incomingBookData);
+        // 更新記憶體中的 existingBooks 列表
+        const idx = existingBooks.findIndex(ex => ex.id === duplicateBook.id);
+        if (idx !== -1) {
+          existingBooks[idx] = { ...existingBooks[idx], ...incomingBookData };
+        }
+      } else {
+        // 'import' 或 'keep_both' (生成新 ID 直接寫入)
+        console.log(`[handleImportFiles] Importing book: ${title} (Action: ${action})`);
+        const newBook = await library.addBook(incomingBookData);
+        existingBooks.push(newBook); // 同步加入記憶體緩存
+      }
+
     } catch (err) {
       console.error('Import failed:', err);
       alert(`${getMsg('parse_failed')}: ${file.name}\n${err.message}`);
     }
   }
+
+  // 渲染新書櫃
+  await renderBookshelf();
 }
 
 // 渲染書櫃列表

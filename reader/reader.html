@@ -892,6 +892,51 @@
     </div>
   </dialog>
 
+  <!-- ==================== 重複書籍導入確認對話框 (Duplicate Book Import Dialog) ==================== -->
+  <dialog id="duplicate-dialog" class="custom-dialog panel-glass" style="max-height: 90vh; width: 420px; border-radius: 20px;">
+    <div class="dialog-form" style="display: flex; flex-direction: column; gap: 14px; color: var(--text-color);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="dialog-warning-icon" style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #ff9f0a, #ff3b30); color: #fff;">
+            <svg class="svg-icon" style="width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2;" viewBox="0 0 24 24">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
+          <h3 style="margin: 0; font-size: 18px; font-weight: 600;" data-i18n="duplicate_dialog_title">Duplicate Book Detected</h3>
+        </div>
+      </div>
+      <div class="dialog-body" style="font-size: 14px; line-height: 1.5; padding: 5px 0; display: flex; flex-direction: column; gap: 12px;">
+        <p id="duplicate-dialog-desc" style="margin: 0; font-weight: 500;"></p>
+        
+        <div style="background-color: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 12px; color: var(--text-muted);" data-i18n="duplicate_new_file">New File:</div>
+          <div id="duplicate-new-name" style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+          <div id="duplicate-new-meta" style="font-size: 12px; color: var(--text-muted);"></div>
+          
+          <div style="border-top: 1px dashed var(--border-color); margin: 6px 0;"></div>
+          
+          <div style="font-size: 12px; color: var(--text-muted);" data-i18n="duplicate_existing_book">Existing Book:</div>
+          <div id="duplicate-existing-name" style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--primary-color);"></div>
+          <div id="duplicate-existing-meta" style="font-size: 12px; color: var(--text-muted);"></div>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; margin-top: 5px; font-size: 13px;">
+          <input type="checkbox" id="duplicate-apply-all-checkbox" style="width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer;">
+          <span data-i18n="duplicate_apply_all">Apply to all remaining conflicts</span>
+        </label>
+      </div>
+      <div class="dialog-actions" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+        <button id="duplicate-replace-btn" class="btn btn-primary" style="width: 100%; justify-content: center; font-weight: 600; background: linear-gradient(135deg, var(--primary-color), #0056b3); color: white; border: none;" data-i18n="duplicate_btn_replace">Replace (Retain Progress)</button>
+        <div style="display: flex; gap: 8px; width: 100%;">
+          <button id="duplicate-keep-both-btn" class="btn" style="flex: 1; justify-content: center; font-weight: 500; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05);" data-i18n="duplicate_btn_keep_both">Keep Both</button>
+          <button id="duplicate-skip-btn" class="btn" style="flex: 1; justify-content: center; font-weight: 500; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05);" data-i18n="duplicate_btn_skip">Skip</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ==================== 引入 JS 庫 ==================== -->
   <script src="libs/jszip.min.js"></script>
   <script src="libs/mermaid.min.js"></script>

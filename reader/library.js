@@ -69,7 +69,7 @@ export class BookLibrary {
   }
 
   // 添加書籍
-  async addBook({ id, title, author, format, file, cover, size }) {
+  async addBook({ id, title, author, format, file, cover, size, fileHash }) {
     await this._ensureOpen();
     const book = {
       id: id || 'book_' + Date.now(),
@@ -79,6 +79,7 @@ export class BookLibrary {
       file,         // Blob
       cover,        // string (DataURL) or Blob
       size: size || 0,
+      fileHash: fileHash || '',
       addedAt: Date.now(),
       lastReadAt: 0,
       progress: {
@@ -98,6 +99,43 @@ export class BookLibrary {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
       const request = store.add(this._cleanBookForStorage(book));
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 覆蓋書籍檔案內容與元數據，但完整保留原有進度、書籤、劃線筆記、統計資訊與資料夾
+  async replaceBookContent(id, { title, author, format, file, cover, size, fileHash }) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.title = title || book.title;
+    book.author = author || book.author;
+    book.format = format.toLowerCase() || book.format;
+    book.file = file;
+    book.cover = cover || book.cover;
+    book.size = size || book.size;
+    book.fileHash = fileHash || book.fileHash;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(this._cleanBookForStorage(book));
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 更新書籍記錄（完整儲存）
+  async updateBook(book) {
+    await this._ensureOpen();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);

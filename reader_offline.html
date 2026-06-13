@@ -5949,6 +5949,51 @@ mark.search-highlight {
     </div>
   </dialog>
 
+  <!-- ==================== 重複書籍導入確認對話框 (Duplicate Book Import Dialog) ==================== -->
+  <dialog id="duplicate-dialog" class="custom-dialog panel-glass" style="max-height: 90vh; width: 420px; border-radius: 20px;">
+    <div class="dialog-form" style="display: flex; flex-direction: column; gap: 14px; color: var(--text-color);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="dialog-warning-icon" style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #ff9f0a, #ff3b30); color: #fff;">
+            <svg class="svg-icon" style="width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2;" viewBox="0 0 24 24">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
+          <h3 style="margin: 0; font-size: 18px; font-weight: 600;" data-i18n="duplicate_dialog_title">Duplicate Book Detected</h3>
+        </div>
+      </div>
+      <div class="dialog-body" style="font-size: 14px; line-height: 1.5; padding: 5px 0; display: flex; flex-direction: column; gap: 12px;">
+        <p id="duplicate-dialog-desc" style="margin: 0; font-weight: 500;"></p>
+        
+        <div style="background-color: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 12px; color: var(--text-muted);" data-i18n="duplicate_new_file">New File:</div>
+          <div id="duplicate-new-name" style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+          <div id="duplicate-new-meta" style="font-size: 12px; color: var(--text-muted);"></div>
+          
+          <div style="border-top: 1px dashed var(--border-color); margin: 6px 0;"></div>
+          
+          <div style="font-size: 12px; color: var(--text-muted);" data-i18n="duplicate_existing_book">Existing Book:</div>
+          <div id="duplicate-existing-name" style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--primary-color);"></div>
+          <div id="duplicate-existing-meta" style="font-size: 12px; color: var(--text-muted);"></div>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; margin-top: 5px; font-size: 13px;">
+          <input type="checkbox" id="duplicate-apply-all-checkbox" style="width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer;">
+          <span data-i18n="duplicate_apply_all">Apply to all remaining conflicts</span>
+        </label>
+      </div>
+      <div class="dialog-actions" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+        <button id="duplicate-replace-btn" class="btn btn-primary" style="width: 100%; justify-content: center; font-weight: 600; background: linear-gradient(135deg, var(--primary-color), #0056b3); color: white; border: none;" data-i18n="duplicate_btn_replace">Replace (Retain Progress)</button>
+        <div style="display: flex; gap: 8px; width: 100%;">
+          <button id="duplicate-keep-both-btn" class="btn" style="flex: 1; justify-content: center; font-weight: 500; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05);" data-i18n="duplicate_btn_keep_both">Keep Both</button>
+          <button id="duplicate-skip-btn" class="btn" style="flex: 1; justify-content: center; font-weight: 500; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05);" data-i18n="duplicate_btn_skip">Skip</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ==================== 引入 JS 庫 ==================== -->
   <script>/*!
 
@@ -9594,6 +9639,33 @@ MindElixir.DARK_THEME = ue;
     },
     "indexing_book": {
       "message": "Building search index..."
+    },
+    "duplicate_dialog_title": {
+      "message": "Duplicate Book Detected"
+    },
+    "duplicate_desc_hash": {
+      "message": "A book with the exact same content already exists in your library."
+    },
+    "duplicate_desc_name": {
+      "message": "A book with the same title already exists in your library, but the content is different."
+    },
+    "duplicate_new_file": {
+      "message": "New File:"
+    },
+    "duplicate_existing_book": {
+      "message": "Existing Book:"
+    },
+    "duplicate_apply_all": {
+      "message": "Apply to all remaining conflicts"
+    },
+    "duplicate_btn_replace": {
+      "message": "Replace & Retain Progress"
+    },
+    "duplicate_btn_keep_both": {
+      "message": "Keep Both"
+    },
+    "duplicate_btn_skip": {
+      "message": "Skip"
     }
   },
   "zh_TW": {
@@ -10500,6 +10572,33 @@ MindElixir.DARK_THEME = ue;
     },
     "indexing_book": {
       "message": "正在建立搜尋索引..."
+    },
+    "duplicate_dialog_title": {
+      "message": "偵測到重複書籍"
+    },
+    "duplicate_desc_hash": {
+      "message": "書庫中已存在內容完全相同的書籍。"
+    },
+    "duplicate_desc_name": {
+      "message": "書庫中已存在同名但內容不同的書籍。"
+    },
+    "duplicate_new_file": {
+      "message": "準備匯入的檔案："
+    },
+    "duplicate_existing_book": {
+      "message": "書庫中的現有書籍："
+    },
+    "duplicate_apply_all": {
+      "message": "套用到所有剩餘衝突"
+    },
+    "duplicate_btn_replace": {
+      "message": "覆蓋檔案 (保留閱讀進度與筆記)"
+    },
+    "duplicate_btn_keep_both": {
+      "message": "保留兩者"
+    },
+    "duplicate_btn_skip": {
+      "message": "跳過"
     }
   },
   "zh_CN": {
@@ -11406,6 +11505,33 @@ MindElixir.DARK_THEME = ue;
     },
     "indexing_book": {
       "message": "正在建立搜索索引..."
+    },
+    "duplicate_dialog_title": {
+      "message": "检测到重复书籍"
+    },
+    "duplicate_desc_hash": {
+      "message": "书库中已存在内容完全相同的书籍。"
+    },
+    "duplicate_desc_name": {
+      "message": "书库中已存在同名但内容不同的书籍。"
+    },
+    "duplicate_new_file": {
+      "message": "准备导入的文件："
+    },
+    "duplicate_existing_book": {
+      "message": "书库中的现有书籍："
+    },
+    "duplicate_apply_all": {
+      "message": "套用到所有剩余冲突"
+    },
+    "duplicate_btn_replace": {
+      "message": "覆盖文件 (保留阅读进度与笔记)"
+    },
+    "duplicate_btn_keep_both": {
+      "message": "保留两者"
+    },
+    "duplicate_btn_skip": {
+      "message": "跳过"
     }
   }
 };
@@ -11638,7 +11764,7 @@ class BookLibrary {
   }
 
   // 添加書籍
-  async addBook({ id, title, author, format, file, cover, size }) {
+  async addBook({ id, title, author, format, file, cover, size, fileHash }) {
     await this._ensureOpen();
     const book = {
       id: id || 'book_' + Date.now(),
@@ -11648,6 +11774,7 @@ class BookLibrary {
       file,         // Blob
       cover,        // string (DataURL) or Blob
       size: size || 0,
+      fileHash: fileHash || '',
       addedAt: Date.now(),
       lastReadAt: 0,
       progress: {
@@ -11667,6 +11794,43 @@ class BookLibrary {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
       const request = store.add(this._cleanBookForStorage(book));
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 覆蓋書籍檔案內容與元數據，但完整保留原有進度、書籤、劃線筆記、統計資訊與資料夾
+  async replaceBookContent(id, { title, author, format, file, cover, size, fileHash }) {
+    await this._ensureOpen();
+    const book = await this.getBook(id);
+    if (!book) throw new Error('Book not found');
+
+    book.title = title || book.title;
+    book.author = author || book.author;
+    book.format = format.toLowerCase() || book.format;
+    book.file = file;
+    book.cover = cover || book.cover;
+    book.size = size || book.size;
+    book.fileHash = fileHash || book.fileHash;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(this._cleanBookForStorage(book));
+
+      request.onsuccess = () => resolve(book);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // 更新書籍記錄（完整儲存）
+  async updateBook(book) {
+    await this._ensureOpen();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -19331,6 +19495,53 @@ function initUIEventBindings() {
 
 // ==================== 2. 書庫管理與導入 ==================== */
 
+// 計算檔案 Hash 值 (為保證大檔案效能，採用「大小+頭尾分塊」的 SHA-256，並在非安全內容下提供 fallback)
+async function computeFileHash(file) {
+  const size = file.size;
+  const name = file.name;
+  const lastModified = file.lastModified || 0;
+  
+  // 如果 Web Crypto API 不可用 (例如在某些瀏覽器中的 file:/// 協議下)
+  if (!window.crypto || !window.crypto.subtle) {
+    console.warn('[computeFileHash] crypto.subtle is not available. Falling back to metadata-based hash.');
+    const rawString = `${name}_${size}_${lastModified}`;
+    let hash = 0;
+    for (let i = 0; i < rawString.length; i++) {
+      hash = (hash << 5) - hash + rawString.charCodeAt(i);
+      hash |= 0; // Convert to 32bit integer
+    }
+    return 'fallback_' + Math.abs(hash).toString(16);
+  }
+  
+  const chunkLimit = 128 * 1024; // 128KB
+  
+  let bufferToHash;
+  if (size <= chunkLimit * 2) {
+    bufferToHash = await file.arrayBuffer();
+  } else {
+    const firstBlob = file.slice(0, chunkLimit);
+    const lastBlob = file.slice(size - chunkLimit, size);
+    
+    const [firstBuf, lastBuf] = await Promise.all([
+      firstBlob.arrayBuffer(),
+      lastBlob.arrayBuffer()
+    ]);
+    
+    const combined = new Uint8Array(8 + firstBuf.byteLength + lastBuf.byteLength);
+    const view = new DataView(combined.buffer);
+    view.setFloat64(0, size);
+    
+    combined.set(new Uint8Array(firstBuf), 8);
+    combined.set(new Uint8Array(lastBuf), 8 + firstBuf.byteLength);
+    
+    bufferToHash = combined.buffer;
+  }
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', bufferToHash);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // 處理選擇檔案
 function handleFileSelect(e) {
   if (e.target.files.length > 0) {
@@ -19338,8 +19549,103 @@ function handleFileSelect(e) {
   }
 }
 
+// 顯示重複導入確認對話框，返回 { action, applyAll }
+function showDuplicateDialog(incomingBook, existingBook, isHashMatch) {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById('duplicate-dialog');
+    
+    // 獲取 UI 元素
+    const descEl = document.getElementById('duplicate-dialog-desc');
+    const newNameEl = document.getElementById('duplicate-new-name');
+    const newMetaEl = document.getElementById('duplicate-new-meta');
+    const existingNameEl = document.getElementById('duplicate-existing-name');
+    const existingMetaEl = document.getElementById('duplicate-existing-meta');
+    const checkboxAll = document.getElementById('duplicate-apply-all-checkbox');
+    
+    const btnReplace = document.getElementById('duplicate-replace-btn');
+    const btnKeepBoth = document.getElementById('duplicate-keep-both-btn');
+    const btnSkip = document.getElementById('duplicate-skip-btn');
+    
+    // 重設狀態
+    checkboxAll.checked = false;
+    
+    // 設定文字說明與元數據
+    if (isHashMatch) {
+      descEl.textContent = getMsg('duplicate_desc_hash');
+    } else {
+      descEl.textContent = getMsg('duplicate_desc_name');
+    }
+    
+    // 新增/待導入書籍的資訊
+    newNameEl.textContent = `${incomingBook.title} (${incomingBook.format.toUpperCase()})`;
+    newMetaEl.textContent = `${getMsg('author_title') || 'Author'}: ${incomingBook.author} | Size: ${(incomingBook.size / 1024 / 1024).toFixed(2)} MB`;
+    
+    // 書庫中已存在書籍的資訊
+    existingNameEl.textContent = `${existingBook.title} (${existingBook.format.toUpperCase()})`;
+    existingMetaEl.textContent = `${getMsg('author_title') || 'Author'}: ${existingBook.author} | Size: ${(existingBook.size / 1024 / 1024).toFixed(2)} MB`;
+    
+    // 綁定點擊事件
+    function cleanup() {
+      btnReplace.removeEventListener('click', onReplace);
+      btnKeepBoth.removeEventListener('click', onKeepBoth);
+      btnSkip.removeEventListener('click', onSkip);
+      dialog.close();
+    }
+    
+    function onReplace() {
+      cleanup();
+      resolve({ action: 'replace', applyAll: checkboxAll.checked });
+    }
+    
+    function onKeepBoth() {
+      cleanup();
+      resolve({ action: 'keep_both', applyAll: checkboxAll.checked });
+    }
+    
+    function onSkip() {
+      cleanup();
+      resolve({ action: 'skip', applyAll: checkboxAll.checked });
+    }
+    
+    btnReplace.addEventListener('click', onReplace);
+    btnKeepBoth.addEventListener('click', onKeepBoth);
+    btnSkip.addEventListener('click', onSkip);
+    
+    // ESC 或其它關閉操作預設為 skip
+    dialog.oncancel = (e) => {
+      e.preventDefault();
+      cleanup();
+      resolve({ action: 'skip', applyAll: false });
+    };
+    
+    // 國際化靜態文字手動初始化（以防 chrome.i18n 沒有翻譯完畢）
+    const titleEl = dialog.querySelector('h3[data-i18n="duplicate_dialog_title"]');
+    if (titleEl) titleEl.textContent = getMsg('duplicate_dialog_title');
+    
+    const lblNew = dialog.querySelector('div[data-i18n="duplicate_new_file"]');
+    if (lblNew) lblNew.textContent = getMsg('duplicate_new_file');
+    
+    const lblEx = dialog.querySelector('div[data-i18n="duplicate_existing_book"]');
+    if (lblEx) lblEx.textContent = getMsg('duplicate_existing_book');
+    
+    const lblAll = dialog.querySelector('span[data-i18n="duplicate_apply_all"]');
+    if (lblAll) lblAll.textContent = getMsg('duplicate_apply_all');
+    
+    btnReplace.textContent = getMsg('duplicate_btn_replace');
+    btnKeepBoth.textContent = getMsg('duplicate_btn_keep_both');
+    btnSkip.textContent = getMsg('duplicate_btn_skip');
+    
+    dialog.showModal();
+  });
+}
+
 // 導入書籍
 async function handleImportFiles(files) {
+  let duplicateActionAll = null; // 用於「套用到所有剩餘衝突」的全局變量
+
+  // 1. 獲取所有現有書籍
+  let existingBooks = await library.getAllBooks();
+
   for (const file of files) {
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     const formats = ['.epub', '.azw3', '.mobi', '.txt', '.md', '.fb2', '.cbz'];
@@ -19354,54 +19660,135 @@ async function handleImportFiles(files) {
       let author = getMsg('unknown_author');
       let cover = '';
       
-      // 依格式調用對應的臨時 parser 以提取封面與元數據
       const format = ext.replace('.', '');
       
+      // 解析元數據
       if (format === 'epub') {
         const parser = new EpubParser(file);
         const res = await parser.parse();
-        title = res.metadata.title;
-        author = res.metadata.author;
-        cover = res.metadata.cover;
+        title = res.metadata.title || title;
+        author = res.metadata.author || author;
+        cover = res.metadata.cover || '';
       } else if (format === 'azw3' || format === 'mobi') {
         const parser = new Azw3Parser(file);
         const res = await parser.parse();
-        title = res.metadata.title;
-        author = res.metadata.author;
-        cover = res.metadata.cover;
+        title = res.metadata.title || title;
+        author = res.metadata.author || author;
+        cover = res.metadata.cover || '';
       } else {
-        // TXT, Markdown, FB2, CBZ 漫畫
         if (format === 'cbz') {
           const parser = new ComicParser(file);
           const res = await parser.parse();
-          title = res.metadata.title;
-          author = res.metadata.author;
-          cover = res.metadata.cover;
+          title = res.metadata.title || title;
+          author = res.metadata.author || author;
+          cover = res.metadata.cover || '';
         } else {
           const parser = new TextParser(file, format);
           const res = await parser.parse();
-          title = res.metadata.title;
-          author = res.metadata.author;
-          cover = res.metadata.cover;
+          title = res.metadata.title || title;
+          author = res.metadata.author || author;
+          cover = res.metadata.cover || '';
         }
       }
 
-      // 添加進資料庫
-      await library.addBook({
+      // 2. 計算待導入檔案的 Hash 值
+      const incomingHash = await computeFileHash(file);
+      const incomingBookData = {
         title,
         author,
         format,
-        file, // 保存原始 Blob 檔案
+        file,
         cover,
-        size: file.size
-      });
+        size: file.size,
+        fileHash: incomingHash
+      };
 
-      await renderBookshelf();
+      // 3. 校驗重複性
+      let duplicateBook = null;
+      let isHashMatch = false;
+
+      // 優先精確比對 Hash
+      for (const ex of existingBooks) {
+        if (ex.fileHash) {
+          if (ex.fileHash === incomingHash) {
+            duplicateBook = ex;
+            isHashMatch = true;
+            break;
+          }
+        } else {
+          // 如果沒有 Hash，但大小完全一致，動態計算舊書的 Hash 並存儲，以防後續誤判
+          if (ex.size === file.size) {
+            try {
+              console.log(`[handleImportFiles] Dynamically computing hash for existing book "${ex.title}" due to size match.`);
+              ex.fileHash = await computeFileHash(ex.file);
+              await library.updateBook(ex); // 寫回資料庫
+              if (ex.fileHash === incomingHash) {
+                duplicateBook = ex;
+                isHashMatch = true;
+                break;
+              }
+            } catch (hashErr) {
+              console.warn(`[handleImportFiles] Failed to compute hash for existing book "${ex.title}":`, hashErr);
+            }
+          }
+        }
+      }
+
+      // 如果未比對到 Hash，再比對標題 (不分大小寫與空白)
+      if (!duplicateBook) {
+        const normalizedIncomingTitle = title.trim().toLowerCase();
+        for (const ex of existingBooks) {
+          const normalizedExistingTitle = (ex.title || '').trim().toLowerCase();
+          if (normalizedExistingTitle === normalizedIncomingTitle) {
+            duplicateBook = ex;
+            isHashMatch = false;
+            break;
+          }
+        }
+      }
+
+      // 4. 重複項處理
+      let action = 'import'; // 默認直接導入
+      if (duplicateBook) {
+        if (duplicateActionAll) {
+          action = duplicateActionAll;
+        } else {
+          // 彈出對話框讓用戶選擇
+          const result = await showDuplicateDialog(incomingBookData, duplicateBook, isHashMatch);
+          action = result.action;
+          if (result.applyAll) {
+            duplicateActionAll = action;
+          }
+        }
+      }
+
+      // 5. 執行對應動作
+      if (action === 'skip') {
+        console.log(`[handleImportFiles] Skipped importing duplicate book: ${title}`);
+        continue;
+      } else if (action === 'replace') {
+        console.log(`[handleImportFiles] Replacing existing book: ${duplicateBook.title}`);
+        await library.replaceBookContent(duplicateBook.id, incomingBookData);
+        // 更新記憶體中的 existingBooks 列表
+        const idx = existingBooks.findIndex(ex => ex.id === duplicateBook.id);
+        if (idx !== -1) {
+          existingBooks[idx] = { ...existingBooks[idx], ...incomingBookData };
+        }
+      } else {
+        // 'import' 或 'keep_both' (生成新 ID 直接寫入)
+        console.log(`[handleImportFiles] Importing book: ${title} (Action: ${action})`);
+        const newBook = await library.addBook(incomingBookData);
+        existingBooks.push(newBook); // 同步加入記憶體緩存
+      }
+
     } catch (err) {
       console.error('Import failed:', err);
       alert(`${getMsg('parse_failed')}: ${file.name}\n${err.message}`);
     }
   }
+
+  // 渲染新書櫃
+  await renderBookshelf();
 }
 
 // 渲染書櫃列表

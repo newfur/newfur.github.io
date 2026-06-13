@@ -905,5 +905,32 @@
   },
   "indexing_book": {
     "message": "正在建立搜索索引..."
+  },
+  "duplicate_dialog_title": {
+    "message": "检测到重复书籍"
+  },
+  "duplicate_desc_hash": {
+    "message": "书库中已存在内容完全相同的书籍。"
+  },
+  "duplicate_desc_name": {
+    "message": "书库中已存在同名但内容不同的书籍。"
+  },
+  "duplicate_new_file": {
+    "message": "准备导入的文件："
+  },
+  "duplicate_existing_book": {
+    "message": "书库中的现有书籍："
+  },
+  "duplicate_apply_all": {
+    "message": "套用到所有剩余冲突"
+  },
+  "duplicate_btn_replace": {
+    "message": "覆盖文件 (保留阅读进度与笔记)"
+  },
+  "duplicate_btn_keep_both": {
+    "message": "保留两者"
+  },
+  "duplicate_btn_skip": {
+    "message": "跳过"
   }
 }

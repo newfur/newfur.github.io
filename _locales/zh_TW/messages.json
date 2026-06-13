@@ -905,5 +905,32 @@
   },
   "indexing_book": {
     "message": "正在建立搜尋索引..."
+  },
+  "duplicate_dialog_title": {
+    "message": "偵測到重複書籍"
+  },
+  "duplicate_desc_hash": {
+    "message": "書庫中已存在內容完全相同的書籍。"
+  },
+  "duplicate_desc_name": {
+    "message": "書庫中已存在同名但內容不同的書籍。"
+  },
+  "duplicate_new_file": {
+    "message": "準備匯入的檔案："
+  },
+  "duplicate_existing_book": {
+    "message": "書庫中的現有書籍："
+  },
+  "duplicate_apply_all": {
+    "message": "套用到所有剩餘衝突"
+  },
+  "duplicate_btn_replace": {
+    "message": "覆蓋檔案 (保留閱讀進度與筆記)"
+  },
+  "duplicate_btn_keep_both": {
+    "message": "保留兩者"
+  },
+  "duplicate_btn_skip": {
+    "message": "跳過"
   }
 }
