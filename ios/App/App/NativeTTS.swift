@@ -117,6 +117,28 @@ public class NativeTTS: CAPPlugin {
         }
     }
     
+    @objc func getSafeAreaInsets(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let bridge = self.bridge else {
+                call.reject("Bridge not available")
+                return
+            }
+            let rootVC = bridge.viewController
+            let webView = bridge.webView
+            let top    = webView?.safeAreaInsets.top ?? rootVC?.view.safeAreaInsets.top ?? 0
+            let bottom = webView?.safeAreaInsets.bottom ?? rootVC?.view.safeAreaInsets.bottom ?? 0
+            let left   = webView?.safeAreaInsets.left ?? rootVC?.view.safeAreaInsets.left ?? 0
+            let right  = webView?.safeAreaInsets.right ?? rootVC?.view.safeAreaInsets.right ?? 0
+            
+            call.resolve([
+                "top": top,
+                "bottom": bottom,
+                "left": left,
+                "right": right
+            ])
+        }
+    }
+    
     private func escapeXml(unsafe: String) -> String {
         return unsafe.replacingOccurrences(of: "&", with: "&amp;")
                      .replacingOccurrences(of: "<", with: "&lt;")

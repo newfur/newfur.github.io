@@ -169,7 +169,7 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, () => {
   console.log(`====================================================`);
-  console.log(`Edge E-Book Reader Web Version running at:`);
+  console.log(`Raconteur/读书人 Web Version running at:`);
   console.log(`http://localhost:${PORT}/`);
   console.log(`====================================================`);
 });

@@ -1,6 +1,6 @@
 {
   "appId": "com.edgereader.app",
-  "appName": "Edge Reader",
+  "appName": "Raconteur",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
@@ -9,5 +9,8 @@
     "CapacitorHttp": {
       "enabled": true
     }
+  },
+  "ios": {
+    "contentInset": "never"
   }
 }

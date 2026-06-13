@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Edge Reader</string>
-    <string name="title_activity_main">Edge Reader</string>
+    <string name="app_name">Raconteur</string>
+    <string name="title_activity_main">Raconteur</string>
     <string name="package_name">com.edgereader.app</string>
     <string name="custom_url_scheme">com.edgereader.app</string>
 </resources>

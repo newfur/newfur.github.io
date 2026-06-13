@@ -1,6 +1,6 @@
 {
-  "name": "我的书库",
-  "short_name": "我的书库",
+  "name": "Raconteur/读书人",
+  "short_name": "Raconteur/读书人",
   "description": "一款专为网页设计的高级电子书阅读器。支持 EPUB、AZW3、MOBI、TXT、MD 等格式，并支持微软高质量语音朗读。",
   "start_url": "/",
   "display": "standalone",

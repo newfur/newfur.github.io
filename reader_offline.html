@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title data-i18n="extension_name">Edge E-Book Reader</title>
   <style>.map-container{-webkit-tap-highlight-color:rgba(0,0,0,0);font-family:-apple-system,BlinkMacSystemFont,Helvetica Neue,PingFang SC,Microsoft YaHei,Source Han Sans SC,Noto Sans CJK SC,WenQuanYi Micro Hei,sans-serif;-webkit-user-select:none;user-select:none;height:100%;width:100%;overflow:hidden;font-size:15px;outline:none;touch-action:none;background-color:var(--bgcolor)}.map-container *{box-sizing:border-box}.map-container::-webkit-scrollbar{width:0px;height:0px}.map-container .selected{outline:2px solid var(--selected);outline-offset:1px}.map-container.space-pressed,.map-container.space-pressed *{cursor:grab!important}.map-container.space-pressed:active,.map-container.space-pressed:active *{cursor:grabbing!important}.map-container .hyper-link{text-decoration:none;margin-left:.3em}.map-container me-main>me-wrapper>me-parent>me-epd{top:50%;transform:translateY(-50%)}.map-container me-epd{top:100%;transform:translateY(-50%)}.map-container .lhs{direction:rtl}.map-container .lhs>me-wrapper>me-parent>me-epd{left:-10px}.map-container .lhs me-epd{left:5px}.map-container .lhs me-tpc{direction:ltr}.map-container .rhs>me-wrapper>me-parent>me-epd{right:-10px}.map-container .rhs me-epd{right:5px}.map-container .map-canvas{position:relative;-webkit-user-select:none;user-select:none;width:fit-content;transform:scale(1)}.map-container .map-canvas me-nodes{position:relative;display:flex;justify-content:center;align-items:center;height:max-content;width:max-content;padding:var(--map-padding)}.map-container me-main>me-wrapper{position:relative;margin:var(--main-gap-y) var(--main-gap-x)}.map-container me-main>me-wrapper>me-parent{margin:10px;padding:0}.map-container me-main>me-wrapper>me-parent>me-tpc{border-radius:var(--main-radius);background-color:var(--main-bgcolor);border:2px solid var(--main-color);color:var(--main-color);padding:8px 25px}.map-container me-wrapper{display:block;pointer-events:none;width:fit-content}.map-container me-children,.map-container me-parent{display:inline-block;vertical-align:middle}.map-container me-root{position:relative;margin:45px 0;z-index:10}.map-container me-root me-tpc{font-size:25px;color:var(--root-color);padding:10px 30px;border-radius:var(--root-radius);border:var(--root-border-color) 2px solid;background-color:var(--root-bgcolor)}.map-container me-parent{position:relative;cursor:pointer;padding:6px var(--node-gap-x);margin-top:var(--node-gap-y);z-index:10}.map-container me-parent me-tpc{position:relative;border-radius:3px;color:var(--color);padding:var(--topic-padding)}.map-container me-parent me-tpc .insert-preview{position:absolute;width:100%;left:0;z-index:9}.map-container me-parent me-tpc .show{background:#7ad5ff;pointer-events:none;opacity:.7;border-radius:3px}.map-container me-parent me-tpc .before{height:14px;top:-14px}.map-container me-parent me-tpc .in{height:100%;top:0}.map-container me-parent me-tpc .after{height:14px;bottom:-14px}.map-container me-parent me-epd{position:absolute;height:18px;width:18px;opacity:.8;background-image:url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBzdGFuZGFsb25lPSJubyI/PjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+CjxzdmcgdD0iMTY1NjY1NDcxNzI0MiIgY2xhc3M9Imljb24iIHZpZXdCb3g9IjAgMCAxMDI0IDEwMjQiIHZlcnNpb249IjEuMSIKICAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCI+CiAgICA8cGF0aCBkPSJNNTEyIDc0LjY2NjY2N0MyNzAuOTMzMzMzIDc0LjY2NjY2NyA3NC42NjY2NjcgMjcwLjkzMzMzMyA3NC42NjY2NjcgNTEyUzI3MC45MzMzMzMgOTQ5LjMzMzMzMyA1MTIgOTQ5LjMzMzMzMyA5NDkuMzMzMzMzIDc1My4wNjY2NjcgOTQ5LjMzMzMzMyA1MTIgNzUzLjA2NjY2NyA3NC42NjY2NjcgNTEyIDc0LjY2NjY2N3oiIHN0cm9rZS13aWR0aD0iNTQiIHN0cm9rZT0nYmxhY2snIGZpbGw9J3doaXRlJyA+PC9wYXRoPgogICAgPHBhdGggZD0iTTY4Mi42NjY2NjcgNDgwaC0xMzguNjY2NjY3VjM0MS4zMzMzMzNjMC0xNy4wNjY2NjctMTQuOTMzMzMzLTMyLTMyLTMycy0zMiAxNC45MzMzMzMtMzIgMzJ2MTM4LjY2NjY2N0gzNDEuMzMzMzMzYy0xNy4wNjY2NjcgMC0zMiAxNC45MzMzMzMtMzIgMzJzMTQuOTMzMzMzIDMyIDMyIDMyaDEzOC42NjY2NjdWNjgyLjY2NjY2N2MwIDE3LjA2NjY2NyAxNC45MzMzMzMgMzIgMzIgMzJzMzItMTQuOTMzMzMzIDMyLTMydi0xMzguNjY2NjY3SDY4Mi42NjY2NjdjMTcuMDY2NjY3IDAgMzItMTQuOTMzMzMzIDMyLTMycy0xNC45MzMzMzMtMzItMzItMzJ6Ij48L3BhdGg+Cjwvc3ZnPg==);background-repeat:no-repeat;background-size:contain;background-position:center;pointer-events:all;z-index:9}.map-container me-parent me-epd.minus{background-image:url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBzdGFuZGFsb25lPSJubyI/PjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+CjxzdmcgdD0iMTY1NjY1NTU2NDk4NSIgY2xhc3M9Imljb24iIHZpZXdCb3g9IjAgMCAxMDI0IDEwMjQiIHZlcnNpb249IjEuMSIKICAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCI+CiAgICA8cGF0aCBkPSJNNTEyIDc0LjY2NjY2N0MyNzAuOTMzMzMzIDc0LjY2NjY2NyA3NC42NjY2NjcgMjcwLjkzMzMzMyA3NC42NjY2NjcgNTEyUzI3MC45MzMzMzMgOTQ5LjMzMzMzMyA1MTIgOTQ5LjMzMzMzMyA5NDkuMzMzMzMzIDc1My4wNjY2NjcgOTQ5LjMzMzMzMyA1MTIgNzUzLjA2NjY2NyA3NC42NjY2NjcgNTEyIDc0LjY2NjY2N3oiIHN0cm9rZS13aWR0aD0iNTQiIHN0cm9rZT0nYmxhY2snIGZpbGw9J3doaXRlJyA+PC9wYXRoPgogICAgPHBhdGggZD0iTTY4Mi42NjY2NjcgNTQ0SDM0MS4zMzMzMzNjLTE3LjA2NjY2NyAwLTMyLTE0LjkzMzMzMy0zMi0zMnMxNC45MzMzMzMtMzIgMzItMzJoMzQxLjMzMzMzNGMxNy4wNjY2NjcgMCAzMiAxNC45MzMzMzMgMzIgMzJzLTE0LjkzMzMzMyAzMi0zMiAzMnoiPjwvcGF0aD4KPC9zdmc+)!important;transition:opacity .3s;opacity:0}@media (hover: hover){.map-container me-parent me-epd.minus:hover{opacity:.8}}@media (hover: none){.map-container me-parent me-epd.minus{opacity:.8}}.map-container .icon{width:1em;height:1em;vertical-align:-.15em;fill:currentColor;overflow:hidden}.map-container .lines,.map-container .summary,.map-container .subLines,.map-container .topiclinks,.map-container .linkcontroller{position:absolute;height:102%;width:100%;top:0;left:0}.map-container .topiclinks,.map-container .linkcontroller,.map-container .summary{pointer-events:none;z-index:20}.map-container .summary>g,.map-container .topiclinks>g{cursor:pointer;pointer-events:stroke;z-index:20}.map-container .label-container{z-index:21}.map-container .lines,.map-container .subLines{pointer-events:none}.map-container #input-box{position:absolute;top:0;left:0;width:max-content;max-width:35em;direction:ltr;-webkit-user-select:auto;user-select:auto;pointer-events:auto;color:var(--color);background-color:var(--bgcolor);outline:1px solid #ccc;border-radius:2px;z-index:100}.map-container me-tpc{display:block;max-width:35em;white-space:pre-wrap;pointer-events:all}.map-container me-tpc>*{pointer-events:none}.map-container me-tpc>a,.map-container me-tpc>iframe{pointer-events:auto}.map-container me-tpc>.text{display:inline-block}.map-container me-tpc>.text a{pointer-events:auto}.map-container me-tpc>img{display:block;margin-bottom:8px;object-fit:cover}.map-container .circle{position:absolute;height:10px;width:10px;margin-top:-5px;margin-left:-5px;border-radius:100%;background:#757575;border:2px solid #ffffff;z-index:50;cursor:pointer}.map-container .tags{direction:ltr}.map-container .tags span{display:inline-block;border-radius:3px;padding:2px 4px;background:#d6f0f8;color:#276f86;margin:2px 4px 0 0;font-size:12px;line-height:1.3em}.map-container .icons{display:inline-block;direction:ltr;margin-left:5px}.map-container .icons span{display:inline-block;line-height:1.3em}.map-container .mind-elixir-ghost{position:fixed;top:-100%;left:-100%;box-sizing:content-box;opacity:.5;background-color:var(--main-bgcolor);border:2px solid var(--main-color);color:var(--main-color);max-width:200px;width:fit-content;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:8px 16px;border-radius:6px}.map-container .selection-area{background:#4f90f22d;border:1px solid #4f90f2}.map-container .svg-label{position:absolute;left:0;top:0;display:flex;align-items:center;word-wrap:break-word;overflow-wrap:break-word;-webkit-hyphens:auto;hyphens:auto;line-height:1.2;padding:2px;pointer-events:auto;cursor:pointer;z-index:10;max-width:200px;border-radius:3px;padding:var(--topic-padding)}.map-container h1{font-size:1.5rem;font-weight:700;color:var(--selected)}.map-container h2{font-size:1.25rem;font-weight:600;color:var(--selected)}.map-container h3{font-size:1.125rem;font-weight:600;color:var(--selected)}.map-container h4{font-size:1rem;font-weight:600;color:var(--selected)}.map-container h5{font-size:.875rem;font-weight:600;color:var(--selected)}.map-container h6{font-size:.875rem;font-weight:500;margin:.1rem 0;color:var(--selected);font-style:italic}.map-container strong.asterisk-emphasis,.map-container em{color:var(--selected)}.map-container strong.underscore-emphasis{background:rgba(255,235,59,.25);padding:.05em .15em;border-radius:.15em}.map-container a{color:var(--selected)}.map-container a:hover{color:var(--selected);text-decoration:underline}.map-container .context-menu{position:fixed;top:0;left:0;width:100%;height:100%;z-index:99}.map-container .context-menu .menu-list{position:fixed;list-style:none;margin:0;padding:0;color:var(--panel-color);box-shadow:0 12px 15px #0003;border-radius:5px;overflow:hidden}.map-container .context-menu .menu-list li{min-width:200px;overflow:hidden;white-space:nowrap;padding:6px 10px;background:var(--panel-bgcolor);border-bottom:1px solid var(--panel-border-color);cursor:pointer}.map-container .context-menu .menu-list li span{line-height:20px}.map-container .context-menu .menu-list li a{color:#333;text-decoration:none}.map-container .context-menu .menu-list li.disabled{display:none}.map-container .context-menu .menu-list li:hover{filter:brightness(.95)}.map-container .context-menu .menu-list li:last-child{border-bottom:0}.map-container .context-menu .menu-list li span:last-child{float:right}.map-container .context-menu .key{font-size:10px;background-color:#f1f1f1;color:#333;padding:2px 5px;border-radius:3px}.map-container .tips{position:absolute;bottom:28px;left:50%;transform:translate(-50%);color:var(--panel-color);background:var(--panel-bgcolor);opacity:.8;padding:5px 10px;border-radius:5px;font-weight:700}.mind-elixir-toolbar{position:absolute;color:var(--panel-color);background:var(--panel-bgcolor);padding:10px;border-radius:5px;box-shadow:0 1px 2px #0003}.mind-elixir-toolbar svg{display:inline-block}.mind-elixir-toolbar span:active{opacity:.5}.mind-elixir-toolbar.rb{right:20px;bottom:20px}.mind-elixir-toolbar.rb span+span{margin-left:10px}.mind-elixir-toolbar.lt{font-size:20px;left:20px;top:20px}.mind-elixir-toolbar.lt span{display:block}.mind-elixir-toolbar.lt span+span{margin-top:10px}
 </style>
@@ -307,6 +307,7 @@ button, select, input {
   z-index: 100;
   box-shadow: 0 4px 20px var(--glass-shadow);
   transition: all var(--transition-speed) ease;
+  padding-top: var(--sat, env(safe-area-inset-top, 0px));
 }
 
 .header-container {
@@ -705,8 +706,10 @@ button, select, input {
   top: 0;
   left: 0;
   right: 0;
-  height: 64px;
-  padding: 0 20px;
+  height: calc(64px + var(--sat, env(safe-area-inset-top, 0px)));
+  padding-top: var(--sat, env(safe-area-inset-top, 0px));
+  padding-left: 20px;
+  padding-right: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -742,7 +745,10 @@ button, select, input {
 .reader-container {
   max-width: 800px;
   margin: 0 auto;
-  padding: 100px 20px 80px 20px; /* 避開頂部懸浮欄與底部 */
+  padding-top: calc(100px + var(--sat, env(safe-area-inset-top, 0px)));
+  padding-bottom: 80px;
+  padding-left: 20px;
+  padding-right: 20px; /* 避開頂部懸浮欄與底部 */
   min-height: 100vh;
   box-sizing: content-box;
   background-color: var(--surface-color);
@@ -831,10 +837,10 @@ body.layout-paginated {
 }
 
 body.layout-paginated .reader-container {
-  height: calc(100vh - 160px) !important;
+  height: calc(100vh - 160px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px))) !important;
   min-height: 0 !important; /* 解除 base style 中的 min-height: 100vh 限制，避免底部文字被裁切 */
-  padding-top: 90px;
-  padding-bottom: 70px;
+  padding-top: calc(90px + var(--sat, env(safe-area-inset-top, 0px)));
+  padding-bottom: calc(70px + var(--sab, env(safe-area-inset-bottom, 0px)));
   margin: 0 auto !important;
   overflow: hidden !important;
   box-sizing: content-box;
@@ -988,7 +994,11 @@ body.layout-paginated #book-content table {
   body.layout-paginated .reader-container {
     width: 100% !important;
     max-width: 100% !important;
-    padding: 80px 16px 60px 16px !important;
+    padding-top: calc(80px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-bottom: calc(60px + var(--sab, env(safe-area-inset-bottom, 0px))) !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+    height: calc(100vh - 140px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px))) !important;
   }
 }
 
@@ -1505,8 +1515,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .sidebar-header {
-  height: 64px !important;
-  padding: 0 20px !important;
+  height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+  padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
+  padding-left: 20px !important;
+  padding-right: 20px !important;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1847,7 +1859,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
     animation: slideUpFullScreen 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
   .ai-panel-footer {
-    padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    padding-bottom: calc(10px + var(--sab, env(safe-area-inset-bottom, 0px))) !important;
+  }
+  .ai-panel-header {
+    height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+    box-sizing: border-box !important;
   }
 
   /* Prompt suggestions toggle state is now handled globally */
@@ -4534,8 +4553,10 @@ html.transition-none .page-texture-slide {
     animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
   .ai-panel-header {
-    height: 64px !important;
-    padding: 0 20px !important;
+    height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
+    padding-left: 20px !important;
+    padding-right: 20px !important;
     box-sizing: border-box !important;
   }
   .reader-sidebar {
@@ -5082,7 +5103,7 @@ mark.search-highlight {
             </span>
             <span data-i18n="import_book">Import Book</span>
           </button>
-          <input type="file" id="file-input" accept=".epub,.azw3,.mobi,.txt,.md,.fb2,.cbz" style="display: none;">
+          <input type="file" id="file-input" accept=".epub,.azw3,.azw,.mobi,.txt,.md,.fb2,.cbz,application/epub+zip,application/vnd.amazon.ebook,application/x-mobipocket-ebook,text/plain,text/markdown,application/x-fictionbook+xml,application/vnd.comicbook+zip,public.data" style="display: none;">
 
           <button id="create-folder-btn" class="btn btn-secondary" title="Create Folder">
             <span class="btn-icon">
@@ -5739,7 +5760,7 @@ mark.search-highlight {
         </button>
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 50vh; font-size: 14px; line-height: 1.5; padding: 5px 0;">
-        <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">Edge E-Book Reader</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;" data-i18n="extension_name">Raconteur/读书人</div>
         <div style="color: var(--text-muted); margin-bottom: 15px;">Version: <span id="about-version-display">v2.2.8</span></div>
         
         <p style="margin: 0 0 15px 0;" data-i18n="about_dialog_desc">一款專為網頁和瀏覽器設計的高級電子書閱讀器。支持多種電子書格式以及微軟高品質雲端神經網路語音朗读（TTS）。</p>
@@ -8666,7 +8687,7 @@ MindElixir.DARK_THEME = ue;
   <script>const _offlineLocales = {
   "en": {
     "extension_name": {
-      "message": "Edge E-Book Reader"
+      "message": "Raconteur"
     },
     "extension_description": {
       "message": "A premium web-based reader for EPUB, AZW3, MOBI, TXT, MD, FB2, and CBZ with high-quality Edge TTS Read Aloud support."
@@ -9535,10 +9556,10 @@ MindElixir.DARK_THEME = ue;
   },
   "zh_TW": {
     "extension_name": {
-      "message": "Edge 網頁版電子書閱讀器"
+      "message": "讀書人"
     },
     "extension_description": {
-      "message": "一款專為 Edge 設計的高級電子書閱讀器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，並支持微軟高品質語音朗讀。"
+      "message": "一款高級電子書閱讀器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，並支持微軟高品質語音朗讀。"
     },
     "library_title": {
       "message": "我的書庫"
@@ -10404,10 +10425,10 @@ MindElixir.DARK_THEME = ue;
   },
   "zh_CN": {
     "extension_name": {
-      "message": "Edge 网页版电子书阅读器"
+      "message": "读书人"
     },
     "extension_description": {
-      "message": "一款专为 Edge 设计的高级电子书阅读器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，并支持微软高质量语音朗读。"
+      "message": "一款高级电子书阅读器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，并支持微软高质量语音朗读。"
     },
     "library_title": {
       "message": "我的书库"
@@ -11487,6 +11508,19 @@ class BookLibrary {
     }
   }
 
+  // 輔助函數：將 File 物件轉回純 Blob 以保證 Safari IndexedDB 儲存時的穩定性，防止出現 NotFoundError ("The object can not be found here.")
+  _cleanBookForStorage(book) {
+    if (!book) return book;
+    const clean = { ...book };
+    if (clean.file instanceof File) {
+      clean.file = new Blob([clean.file], { type: clean.file.type });
+    }
+    if (clean.cover instanceof File) {
+      clean.cover = new Blob([clean.cover], { type: clean.cover.type });
+    }
+    return clean;
+  }
+
   // 添加書籍
   async addBook({ id, title, author, format, file, cover, size }) {
     await this._ensureOpen();
@@ -11516,7 +11550,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.add(book);
+      const request = store.add(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -11661,7 +11695,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(mergedBook);
+      const request = store.put(this._cleanBookForStorage(mergedBook));
 
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
@@ -11729,7 +11763,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -11747,7 +11781,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -11765,7 +11799,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -11795,7 +11829,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.notes);
       request.onerror = () => reject(request.error);
@@ -11815,7 +11849,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.notes);
       request.onerror = () => reject(request.error);
@@ -11847,7 +11881,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.bookmarks);
       request.onerror = () => reject(request.error);
@@ -11867,7 +11901,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.bookmarks);
       request.onerror = () => reject(request.error);
@@ -11902,7 +11936,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -11924,7 +11958,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -11954,7 +11988,7 @@ class BookLibrary {
           readingDays: {},
           hourlyDist: {}
         };
-        const request = store.put(book);
+        const request = store.put(this._cleanBookForStorage(book));
         request.onsuccess = () => {
           completed++;
           if (completed === books.length && !hasError) {
@@ -11991,7 +12025,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.aiChats);
       request.onerror = () => reject(request.error);
@@ -12011,7 +12045,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.aiChats);
       request.onerror = () => reject(request.error);
@@ -12029,7 +12063,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.aiChats);
       request.onerror = () => reject(request.error);
@@ -12047,7 +12081,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.bookSummary);
       request.onerror = () => reject(request.error);
@@ -12066,7 +12100,7 @@ class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.chapterSummaries);
       request.onerror = () => reject(request.error);
@@ -17427,6 +17461,61 @@ async function mergeShortChapters(chapters) {
 
 // ==================== 1. 初始化與事件綁定 ==================== */
 document.addEventListener('DOMContentLoaded', async () => {
+  // 0.0 取得並綁定原生安全區域留白 (Safe Area Insets)
+  const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+  if (isCapacitor && window.Capacitor.Plugins.NativeTTS) {
+    const updateSafeArea = async () => {
+      try {
+        const insets = await window.Capacitor.Plugins.NativeTTS.getSafeAreaInsets();
+        if (insets && insets.top > 0) {
+          document.documentElement.style.setProperty('--sat', `${insets.top}px`);
+          document.documentElement.style.setProperty('--sab', `${insets.bottom}px`);
+          document.documentElement.style.setProperty('--sal', `${insets.left}px`);
+          document.documentElement.style.setProperty('--sar', `${insets.right}px`);
+          console.log('[SafeArea] Dynamic Safe Area applied successfully:', insets);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[SafeArea] Failed to update safe area insets:', e);
+      }
+      return false;
+    };
+    
+    // 輪詢重試，等待原生 View 完成 Layout 計算 (避免初期 top 為 0 覆寫 CSS env)
+    (async () => {
+      for (let i = 0; i < 12; i++) {
+        const success = await updateSafeArea();
+        if (success) break;
+        await new Promise(r => setTimeout(r, 100 + i * 50));
+      }
+    })();
+    
+    // 監聽旋轉與視窗大小變更
+    window.addEventListener('resize', updateSafeArea);
+    window.addEventListener('orientationchange', updateSafeArea);
+  }
+
+  // 0.0.1 自動化 TTS 調試測試
+  if (isCapacitor && window.Capacitor.Plugins.NativeTTS) {
+    setTimeout(async () => {
+      console.log('[TTS-Test] Initiating automated downloadTTS test...');
+      try {
+        const secMsGec = await tts._generateSecMsGecToken();
+        const connectionId = tts._generateConnectionId();
+        const result = await window.Capacitor.Plugins.NativeTTS.downloadTTS({
+          text: "测试测试，Edge TTS 是否可用。",
+          voice: "zh-CN-XiaoxiaoNeural",
+          connectionId: connectionId,
+          secMsGec: secMsGec,
+          dateStr: tts._dateToString()
+        });
+        console.log('[TTS-Test] Result received! base64 length:', result.audioBase64.length);
+      } catch (err) {
+        console.error('[TTS-Test] DownloadTTS failed with error:', err);
+      }
+    }, 4000);
+  }
+
   // 0. 初始化歷史記錄狀態
   if (!history.state) {
     history.replaceState({ bookshelf: true }, '');
@@ -17668,6 +17757,14 @@ function initUIEventBindings() {
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
+  
+  // Adjust accept attribute for Android devices to avoid file picker greying out files.
+  // iOS requires public.data to select e-books, but Android WebView gets confused by it (as it's an invalid MIME type)
+  // and greys out all files. We remove iOS-specific UTIs and keep standard extensions and MIME types.
+  if (fileInput && /android/i.test(navigator.userAgent)) {
+    fileInput.setAttribute('accept', '.epub,.azw3,.azw,.mobi,.txt,.md,.fb2,.cbz,application/epub+zip,application/vnd.amazon.ebook,application/x-mobipocket-ebook,text/plain,text/markdown,application/x-fictionbook+xml,application/vnd.comicbook+zip');
+  }
+
   importBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', handleFileSelect);
 
@@ -18860,10 +18957,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.4';
+            versionDisplay.textContent = 'v3.0.5';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.4';
+          versionDisplay.textContent = 'v3.0.5';
         }
       }
       aboutDialog.showModal();
@@ -19671,20 +19768,11 @@ async function openBook(id) {
 
   // 清理舊的資源 Object URL 與預載快取
   clearResourceUrls();
-  // 自動修復：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），將其轉換並保存回資料庫，防止解析時 crash
-  if (book.file && !(book.file instanceof File) && !book.file.name) {
-    console.log('[openBook] Automatically repairing plain Blob file to File object for book:', book.title);
+  // 記憶體轉換：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），在記憶體中將其包裝為 File 物件，以供解析器使用（不寫回資料庫，防止 Safari IndexedDB 儲存 File 物件的失效 Bug）
+  if (book.file && !(book.file instanceof File)) {
+    console.log('[openBook] Wrapping plain Blob file to File object in memory for book:', book.title);
     const fileName = book.title ? `${book.title}.${book.format}` : `${book.id}.${book.format}`;
     book.file = new File([book.file], fileName, { type: book.file.type });
-    try {
-      await library._ensureOpen();
-      const transaction = library.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      store.put(book);
-      console.log('[openBook] Book file repaired and saved successfully.');
-    } catch (e) {
-      console.error('[openBook] Failed to save repaired book file:', e);
-    }
   }
 
   currentBook = book;
@@ -25857,6 +25945,45 @@ async function handleExportBackup() {
   if (!backupBtn) return;
   const originalHtml = backupBtn.innerHTML;
   
+  // Helper to convert blob to base64 using memory-efficient ArrayBuffer chunking
+  const blobToBase64 = async (blob) => {
+    try {
+      if (typeof blob.arrayBuffer === 'function') {
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const len = bytes.byteLength;
+        const chunkSize = 16384; // 16KB chunks to avoid stack overflow
+        for (let i = 0; i < len; i += chunkSize) {
+          const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        return window.btoa(binary);
+      }
+    } catch (e) {
+      console.warn('ArrayBuffer base64 conversion failed, falling back to FileReader:', e);
+    }
+    
+    // Fallback to FileReader with safe onload/onerror handling
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const base64String = reader.result.split(',')[1];
+          if (base64String) {
+            resolve(base64String);
+          } else {
+            reject(new Error('Base64 data was empty'));
+          }
+        } else {
+          reject(new Error('Reader result is not a string'));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('FileReader error'));
+      reader.readAsDataURL(blob);
+    });
+  };
+  
   try {
     // 進入載入狀態
     backupBtn.disabled = true;
@@ -25934,9 +26061,8 @@ async function handleExportBackup() {
     
     // 生成 zip 的 Blob 檔
     const backupBlob = await zip.generateAsync({ type: 'blob' });
-    const downloadUrl = URL.createObjectURL(backupBlob);
-
-    // 4. 觸發下載
+    
+    // 4. 觸發下載或調用原生分享（App 版本）
     const now = new Date();
     const YYYY = now.getFullYear();
     const MM = String(now.getMonth() + 1).padStart(2, '0');
@@ -25945,16 +26071,130 @@ async function handleExportBackup() {
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
     const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
-    
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(downloadUrl);
 
-    alert(getMsg('backup_success'));
+    const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+    
+    if (isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
+      const { Filesystem, Share, NativeTTS } = window.Capacitor.Plugins;
+      
+      const isAndroid = /android/i.test(navigator.userAgent);
+      let actionChoice = 'share'; // 'share' or 'save'
+      
+      if (isAndroid) {
+        const confirmSave = confirm('您希望如何保存備份檔案？\n\n按「確定」：直接下載儲存到裝置的「下載 (Downloads)」資料夾。\n按「取消」：叫起系統分享選單。');
+        actionChoice = confirmSave ? 'save' : 'share';
+      } else {
+        const confirmSave = confirm('您希望如何保存備份檔案？\n\n按「確定」：直接儲存至本機 app 檔案目錄（可在系統「檔案」App 的「我的 iPhone -> Raconteur」目錄下找到）。\n按「取消」：叫起系統分享選單。');
+        actionChoice = confirmSave ? 'save' : 'share';
+      }
+      
+      const chunkSize = 1024 * 1024; // 1MB chunks to prevent memory limit errors in WebView
+      const totalSize = backupBlob.size;
+      const totalChunks = Math.ceil(totalSize / chunkSize);
+      let fileUri = '';
+      const saveDirectory = (actionChoice === 'save' && !isAndroid) ? 'DOCUMENTS' : 'CACHE';
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, totalSize);
+        const chunkBlob = backupBlob.slice(start, end);
+        
+        // Convert the 1MB chunk to Base64 (always success and fast)
+        const base64Data = await blobToBase64(chunkBlob);
+        
+        if (i === 0) {
+          // Write the first chunk (creates/overwrites the file)
+          const writeResult = await Filesystem.writeFile({
+            path: filename,
+            data: base64Data,
+            directory: saveDirectory
+          });
+          fileUri = writeResult.uri;
+        } else {
+          // Append subsequent chunks
+          await Filesystem.appendFile({
+            path: filename,
+            data: base64Data,
+            directory: saveDirectory
+          });
+        }
+      }
+      
+      if (actionChoice === 'save') {
+        if (isAndroid) {
+          if (NativeTTS && typeof NativeTTS.copyFileToDownloads === 'function') {
+            try {
+              const result = await NativeTTS.copyFileToDownloads({
+                filename: filename,
+                fileUri: fileUri
+              });
+              alert(`備份成功！檔案已儲存至系統下載資料夾：\n${result.path}`);
+            } catch (copyErr) {
+              console.error('Copy to Downloads failed:', copyErr);
+              alert('直接儲存至下載資料夾失敗，將改為開啟系統分享面板。');
+              // Fallback to share
+              await Share.share({
+                title: 'Raconteur Reader Backup',
+                text: 'Raconteur/读书人 书库备份文件',
+                url: fileUri,
+                dialogTitle: 'Save or Share Backup'
+              });
+            } finally {
+              // Delete the temp file from CACHE
+              try {
+                await Filesystem.deleteFile({
+                  path: filename,
+                  directory: 'CACHE'
+                });
+              } catch (e) {
+                console.warn('Failed to delete temp backup file:', e);
+              }
+            }
+          } else {
+            alert('原生物件不支援直接儲存，將改為開啟系統分享面板。');
+            await Share.share({
+              title: 'Raconteur Reader Backup',
+              text: 'Raconteur/读书人 书库备份文件',
+              url: fileUri,
+              dialogTitle: 'Save or Share Backup'
+            });
+          }
+        } else {
+          // iOS
+          alert(`備份成功！檔案已儲存至本機應用程式目錄：\n[我的 iPhone] -> [Raconteur] -> ${filename}`);
+        }
+      } else {
+        // Share action
+        await Share.share({
+          title: 'Raconteur Reader Backup',
+          text: 'Raconteur/读书人 书库备份文件',
+          url: fileUri,
+          dialogTitle: 'Save or Share Backup'
+        });
+        
+        // Delete the temp file from CACHE
+        try {
+          await Filesystem.deleteFile({
+            path: filename,
+            directory: 'CACHE'
+          });
+        } catch (e) {
+          console.warn('Failed to delete temp backup file:', e);
+        }
+      }
+    } else {
+      // 瀏覽器版本使用 standard A 標籤下載
+      const downloadUrl = URL.createObjectURL(backupBlob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+      
+      alert(getMsg('backup_success'));
+    }
   } catch (err) {
     console.error('Backup failed:', err);
     alert(`${getMsg('backup_failed')}: ${err.message}`);

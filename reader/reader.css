@@ -299,7 +299,7 @@ button, select, input {
   z-index: 100;
   box-shadow: 0 4px 20px var(--glass-shadow);
   transition: all var(--transition-speed) ease;
-  padding-top: env(safe-area-inset-top);
+  padding-top: var(--sat, env(safe-area-inset-top, 0px));
 }
 
 .header-container {
@@ -698,8 +698,8 @@ button, select, input {
   top: 0;
   left: 0;
   right: 0;
-  height: calc(64px + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
+  height: calc(64px + var(--sat, env(safe-area-inset-top, 0px)));
+  padding-top: var(--sat, env(safe-area-inset-top, 0px));
   padding-left: 20px;
   padding-right: 20px;
   display: flex;
@@ -737,7 +737,7 @@ button, select, input {
 .reader-container {
   max-width: 800px;
   margin: 0 auto;
-  padding-top: calc(100px + env(safe-area-inset-top));
+  padding-top: calc(100px + var(--sat, env(safe-area-inset-top, 0px)));
   padding-bottom: 80px;
   padding-left: 20px;
   padding-right: 20px; /* 避開頂部懸浮欄與底部 */
@@ -829,10 +829,10 @@ body.layout-paginated {
 }
 
 body.layout-paginated .reader-container {
-  height: calc(100vh - 160px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  height: calc(100vh - 160px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px))) !important;
   min-height: 0 !important; /* 解除 base style 中的 min-height: 100vh 限制，避免底部文字被裁切 */
-  padding-top: calc(90px + env(safe-area-inset-top));
-  padding-bottom: calc(70px + env(safe-area-inset-bottom));
+  padding-top: calc(90px + var(--sat, env(safe-area-inset-top, 0px)));
+  padding-bottom: calc(70px + var(--sab, env(safe-area-inset-bottom, 0px)));
   margin: 0 auto !important;
   overflow: hidden !important;
   box-sizing: content-box;
@@ -986,11 +986,11 @@ body.layout-paginated #book-content table {
   body.layout-paginated .reader-container {
     width: 100% !important;
     max-width: 100% !important;
-    padding-top: calc(80px + env(safe-area-inset-top)) !important;
-    padding-bottom: calc(60px + env(safe-area-inset-bottom)) !important;
+    padding-top: calc(80px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-bottom: calc(60px + var(--sab, env(safe-area-inset-bottom, 0px))) !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
-    height: calc(100vh - 140px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    height: calc(100vh - 140px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px))) !important;
   }
 }
 
@@ -1507,8 +1507,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .sidebar-header {
-  height: calc(64px + env(safe-area-inset-top)) !important;
-  padding-top: env(safe-area-inset-top) !important;
+  height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+  padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
   padding-left: 20px !important;
   padding-right: 20px !important;
   display: flex;
@@ -1851,11 +1851,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
     animation: slideUpFullScreen 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
   .ai-panel-footer {
-    padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    padding-bottom: calc(10px + var(--sab, env(safe-area-inset-bottom, 0px))) !important;
   }
   .ai-panel-header {
-    height: calc(64px + env(safe-area-inset-top)) !important;
-    padding-top: env(safe-area-inset-top) !important;
+    height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
     padding-left: 20px !important;
     padding-right: 20px !important;
     box-sizing: border-box !important;
@@ -4545,8 +4545,8 @@ html.transition-none .page-texture-slide {
     animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
   .ai-panel-header {
-    height: calc(64px + env(safe-area-inset-top)) !important;
-    padding-top: env(safe-area-inset-top) !important;
+    height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
     padding-left: 20px !important;
     padding-right: 20px !important;
     box-sizing: border-box !important;

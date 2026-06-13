@@ -5,6 +5,15 @@ import android.content.Intent;
 import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
+import android.content.ContentValues;
+import android.net.Uri;
+import android.os.Environment;
+import android.provider.MediaStore;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.io.InputStream;
+import java.io.FileInputStream;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -225,6 +234,91 @@ public class NativeTTS extends Plugin {
                 call.reject("WebSocket failure: " + t.getMessage());
             }
         });
+    }
+
+    @PluginMethod
+    public void copyFileToDownloads(PluginCall call) {
+        String filename = call.getString("filename");
+        String fileUri = call.getString("fileUri");
+        if (filename == null || fileUri == null) {
+            call.reject("Missing filename or fileUri");
+            return;
+        }
+
+        try {
+            Context context = getContext();
+            Uri srcUri = Uri.parse(fileUri);
+            
+            InputStream is = null;
+            if (fileUri.startsWith("content://")) {
+                is = context.getContentResolver().openInputStream(srcUri);
+            } else {
+                String filePath = srcUri.getPath();
+                is = new FileInputStream(new File(filePath));
+            }
+            
+            if (is == null) {
+                call.reject("Cannot open source file: " + fileUri);
+                return;
+            }
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+                    values.put(MediaStore.MediaColumns.MIME_TYPE, "application/zip");
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                    Uri destUri = context.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (destUri != null) {
+                        try (OutputStream os = context.getContentResolver().openOutputStream(destUri)) {
+                            byte[] buffer = new byte[8192];
+                            int read;
+                            while ((read = is.read(buffer)) != -1) {
+                                os.write(buffer, 0, read);
+                            }
+                            
+                            JSObject ret = new JSObject();
+                            ret.put("path", Environment.DIRECTORY_DOWNLOADS + "/" + filename);
+                            call.resolve(ret);
+                        }
+                    } else {
+                        call.reject("Failed to create MediaStore entry");
+                    }
+                } else {
+                    File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!downloadsDir.exists()) {
+                        downloadsDir.mkdirs();
+                    }
+                    File file = new File(downloadsDir, filename);
+                    try (FileOutputStream fos = new FileOutputStream(file)) {
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = is.read(buffer)) != -1) {
+                            fos.write(buffer, 0, read);
+                        }
+                        
+                        JSObject ret = new JSObject();
+                        ret.put("path", file.getAbsolutePath());
+                        call.resolve(ret);
+                    }
+                }
+            } finally {
+                is.close();
+            }
+        } catch (Exception e) {
+            call.reject("Copy failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getSafeAreaInsets(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("top", 0);
+        ret.put("bottom", 0);
+        ret.put("left", 0);
+        ret.put("right", 0);
+        call.resolve(ret);
     }
 
     private String escapeXml(String unsafe) {

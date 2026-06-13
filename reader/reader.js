@@ -172,6 +172,61 @@ async function mergeShortChapters(chapters) {
 
 // ==================== 1. 初始化與事件綁定 ==================== */
 document.addEventListener('DOMContentLoaded', async () => {
+  // 0.0 取得並綁定原生安全區域留白 (Safe Area Insets)
+  const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+  if (isCapacitor && window.Capacitor.Plugins.NativeTTS) {
+    const updateSafeArea = async () => {
+      try {
+        const insets = await window.Capacitor.Plugins.NativeTTS.getSafeAreaInsets();
+        if (insets && insets.top > 0) {
+          document.documentElement.style.setProperty('--sat', `${insets.top}px`);
+          document.documentElement.style.setProperty('--sab', `${insets.bottom}px`);
+          document.documentElement.style.setProperty('--sal', `${insets.left}px`);
+          document.documentElement.style.setProperty('--sar', `${insets.right}px`);
+          console.log('[SafeArea] Dynamic Safe Area applied successfully:', insets);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[SafeArea] Failed to update safe area insets:', e);
+      }
+      return false;
+    };
+    
+    // 輪詢重試，等待原生 View 完成 Layout 計算 (避免初期 top 為 0 覆寫 CSS env)
+    (async () => {
+      for (let i = 0; i < 12; i++) {
+        const success = await updateSafeArea();
+        if (success) break;
+        await new Promise(r => setTimeout(r, 100 + i * 50));
+      }
+    })();
+    
+    // 監聽旋轉與視窗大小變更
+    window.addEventListener('resize', updateSafeArea);
+    window.addEventListener('orientationchange', updateSafeArea);
+  }
+
+  // 0.0.1 自動化 TTS 調試測試
+  if (isCapacitor && window.Capacitor.Plugins.NativeTTS) {
+    setTimeout(async () => {
+      console.log('[TTS-Test] Initiating automated downloadTTS test...');
+      try {
+        const secMsGec = await tts._generateSecMsGecToken();
+        const connectionId = tts._generateConnectionId();
+        const result = await window.Capacitor.Plugins.NativeTTS.downloadTTS({
+          text: "测试测试，Edge TTS 是否可用。",
+          voice: "zh-CN-XiaoxiaoNeural",
+          connectionId: connectionId,
+          secMsGec: secMsGec,
+          dateStr: tts._dateToString()
+        });
+        console.log('[TTS-Test] Result received! base64 length:', result.audioBase64.length);
+      } catch (err) {
+        console.error('[TTS-Test] DownloadTTS failed with error:', err);
+      }
+    }, 4000);
+  }
+
   // 0. 初始化歷史記錄狀態
   if (!history.state) {
     history.replaceState({ bookshelf: true }, '');
@@ -413,6 +468,14 @@ function initUIEventBindings() {
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
+  
+  // Adjust accept attribute for Android devices to avoid file picker greying out files.
+  // iOS requires public.data to select e-books, but Android WebView gets confused by it (as it's an invalid MIME type)
+  // and greys out all files. We remove iOS-specific UTIs and keep standard extensions and MIME types.
+  if (fileInput && /android/i.test(navigator.userAgent)) {
+    fileInput.setAttribute('accept', '.epub,.azw3,.azw,.mobi,.txt,.md,.fb2,.cbz,application/epub+zip,application/vnd.amazon.ebook,application/x-mobipocket-ebook,text/plain,text/markdown,application/x-fictionbook+xml,application/vnd.comicbook+zip');
+  }
+
   importBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', handleFileSelect);
 
@@ -1605,10 +1668,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.4';
+            versionDisplay.textContent = 'v3.0.5';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.4';
+          versionDisplay.textContent = 'v3.0.5';
         }
       }
       aboutDialog.showModal();
@@ -2416,20 +2479,11 @@ async function openBook(id) {
 
   // 清理舊的資源 Object URL 與預載快取
   clearResourceUrls();
-  // 自動修復：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），將其轉換並保存回資料庫，防止解析時 crash
-  if (book.file && !(book.file instanceof File) && !book.file.name) {
-    console.log('[openBook] Automatically repairing plain Blob file to File object for book:', book.title);
+  // 記憶體轉換：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），在記憶體中將其包裝為 File 物件，以供解析器使用（不寫回資料庫，防止 Safari IndexedDB 儲存 File 物件的失效 Bug）
+  if (book.file && !(book.file instanceof File)) {
+    console.log('[openBook] Wrapping plain Blob file to File object in memory for book:', book.title);
     const fileName = book.title ? `${book.title}.${book.format}` : `${book.id}.${book.format}`;
     book.file = new File([book.file], fileName, { type: book.file.type });
-    try {
-      await library._ensureOpen();
-      const transaction = library.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      store.put(book);
-      console.log('[openBook] Book file repaired and saved successfully.');
-    } catch (e) {
-      console.error('[openBook] Failed to save repaired book file:', e);
-    }
   }
 
   currentBook = book;
@@ -8602,6 +8656,45 @@ async function handleExportBackup() {
   if (!backupBtn) return;
   const originalHtml = backupBtn.innerHTML;
   
+  // Helper to convert blob to base64 using memory-efficient ArrayBuffer chunking
+  const blobToBase64 = async (blob) => {
+    try {
+      if (typeof blob.arrayBuffer === 'function') {
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const len = bytes.byteLength;
+        const chunkSize = 16384; // 16KB chunks to avoid stack overflow
+        for (let i = 0; i < len; i += chunkSize) {
+          const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        return window.btoa(binary);
+      }
+    } catch (e) {
+      console.warn('ArrayBuffer base64 conversion failed, falling back to FileReader:', e);
+    }
+    
+    // Fallback to FileReader with safe onload/onerror handling
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const base64String = reader.result.split(',')[1];
+          if (base64String) {
+            resolve(base64String);
+          } else {
+            reject(new Error('Base64 data was empty'));
+          }
+        } else {
+          reject(new Error('Reader result is not a string'));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('FileReader error'));
+      reader.readAsDataURL(blob);
+    });
+  };
+  
   try {
     // 進入載入狀態
     backupBtn.disabled = true;
@@ -8679,9 +8772,8 @@ async function handleExportBackup() {
     
     // 生成 zip 的 Blob 檔
     const backupBlob = await zip.generateAsync({ type: 'blob' });
-    const downloadUrl = URL.createObjectURL(backupBlob);
-
-    // 4. 觸發下載
+    
+    // 4. 觸發下載或調用原生分享（App 版本）
     const now = new Date();
     const YYYY = now.getFullYear();
     const MM = String(now.getMonth() + 1).padStart(2, '0');
@@ -8690,16 +8782,130 @@ async function handleExportBackup() {
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
     const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
-    
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(downloadUrl);
 
-    alert(getMsg('backup_success'));
+    const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+    
+    if (isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
+      const { Filesystem, Share, NativeTTS } = window.Capacitor.Plugins;
+      
+      const isAndroid = /android/i.test(navigator.userAgent);
+      let actionChoice = 'share'; // 'share' or 'save'
+      
+      if (isAndroid) {
+        const confirmSave = confirm('您希望如何保存備份檔案？\n\n按「確定」：直接下載儲存到裝置的「下載 (Downloads)」資料夾。\n按「取消」：叫起系統分享選單。');
+        actionChoice = confirmSave ? 'save' : 'share';
+      } else {
+        const confirmSave = confirm('您希望如何保存備份檔案？\n\n按「確定」：直接儲存至本機 app 檔案目錄（可在系統「檔案」App 的「我的 iPhone -> Raconteur」目錄下找到）。\n按「取消」：叫起系統分享選單。');
+        actionChoice = confirmSave ? 'save' : 'share';
+      }
+      
+      const chunkSize = 1024 * 1024; // 1MB chunks to prevent memory limit errors in WebView
+      const totalSize = backupBlob.size;
+      const totalChunks = Math.ceil(totalSize / chunkSize);
+      let fileUri = '';
+      const saveDirectory = (actionChoice === 'save' && !isAndroid) ? 'DOCUMENTS' : 'CACHE';
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, totalSize);
+        const chunkBlob = backupBlob.slice(start, end);
+        
+        // Convert the 1MB chunk to Base64 (always success and fast)
+        const base64Data = await blobToBase64(chunkBlob);
+        
+        if (i === 0) {
+          // Write the first chunk (creates/overwrites the file)
+          const writeResult = await Filesystem.writeFile({
+            path: filename,
+            data: base64Data,
+            directory: saveDirectory
+          });
+          fileUri = writeResult.uri;
+        } else {
+          // Append subsequent chunks
+          await Filesystem.appendFile({
+            path: filename,
+            data: base64Data,
+            directory: saveDirectory
+          });
+        }
+      }
+      
+      if (actionChoice === 'save') {
+        if (isAndroid) {
+          if (NativeTTS && typeof NativeTTS.copyFileToDownloads === 'function') {
+            try {
+              const result = await NativeTTS.copyFileToDownloads({
+                filename: filename,
+                fileUri: fileUri
+              });
+              alert(`備份成功！檔案已儲存至系統下載資料夾：\n${result.path}`);
+            } catch (copyErr) {
+              console.error('Copy to Downloads failed:', copyErr);
+              alert('直接儲存至下載資料夾失敗，將改為開啟系統分享面板。');
+              // Fallback to share
+              await Share.share({
+                title: 'Raconteur Reader Backup',
+                text: 'Raconteur/读书人 书库备份文件',
+                url: fileUri,
+                dialogTitle: 'Save or Share Backup'
+              });
+            } finally {
+              // Delete the temp file from CACHE
+              try {
+                await Filesystem.deleteFile({
+                  path: filename,
+                  directory: 'CACHE'
+                });
+              } catch (e) {
+                console.warn('Failed to delete temp backup file:', e);
+              }
+            }
+          } else {
+            alert('原生物件不支援直接儲存，將改為開啟系統分享面板。');
+            await Share.share({
+              title: 'Raconteur Reader Backup',
+              text: 'Raconteur/读书人 书库备份文件',
+              url: fileUri,
+              dialogTitle: 'Save or Share Backup'
+            });
+          }
+        } else {
+          // iOS
+          alert(`備份成功！檔案已儲存至本機應用程式目錄：\n[我的 iPhone] -> [Raconteur] -> ${filename}`);
+        }
+      } else {
+        // Share action
+        await Share.share({
+          title: 'Raconteur Reader Backup',
+          text: 'Raconteur/读书人 书库备份文件',
+          url: fileUri,
+          dialogTitle: 'Save or Share Backup'
+        });
+        
+        // Delete the temp file from CACHE
+        try {
+          await Filesystem.deleteFile({
+            path: filename,
+            directory: 'CACHE'
+          });
+        } catch (e) {
+          console.warn('Failed to delete temp backup file:', e);
+        }
+      }
+    } else {
+      // 瀏覽器版本使用 standard A 標籤下載
+      const downloadUrl = URL.createObjectURL(backupBlob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+      
+      alert(getMsg('backup_success'));
+    }
   } catch (err) {
     console.error('Backup failed:', err);
     alert(`${getMsg('backup_failed')}: ${err.message}`);

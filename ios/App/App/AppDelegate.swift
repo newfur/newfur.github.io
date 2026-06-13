@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import WebKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -27,6 +28,39 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // Inject real safe-area insets as CSS variables into the WKWebView,
+        // because env(safe-area-inset-top) returns 0 in Capacitor's default layout.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.injectSafeAreaInsets()
+        }
+    }
+
+    // MARK: - Safe Area Injection
+
+    private func injectSafeAreaInsets() {
+        guard let rootVC = window?.rootViewController else { return }
+        let top    = rootVC.view.safeAreaInsets.top
+        let bottom = rootVC.view.safeAreaInsets.bottom
+        guard top > 0 else { return }
+
+        let js = """
+        (function() {
+          var r = document.documentElement;
+          r.style.setProperty('--sat', '\(top)px');
+          r.style.setProperty('--sab', '\(bottom)px');
+        })();
+        """
+
+        for webView in findWebViews(in: rootVC.view) {
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
+    private func findWebViews(in view: UIView) -> [WKWebView] {
+        var result: [WKWebView] = []
+        if let wk = view as? WKWebView { result.append(wk) }
+        for sub in view.subviews { result.append(contentsOf: findWebViews(in: sub)) }
+        return result
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

@@ -55,6 +55,19 @@ export class BookLibrary {
     }
   }
 
+  // 輔助函數：將 File 物件轉回純 Blob 以保證 Safari IndexedDB 儲存時的穩定性，防止出現 NotFoundError ("The object can not be found here.")
+  _cleanBookForStorage(book) {
+    if (!book) return book;
+    const clean = { ...book };
+    if (clean.file instanceof File) {
+      clean.file = new Blob([clean.file], { type: clean.file.type });
+    }
+    if (clean.cover instanceof File) {
+      clean.cover = new Blob([clean.cover], { type: clean.cover.type });
+    }
+    return clean;
+  }
+
   // 添加書籍
   async addBook({ id, title, author, format, file, cover, size }) {
     await this._ensureOpen();
@@ -84,7 +97,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.add(book);
+      const request = store.add(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -229,7 +242,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(mergedBook);
+      const request = store.put(this._cleanBookForStorage(mergedBook));
 
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
@@ -297,7 +310,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -315,7 +328,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -333,7 +346,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -363,7 +376,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.notes);
       request.onerror = () => reject(request.error);
@@ -383,7 +396,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.notes);
       request.onerror = () => reject(request.error);
@@ -415,7 +428,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.bookmarks);
       request.onerror = () => reject(request.error);
@@ -435,7 +448,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.bookmarks);
       request.onerror = () => reject(request.error);
@@ -470,7 +483,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -492,7 +505,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book);
       request.onerror = () => reject(request.error);
@@ -522,7 +535,7 @@ export class BookLibrary {
           readingDays: {},
           hourlyDist: {}
         };
-        const request = store.put(book);
+        const request = store.put(this._cleanBookForStorage(book));
         request.onsuccess = () => {
           completed++;
           if (completed === books.length && !hasError) {
@@ -559,7 +572,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.aiChats);
       request.onerror = () => reject(request.error);
@@ -579,7 +592,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.aiChats);
       request.onerror = () => reject(request.error);
@@ -597,7 +610,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.aiChats);
       request.onerror = () => reject(request.error);
@@ -615,7 +628,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.bookSummary);
       request.onerror = () => reject(request.error);
@@ -634,7 +647,7 @@ export class BookLibrary {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');
       const store = transaction.objectStore('books');
-      const request = store.put(book);
+      const request = store.put(this._cleanBookForStorage(book));
 
       request.onsuccess = () => resolve(book.chapterSummaries);
       request.onerror = () => reject(request.error);

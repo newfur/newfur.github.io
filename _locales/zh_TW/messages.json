@@ -1,9 +1,9 @@
 {
   "extension_name": {
-    "message": "Edge 網頁版電子書閱讀器"
+    "message": "讀書人"
   },
   "extension_description": {
-    "message": "一款專為 Edge 設計的高級電子書閱讀器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，並支持微軟高品質語音朗讀。"
+    "message": "一款高級電子書閱讀器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，並支持微軟高品質語音朗讀。"
   },
   "library_title": {
     "message": "我的書庫"
