@@ -453,134 +453,37 @@ export class EpubParser {
     return stylesHtml + body.innerHTML;
   }
 
-  // CSS 隔離助手函數：利用狀態機解析 CSS，以便正確處理 @media/keyframes 嵌套大括號
+  // CSS 隔離助手函數：利用現代 CSS @scope 特性進行超快速隔離，大幅減少解析時間
   _scopeCSS(cssText, scopeSelector = '.book-content') {
     if (!cssText) return '';
     
     // 1. 移除註釋
     let cleanCss = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
     
-    // 2. 解析 CSS
-    let result = '';
-    let i = 0;
-    const len = cleanCss.length;
-    let buffer = '';
-    let braceDepth = 0;
-    let inKeyframes = false;
-    let isGlobalLayoutSelector = false; // 記錄當前規則塊是否屬於 body / html / :root 選擇器
-    
-    while (i < len) {
-      const char = cleanCss[i];
-      
-      if (char === '{') {
-        braceDepth++;
-        if (braceDepth === 1) {
-          let selector = buffer.trim();
-          buffer = '';
-          
-          // 判斷是否為全局排版選擇器
-          const lowerSel = selector.toLowerCase();
-          isGlobalLayoutSelector = (lowerSel === 'body' || lowerSel === 'html' || lowerSel === ':root' || 
-                                    lowerSel.startsWith('body ') || lowerSel.startsWith('html ') || lowerSel.startsWith(':root '));
-          
-          if (selector.startsWith('@')) {
-            result += selector + ' {';
-            if (selector.toLowerCase().includes('keyframes')) {
-              inKeyframes = true;
-            }
-          } else {
-            const scopedSelector = this._scopeSelectorList(selector, scopeSelector);
-            result += scopedSelector + ' {';
+    // 2. 過濾針對 html/body/:root 原身聲明的 margin 和 padding，防止其干擾閱讀器本身的佈局設定
+    let scoped = cleanCss.replace(/\b(html|body|:root)\b([^{]*)\{([^{}]+)\}/gi, (match, selector, suffix, rules) => {
+      const isDescendant = /[\s>+~]/.test(suffix.trim());
+      const filteredRules = rules.split(';')
+        .map(decl => {
+          const trimmed = decl.trim();
+          if (!trimmed) return '';
+          const colonIdx = trimmed.indexOf(':');
+          if (colonIdx === -1) return decl;
+          const propName = trimmed.substring(0, colonIdx).trim().toLowerCase();
+          if (!isDescendant && (propName.startsWith('margin') || propName.startsWith('padding'))) {
+            return '';
           }
-        } else {
-          let content = buffer.trim();
-          buffer = '';
-          if (braceDepth === 2 && !inKeyframes) {
-            const lowerSel = content.toLowerCase();
-            isGlobalLayoutSelector = (lowerSel === 'body' || lowerSel === 'html' || lowerSel === ':root' || 
-                                      lowerSel.startsWith('body ') || lowerSel.startsWith('html ') || lowerSel.startsWith(':root '));
-            
-            const scopedSelector = this._scopeSelectorList(content, scopeSelector);
-            result += scopedSelector + ' {';
-          } else {
-            result += content + ' {';
-          }
-        }
-      } else if (char === '}') {
-        braceDepth--;
-        let rulesText = buffer.trim();
-        
-        // 如果是 body/html/:root 選擇器的規則塊，過濾掉 margin 和 padding 屬性，防範書籍重疊外邊距
-        if (isGlobalLayoutSelector && rulesText) {
-          rulesText = this._filterMarginsAndPaddings(rulesText);
-        }
-        
-        result += rulesText + ' }';
-        buffer = '';
-        if (braceDepth === 0) {
-          inKeyframes = false;
-          isGlobalLayoutSelector = false;
-        }
-      } else {
-        buffer += char;
-      }
-      i++;
-    }
+          return decl;
+        })
+        .filter(Boolean)
+        .join(';');
+      return `${scopeSelector}${suffix} { ${filteredRules} }`;
+    });
     
-    result += buffer.trim();
-    return result;
-  }
-
-  // 過濾掉規則文字中的 margin 與 padding 宣告
-  _filterMarginsAndPaddings(rulesText) {
-    return rulesText.split(';')
-      .map(decl => {
-        const trimmed = decl.trim();
-        if (!trimmed) return '';
-        
-        const colonIdx = trimmed.indexOf(':');
-        if (colonIdx === -1) return decl;
-        
-        const propName = trimmed.substring(0, colonIdx).trim().toLowerCase();
-        // 如果屬性是 margin 或 padding 相關的，丟棄它以防止疊加邊距
-        if (propName.startsWith('margin') || propName.startsWith('padding')) {
-          return '';
-        }
-        return decl;
-      })
-      .filter(Boolean)
-      .join(';');
-  }
-
-  // 輔助函數：將選擇器列表（逗號分隔）中的每個選擇器進行 scope 化
-  _scopeSelectorList(selectorList, scopeSelector) {
-    return selectorList.split(',')
-      .map(sel => {
-        let trimmed = sel.trim();
-        if (!trimmed) return '';
-        
-        const lower = trimmed.toLowerCase();
-        if (lower === 'body' || lower === 'html' || lower === ':root') {
-          return scopeSelector;
-        }
-        
-        if (lower.startsWith('body ') || lower.startsWith('body.')) {
-          return scopeSelector + trimmed.substring(4);
-        }
-        if (lower.startsWith('html ') || lower.startsWith('html.')) {
-          return scopeSelector + trimmed.substring(4);
-        }
-        if (lower.startsWith(':root ') || lower.startsWith(':root.')) {
-          return scopeSelector + trimmed.substring(5);
-        }
-        
-        if (trimmed.includes(scopeSelector)) {
-          return trimmed;
-        }
-        
-        return `${scopeSelector} ${trimmed}`;
-      })
-      .filter(Boolean)
-      .join(', ');
+    // 3. 將其他單獨出現的 html, body, :root 關鍵字替換為 scopeSelector
+    scoped = scoped.replace(/\b(html|body|:root)\b/gi, scopeSelector);
+    
+    // 4. 用 CSS 原生 @scope 特性包裹進行最終隔離
+    return `@scope (${scopeSelector}) {\n${scoped}\n}`;
   }
 }
