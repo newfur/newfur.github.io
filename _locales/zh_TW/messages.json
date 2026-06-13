@@ -199,6 +199,9 @@
   "tts_speed": {
     "message": "播放倍速"
   },
+  "tts_sync_offset": {
+    "message": "高亮同步微調"
+  },
   "toc": {
     "message": "章節目錄"
   },

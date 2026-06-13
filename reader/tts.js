@@ -99,6 +99,7 @@ export class TTSEngine {
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
     this.isAutoScrolling = false; // 標記是否為 TTS 自動滾動
+    this.syncOffset = 0.0; // 高亮同步時間補償偏移量（秒）
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
@@ -1623,7 +1624,8 @@ export class TTSEngine {
         
         const boundaries = getBoundaries();
         if (!boundaries) return;
-        const currentTime = audio.currentTime;
+        const rawTime = audio.currentTime;
+        const currentTime = rawTime + this.syncOffset;
         
         // 尋找當前播放時間對應分組內的哪一句
         let currentIdxInGroup = idxInGroup;
@@ -1676,7 +1678,7 @@ export class TTSEngine {
         
         // 計算合理的提前量
         const threshold = Math.min(0.08, audio.duration * 0.08);
-        if (currentTime >= audio.duration - threshold) {
+        if (rawTime >= audio.duration - threshold) {
           if (!hasTriggeredNext) {
             hasTriggeredNext = true;
             this._stopPolling(); // 停止高頻輪詢
@@ -1777,6 +1779,9 @@ export class TTSEngine {
         this._prefetchNextChapter();
         this._prewarmNextPlayer();
         this._startPolling(); // 啟動高頻輪詢以即時更新高亮
+        
+        // 在音訊實際開始播放時，才執行高亮和回調，消除播放延遲導致的高亮超前
+        doHighlightAndCallbacks();
       }).catch(err => {
         console.error("Audio play error:", err);
         this._stopPolling(); // 確保停止輪詢
@@ -1816,21 +1821,17 @@ export class TTSEngine {
         if (transitionPromise && typeof transitionPromise.then === 'function') {
           transitionPromise.then(() => {
             if (!this.isPlaying) return;
-            doHighlightAndCallbacks();
             startPlay();
           });
         } else {
-          doHighlightAndCallbacks();
           startPlay();
         }
       } else {
-        doHighlightAndCallbacks();
         startPlay();
       }
       
       this._prefetchNextChapter();
     } else {
-      doHighlightAndCallbacks();
       startPlay();
     }
   }
@@ -2394,6 +2395,10 @@ export class TTSEngine {
         p.playbackRate = this.rate;
       } catch (e) {}
     });
+  }
+
+  setSyncOffset(offset) {
+    this.syncOffset = parseFloat(offset) || 0.0;
   }
 
   _prewarmNextPlayer() {

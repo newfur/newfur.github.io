@@ -1366,6 +1366,16 @@ function initUIEventBindings() {
     }
   });
 
+  document.getElementById('tts-sync-offset-slider').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('tts-sync-offset-val').textContent = `${val >= 0 ? '+' : ''}${val.toFixed(2)}s`;
+    tts.setSyncOffset(val);
+    chrome.storage.local.set({ ttsSyncOffset: val });
+    if (currentBook) {
+      saveProgressDebounced({ ttsSyncOffset: val });
+    }
+  });
+
   document.getElementById('tts-voice-select').addEventListener('change', (e) => {
     const voiceName = e.target.value;
     tts.setVoice(voiceName);
@@ -1687,10 +1697,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.1.3';
+            versionDisplay.textContent = 'v3.1.4';
           }
         } else {
-          versionDisplay.textContent = 'v3.1.3';
+          versionDisplay.textContent = 'v3.1.4';
         }
       }
       aboutDialog.showModal();
@@ -4932,7 +4942,7 @@ function updateAIButtonsVisibility() {
 
 function initThemeAndStyles() {
   // 從 Storage 讀取設定，否則採用預設值
-  chrome.storage.local.get(['theme', 'fontSize', 'fontFamily', 'lineHeight', 'marginWidth', 'marginWidthScroll', 'marginWidthPaginated', 'marginTop', 'marginBottom', 'layoutMode', 'pagesDisplayed', 'ttsHighlightStyle', 'ttsRate', 'paperTexture', 'pagePadding', 'transitionEffect', 'ttsOnlyEdge'], (res) => {
+  chrome.storage.local.get(['theme', 'fontSize', 'fontFamily', 'lineHeight', 'marginWidth', 'marginWidthScroll', 'marginWidthPaginated', 'marginTop', 'marginBottom', 'layoutMode', 'pagesDisplayed', 'ttsHighlightStyle', 'ttsRate', 'paperTexture', 'pagePadding', 'transitionEffect', 'ttsOnlyEdge', 'ttsSyncOffset'], (res) => {
     // 優先使用當前書籍個別的設定，其次使用全局設定，最後使用系統預設
     const getPref = (key, defaultVal) => {
       if (currentBook && currentBook.progress && currentBook.progress[key] !== undefined) {
@@ -4978,6 +4988,18 @@ function initThemeAndStyles() {
     tts.setRate(savedRate);
     document.getElementById('tts-speed-slider').value = savedRate;
     document.getElementById('tts-speed-val').textContent = `${savedRate.toFixed(1)}x`;
+
+    // 朗讀高亮同步微調
+    let savedSyncOffset = getPref('ttsSyncOffset', 0.0);
+    tts.setSyncOffset(savedSyncOffset);
+    const syncSlider = document.getElementById('tts-sync-offset-slider');
+    if (syncSlider) {
+      syncSlider.value = savedSyncOffset;
+    }
+    const syncValText = document.getElementById('tts-sync-offset-val');
+    if (syncValText) {
+      syncValText.textContent = `${savedSyncOffset >= 0 ? '+' : ''}${savedSyncOffset.toFixed(2)}s`;
+    }
     
     // 朗讀高亮樣式
     const highlightStyle = res.ttsHighlightStyle || 'highlight-style-yellow';

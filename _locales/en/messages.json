@@ -199,6 +199,9 @@
   "tts_speed": {
     "message": "Speed"
   },
+  "tts_sync_offset": {
+    "message": "Highlight Sync Adjust"
+  },
   "toc": {
     "message": "Table of Contents"
   },
