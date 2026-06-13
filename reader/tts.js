@@ -1347,11 +1347,28 @@ export class TTSEngine {
         return;
       }
       
-      // 合併句子的文字
-      const mergedText = groupSentences.map(s => s.text).join(' ');
+      // 合併句子的文字，對無結尾標點的句子（特別是標題）自動追加適當標點以達到斷句停頓效果
+      const texts = groupSentences.map(s => {
+        let text = s.text;
+        // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）以精確判斷結尾標點
+        let cleanText = text.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+        cleanText = cleanText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+        cleanText = cleanText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+        
+        if (!/[。！？.!?；;，,：:]\s*$/.test(cleanText.trim())) {
+          if (s.isHeading) {
+            text += "。";
+          } else {
+            text += "，";
+          }
+        }
+        return text;
+      });
+      const mergedText = texts.join(' ');
       const virtualSentence = {
         text: mergedText,
-        chapterIndex: groupSentences[0].chapterIndex
+        chapterIndex: groupSentences[0].chapterIndex,
+        isHeading: groupSentences[groupSentences.length - 1].isHeading
       };
       
       this._downloadSentenceAudio(virtualSentence).then(blob => {
