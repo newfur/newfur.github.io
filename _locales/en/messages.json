@@ -105,9 +105,6 @@
   "backup_share_success": {
     "message": "The backup file has been handed to the system save/share panel. Choose a save location in the panel."
   },
-  "backup_android_save_prompt": {
-    "message": "This device does not support the fast save path, so compatibility mode is required.\n\nOK: save to Downloads.\nCancel: open the system share panel.\n\nCompatibility mode is slower. Prefer the system save/share panel when available."
-  },
   "backup_save_prompt": {
     "message": "How would you like to save the backup file?\n\nOK: save to the app files directory.\nCancel: open the system share panel."
   },

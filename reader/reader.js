@@ -8842,8 +8842,7 @@ async function handleExportBackup() {
       let actionChoice = 'share'; // 'share' or 'save'
       
       if (isAndroid) {
-        const confirmSave = confirm(getMsg('backup_android_save_prompt'));
-        actionChoice = confirmSave ? 'save' : 'share';
+        actionChoice = 'share';
       } else {
         const confirmSave = confirm(getMsg('backup_save_prompt'));
         actionChoice = confirmSave ? 'save' : 'share';
