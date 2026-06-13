@@ -40,6 +40,7 @@ public class NativeTTS extends Plugin {
 
     private static final String TAG = "NativeTTS";
     public static NativeTTS instance;
+    private String pendingSaveFileUri;
 
     @Override
     public void load() {
@@ -323,13 +324,12 @@ public class NativeTTS extends Plugin {
             return;
         }
 
+        this.pendingSaveFileUri = fileUri;
+
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/zip");
         intent.putExtra(Intent.EXTRA_TITLE, filename);
-
-        call.put("tempFileUri", fileUri);
-        call.put("filename", filename);
 
         startActivityForResult(call, intent, "saveFileToSystemResult");
     }
@@ -339,10 +339,10 @@ public class NativeTTS extends Plugin {
         if (call == null) return;
 
         if (result.getResultCode() == Activity.RESULT_OK) {
-            Intent intent = result.getData();
-            if (intent != null && intent.getData() != null) {
-                Uri destUri = intent.getData();
-                String fileUri = call.getString("tempFileUri");
+            Intent data = result.getData();
+            if (data != null && data.getData() != null) {
+                Uri destUri = data.getData();
+                String fileUri = this.pendingSaveFileUri;
                 
                 try {
                     Context context = getContext();
