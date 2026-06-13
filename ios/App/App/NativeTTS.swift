@@ -123,12 +123,13 @@ public class NativeTTS: CAPPlugin {
                 call.reject("Bridge not available")
                 return
             }
-            let rootVC = bridge.viewController
-            let webView = bridge.webView
-            let top    = webView?.safeAreaInsets.top ?? rootVC?.view.safeAreaInsets.top ?? 0
-            let bottom = webView?.safeAreaInsets.bottom ?? rootVC?.view.safeAreaInsets.bottom ?? 0
-            let left   = webView?.safeAreaInsets.left ?? rootVC?.view.safeAreaInsets.left ?? 0
-            let right  = webView?.safeAreaInsets.right ?? rootVC?.view.safeAreaInsets.right ?? 0
+            let rootInsets = bridge.viewController?.view.safeAreaInsets ?? .zero
+            let webInsets = bridge.webView?.safeAreaInsets ?? .zero
+            let windowInsets = bridge.viewController?.view.window?.safeAreaInsets ?? .zero
+            let top = max(rootInsets.top, webInsets.top, windowInsets.top)
+            let bottom = max(rootInsets.bottom, webInsets.bottom, windowInsets.bottom)
+            let left = max(rootInsets.left, webInsets.left, windowInsets.left)
+            let right = max(rootInsets.right, webInsets.right, windowInsets.right)
             
             call.resolve([
                 "top": top,

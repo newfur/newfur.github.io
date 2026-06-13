@@ -1,0 +1,96 @@
+name: Mobile Build
+
+on:
+  push:
+    branches:
+      - web-version
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android Debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web assets
+        run: node scratch/build_dist.js
+
+      - name: Sync Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: edgereader-android-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+
+  ios-simulator:
+    name: iOS Simulator App
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web assets
+        run: node scratch/build_dist.js
+
+      - name: Sync iOS project
+        run: npx cap sync ios
+
+      - name: Build simulator app
+        working-directory: ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package simulator app
+        working-directory: ios/App
+        run: |
+          APP_PATH=$(find build -name '*.app' -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No simulator app bundle found"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" edgereader-ios-simulator-app.zip
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: edgereader-ios-simulator-app
+          path: ios/App/edgereader-ios-simulator-app.zip

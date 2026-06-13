@@ -39,8 +39,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     private func injectSafeAreaInsets() {
         guard let rootVC = window?.rootViewController else { return }
-        let top    = rootVC.view.safeAreaInsets.top
-        let bottom = rootVC.view.safeAreaInsets.bottom
+        let windowInsets = rootVC.view.window?.safeAreaInsets ?? .zero
+        let top = max(rootVC.view.safeAreaInsets.top, windowInsets.top)
+        let bottom = max(rootVC.view.safeAreaInsets.bottom, windowInsets.bottom)
         guard top > 0 else { return }
 
         let js = """

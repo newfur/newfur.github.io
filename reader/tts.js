@@ -1137,7 +1137,7 @@ export class TTSEngine {
             const headerLength = view.getUint16(0, false);
             if (headerLength + 2 > arrayBuffer.byteLength) return;
             
-            const headerBytes = new Uint8Array(arrayBuffer, 2, headerLength - 2);
+            const headerBytes = new Uint8Array(arrayBuffer, 2, headerLength);
             const textDecoder = new TextDecoder("utf-8");
             const headersStr = textDecoder.decode(headerBytes);
             const headers = {};

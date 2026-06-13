@@ -93,6 +93,8 @@ let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
 let lastChapterChangeTime = 0;
+let openBookRequestId = 0;
+let openingBookId = null;
 
 // AI 服务商配置管理全局状态
 const DEFAULT_AI_PROFILES = [
@@ -149,6 +151,10 @@ function clearResourceUrls() {
     epubBookData.parser.resourceUrls.forEach(url => URL.revokeObjectURL(url));
     epubBookData.parser.resourceUrls = [];
   }
+}
+
+function isBlobLike(value) {
+  return value instanceof Blob || (value && typeof value === 'object' && typeof value.arrayBuffer === 'function' && typeof value.size === 'number');
 }
 
 
@@ -2173,7 +2179,7 @@ async function renderBookshelf(searchQuery = '') {
             const book = topBooks[i];
             let bookCoverUrl = '';
             if (book.cover) {
-              if (book.cover instanceof Blob) {
+              if (isBlobLike(book.cover)) {
                 bookCoverUrl = URL.createObjectURL(book.cover);
                 activeCoverUrls.push(bookCoverUrl);
               } else if (typeof book.cover === 'string') {
@@ -2313,7 +2319,7 @@ async function renderBookshelf(searchQuery = '') {
       const coverContainer = card.querySelector('.book-cover-container');
       let coverUrl = '';
       if (book.cover) {
-        if (book.cover instanceof Blob) {
+        if (isBlobLike(book.cover)) {
           coverUrl = URL.createObjectURL(book.cover);
           activeCoverUrls.push(coverUrl);
         } else if (typeof book.cover === 'string') {
@@ -2469,8 +2475,17 @@ async function saveReadingTime() {
 
 // 打開書籍
 async function openBook(id) {
+  const readerView = document.getElementById('reader-view');
+  if (openingBookId || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
+    return;
+  }
+  openingBookId = id;
+  const requestId = ++openBookRequestId;
   const book = await library.getBook(id);
-  if (!book) return;
+  if (!book || requestId !== openBookRequestId) {
+    openingBookId = null;
+    return;
+  }
 
   // Push state to prevent back gesture from leaving the reader app
   if (!history.state || history.state.bookId !== id) {
@@ -2480,7 +2495,7 @@ async function openBook(id) {
   // 清理舊的資源 Object URL 與預載快取
   clearResourceUrls();
   // 記憶體轉換：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），在記憶體中將其包裝為 File 物件，以供解析器使用（不寫回資料庫，防止 Safari IndexedDB 儲存 File 物件的失效 Bug）
-  if (book.file && !(book.file instanceof File)) {
+  if (book.file && typeof File !== 'undefined' && !(book.file instanceof File)) {
     console.log('[openBook] Wrapping plain Blob file to File object in memory for book:', book.title);
     const fileName = book.title ? `${book.title}.${book.format}` : `${book.id}.${book.format}`;
     book.file = new File([book.file], fileName, { type: book.file.type });
@@ -2547,6 +2562,7 @@ async function openBook(id) {
     if (book.format === 'epub') {
       const parser = new EpubParser(book.file);
       epubBookData = await parser.parse();
+      if (requestId !== openBookRequestId) return;
       epubBookData.parser = parser; // 保存解析器實例以進行動態 URL 的清理
       epubBookData.chapters = await mergeShortChapters(epubBookData.chapters);
       renderTOC(epubBookData.chapters);
@@ -2554,6 +2570,7 @@ async function openBook(id) {
     } else if (book.format === 'azw3' || book.format === 'mobi') {
       const parser = new Azw3Parser(book.file);
       const res = await parser.parse();
+      if (requestId !== openBookRequestId) return;
       res.chapters = await mergeShortChapters(res.chapters);
       epubBookData = res; // 複用變量名以載入章節
       if (res.resourceUrls) {
@@ -2564,12 +2581,14 @@ async function openBook(id) {
     } else if (book.format === 'cbz') {
       comicParserInstance = new ComicParser(book.file);
       const res = await comicParserInstance.parse();
+      if (requestId !== openBookRequestId) return;
       // 漫畫沒有 TOC 側邊欄，直接渲染圖片
       await loadComicPage(currentBook.progress?.comicImageIndex || 0);
     } else {
       // TXT, Markdown, FB2
       const parser = new TextParser(book.file, book.format);
       const res = await parser.parse();
+      if (requestId !== openBookRequestId) return;
       res.chapters = await mergeShortChapters(res.chapters);
       epubBookData = res;
       renderTOC(res.chapters);
@@ -2591,13 +2610,20 @@ async function openBook(id) {
     // 異步在背景建立全文檢索索引
     buildBookSearchIndex();
   } catch (err) {
-    console.error('Failed to parse book:', err);
-    contentEl.innerHTML = `<p style="color:red; padding:40px; text-align:center;">${getMsg('failed_load_book')}: ${err.message}</p>`;
+    if (requestId === openBookRequestId) {
+      console.error('Failed to parse book:', err);
+      clearResourceUrls();
+      contentEl.innerHTML = `<p style="color:red; padding:40px; text-align:center;">${getMsg('failed_load_book')}: ${err.message}</p>`;
+    }
+  } finally {
+    if (openingBookId === id) openingBookId = null;
   }
 }
 
 // 關閉閱讀器，返回書櫃
 async function closeCurrentBook(triggerBack = true) {
+  openBookRequestId++;
+  openingBookId = null;
   // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動
   isChangingChapter = false;
   document.documentElement.style.overflow = '';
@@ -8799,7 +8825,7 @@ async function handleExportBackup() {
         actionChoice = confirmSave ? 'save' : 'share';
       }
       
-      const chunkSize = 1024 * 1024; // 1MB chunks to prevent memory limit errors in WebView
+      const chunkSize = isAndroid ? 16 * 1024 * 1024 : 1024 * 1024; // Android bridge calls are slow, use fewer larger writes there.
       const totalSize = backupBlob.size;
       const totalChunks = Math.ceil(totalSize / chunkSize);
       let fileUri = '';

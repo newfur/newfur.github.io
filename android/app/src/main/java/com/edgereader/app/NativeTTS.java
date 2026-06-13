@@ -198,8 +198,8 @@ public class NativeTTS extends Plugin {
                 int headerLength = ((array[0] & 0xFF) << 8) | (array[1] & 0xFF);
                 if (headerLength + 2 > array.length) return;
 
-                byte[] headerBytes = new byte[headerLength - 2];
-                System.arraycopy(array, 2, headerBytes, 0, headerLength - 2);
+                byte[] headerBytes = new byte[headerLength];
+                System.arraycopy(array, 2, headerBytes, 0, headerLength);
                 String headers = new String(headerBytes, StandardCharsets.UTF_8);
 
                 if (headers.contains("Path:audio")) {
@@ -272,7 +272,7 @@ public class NativeTTS extends Plugin {
                     Uri destUri = context.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
                     if (destUri != null) {
                         try (OutputStream os = context.getContentResolver().openOutputStream(destUri)) {
-                            byte[] buffer = new byte[8192];
+                            byte[] buffer = new byte[262144];
                             int read;
                             while ((read = is.read(buffer)) != -1) {
                                 os.write(buffer, 0, read);
@@ -292,7 +292,7 @@ public class NativeTTS extends Plugin {
                     }
                     File file = new File(downloadsDir, filename);
                     try (FileOutputStream fos = new FileOutputStream(file)) {
-                        byte[] buffer = new byte[8192];
+                        byte[] buffer = new byte[262144];
                         int read;
                         while ((read = is.read(buffer)) != -1) {
                             fos.write(buffer, 0, read);

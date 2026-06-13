@@ -4,6 +4,10 @@
 /* ==================== 1. 全局變量與主題定義 ==================== */
 :root {
   --transition-speed: 0.3s;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-serif: 'Lora', Georgia, "Times New Roman", serif;
   --font-lxgw: 'LXGW WenKai', 'LXGW WenKai Screen', 'LXGW WenKai TC', sans-serif;
@@ -2913,7 +2917,7 @@ html.transition-none .page-texture-slide {
 
   /* 閱讀器頂部導航欄響應式優化 */
   .reader-header {
-    padding: 0 8px;
+    padding: var(--sat, env(safe-area-inset-top, 0px)) max(8px, var(--sar, env(safe-area-inset-right, 0px))) 0 max(8px, var(--sal, env(safe-area-inset-left, 0px)));
   }
   .reader-header .btn-icon-only {
     width: 40px;
@@ -2937,7 +2941,9 @@ html.transition-none .page-texture-slide {
     bottom: 0 !important;
   }
   .sidebar-header {
-    padding: 0 12px !important;
+    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
+    padding-left: max(12px, var(--sal, env(safe-area-inset-left, 0px))) !important;
+    padding-right: 12px !important;
   }
   .sidebar-header .btn-icon-only {
     width: 40px !important;
@@ -5046,6 +5052,5 @@ mark.search-highlight {
 .sidebar-resize-handle.resizing {
   background: rgba(10, 132, 255, 0.25);
 }
-
 
 
