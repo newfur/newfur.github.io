@@ -2,8 +2,6 @@ name: Build Mobile Apps (Android & iOS)
 
 on:
   push:
-    branches:
-      - web-version
     tags:
       - 'v*'
   workflow_dispatch:

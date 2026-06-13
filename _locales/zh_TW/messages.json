@@ -844,6 +844,29 @@
     "message": "這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。"
   },
   "confirm_deep_analysis": {
-    "message": "「深度分析全書」將會分析本書，並消耗較多 API Token。是否繼續？"
+    "message": "「深度分析全书」将会在本书进行全书扫描，并消耗较多 API Token。是否继续？"
+  },
+  "search_book": {
+    "message": "搜尋"
+  },
+  "search_placeholder": {
+    "message": "在本書中搜尋..."
+  },
+  "searching": {
+    "message": "正在搜尋..."
+  },
+  "search_no_results": {
+    "message": "未找到匹配內容。"
+  },
+  "search_results_count": {
+    "message": "共找到 $count$ 處匹配",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "indexing_book": {
+    "message": "正在建立搜尋索引..."
   }
 }

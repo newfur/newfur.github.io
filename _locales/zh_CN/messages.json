@@ -845,5 +845,28 @@
   },
   "confirm_deep_analysis": {
     "message": "「深度分析全书」将会分析本书，并消耗较多 API Token。是否继续？"
+  },
+  "search_book": {
+    "message": "搜索"
+  },
+  "search_placeholder": {
+    "message": "在本书中搜索..."
+  },
+  "searching": {
+    "message": "正在搜索..."
+  },
+  "search_no_results": {
+    "message": "未找到匹配内容。"
+  },
+  "search_results_count": {
+    "message": "共找到 $count$ 处匹配",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "indexing_book": {
+    "message": "正在建立搜索索引..."
   }
 }

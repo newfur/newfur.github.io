@@ -177,6 +177,12 @@
       </button>
       <div id="reader-book-title" class="reader-title">Book Title</div>
       <div class="reader-header-actions">
+        <!-- 全書搜尋 -->
+        <button id="search-toggle" class="btn-icon-only" data-i18n-title="search_book" title="Search Book">
+          <span class="icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </span>
+        </button>
         <!-- 側邊欄切換 -->
         <button id="sidebar-toggle" class="btn-icon-only" data-i18n-title="toc" title="Table of Contents">
           <span class="icon">
@@ -392,6 +398,7 @@
         <div class="sidebar-tabs">
           <button id="tab-toc" class="tab-btn active" data-i18n="toc" style="font-family: var(--font-sans) !important;">Table of Contents</button>
           <button id="tab-highlights" class="tab-btn" data-i18n="highlights" style="font-family: var(--font-sans) !important;">Bookmarks & Notes</button>
+          <button id="tab-search" class="tab-btn" data-i18n="search_book" style="font-family: var(--font-sans) !important;">Search</button>
         </div>
         <button id="close-sidebar-btn" class="btn-icon-only">
           <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -425,6 +432,29 @@
           </ul>
         </div>
       </div>
+
+      <!-- 搜尋面板 -->
+      <div id="sidebar-search-container" class="sidebar-content">
+        <div class="sidebar-search-box">
+          <div class="sidebar-search-input-wrapper">
+            <input type="text" id="sidebar-search-input" placeholder="Search book..." data-i18n-placeholder="search_placeholder">
+          </div>
+          <button class="sidebar-search-btn" id="sidebar-search-btn" title="Search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+        </div>
+        <div class="sidebar-search-status" id="sidebar-search-results-info" style="display: none;"></div>
+        <div class="sidebar-search-loading" id="sidebar-search-loading" style="display: none;">
+          <div class="search-spinner"></div>
+          <span data-i18n="searching">Searching book...</span>
+        </div>
+        <div class="sidebar-search-indexing" id="sidebar-search-indexing" style="display: none;">
+          <div class="search-spinner"></div>
+          <span data-i18n="indexing_book">Building search index, please wait...</span>
+        </div>
+        <ul class="search-results-list" id="search-results-list"></ul>
+      </div>
+      <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
     </aside>
 
     <!-- ================= 文字選取懸浮菜單 (Text Selection Menu) ================= -->

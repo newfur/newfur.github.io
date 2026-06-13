@@ -848,5 +848,28 @@
   },
   "confirm_deep_analysis": {
     "message": "Deep Book Analysis will scan the entire book and consume a significant amount of API Tokens. Do you want to continue?"
+  },
+  "search_book": {
+    "message": "Search"
+  },
+  "search_placeholder": {
+    "message": "Search in book..."
+  },
+  "searching": {
+    "message": "Searching..."
+  },
+  "search_no_results": {
+    "message": "No matches found."
+  },
+  "search_results_count": {
+    "message": "Found $count$ matches",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "indexing_book": {
+    "message": "Building search index..."
   }
 }

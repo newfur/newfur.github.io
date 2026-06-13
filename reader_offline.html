@@ -20,6 +20,7 @@
   --font-fira: 'Fira Code', Consolas, Monaco, monospace;
   --font-dyslexic: 'OpenDyslexic', 'Inter', sans-serif;
   --ai-panel-width: 400px;
+  --sidebar-width: 360px;
 }
 
 /* 主題配色定義 */
@@ -1485,7 +1486,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 360px;
+  width: var(--sidebar-width);
   z-index: 300;
   transform: translateX(-100%);
   transition: transform var(--transition-speed) cubic-bezier(0.16, 1, 0.3, 1);
@@ -1496,6 +1497,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-left: none;
   border-right: 1px solid var(--border-color);
   border-radius: 0 24px 24px 0;
+  overflow: hidden;
 }
 
 .reader-sidebar.active {
@@ -4600,16 +4602,16 @@ html.transition-none .page-texture-slide {
 
   /* 1. 僅左側邊欄開啟 */
   body.sidebar-active #reader-view {
-    padding-left: 360px;
+    padding-left: var(--sidebar-width);
   }
   body.sidebar-active .reader-header {
-    left: 360px;
+    left: var(--sidebar-width);
   }
   body.sidebar-active .nav-arrow-btn.left-arrow {
-    left: 384px; /* 360px + 24px */
+    left: calc(var(--sidebar-width) + 24px);
   }
   body.sidebar-active:not(.ai-active) .note-dialog {
-    left: calc(50% + 180px); /* 50% + 360px/2 */
+    left: calc(50% + var(--sidebar-width) / 2);
   }
 
   /* 2. 僅右側 AI 面板開啟 */
@@ -4631,15 +4633,15 @@ html.transition-none .page-texture-slide {
 
   /* 3. 兩者同時開啟 */
   body.sidebar-active.ai-active #reader-view {
-    padding-left: 360px;
+    padding-left: var(--sidebar-width);
     padding-right: var(--ai-panel-width);
   }
   body.sidebar-active.ai-active .reader-header {
-    left: 360px;
+    left: var(--sidebar-width);
     right: var(--ai-panel-width);
   }
   body.sidebar-active.ai-active .nav-arrow-btn.left-arrow {
-    left: 384px;
+    left: calc(var(--sidebar-width) + 24px);
   }
   body.sidebar-active.ai-active .nav-arrow-btn.right-arrow {
     right: calc(var(--ai-panel-width) + 24px);
@@ -4648,7 +4650,7 @@ html.transition-none .page-texture-slide {
     right: calc(var(--ai-panel-width) + 20px);
   }
   body.sidebar-active.ai-active .note-dialog {
-    left: calc(50% + 180px - var(--ai-panel-width) / 2);
+    left: calc(50% + var(--sidebar-width) / 2 - var(--ai-panel-width) / 2);
   }
 }
 
@@ -4888,6 +4890,150 @@ me-tpc {
   height: calc(100vh - 200px) !important;
 }
 
+/* ==================== 8. 全書搜尋與高亮樣式 (Full-Text Search & Highlighting CSS) ==================== */
+
+.sidebar-search-box {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sidebar-search-input-wrapper {
+  position: relative;
+  flex-grow: 1;
+}
+
+.sidebar-search-input-wrapper input {
+  width: 100%;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-color);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.sidebar-search-input-wrapper input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.15);
+}
+
+.sidebar-search-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: none;
+  background: var(--primary-color);
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-search-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.sidebar-search-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  fill: none;
+}
+
+.sidebar-search-status {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  padding: 0 4px;
+  font-family: var(--font-sans);
+}
+
+.search-results-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.search-result-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: var(--primary-color) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 搜尋高亮 */
+mark.search-highlight {
+  background-color: #ffeb3b !important;
+  color: #000000 !important;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: 0 1px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  font-weight: 500;
+  transition: background-color 0.3s;
+}
+
+/* Loading animations */
+.sidebar-search-loading, .sidebar-search-indexing {
+  text-align: center;
+  padding: 20px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+
+.search-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: search-spin 1s infinite linear;
+  margin: 0 auto 12px;
+}
+
+@keyframes search-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 側邊欄調整大小拖曳把手 */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 500;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .sidebar-resize-handle {
+    display: none !important;
+  }
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle.resizing {
+  background: rgba(10, 132, 255, 0.25);
+}
+
 
 
 </style>
@@ -5062,6 +5208,12 @@ me-tpc {
       </button>
       <div id="reader-book-title" class="reader-title">Book Title</div>
       <div class="reader-header-actions">
+        <!-- 全書搜尋 -->
+        <button id="search-toggle" class="btn-icon-only" data-i18n-title="search_book" title="Search Book">
+          <span class="icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </span>
+        </button>
         <!-- 側邊欄切換 -->
         <button id="sidebar-toggle" class="btn-icon-only" data-i18n-title="toc" title="Table of Contents">
           <span class="icon">
@@ -5277,6 +5429,7 @@ me-tpc {
         <div class="sidebar-tabs">
           <button id="tab-toc" class="tab-btn active" data-i18n="toc" style="font-family: var(--font-sans) !important;">Table of Contents</button>
           <button id="tab-highlights" class="tab-btn" data-i18n="highlights" style="font-family: var(--font-sans) !important;">Bookmarks & Notes</button>
+          <button id="tab-search" class="tab-btn" data-i18n="search_book" style="font-family: var(--font-sans) !important;">Search</button>
         </div>
         <button id="close-sidebar-btn" class="btn-icon-only">
           <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -5310,6 +5463,29 @@ me-tpc {
           </ul>
         </div>
       </div>
+
+      <!-- 搜尋面板 -->
+      <div id="sidebar-search-container" class="sidebar-content">
+        <div class="sidebar-search-box">
+          <div class="sidebar-search-input-wrapper">
+            <input type="text" id="sidebar-search-input" placeholder="Search book..." data-i18n-placeholder="search_placeholder">
+          </div>
+          <button class="sidebar-search-btn" id="sidebar-search-btn" title="Search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+        </div>
+        <div class="sidebar-search-status" id="sidebar-search-results-info" style="display: none;"></div>
+        <div class="sidebar-search-loading" id="sidebar-search-loading" style="display: none;">
+          <div class="search-spinner"></div>
+          <span data-i18n="searching">Searching book...</span>
+        </div>
+        <div class="sidebar-search-indexing" id="sidebar-search-indexing" style="display: none;">
+          <div class="search-spinner"></div>
+          <span data-i18n="indexing_book">Building search index, please wait...</span>
+        </div>
+        <ul class="search-results-list" id="search-results-list"></ul>
+      </div>
+      <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
     </aside>
 
     <!-- ================= 文字選取懸浮菜單 (Text Selection Menu) ================= -->
@@ -8668,7 +8844,7 @@ MindElixir.DARK_THEME = ue;
       "message": "AI Translate"
     },
     "search_placeholder": {
-      "message": "Search books..."
+      "message": "Search in book..."
     },
     "unsupported_format": {
       "message": "Unsupported file format!"
@@ -9335,6 +9511,26 @@ MindElixir.DARK_THEME = ue;
     },
     "confirm_deep_analysis": {
       "message": "Deep Book Analysis will scan the entire book and consume a significant amount of API Tokens. Do you want to continue?"
+    },
+    "search_book": {
+      "message": "Search"
+    },
+    "searching": {
+      "message": "Searching..."
+    },
+    "search_no_results": {
+      "message": "No matches found."
+    },
+    "search_results_count": {
+      "message": "Found $count$ matches",
+      "placeholders": {
+        "count": {
+          "content": "$1"
+        }
+      }
+    },
+    "indexing_book": {
+      "message": "Building search index..."
     }
   },
   "zh_TW": {
@@ -9517,7 +9713,7 @@ MindElixir.DARK_THEME = ue;
       "message": "AI 翻譯"
     },
     "search_placeholder": {
-      "message": "搜尋書籍名稱或作者..."
+      "message": "在本書中搜尋..."
     },
     "unsupported_format": {
       "message": "不支援此文件格式！"
@@ -10183,7 +10379,27 @@ MindElixir.DARK_THEME = ue;
       "message": "這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。"
     },
     "confirm_deep_analysis": {
-      "message": "「深度分析全書」將會分析本書，並消耗較多 API Token。是否繼續？"
+      "message": "「深度分析全书」将会在本书进行全书扫描，并消耗较多 API Token。是否继续？"
+    },
+    "search_book": {
+      "message": "搜尋"
+    },
+    "searching": {
+      "message": "正在搜尋..."
+    },
+    "search_no_results": {
+      "message": "未找到匹配內容。"
+    },
+    "search_results_count": {
+      "message": "共找到 $count$ 處匹配",
+      "placeholders": {
+        "count": {
+          "content": "$1"
+        }
+      }
+    },
+    "indexing_book": {
+      "message": "正在建立搜尋索引..."
     }
   },
   "zh_CN": {
@@ -10366,7 +10582,7 @@ MindElixir.DARK_THEME = ue;
       "message": "AI 翻译"
     },
     "search_placeholder": {
-      "message": "搜索书籍名称或作者..."
+      "message": "在本书中搜索..."
     },
     "unsupported_format": {
       "message": "不支持此文件格式！"
@@ -11033,6 +11249,26 @@ MindElixir.DARK_THEME = ue;
     },
     "confirm_deep_analysis": {
       "message": "「深度分析全书」将会分析本书，并消耗较多 API Token。是否继续？"
+    },
+    "search_book": {
+      "message": "搜索"
+    },
+    "searching": {
+      "message": "正在搜索..."
+    },
+    "search_no_results": {
+      "message": "未找到匹配内容。"
+    },
+    "search_results_count": {
+      "message": "共找到 $count$ 处匹配",
+      "placeholders": {
+        "count": {
+          "content": "$1"
+        }
+      }
+    },
+    "indexing_book": {
+      "message": "正在建立搜索索引..."
     }
   }
 };
@@ -17090,6 +17326,7 @@ let prefetchedChapterCache = null; // 緩存背景預載的下一章 HTML 內容
 let epubBookData = null; // 存儲 EPUB 解析後的對象
 let bookChunksCache = []; // 緩存整本書的文本切片以供 RAG 檢索
 let isIndexingBook = false; // 標記是否正在背景建立書本索引
+let currentSearchQuery = ''; // 儲存當前全書搜尋關鍵字
 let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
@@ -17203,6 +17440,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const savedAIWidth = localStorage.getItem('aiPanelWidth') || '400px';
   document.documentElement.style.setProperty('--ai-panel-width', savedAIWidth);
 
+  // 0.7 立即套用左側側邊欄大小設定以防佈局抖動
+  const savedSidebarWidth = localStorage.getItem('sidebarWidth') || '360px';
+  document.documentElement.style.setProperty('--sidebar-width', savedSidebarWidth);
+
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
   initAISuggestions();
@@ -17233,6 +17474,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 5. 初始化 AI 面板調整大小
   initAIResize();
+
+  // 5.1 初始化左側側邊欄調整大小
+  initSidebarResize();
 
   // 5.5 監聽 AI 面板的可見性，當面板顯示時立即渲染 Mermaid 圖表
   const aiPanel = document.getElementById('ai-panel');
@@ -17600,6 +17844,7 @@ function initUIEventBindings() {
       }
     }
   });
+  document.getElementById('search-toggle').addEventListener('click', toggleSearchSidebar);
   document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
   document.getElementById('tts-toggle').addEventListener('click', toggleTTSPanel);
   document.getElementById('settings-toggle').addEventListener('click', toggleSettingsPanel);
@@ -18415,25 +18660,18 @@ function initUIEventBindings() {
   };
 
   // 側邊欄切換標籤
-  document.getElementById('tab-toc').addEventListener('click', () => {
-    document.getElementById('tab-toc').classList.add('active');
-    document.getElementById('tab-highlights').classList.remove('active');
-    document.getElementById('sidebar-toc-container').classList.add('active');
-    document.getElementById('sidebar-highlights-container').classList.remove('active');
-    setTimeout(() => {
-      const activeItem = document.querySelector('#toc-list .toc-item.active');
-      if (activeItem) {
-        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 150);
-  });
+  document.getElementById('tab-toc').addEventListener('click', () => switchSidebarTab('toc'));
+  document.getElementById('tab-highlights').addEventListener('click', () => switchSidebarTab('highlights'));
+  document.getElementById('tab-search').addEventListener('click', () => switchSidebarTab('search'));
 
-  document.getElementById('tab-highlights').addEventListener('click', () => {
-    document.getElementById('tab-toc').classList.remove('active');
-    document.getElementById('tab-highlights').classList.add('active');
-    document.getElementById('sidebar-toc-container').classList.remove('active');
-    document.getElementById('sidebar-highlights-container').classList.add('active');
-    renderHighlightsList();
+  document.getElementById('sidebar-search-btn').addEventListener('click', () => {
+    const input = document.getElementById('sidebar-search-input');
+    performBookSearch(input.value);
+  });
+  document.getElementById('sidebar-search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      performBookSearch(e.target.value);
+    }
   });
 
   document.getElementById('close-sidebar-btn').addEventListener('click', () => {
@@ -18622,10 +18860,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.3';
+            versionDisplay.textContent = 'v3.0.4';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.3';
+          versionDisplay.textContent = 'v3.0.4';
         }
       }
       aboutDialog.showModal();
@@ -18674,7 +18912,7 @@ function initUIEventBindings() {
     // 側邊欄：點擊側邊欄及其觸發按鈕外部則關閉
     const sidebar = document.getElementById('reader-sidebar');
     if (sidebar && sidebar.classList.contains('active')) {
-      if (!target.closest('#reader-sidebar') && !target.closest('#sidebar-toggle')) {
+      if (!target.closest('#reader-sidebar') && !target.closest('#sidebar-toggle') && !target.closest('#search-toggle')) {
         sidebar.classList.remove('active');
         panelClosed = true;
       }
@@ -19602,14 +19840,27 @@ async function closeCurrentBook(triggerBack = true) {
     
     const tabToc = document.getElementById('tab-toc');
     const tabHighlights = document.getElementById('tab-highlights');
+    const tabSearch = document.getElementById('tab-search');
     const containerToc = document.getElementById('sidebar-toc-container');
     const containerHighlights = document.getElementById('sidebar-highlights-container');
+    const containerSearch = document.getElementById('sidebar-search-container');
     
     if (tabToc) tabToc.classList.add('active');
     if (tabHighlights) tabHighlights.classList.remove('active');
+    if (tabSearch) tabSearch.classList.remove('active');
     if (containerToc) containerToc.classList.add('active');
     if (containerHighlights) containerHighlights.classList.remove('active');
+    if (containerSearch) containerSearch.classList.remove('active');
   }
+
+  currentSearchQuery = '';
+  clearSearchHighlights();
+  const searchInput = document.getElementById('sidebar-search-input');
+  if (searchInput) searchInput.value = '';
+  const searchList = document.getElementById('search-results-list');
+  if (searchList) searchList.innerHTML = '';
+  const searchInfo = document.getElementById('sidebar-search-results-info');
+  if (searchInfo) searchInfo.style.display = 'none';
   
   const tocList = document.getElementById('toc-list');
   const bList = document.getElementById('bookmarks-list');
@@ -22251,14 +22502,81 @@ function handleKeyDown(e) {
 // 面板顯示切換
 function toggleSidebar() {
   const sidebar = document.getElementById('reader-sidebar');
-  sidebar.classList.toggle('active');
+  const isTOCActive = document.getElementById('tab-toc') && document.getElementById('tab-toc').classList.contains('active');
+  
+  if (!sidebar.classList.contains('active')) {
+    sidebar.classList.add('active');
+    switchSidebarTab('toc');
+  } else {
+    if (isTOCActive) {
+      sidebar.classList.remove('active');
+    } else {
+      switchSidebarTab('toc');
+    }
+  }
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   document.getElementById('tts-panel').classList.remove('dropdown-active');
-  if (sidebar.classList.contains('active')) {
+  updateHeaderActiveStates();
+}
+
+function toggleSearchSidebar() {
+  console.log('[Reader] toggleSearchSidebar called');
+  const sidebar = document.getElementById('reader-sidebar');
+  const isSearchActive = document.getElementById('tab-search') && document.getElementById('tab-search').classList.contains('active');
+  
+  if (!sidebar.classList.contains('active')) {
+    sidebar.classList.add('active');
+    switchSidebarTab('search');
+  } else {
+    if (isSearchActive) {
+      sidebar.classList.remove('active');
+    } else {
+      switchSidebarTab('search');
+    }
+  }
+  document.getElementById('settings-panel').classList.remove('dropdown-active');
+  document.getElementById('tts-panel').classList.remove('dropdown-active');
+  updateHeaderActiveStates();
+}
+
+function switchSidebarTab(tabId) {
+  const tabToc = document.getElementById('tab-toc');
+  const tabHighlights = document.getElementById('tab-highlights');
+  const tabSearch = document.getElementById('tab-search');
+  
+  const containerToc = document.getElementById('sidebar-toc-container');
+  const containerHighlights = document.getElementById('sidebar-highlights-container');
+  const containerSearch = document.getElementById('sidebar-search-container');
+  
+  if (tabToc) tabToc.classList.remove('active');
+  if (tabHighlights) tabHighlights.classList.remove('active');
+  if (tabSearch) tabSearch.classList.remove('active');
+  
+  if (containerToc) containerToc.classList.remove('active');
+  if (containerHighlights) containerHighlights.classList.remove('active');
+  if (containerSearch) containerSearch.classList.remove('active');
+  
+  if (tabId === 'toc') {
+    if (tabToc) tabToc.classList.add('active');
+    if (containerToc) containerToc.classList.add('active');
     setTimeout(() => {
       const activeItem = document.querySelector('#toc-list .toc-item.active');
       if (activeItem) {
         activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 150);
+  } else if (tabId === 'highlights') {
+    if (tabHighlights) tabHighlights.classList.add('active');
+    if (containerHighlights) containerHighlights.classList.add('active');
+    renderHighlightsList();
+  } else if (tabId === 'search') {
+    if (tabSearch) tabSearch.classList.add('active');
+    if (containerSearch) containerSearch.classList.add('active');
+    setTimeout(() => {
+      const searchInput = document.getElementById('sidebar-search-input');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
       }
     }, 150);
   }
@@ -22290,12 +22608,19 @@ function updateHeaderActiveStates() {
   const settingsActive = settingsPanel && settingsPanel.classList.contains('dropdown-active');
   const aiActive = aiPanel && (aiPanel.style.display === 'flex' || aiPanel.style.display === 'block');
 
+  const tabSearch = document.getElementById('tab-search');
+  const isSearchTabActive = tabSearch && tabSearch.classList.contains('active');
+  const searchToggleActive = sidebarActive && isSearchTabActive;
+  const sidebarToggleActive = sidebarActive && !isSearchTabActive;
+
+  const searchToggle = document.getElementById('search-toggle');
   const sidebarToggle = document.getElementById('sidebar-toggle');
   const ttsToggle = document.getElementById('tts-toggle');
   const settingsToggle = document.getElementById('settings-toggle');
   const aiToggle = document.getElementById('ai-toggle');
 
-  if (sidebarToggle) sidebarToggle.classList.toggle('active', sidebarActive);
+  if (searchToggle) searchToggle.classList.toggle('active', searchToggleActive);
+  if (sidebarToggle) sidebarToggle.classList.toggle('active', sidebarToggleActive);
   if (ttsToggle) ttsToggle.classList.toggle('active', ttsActive);
   if (settingsToggle) settingsToggle.classList.toggle('active', settingsActive);
   if (aiToggle) aiToggle.classList.toggle('active', aiActive);
@@ -25424,6 +25749,78 @@ function initAIResize() {
   });
 }
 
+// 初始化左側側邊欄拖曳調整大小功能
+function initSidebarResize() {
+  const handle = document.getElementById('sidebar-resize-handle');
+  const panel = document.getElementById('reader-sidebar');
+  if (!handle || !panel) return;
+
+  let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 只允許左鍵拖曳
+    e.preventDefault();
+
+    isResizing = true;
+    startX = e.clientX;
+    startWidth = panel.offsetWidth;
+
+    handle.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    // 拖曳向右 (e.clientX 增大) 時，左側側邊欄寬度增加
+    const deltaX = e.clientX - startX;
+    let newWidth = startWidth + deltaX;
+
+    // 設定寬度邊界限制：280px 到 95% 螢幕寬度
+    const minWidth = 280;
+    const maxWidth = window.innerWidth * 0.95;
+    if (newWidth < minWidth) newWidth = minWidth;
+    if (newWidth > maxWidth) newWidth = maxWidth;
+
+    document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+    localStorage.setItem('sidebarWidth', `${newWidth}px`);
+
+    if (document.body.classList.contains('layout-paginated')) {
+      applyLayoutDimensions();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    handle.classList.remove('resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    if (document.body.classList.contains('layout-paginated')) {
+      applyLayoutDimensions();
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    const currentWidthStr = document.documentElement.style.getPropertyValue('--sidebar-width');
+    if (currentWidthStr) {
+      const currentWidth = parseInt(currentWidthStr);
+      if (!isNaN(currentWidth)) {
+        const maxWidth = Math.round(window.innerWidth * 0.95);
+        if (currentWidth > maxWidth) {
+          const newWidth = Math.max(280, maxWidth);
+          document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+          localStorage.setItem('sidebarWidth', `${newWidth}px`);
+        }
+      }
+    }
+  });
+}
+
 // ==================== 備份與還原功能 ====================
 
 // 將 Blob 轉為 DataURL (Base64)
@@ -26241,6 +26638,170 @@ if (window.location.protocol.startsWith('http')) {
         .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
     });
   }
+}
+
+// ==================== 7. 全文搜尋與關鍵字高亮 (Full-Text Search & Highlighting) ====================
+
+function performBookSearch(query) {
+  if (!query) return;
+  const cleanQuery = query.trim();
+  if (cleanQuery.length === 0) return;
+
+  currentSearchQuery = cleanQuery;
+  const listEl = document.getElementById('search-results-list');
+  const infoEl = document.getElementById('sidebar-search-results-info');
+  const loadingEl = document.getElementById('sidebar-search-loading');
+  const indexingEl = document.getElementById('sidebar-search-indexing');
+
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+  if (infoEl) infoEl.style.display = 'none';
+  if (loadingEl) loadingEl.style.display = 'none';
+  if (indexingEl) indexingEl.style.display = 'none';
+
+  if (isIndexingBook) {
+    if (indexingEl) indexingEl.style.display = 'block';
+    const pollInterval = setInterval(() => {
+      if (!isIndexingBook) {
+        clearInterval(pollInterval);
+        performBookSearch(query);
+      }
+    }, 300);
+    return;
+  }
+
+  if (!bookChunksCache || bookChunksCache.length === 0) {
+    if (indexingEl) indexingEl.style.display = 'block';
+    buildBookSearchIndex().then(() => {
+      if (indexingEl) indexingEl.style.display = 'none';
+      if (!bookChunksCache || bookChunksCache.length === 0) {
+        listEl.innerHTML = `<li style="text-align: center; padding: 20px; color: var(--text-muted); font-family: var(--font-sans);">${getMsg('search_no_results') || 'No matches found.'}</li>`;
+        return;
+      }
+      performBookSearch(query);
+    });
+    return;
+  }
+
+  if (loadingEl) loadingEl.style.display = 'block';
+
+  setTimeout(() => {
+    const results = [];
+    const lowerQuery = cleanQuery.toLowerCase();
+
+    for (const chunk of bookChunksCache) {
+      const index = chunk.text.toLowerCase().indexOf(lowerQuery);
+      if (index !== -1) {
+        results.push({
+          chapterTitle: chunk.chapterTitle || 'Chapter',
+          chapterIndex: chunk.chapterIndex,
+          text: chunk.text,
+          index: index
+        });
+      }
+    }
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (infoEl) {
+      infoEl.textContent = getMsg('search_results_count', [String(results.length)]) || `Found ${results.length} matches`;
+      infoEl.style.display = 'block';
+    }
+
+    if (results.length === 0) {
+      listEl.innerHTML = `<li style="text-align: center; padding: 20px; color: var(--text-muted); font-family: var(--font-sans);">${getMsg('search_no_results') || 'No matches found.'}</li>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    results.forEach(res => {
+      const li = document.createElement('li');
+      li.className = 'search-result-item';
+      li.style.cssText = 'padding: 12px; margin-bottom: 8px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: all 0.2s;';
+      
+      const start = Math.max(0, res.index - 40);
+      const end = Math.min(res.text.length, res.index + lowerQuery.length + 60);
+      let snippet = res.text.substring(start, end);
+      if (start > 0) snippet = '...' + snippet;
+      if (end < res.text.length) snippet = snippet + '...';
+
+      const queryRegex = new RegExp(escapeRegExp(cleanQuery), 'gi');
+      const highlightedSnippet = snippet.replace(queryRegex, match => `<span class="search-snippet-match" style="background-color: rgba(255, 235, 59, 0.4); color: var(--text-color); font-weight: bold; border-radius: 2px; padding: 0 2px;">${match}</span>`);
+
+      li.innerHTML = `
+        <div style="font-size: 13px; color: var(--primary-color); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--font-sans);">${res.chapterTitle}</div>
+        <div style="font-size: 15px; line-height: 1.5; color: var(--text-color);">${highlightedSnippet}</div>
+      `;
+
+      li.addEventListener('click', async () => {
+        await loadChapter(res.chapterIndex, false, false, false, true, null, null, null, null, null, true);
+        highlightAndScrollToSearchQuery(cleanQuery);
+      });
+
+      fragment.appendChild(li);
+    });
+
+    listEl.appendChild(fragment);
+  }, 50);
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightAndScrollToSearchQuery(query) {
+  clearSearchHighlights();
+
+  if (!query) return;
+  const cleanQuery = query.trim();
+  if (cleanQuery.length === 0) return;
+
+  const contentEl = document.getElementById('book-content');
+  if (!contentEl) return;
+
+  const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
+
+  const highlightTextNodes = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.nodeValue;
+      if (regex.test(text)) {
+        const span = document.createElement('span');
+        span.className = 'search-highlight-wrapper';
+        span.innerHTML = text.replace(regex, match => `<mark class="search-highlight">${match}</mark>`);
+        node.parentNode.replaceChild(span, node);
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      if (tagName !== 'script' && tagName !== 'style' && !node.classList.contains('textLayer')) {
+        const children = Array.from(node.childNodes);
+        children.forEach(child => highlightTextNodes(child));
+      }
+    }
+  };
+
+  highlightTextNodes(contentEl);
+
+  setTimeout(() => {
+    const firstHighlight = contentEl.querySelector('.search-highlight');
+    if (firstHighlight) {
+      firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 150);
+}
+
+function clearSearchHighlights() {
+  const contentEl = document.getElementById('book-content');
+  if (!contentEl) return;
+
+  const wrappers = contentEl.querySelectorAll('.search-highlight-wrapper');
+  wrappers.forEach(wrapper => {
+    const parent = wrapper.parentNode;
+    if (parent) {
+      const textNode = document.createTextNode(wrapper.textContent);
+      parent.replaceChild(textNode, wrapper);
+      parent.normalize();
+    }
+  });
 }
 
 

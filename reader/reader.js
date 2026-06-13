@@ -71,6 +71,7 @@ let prefetchedChapterCache = null; // 緩存背景預載的下一章 HTML 內容
 let epubBookData = null; // 存儲 EPUB 解析後的對象
 let bookChunksCache = []; // 緩存整本書的文本切片以供 RAG 檢索
 let isIndexingBook = false; // 標記是否正在背景建立書本索引
+let currentSearchQuery = ''; // 儲存當前全書搜尋關鍵字
 let comicParserInstance = null; // 漫畫解析實例
 let isSavingProgress = false;
 let selectedTextState = '';
@@ -184,6 +185,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const savedAIWidth = localStorage.getItem('aiPanelWidth') || '400px';
   document.documentElement.style.setProperty('--ai-panel-width', savedAIWidth);
 
+  // 0.7 立即套用左側側邊欄大小設定以防佈局抖動
+  const savedSidebarWidth = localStorage.getItem('sidebarWidth') || '360px';
+  document.documentElement.style.setProperty('--sidebar-width', savedSidebarWidth);
+
   // 1. 初始化多語言（載入後備翻譯字典 + 套用翻譯）
   await initI18n();
   initAISuggestions();
@@ -214,6 +219,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 5. 初始化 AI 面板調整大小
   initAIResize();
+
+  // 5.1 初始化左側側邊欄調整大小
+  initSidebarResize();
 
   // 5.5 監聽 AI 面板的可見性，當面板顯示時立即渲染 Mermaid 圖表
   const aiPanel = document.getElementById('ai-panel');
@@ -581,6 +589,7 @@ function initUIEventBindings() {
       }
     }
   });
+  document.getElementById('search-toggle').addEventListener('click', toggleSearchSidebar);
   document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
   document.getElementById('tts-toggle').addEventListener('click', toggleTTSPanel);
   document.getElementById('settings-toggle').addEventListener('click', toggleSettingsPanel);
@@ -1396,25 +1405,18 @@ function initUIEventBindings() {
   };
 
   // 側邊欄切換標籤
-  document.getElementById('tab-toc').addEventListener('click', () => {
-    document.getElementById('tab-toc').classList.add('active');
-    document.getElementById('tab-highlights').classList.remove('active');
-    document.getElementById('sidebar-toc-container').classList.add('active');
-    document.getElementById('sidebar-highlights-container').classList.remove('active');
-    setTimeout(() => {
-      const activeItem = document.querySelector('#toc-list .toc-item.active');
-      if (activeItem) {
-        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 150);
-  });
+  document.getElementById('tab-toc').addEventListener('click', () => switchSidebarTab('toc'));
+  document.getElementById('tab-highlights').addEventListener('click', () => switchSidebarTab('highlights'));
+  document.getElementById('tab-search').addEventListener('click', () => switchSidebarTab('search'));
 
-  document.getElementById('tab-highlights').addEventListener('click', () => {
-    document.getElementById('tab-toc').classList.remove('active');
-    document.getElementById('tab-highlights').classList.add('active');
-    document.getElementById('sidebar-toc-container').classList.remove('active');
-    document.getElementById('sidebar-highlights-container').classList.add('active');
-    renderHighlightsList();
+  document.getElementById('sidebar-search-btn').addEventListener('click', () => {
+    const input = document.getElementById('sidebar-search-input');
+    performBookSearch(input.value);
+  });
+  document.getElementById('sidebar-search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      performBookSearch(e.target.value);
+    }
   });
 
   document.getElementById('close-sidebar-btn').addEventListener('click', () => {
@@ -1603,10 +1605,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.0.3';
+            versionDisplay.textContent = 'v3.0.4';
           }
         } else {
-          versionDisplay.textContent = 'v3.0.3';
+          versionDisplay.textContent = 'v3.0.4';
         }
       }
       aboutDialog.showModal();
@@ -1655,7 +1657,7 @@ function initUIEventBindings() {
     // 側邊欄：點擊側邊欄及其觸發按鈕外部則關閉
     const sidebar = document.getElementById('reader-sidebar');
     if (sidebar && sidebar.classList.contains('active')) {
-      if (!target.closest('#reader-sidebar') && !target.closest('#sidebar-toggle')) {
+      if (!target.closest('#reader-sidebar') && !target.closest('#sidebar-toggle') && !target.closest('#search-toggle')) {
         sidebar.classList.remove('active');
         panelClosed = true;
       }
@@ -2583,14 +2585,27 @@ async function closeCurrentBook(triggerBack = true) {
     
     const tabToc = document.getElementById('tab-toc');
     const tabHighlights = document.getElementById('tab-highlights');
+    const tabSearch = document.getElementById('tab-search');
     const containerToc = document.getElementById('sidebar-toc-container');
     const containerHighlights = document.getElementById('sidebar-highlights-container');
+    const containerSearch = document.getElementById('sidebar-search-container');
     
     if (tabToc) tabToc.classList.add('active');
     if (tabHighlights) tabHighlights.classList.remove('active');
+    if (tabSearch) tabSearch.classList.remove('active');
     if (containerToc) containerToc.classList.add('active');
     if (containerHighlights) containerHighlights.classList.remove('active');
+    if (containerSearch) containerSearch.classList.remove('active');
   }
+
+  currentSearchQuery = '';
+  clearSearchHighlights();
+  const searchInput = document.getElementById('sidebar-search-input');
+  if (searchInput) searchInput.value = '';
+  const searchList = document.getElementById('search-results-list');
+  if (searchList) searchList.innerHTML = '';
+  const searchInfo = document.getElementById('sidebar-search-results-info');
+  if (searchInfo) searchInfo.style.display = 'none';
   
   const tocList = document.getElementById('toc-list');
   const bList = document.getElementById('bookmarks-list');
@@ -5232,14 +5247,81 @@ function handleKeyDown(e) {
 // 面板顯示切換
 function toggleSidebar() {
   const sidebar = document.getElementById('reader-sidebar');
-  sidebar.classList.toggle('active');
+  const isTOCActive = document.getElementById('tab-toc') && document.getElementById('tab-toc').classList.contains('active');
+  
+  if (!sidebar.classList.contains('active')) {
+    sidebar.classList.add('active');
+    switchSidebarTab('toc');
+  } else {
+    if (isTOCActive) {
+      sidebar.classList.remove('active');
+    } else {
+      switchSidebarTab('toc');
+    }
+  }
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   document.getElementById('tts-panel').classList.remove('dropdown-active');
-  if (sidebar.classList.contains('active')) {
+  updateHeaderActiveStates();
+}
+
+function toggleSearchSidebar() {
+  console.log('[Reader] toggleSearchSidebar called');
+  const sidebar = document.getElementById('reader-sidebar');
+  const isSearchActive = document.getElementById('tab-search') && document.getElementById('tab-search').classList.contains('active');
+  
+  if (!sidebar.classList.contains('active')) {
+    sidebar.classList.add('active');
+    switchSidebarTab('search');
+  } else {
+    if (isSearchActive) {
+      sidebar.classList.remove('active');
+    } else {
+      switchSidebarTab('search');
+    }
+  }
+  document.getElementById('settings-panel').classList.remove('dropdown-active');
+  document.getElementById('tts-panel').classList.remove('dropdown-active');
+  updateHeaderActiveStates();
+}
+
+function switchSidebarTab(tabId) {
+  const tabToc = document.getElementById('tab-toc');
+  const tabHighlights = document.getElementById('tab-highlights');
+  const tabSearch = document.getElementById('tab-search');
+  
+  const containerToc = document.getElementById('sidebar-toc-container');
+  const containerHighlights = document.getElementById('sidebar-highlights-container');
+  const containerSearch = document.getElementById('sidebar-search-container');
+  
+  if (tabToc) tabToc.classList.remove('active');
+  if (tabHighlights) tabHighlights.classList.remove('active');
+  if (tabSearch) tabSearch.classList.remove('active');
+  
+  if (containerToc) containerToc.classList.remove('active');
+  if (containerHighlights) containerHighlights.classList.remove('active');
+  if (containerSearch) containerSearch.classList.remove('active');
+  
+  if (tabId === 'toc') {
+    if (tabToc) tabToc.classList.add('active');
+    if (containerToc) containerToc.classList.add('active');
     setTimeout(() => {
       const activeItem = document.querySelector('#toc-list .toc-item.active');
       if (activeItem) {
         activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 150);
+  } else if (tabId === 'highlights') {
+    if (tabHighlights) tabHighlights.classList.add('active');
+    if (containerHighlights) containerHighlights.classList.add('active');
+    renderHighlightsList();
+  } else if (tabId === 'search') {
+    if (tabSearch) tabSearch.classList.add('active');
+    if (containerSearch) containerSearch.classList.add('active');
+    setTimeout(() => {
+      const searchInput = document.getElementById('sidebar-search-input');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
       }
     }, 150);
   }
@@ -5271,12 +5353,19 @@ function updateHeaderActiveStates() {
   const settingsActive = settingsPanel && settingsPanel.classList.contains('dropdown-active');
   const aiActive = aiPanel && (aiPanel.style.display === 'flex' || aiPanel.style.display === 'block');
 
+  const tabSearch = document.getElementById('tab-search');
+  const isSearchTabActive = tabSearch && tabSearch.classList.contains('active');
+  const searchToggleActive = sidebarActive && isSearchTabActive;
+  const sidebarToggleActive = sidebarActive && !isSearchTabActive;
+
+  const searchToggle = document.getElementById('search-toggle');
   const sidebarToggle = document.getElementById('sidebar-toggle');
   const ttsToggle = document.getElementById('tts-toggle');
   const settingsToggle = document.getElementById('settings-toggle');
   const aiToggle = document.getElementById('ai-toggle');
 
-  if (sidebarToggle) sidebarToggle.classList.toggle('active', sidebarActive);
+  if (searchToggle) searchToggle.classList.toggle('active', searchToggleActive);
+  if (sidebarToggle) sidebarToggle.classList.toggle('active', sidebarToggleActive);
   if (ttsToggle) ttsToggle.classList.toggle('active', ttsActive);
   if (settingsToggle) settingsToggle.classList.toggle('active', settingsActive);
   if (aiToggle) aiToggle.classList.toggle('active', aiActive);
@@ -8405,6 +8494,78 @@ function initAIResize() {
   });
 }
 
+// 初始化左側側邊欄拖曳調整大小功能
+function initSidebarResize() {
+  const handle = document.getElementById('sidebar-resize-handle');
+  const panel = document.getElementById('reader-sidebar');
+  if (!handle || !panel) return;
+
+  let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 只允許左鍵拖曳
+    e.preventDefault();
+
+    isResizing = true;
+    startX = e.clientX;
+    startWidth = panel.offsetWidth;
+
+    handle.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    // 拖曳向右 (e.clientX 增大) 時，左側側邊欄寬度增加
+    const deltaX = e.clientX - startX;
+    let newWidth = startWidth + deltaX;
+
+    // 設定寬度邊界限制：280px 到 95% 螢幕寬度
+    const minWidth = 280;
+    const maxWidth = window.innerWidth * 0.95;
+    if (newWidth < minWidth) newWidth = minWidth;
+    if (newWidth > maxWidth) newWidth = maxWidth;
+
+    document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+    localStorage.setItem('sidebarWidth', `${newWidth}px`);
+
+    if (document.body.classList.contains('layout-paginated')) {
+      applyLayoutDimensions();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    handle.classList.remove('resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    if (document.body.classList.contains('layout-paginated')) {
+      applyLayoutDimensions();
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    const currentWidthStr = document.documentElement.style.getPropertyValue('--sidebar-width');
+    if (currentWidthStr) {
+      const currentWidth = parseInt(currentWidthStr);
+      if (!isNaN(currentWidth)) {
+        const maxWidth = Math.round(window.innerWidth * 0.95);
+        if (currentWidth > maxWidth) {
+          const newWidth = Math.max(280, maxWidth);
+          document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+          localStorage.setItem('sidebarWidth', `${newWidth}px`);
+        }
+      }
+    }
+  });
+}
+
 // ==================== 備份與還原功能 ====================
 
 // 將 Blob 轉為 DataURL (Base64)
@@ -9222,4 +9383,168 @@ if (window.location.protocol.startsWith('http')) {
         .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
     });
   }
+}
+
+// ==================== 7. 全文搜尋與關鍵字高亮 (Full-Text Search & Highlighting) ====================
+
+function performBookSearch(query) {
+  if (!query) return;
+  const cleanQuery = query.trim();
+  if (cleanQuery.length === 0) return;
+
+  currentSearchQuery = cleanQuery;
+  const listEl = document.getElementById('search-results-list');
+  const infoEl = document.getElementById('sidebar-search-results-info');
+  const loadingEl = document.getElementById('sidebar-search-loading');
+  const indexingEl = document.getElementById('sidebar-search-indexing');
+
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+  if (infoEl) infoEl.style.display = 'none';
+  if (loadingEl) loadingEl.style.display = 'none';
+  if (indexingEl) indexingEl.style.display = 'none';
+
+  if (isIndexingBook) {
+    if (indexingEl) indexingEl.style.display = 'block';
+    const pollInterval = setInterval(() => {
+      if (!isIndexingBook) {
+        clearInterval(pollInterval);
+        performBookSearch(query);
+      }
+    }, 300);
+    return;
+  }
+
+  if (!bookChunksCache || bookChunksCache.length === 0) {
+    if (indexingEl) indexingEl.style.display = 'block';
+    buildBookSearchIndex().then(() => {
+      if (indexingEl) indexingEl.style.display = 'none';
+      if (!bookChunksCache || bookChunksCache.length === 0) {
+        listEl.innerHTML = `<li style="text-align: center; padding: 20px; color: var(--text-muted); font-family: var(--font-sans);">${getMsg('search_no_results') || 'No matches found.'}</li>`;
+        return;
+      }
+      performBookSearch(query);
+    });
+    return;
+  }
+
+  if (loadingEl) loadingEl.style.display = 'block';
+
+  setTimeout(() => {
+    const results = [];
+    const lowerQuery = cleanQuery.toLowerCase();
+
+    for (const chunk of bookChunksCache) {
+      const index = chunk.text.toLowerCase().indexOf(lowerQuery);
+      if (index !== -1) {
+        results.push({
+          chapterTitle: chunk.chapterTitle || 'Chapter',
+          chapterIndex: chunk.chapterIndex,
+          text: chunk.text,
+          index: index
+        });
+      }
+    }
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (infoEl) {
+      infoEl.textContent = getMsg('search_results_count', [String(results.length)]) || `Found ${results.length} matches`;
+      infoEl.style.display = 'block';
+    }
+
+    if (results.length === 0) {
+      listEl.innerHTML = `<li style="text-align: center; padding: 20px; color: var(--text-muted); font-family: var(--font-sans);">${getMsg('search_no_results') || 'No matches found.'}</li>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    results.forEach(res => {
+      const li = document.createElement('li');
+      li.className = 'search-result-item';
+      li.style.cssText = 'padding: 12px; margin-bottom: 8px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: all 0.2s;';
+      
+      const start = Math.max(0, res.index - 40);
+      const end = Math.min(res.text.length, res.index + lowerQuery.length + 60);
+      let snippet = res.text.substring(start, end);
+      if (start > 0) snippet = '...' + snippet;
+      if (end < res.text.length) snippet = snippet + '...';
+
+      const queryRegex = new RegExp(escapeRegExp(cleanQuery), 'gi');
+      const highlightedSnippet = snippet.replace(queryRegex, match => `<span class="search-snippet-match" style="background-color: rgba(255, 235, 59, 0.4); color: var(--text-color); font-weight: bold; border-radius: 2px; padding: 0 2px;">${match}</span>`);
+
+      li.innerHTML = `
+        <div style="font-size: 13px; color: var(--primary-color); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--font-sans);">${res.chapterTitle}</div>
+        <div style="font-size: 15px; line-height: 1.5; color: var(--text-color);">${highlightedSnippet}</div>
+      `;
+
+      li.addEventListener('click', async () => {
+        await loadChapter(res.chapterIndex, false, false, false, true, null, null, null, null, null, true);
+        highlightAndScrollToSearchQuery(cleanQuery);
+      });
+
+      fragment.appendChild(li);
+    });
+
+    listEl.appendChild(fragment);
+  }, 50);
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightAndScrollToSearchQuery(query) {
+  clearSearchHighlights();
+
+  if (!query) return;
+  const cleanQuery = query.trim();
+  if (cleanQuery.length === 0) return;
+
+  const contentEl = document.getElementById('book-content');
+  if (!contentEl) return;
+
+  const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
+
+  const highlightTextNodes = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.nodeValue;
+      if (regex.test(text)) {
+        const span = document.createElement('span');
+        span.className = 'search-highlight-wrapper';
+        span.innerHTML = text.replace(regex, match => `<mark class="search-highlight">${match}</mark>`);
+        node.parentNode.replaceChild(span, node);
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      if (tagName !== 'script' && tagName !== 'style' && !node.classList.contains('textLayer')) {
+        const children = Array.from(node.childNodes);
+        children.forEach(child => highlightTextNodes(child));
+      }
+    }
+  };
+
+  highlightTextNodes(contentEl);
+
+  setTimeout(() => {
+    const firstHighlight = contentEl.querySelector('.search-highlight');
+    if (firstHighlight) {
+      firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 150);
+}
+
+function clearSearchHighlights() {
+  const contentEl = document.getElementById('book-content');
+  if (!contentEl) return;
+
+  const wrappers = contentEl.querySelectorAll('.search-highlight-wrapper');
+  wrappers.forEach(wrapper => {
+    const parent = wrapper.parentNode;
+    if (parent) {
+      const textNode = document.createTextNode(wrapper.textContent);
+      parent.replaceChild(textNode, wrapper);
+      parent.normalize();
+    }
+  });
 }
