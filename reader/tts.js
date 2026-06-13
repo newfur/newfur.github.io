@@ -97,6 +97,7 @@ export class TTSEngine {
     this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
     this.activePlayerIdx = 0;
     this.currentAudio = null; // 當前正在播放的 Audio 對象
+    this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
@@ -196,6 +197,32 @@ export class TTSEngine {
     }
     if (voiceChanged) {
       this._initVoices();
+    }
+  }
+
+  _startPolling() {
+    this._stopPolling();
+    if (!this.isPlaying || this.isPaused || !this.currentAudio) return;
+    
+    const check = () => {
+      if (!this.isPlaying || this.isPaused || !this.currentAudio) {
+        this._stopPolling();
+        return;
+      }
+      const audio = this.currentAudio;
+      if (audio.ontimeupdate) {
+        audio.ontimeupdate();
+      }
+      this.pollingTimer = requestAnimationFrame(check);
+    };
+    
+    this.pollingTimer = requestAnimationFrame(check);
+  }
+
+  _stopPolling() {
+    if (this.pollingTimer) {
+      cancelAnimationFrame(this.pollingTimer);
+      this.pollingTimer = null;
     }
   }
 
@@ -1528,10 +1555,23 @@ export class TTSEngine {
     
     const isSameSource = (audio.dataset.srcUrl === audioUrl);
     
+    if (!isSameSource) {
+      audio._boundaries = null; // 重置已快取的邊界數據
+    }
+
+    const getBoundaries = () => {
+      if (audio._boundaries) return audio._boundaries;
+      if (isGroupPlay && groupSentences && audio.duration) {
+        audio._boundaries = this._getGroupBoundaries(groupSentences, audio.duration);
+        return audio._boundaries;
+      }
+      return null;
+    };
+
     const setupGroupSeeking = () => {
       if (isGroupPlay && groupSentences && audio.duration) {
-        const boundaries = this._getGroupBoundaries(groupSentences, audio.duration);
-        if (boundaries[idxInGroup]) {
+        const boundaries = getBoundaries();
+        if (boundaries && boundaries[idxInGroup]) {
           const targetTime = boundaries[idxInGroup].start;
           if (Math.abs(audio.currentTime - targetTime) > 0.5) {
             audio.currentTime = targetTime;
@@ -1562,9 +1602,9 @@ export class TTSEngine {
     if (isGroupPlay) {
       audio.ontimeupdate = () => {
         if (!this.isPlaying) return;
-        if (!audio.duration) return;
         
-        const boundaries = this._getGroupBoundaries(groupSentences, audio.duration);
+        const boundaries = getBoundaries();
+        if (!boundaries) return;
         const currentTime = audio.currentTime;
         
         // 尋找當前播放時間對應分組內的哪一句
@@ -1591,7 +1631,6 @@ export class TTSEngine {
                 this.onSentenceStart(activeIdx);
               }
               this._fillPreFetchBuffer();
-              this._prewarmNextPlayer();
             };
 
             if (currentSentence.chapterIndex !== this.currentChapterIndex) {
@@ -1622,6 +1661,7 @@ export class TTSEngine {
         if (currentTime >= audio.duration - threshold) {
           if (!hasTriggeredNext) {
             hasTriggeredNext = true;
+            this._stopPolling(); // 停止高頻輪詢
             audio.ontimeupdate = null; // 避免重疊期間重複觸發
             
             // 切換至下一個播放器，播放下一分組的起點
@@ -1633,6 +1673,7 @@ export class TTSEngine {
       };
       
       audio.onended = () => {
+        this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
         audio.onloadedmetadata = null;
@@ -1662,6 +1703,7 @@ export class TTSEngine {
         if (audio.duration && audio.currentTime >= audio.duration - threshold) {
           if (!hasTriggeredNext) {
             hasTriggeredNext = true;
+            this._stopPolling(); // 停止高頻輪詢
             audio.ontimeupdate = null; // 避免重疊期間重複觸發
             
             // 切換至下一個播放器，並播放下一句
@@ -1674,6 +1716,7 @@ export class TTSEngine {
       
       // 容錯機制：以防 ontimeupdate 由於特殊原因未觸發（例如有些設備或格式的 duration 為空）
       audio.onended = () => {
+        this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
         audio.onloadedmetadata = null;
@@ -1715,8 +1758,10 @@ export class TTSEngine {
         this._fillPreFetchBuffer();
         this._prefetchNextChapter();
         this._prewarmNextPlayer();
+        this._startPolling(); // 啟動高頻輪詢以即時更新高亮
       }).catch(err => {
         console.error("Audio play error:", err);
+        this._stopPolling(); // 確保停止輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
         audio.onloadedmetadata = null;
@@ -1962,6 +2007,7 @@ export class TTSEngine {
     this.isPlaying = false;
     this.isPaused = false;
     this._stopSilenceKeepAlive();
+    this._stopPolling();
     
     if (this.synth) {
       this.synth.cancel();
@@ -2226,6 +2272,7 @@ export class TTSEngine {
       } else if (this.currentAudio) {
         this.currentAudio.pause();
       }
+      this._stopPolling();
       if (this.onStateChange) this.onStateChange();
     }
   }
@@ -2251,7 +2298,9 @@ export class TTSEngine {
       if (useNativeSynth && this.synth) {
         this.synth.resume();
       } else if (this.currentAudio) {
-        this.currentAudio.play().catch(err => console.error("Resume error:", err));
+        this.currentAudio.play().then(() => {
+          this._startPolling();
+        }).catch(err => console.error("Resume error:", err));
       }
       if (this.onStateChange) this.onStateChange();
     }
@@ -2263,6 +2312,7 @@ export class TTSEngine {
     this.playbackStarted = false;
     this.currentlyPlayingIndex = -1;
     this._stopSilenceKeepAlive();
+    this._stopPolling();
     
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
