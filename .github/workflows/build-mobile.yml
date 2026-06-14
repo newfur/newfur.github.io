@@ -37,9 +37,11 @@ jobs:
       - name: Get Version
         id: version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('./manifest.json','utf8')).version")
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building version: ${VERSION}"
+          # 同步版本號到 package.json
+          node -e "const f='./package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8'));p.version='${VERSION}';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
 
       # ===== Android APK Build =====
       - name: Setup Java JDK 17

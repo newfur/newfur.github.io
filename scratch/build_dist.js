@@ -45,4 +45,7 @@ fs.copyFileSync(
 console.log('5. Copying application icons...');
 copyDirSync(path.join(rootDir, 'icons'), path.join(distDir, 'icons'));
 
+console.log('6. Copying manifest.json for version detection...');
+fs.copyFileSync(path.join(rootDir, 'manifest.json'), path.join(distDir, 'manifest.json'));
+
 console.log('Distribution build completed successfully!');

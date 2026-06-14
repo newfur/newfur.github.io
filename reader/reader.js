@@ -239,6 +239,77 @@ document.addEventListener('DOMContentLoaded', async () => {
     history.replaceState({ bookshelf: true }, '');
   }
 
+  // Android 返回鍵統一處理函數
+  function handleAndroidBack() {
+    // 優先關閉浮動面板/對話框
+    const aboutDialog = document.getElementById('about-dialog');
+    if (aboutDialog && aboutDialog.open) { aboutDialog.close(); return; }
+    const noteDialog = document.getElementById('note-dialog');
+    if (noteDialog && noteDialog.style.display !== 'none') { noteDialog.style.display = 'none'; return; }
+    const sidebar = document.getElementById('reader-sidebar');
+    if (sidebar && sidebar.classList.contains('active')) { sidebar.classList.remove('active'); return; }
+    const aiPanel = document.getElementById('ai-panel');
+    if (aiPanel && aiPanel.style.display !== 'none') { aiPanel.style.display = 'none'; return; }
+    const settingsPanel = document.getElementById('settings-panel');
+    if (settingsPanel && settingsPanel.classList.contains('active')) { settingsPanel.classList.remove('active'); return; }
+    const ttsPanel = document.getElementById('tts-panel');
+    if (ttsPanel && ttsPanel.classList.contains('active')) { ttsPanel.classList.remove('active'); return; }
+    // 拖拽 overlay
+    const dragOverlay = document.getElementById('drag-overlay');
+    if (dragOverlay && dragOverlay.style.display !== 'none' && dragOverlay.style.display !== '') { dragOverlay.style.display = 'none'; return; }
+
+    // 如果在閱讀器中，返回書庫
+    if (currentBook) {
+      closeCurrentBook();
+      return;
+    }
+    
+    // 已在書庫頁面，允許退出 app
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+      window.Capacitor.Plugins.App.exitApp();
+    }
+  }
+
+  // 0.05 Android 返回鍵處理：在閱讀器中返回書庫而非退出 app
+  // Capacitor WebView 在 Android 返回鍵觸發時，如果 history 可以 back 就觸發 history.back()
+  // 否則退出 app。我們通過 popstate 事件處理返回邏輯。
+  // 額外監聽 document 'backbutton' 事件（部分 Capacitor 版本支持）作為兜底
+  document.addEventListener('backbutton', (e) => {
+    e.preventDefault();
+    handleAndroidBack();
+  });
+  
+  // 也嘗試使用 Capacitor App 插件（如果可用）
+  if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+    try {
+      window.Capacitor.Plugins.App.addListener('backButton', (event) => {
+        handleAndroidBack();
+      });
+    } catch (e) {
+      // 插件不可用，依賴 popstate 處理
+    }
+  }
+
+  // 0.1 從 manifest.json 讀取版本號，統一管理版本顯示
+  try {
+    // 嘗試多個路徑：在網頁版中 manifest.json 在上層目錄，在 Capacitor app 中可能在同層
+    let manifestData = null;
+    for (const path of ['../manifest.json', './manifest.json', 'manifest.json']) {
+      try {
+        const resp = await fetch(path);
+        if (resp.ok) {
+          manifestData = await resp.json();
+          break;
+        }
+      } catch (e) { /* 嘗試下一個路徑 */ }
+    }
+    if (manifestData && manifestData.version) {
+      window.__APP_VERSION__ = manifestData.version;
+    }
+  } catch (e) {
+    console.warn('[Version] Failed to load manifest.json:', e);
+  }
+
   // 0.5 立即套用封面大小設定以防佈局抖動
   const savedWidth = localStorage.getItem('coverWidth') || '180';
   document.documentElement.style.setProperty('--cover-width', `${savedWidth}px`);
@@ -610,31 +681,53 @@ function initUIEventBindings() {
     });
   }
 
-  // 拖曳導入
+  // 拖曳導入（僅桌面端有效）
   const dragOverlay = document.getElementById('drag-overlay');
   const libraryView = document.getElementById('library-view');
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
-  window.addEventListener('dragenter', (e) => {
-    if (document.getElementById('library-view').classList.contains('view-active')) {
-      dragOverlay.style.display = 'flex';
-    }
-  });
+  if (!isTouchDevice) {
+    let dragEnterCounter = 0; // 追蹤 dragenter/dragleave 配對，防止子元素觸發導致閃爍
+    
+    window.addEventListener('dragenter', (e) => {
+      if (document.getElementById('library-view').classList.contains('view-active')) {
+        dragEnterCounter++;
+        dragOverlay.style.display = 'flex';
+      }
+    });
 
-  dragOverlay.addEventListener('dragleave', () => {
-    dragOverlay.style.display = 'none';
-  });
+    window.addEventListener('dragleave', (e) => {
+      dragEnterCounter--;
+      if (dragEnterCounter <= 0) {
+        dragEnterCounter = 0;
+        dragOverlay.style.display = 'none';
+      }
+    });
 
-  dragOverlay.addEventListener('dragover', (e) => {
-    e.preventDefault();
-  });
+    window.addEventListener('drop', () => {
+      dragEnterCounter = 0;
+    });
 
-  dragOverlay.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dragOverlay.style.display = 'none';
-    if (e.dataTransfer.files.length > 0) {
-      handleImportFiles(e.dataTransfer.files);
-    }
-  });
+    dragOverlay.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    dragOverlay.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragEnterCounter = 0;
+      dragOverlay.style.display = 'none';
+      if (e.dataTransfer.files.length > 0) {
+        handleImportFiles(e.dataTransfer.files);
+      }
+    });
+  }
+
+  // 點擊 overlay 本身也可關閉（容錯：防止任何情況下卡住）
+  if (dragOverlay) {
+    dragOverlay.addEventListener('click', () => {
+      dragOverlay.style.display = 'none';
+    });
+  }
 
   // 書籍搜尋
   document.getElementById('search-input').addEventListener('input', (e) => {
@@ -1747,10 +1840,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.1.9';
+            versionDisplay.textContent = 'v' + (window.__APP_VERSION__ || '');
           }
         } else {
-          versionDisplay.textContent = 'v3.1.9';
+          versionDisplay.textContent = 'v' + (window.__APP_VERSION__ || '');
         }
       }
       aboutDialog.showModal();
@@ -2832,7 +2925,15 @@ async function openBook(id) {
   }
 
   currentBook = book;
-  currentChapterIndex = book.progress?.chapterIndex || 0;
+  // 優先使用 TTS 朗讀章節位置（如果比視覺進度更新），確保重新打開書籍時定位到最近朗讀的位置
+  const visualChapter = book.progress?.chapterIndex || 0;
+  const ttsChapter = book.progress?.ttsChapterIndex;
+  if (ttsChapter !== undefined && ttsChapter !== null && book.progress?.ttsActiveSentenceIndex !== undefined) {
+    // TTS 有保存位置，使用 TTS 章節
+    currentChapterIndex = ttsChapter;
+  } else {
+    currentChapterIndex = visualChapter;
+  }
 
   // 1. 初始化界面 UI 顯示
   document.getElementById('library-view').classList.remove('view-active');
@@ -3833,13 +3934,33 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     } else if (activeHashElem) {
       // 點擊目錄子標題或章節錨點跳轉時，精確滾動/翻頁到該錨點元素
       safeRestoreScrollToElementIndex(activeHashElem);
-    } else if (restoreProgress && currentBook.progress && currentBook.progress.chapterIndex === index) {
-      if (document.body.classList.contains('layout-paginated') && typeof currentBook.progress.currentPageIndex === 'number') {
-        currentPageIndex = currentBook.progress.currentPageIndex;
-        updatePageTranslate(false);
+    } else if (restoreProgress && currentBook.progress) {
+      // 恢復閱讀位置：優先定位到 TTS 朗讀位置（句子級別），否則恢復視覺滾動位置
+      const savedTTSChapter = currentBook.progress.ttsChapterIndex;
+      const hasTTSPosition = savedTTSChapter !== undefined && savedTTSChapter !== null && currentBook.progress.ttsActiveSentenceIndex !== undefined;
+      
+      if (hasTTSPosition && (savedTTSChapter === index || (epubBookData && epubBookData.chapters[savedTTSChapter] && epubBookData.chapters[index] && epubBookData.chapters[savedTTSChapter].cleanHref === epubBookData.chapters[index].cleanHref))) {
+        // 定位到 TTS 句子位置
+        const ttsSentenceIdx = currentBook.progress.ttsActiveSentenceIndex || 0;
+        const sentenceEl = document.querySelector(`[data-sentence-index="${ttsSentenceIdx}"]`);
+        if (sentenceEl) {
+          safeRestoreScrollToElementIndex(sentenceEl);
+        } else if (currentBook.progress.chapterIndex === index) {
+          const savedElementIdx = currentBook.progress.elementIndex || 0;
+          safeRestoreScrollToElementIndex(savedElementIdx);
+        } else {
+          window.scrollTo(0, 0);
+        }
+      } else if (currentBook.progress.chapterIndex === index) {
+        if (document.body.classList.contains('layout-paginated') && typeof currentBook.progress.currentPageIndex === 'number') {
+          currentPageIndex = currentBook.progress.currentPageIndex;
+          updatePageTranslate(false);
+        } else {
+          const savedElementIdx = currentBook.progress.elementIndex || 0;
+          safeRestoreScrollToElementIndex(savedElementIdx);
+        }
       } else {
-        const savedElementIdx = currentBook.progress.elementIndex || 0;
-        safeRestoreScrollToElementIndex(savedElementIdx);
+        window.scrollTo(0, 0);
       }
     } else {
       if (document.body.classList.contains('layout-paginated')) {
