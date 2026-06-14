@@ -1,5 +1,19 @@
 apply plugin: 'com.android.application'
 
+// 從根目錄的 manifest.json 動態讀取版本號
+def manifestFile = new File(rootProject.projectDir.parentFile, "manifest.json")
+def appVersion = "1.0.0"
+def appVersionCode = 1
+if (manifestFile.exists()) {
+    def manifestJson = new groovy.json.JsonSlurper().parseText(manifestFile.text)
+    appVersion = manifestJson.version ?: "1.0.0"
+    // 將版本號轉為 versionCode：major*10000 + minor*100 + patch
+    def parts = appVersion.tokenize('.')
+    if (parts.size() >= 3) {
+        appVersionCode = parts[0].toInteger() * 10000 + parts[1].toInteger() * 100 + parts[2].toInteger()
+    }
+}
+
 android {
     namespace "com.edgereader.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +21,8 @@ android {
         applicationId "com.edgereader.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 21
-        versionName "3.1.8"
+        versionCode appVersionCode
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
