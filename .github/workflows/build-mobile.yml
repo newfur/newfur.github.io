@@ -1,17 +1,26 @@
-name: Build Android APK
+name: Build & Deploy
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - web-version
+    paths:
+      - 'manifest.json'
+      - 'reader/**'
+      - 'android/**'
+      - 'index.html'
+      - 'package.json'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
-  build-android:
-    name: Build Android APK
+  build-and-deploy:
+    name: Build APK & Deploy Web
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -25,6 +34,14 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
+      # ===== Android APK Build =====
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
@@ -41,26 +58,44 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug
 
-      - name: Rename APK for Release
+      - name: Rename APK
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "APK_VERSION=${VERSION}" >> $GITHUB_ENV
-          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/eReader-${VERSION}.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/eReader-${{ steps.version.outputs.version }}.apk
 
-      - name: Upload Android APK Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: android/app/build/outputs/apk/debug/eReader-${{ env.APK_VERSION }}.apk
+          path: android/app/build/outputs/apk/debug/eReader-${{ steps.version.outputs.version }}.apk
           if-no-files-found: error
+
+      # ===== Create Tag & Release =====
+      - name: Create Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}" --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: android/app/build/outputs/apk/debug/eReader-${{ env.APK_VERSION }}.apk
-          name: Release ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
+          files: android/app/build/outputs/apk/debug/eReader-${{ steps.version.outputs.version }}.apk
+          name: v${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ===== Deploy Web to GitHub Pages =====
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+          publish_branch: gh-pages
+          exclude_assets: 'android/**,node_modules/**,scratch/**,.github/**,.git/**,www/**'
