@@ -92,10 +92,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ===== Deploy Web to GitHub Pages =====
+      - name: Prepare Web Deploy
+        run: |
+          mkdir -p deploy
+          cp -r reader deploy/
+          cp -r icons deploy/
+          cp -r _locales deploy/
+          cp index.html deploy/
+          cp manifest.webmanifest deploy/
+          cp sw.js deploy/
+          cp service-worker.js deploy/
+          cp manifest.json deploy/
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
+          publish_dir: ./deploy
           publish_branch: gh-pages
-          exclude_assets: 'android/**,node_modules/**,scratch/**,.github/**,.git/**,www/**'
