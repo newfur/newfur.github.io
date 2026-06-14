@@ -107,7 +107,8 @@ export class BookLibrary {
     });
   }
 
-  // 覆蓋書籍檔案內容與元數據，但完整保留原有進度、書籤、劃線筆記、統計資訊與資料夾
+  // 覆蓋書籍檔案內容與元數據，但完整保留原有書籤、劃線筆記、統計資訊與資料夾
+  // 注意：進度索引（章節、句子位置）在文件替換後可能無效，需重置
   async replaceBookContent(id, { title, author, format, file, cover, size, fileHash }) {
     await this._ensureOpen();
     const book = await this.getBook(id);
@@ -115,11 +116,25 @@ export class BookLibrary {
 
     book.title = title || book.title;
     book.author = author || book.author;
-    book.format = format.toLowerCase() || book.format;
+    book.format = format ? format.toLowerCase() : book.format;
     book.file = file;
     book.cover = cover || book.cover;
     book.size = size || book.size;
     book.fileHash = fileHash || book.fileHash;
+    
+    // 重置位置相關的進度，因為新文件的章節結構可能不同
+    if (book.progress) {
+      book.progress.chapterIndex = 0;
+      book.progress.elementIndex = 0;
+      book.progress.scrollTop = 0;
+      book.progress.ttsActiveSentenceIndex = 0;
+      book.progress.ttsChapterIndex = 0;
+      book.progress.activeSentenceIndex = 0;
+      book.progress.currentPageIndex = 0;
+      book.progress.pdfPage = 1;
+      book.progress.comicImageIndex = 0;
+      book.progress.percent = 0;
+    }
 
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readwrite');

@@ -461,6 +461,17 @@ export class TTSEngine {
     this.sentences = [];
     this.currentIndex = 0;
     
+    // 清理舊的音訊快取 blob URLs，防止章節切換時內存累積
+    if (this.audioCache.size > 0) {
+      this.audioCache.forEach(cached => {
+        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(cached.blobUrl);
+        }
+      });
+      this.audioCache.clear();
+      this.fetchingIndices.clear();
+    }
+    
     let sentenceId = 0;
 
     // 找出所有與當前章節共享相同 cleanHref 的子章節及其 hash 對照，以便為每句話分配精確的 chapterIndex
@@ -1639,6 +1650,7 @@ export class TTSEngine {
         const activeIdx = groupStartIndex + currentIdxInGroup;
         if (activeIdx !== this.currentIndex) {
           this.currentIndex = activeIdx;
+          this.currentlyPlayingIndex = activeIdx; // 同步更新實際播放索引，確保暫停時能保存正確位置
           const currentSentence = this.sentences[activeIdx];
           
           if (currentSentence) {
@@ -1880,6 +1892,7 @@ export class TTSEngine {
     utterance.onstart = () => {
       if (!this.isPlaying) return;
       this.currentIndex = index;
+      this.currentlyPlayingIndex = index; // 同步更新實際播放索引
       
       // 跨章節無縫過渡檢測
       const doNativeHighlight = () => {
@@ -2326,10 +2339,11 @@ export class TTSEngine {
   }
 
   stop() {
+    // 先保留 currentlyPlayingIndex 的值，以便 onStateChange 回調可以正確保存最後播放位置
+    const lastPlayingIndex = this.currentlyPlayingIndex;
     this.isPlaying = false;
     this.isPaused = false;
     this.playbackStarted = false;
-    this.currentlyPlayingIndex = -1;
     this._stopSilenceKeepAlive();
     this._stopPolling();
     
@@ -2371,7 +2385,11 @@ export class TTSEngine {
     
     this.prefetchedChapterIndex = null;
     this._clearHighlight();
+    // 在 onStateChange 回調前暫時恢復 currentlyPlayingIndex，讓保存邏輯能讀到正確位置
+    this.currentlyPlayingIndex = lastPlayingIndex;
     if (this.onStateChange) this.onStateChange();
+    // 回調完成後重置
+    this.currentlyPlayingIndex = -1;
   }
 
   next() {

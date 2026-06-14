@@ -1336,9 +1336,23 @@ function initUIEventBindings() {
       // 從進度保存的句子索引或當前頁面第一個可見句子開始朗讀
       let savedIndex = 0;
       if (currentBook && currentBook.progress) {
-        if (currentBook.progress.ttsChapterIndex === currentChapterIndex) {
+        const savedTTSChapter = currentBook.progress.ttsChapterIndex;
+        if (savedTTSChapter === currentChapterIndex) {
+          // 保存的 TTS 章節與當前章節一致，直接恢復
           savedIndex = currentBook.progress.ttsActiveSentenceIndex || 0;
-        } else if (currentBook.progress.ttsChapterIndex === undefined && currentBook.progress.activeSentenceIndex !== undefined && currentBook.progress.chapterIndex === currentChapterIndex) {
+        } else if (savedTTSChapter !== undefined && savedTTSChapter !== null) {
+          // 保存的 TTS 章節與當前視覺章節不同
+          // 檢查是否屬於相同 cleanHref 的子章節（多個子章節共享同一頁面內容）
+          const currentCleanHref = epubBookData && epubBookData.chapters[currentChapterIndex] ? epubBookData.chapters[currentChapterIndex].cleanHref : null;
+          const savedCleanHref = epubBookData && epubBookData.chapters[savedTTSChapter] ? epubBookData.chapters[savedTTSChapter].cleanHref : null;
+          if (currentCleanHref && savedCleanHref && currentCleanHref === savedCleanHref) {
+            // 同一個 HTML 文件的不同子章節，可以直接恢復（sentences 中包含所有子章節的句子）
+            savedIndex = currentBook.progress.ttsActiveSentenceIndex || 0;
+          } else {
+            // 完全不同的章節，使用當前可見位置
+            savedIndex = getFirstVisibleSentenceIndex();
+          }
+        } else if (currentBook.progress.activeSentenceIndex !== undefined && currentBook.progress.chapterIndex === currentChapterIndex) {
           savedIndex = currentBook.progress.activeSentenceIndex || 0;
         } else {
           savedIndex = getFirstVisibleSentenceIndex();
@@ -1415,6 +1429,23 @@ function initUIEventBindings() {
   }
 
   let lastVoicesCount = 0;
+  // TTS 進度心跳保存計時器：每 5 秒強制保存一次，防止 app 被殺時丟失進度
+  let ttsProgressHeartbeatTimer = null;
+  function startTTSProgressHeartbeat() {
+    stopTTSProgressHeartbeat();
+    ttsProgressHeartbeatTimer = setInterval(() => {
+      if (tts.isPlaying && !tts.isPaused && currentBook) {
+        saveTTSProgressImmediately();
+      }
+    }, 5000);
+  }
+  function stopTTSProgressHeartbeat() {
+    if (ttsProgressHeartbeatTimer) {
+      clearInterval(ttsProgressHeartbeatTimer);
+      ttsProgressHeartbeatTimer = null;
+    }
+  }
+  
   // TTS 引擎狀態同步
   tts.onStateChange = () => {
     updatePlayPauseButtonIcon();
@@ -1423,6 +1454,10 @@ function initUIEventBindings() {
     // 當暫停或停止時，立即強制保存最新朗讀位置，不使用防抖，確保在後台或藍牙暫停時進度被即時寫入資料庫
     if (!tts.isPlaying || tts.isPaused) {
       saveTTSProgressImmediately();
+      stopTTSProgressHeartbeat();
+    } else {
+      // 播放中：啟動心跳保存
+      startTTSProgressHeartbeat();
     }
     
     if (tts.voices.length !== lastVoicesCount) {
@@ -1461,15 +1496,23 @@ function initUIEventBindings() {
     updatePlayPauseButtonIcon();
 
     // 朗讀句子時更新進度 (儲存於獨立的 tts 進度欄位)
+    // 使用立即保存而非防抖，確保每一句的位置都能即時持久化，
+    // 防止後台被殺、藍牙暫停等場景下丟失最新進度
     if (currentBook) {
       const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
       const safeIdx = Math.max(0, Math.min(index, maxIdx));
       const sentence = tts.sentences[safeIdx];
-      const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : safeIdx) : safeIdx;
-      saveProgressDebounced({ 
-        ttsActiveSentenceIndex: relativeIdx,
-        ttsChapterIndex: currentChapterIndex
-      });
+      if (sentence) {
+        const relativeIdx = sentence.relativeIndex !== undefined ? sentence.relativeIndex : safeIdx;
+        const sentenceChapter = sentence.chapterIndex !== undefined ? sentence.chapterIndex : currentChapterIndex;
+        const progressUpdate = { 
+          ttsActiveSentenceIndex: relativeIdx,
+          ttsChapterIndex: sentenceChapter
+        };
+        // 立即寫入 IndexedDB（非防抖），確保 app 被殺時有最新位置
+        library.updateProgress(currentBook.id, progressUpdate).catch(e => console.warn('[TTS] Progress save failed:', e));
+        currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+      }
     }
 
     // 在翻頁模式下，如果朗讀的句子不在當前可見頁面上，則自動翻頁
@@ -1704,10 +1747,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.1.8';
+            versionDisplay.textContent = 'v3.1.9';
           }
         } else {
-          versionDisplay.textContent = 'v3.1.8';
+          versionDisplay.textContent = 'v3.1.9';
         }
       }
       aboutDialog.showModal();
@@ -1966,8 +2009,20 @@ function initUIEventBindings() {
     // 自動播放下一章節/頁面
     if (currentBook) {
       if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-        await loadChapter(currentChapterIndex + 1);
-        tts.play(0);
+        const nextIdx = currentChapterIndex + 1;
+        const currentChapter = epubBookData.chapters[currentChapterIndex];
+        const nextChapter = epubBookData.chapters[nextIdx];
+        // 如果下一章與當前章節共享相同 cleanHref（子章節），僅更新章節索引而不重載
+        if (currentChapter && nextChapter && currentChapter.cleanHref === nextChapter.cleanHref) {
+          currentChapterIndex = nextIdx;
+          tts.currentChapterIndex = nextIdx;
+          syncTOCActiveState(nextIdx);
+          updateReaderTitle();
+          tts.play(0);
+        } else {
+          await loadChapter(nextIdx);
+          tts.play(0);
+        }
         updatePlayPauseButtonIcon();
       }
     }
@@ -2703,10 +2758,11 @@ function startReadingTracker(bookId) {
     }
 
     const now = Date.now();
-    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying);
+    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying && document.visibilityState === 'visible');
 
     if (isUserActive) {
-      const elapsedSeconds = Math.round((now - lastReadingHeartbeat) / 1000);
+      // 限制每次 tick 最多計入 15 秒，防止主線程阻塞後一次性累計過多時間
+      const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
         try {
           await library.addReadingDuration(bookId, elapsedSeconds);
@@ -2729,9 +2785,9 @@ function stopReadingTracker() {
 async function saveReadingTime() {
   if (currentBook) {
     const now = Date.now();
-    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying);
+    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying && document.visibilityState === 'visible');
     if (isUserActive) {
-      const elapsedSeconds = Math.round((now - lastReadingHeartbeat) / 1000);
+      const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
         try {
           await library.addReadingDuration(currentBook.id, elapsedSeconds);
@@ -3516,9 +3572,17 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     if (targetSentenceIndex !== null) {
       targetSentenceIdx = targetSentenceIndex;
     } else if (restoreProgress && currentBook && currentBook.progress) {
-      if (currentBook.progress.ttsChapterIndex === finalIdx) {
+      const savedTTSChapter = currentBook.progress.ttsChapterIndex;
+      if (savedTTSChapter === finalIdx) {
         targetSentenceIdx = currentBook.progress.ttsActiveSentenceIndex || 0;
-      } else if (currentBook.progress.ttsChapterIndex === undefined && currentBook.progress.chapterIndex === finalIdx) {
+      } else if (savedTTSChapter !== undefined && savedTTSChapter !== null) {
+        // 檢查是否為相同 cleanHref 的子章節
+        const finalCleanHref = epubBookData && epubBookData.chapters[finalIdx] ? epubBookData.chapters[finalIdx].cleanHref : null;
+        const savedCleanHref = epubBookData && epubBookData.chapters[savedTTSChapter] ? epubBookData.chapters[savedTTSChapter].cleanHref : null;
+        if (finalCleanHref && savedCleanHref && finalCleanHref === savedCleanHref) {
+          targetSentenceIdx = currentBook.progress.ttsActiveSentenceIndex || 0;
+        }
+      } else if (savedTTSChapter === undefined && currentBook.progress.chapterIndex === finalIdx) {
         targetSentenceIdx = currentBook.progress.activeSentenceIndex || 0;
       }
     }
@@ -4519,41 +4583,49 @@ let saveTimeout = null;
 function saveProgressDebounced(update) {
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(async () => {
-    if (currentBook) {
-      await library.updateProgress(currentBook.id, update);
-      // 更新內存狀態
-      currentBook.progress = { ...currentBook.progress, ...update };
+    try {
+      if (currentBook) {
+        await library.updateProgress(currentBook.id, update);
+        // 更新內存狀態
+        currentBook.progress = { ...currentBook.progress, ...update };
+      }
+    } catch (e) {
+      console.warn('[Progress] Debounced save failed:', e);
     }
   }, 1000);
 }
 
 // 立即保存 TTS 進度（無防抖，安全過渡校驗）
+// 優先使用 currentlyPlayingIndex（實際正在播放的句子），而非 currentIndex（指向下一句的指標）
 function saveTTSProgressImmediately() {
   if (currentBook) {
     let targetChapter = currentChapterIndex;
-    let targetSentence = tts.currentIndex;
+    // 優先使用「正在播放」的索引，避免 currentIndex 已指向下一句導致保存錯誤位置
+    let targetSentence = tts.currentlyPlayingIndex >= 0 ? tts.currentlyPlayingIndex : tts.currentIndex;
     const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
     
-    if (targetSentence >= tts.sentences.length && tts.sentences.length > 0) {
-      if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-        targetChapter = currentChapterIndex + 1;
-        targetSentence = 0;
-      } else {
-        targetSentence = maxIdx;
-      }
+    if (tts.sentences.length === 0) return; // 沒有句子時不保存，避免覆蓋有效進度
+    
+    if (targetSentence >= tts.sentences.length) {
+      // 溢位：代表當前章節已播完，保存最後一句的位置（而非嘗試跳到下一章）
+      targetSentence = maxIdx;
     } else {
       targetSentence = Math.max(0, Math.min(targetSentence, maxIdx));
     }
     
     const sentence = tts.sentences[targetSentence];
-    const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : targetSentence) : targetSentence;
+    if (!sentence) return; // 防禦性檢查
+    
+    const relativeIdx = sentence.relativeIndex !== undefined ? sentence.relativeIndex : targetSentence;
+    // 使用句子自身的 chapterIndex（精確到子章節），避免 currentChapterIndex 與實際播放位置不一致
+    const sentenceChapter = sentence.chapterIndex !== undefined ? sentence.chapterIndex : targetChapter;
     
     const progressUpdate = {
       ttsActiveSentenceIndex: relativeIdx,
-      ttsChapterIndex: targetChapter
+      ttsChapterIndex: sentenceChapter
     };
     
-    library.updateProgress(currentBook.id, progressUpdate);
+    library.updateProgress(currentBook.id, progressUpdate).catch(e => console.warn('[TTS] Immediate save failed:', e));
     currentBook.progress = { ...currentBook.progress, ...progressUpdate };
   }
 }
@@ -4561,6 +4633,9 @@ function saveTTSProgressImmediately() {
 // 頁面關閉時的強制立即保存
 async function forceSaveCurrentProgress() {
   if (currentBook && !isSavingProgress) {
+    // 取消待執行的防抖保存，防止之後觸發時用舊數據覆蓋本次強制保存
+    if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+    
     isSavingProgress = true;
     const update = {};
     
@@ -4573,26 +4648,25 @@ async function forceSaveCurrentProgress() {
       update.elementIndex = getTopVisibleElementIndex();
       update.scrollTop = window.scrollY;
       
-      let targetChapter = tts.currentChapterIndex;
-      let targetSentence = tts.currentIndex;
+      // 優先使用「正在播放」的索引，避免 currentIndex 已指向下一句
+      let targetSentence = tts.currentlyPlayingIndex >= 0 ? tts.currentlyPlayingIndex : tts.currentIndex;
       const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
       
-      if (targetSentence >= tts.sentences.length && tts.sentences.length > 0) {
-        if (epubBookData && targetChapter < epubBookData.chapters.length - 1) {
-          targetChapter = targetChapter + 1;
-          targetSentence = 0;
-        } else {
+      if (tts.sentences.length > 0) {
+        if (targetSentence >= tts.sentences.length) {
           targetSentence = maxIdx;
+        } else {
+          targetSentence = Math.max(0, Math.min(targetSentence, maxIdx));
         }
-      } else {
-        targetSentence = Math.max(0, Math.min(targetSentence, maxIdx));
+        
+        const sentence = tts.sentences[targetSentence];
+        if (sentence) {
+          const relativeIdx = sentence.relativeIndex !== undefined ? sentence.relativeIndex : targetSentence;
+          const sentenceChapter = sentence.chapterIndex !== undefined ? sentence.chapterIndex : currentChapterIndex;
+          update.ttsActiveSentenceIndex = relativeIdx;
+          update.ttsChapterIndex = sentenceChapter;
+        }
       }
-      
-      const sentence = tts.sentences[targetSentence];
-      const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : targetSentence) : targetSentence;
-      
-      update.ttsActiveSentenceIndex = relativeIdx;
-      update.ttsChapterIndex = targetChapter;
       
       if (document.body.classList.contains('layout-paginated')) {
         update.currentPageIndex = currentPageIndex;
