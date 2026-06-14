@@ -240,55 +240,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Android 返回鍵統一處理函數
+  // 返回 true 表示已由前端處理，返回 false 表示需要退出 app
   function handleAndroidBack() {
     // 優先關閉浮動面板/對話框
     const aboutDialog = document.getElementById('about-dialog');
-    if (aboutDialog && aboutDialog.open) { aboutDialog.close(); return; }
+    if (aboutDialog && aboutDialog.open) { aboutDialog.close(); return true; }
     const noteDialog = document.getElementById('note-dialog');
-    if (noteDialog && noteDialog.style.display !== 'none') { noteDialog.style.display = 'none'; return; }
+    if (noteDialog && noteDialog.style.display !== 'none') { noteDialog.style.display = 'none'; return true; }
     const sidebar = document.getElementById('reader-sidebar');
-    if (sidebar && sidebar.classList.contains('active')) { sidebar.classList.remove('active'); return; }
+    if (sidebar && sidebar.classList.contains('active')) { sidebar.classList.remove('active'); return true; }
     const aiPanel = document.getElementById('ai-panel');
-    if (aiPanel && aiPanel.style.display !== 'none') { aiPanel.style.display = 'none'; return; }
+    if (aiPanel && aiPanel.style.display !== 'none') { aiPanel.style.display = 'none'; return true; }
     const settingsPanel = document.getElementById('settings-panel');
-    if (settingsPanel && settingsPanel.classList.contains('active')) { settingsPanel.classList.remove('active'); return; }
+    if (settingsPanel && settingsPanel.classList.contains('active')) { settingsPanel.classList.remove('active'); return true; }
     const ttsPanel = document.getElementById('tts-panel');
-    if (ttsPanel && ttsPanel.classList.contains('active')) { ttsPanel.classList.remove('active'); return; }
+    if (ttsPanel && ttsPanel.classList.contains('active')) { ttsPanel.classList.remove('active'); return true; }
     // 拖拽 overlay
     const dragOverlay = document.getElementById('drag-overlay');
-    if (dragOverlay && dragOverlay.style.display !== 'none' && dragOverlay.style.display !== '') { dragOverlay.style.display = 'none'; return; }
+    if (dragOverlay && dragOverlay.style.display !== 'none' && dragOverlay.style.display !== '') { dragOverlay.style.display = 'none'; return true; }
 
     // 如果在閱讀器中，返回書庫
     if (currentBook) {
       closeCurrentBook();
-      return;
+      return true;
     }
     
-    // 已在書庫頁面，允許退出 app
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-      window.Capacitor.Plugins.App.exitApp();
-    }
+    // 已在書庫頁面，返回 false 讓原生層退出 app
+    return false;
   }
-
-  // 0.05 Android 返回鍵處理：在閱讀器中返回書庫而非退出 app
-  // Capacitor WebView 在 Android 返回鍵觸發時，如果 history 可以 back 就觸發 history.back()
-  // 否則退出 app。我們通過 popstate 事件處理返回邏輯。
-  // 額外監聽 document 'backbutton' 事件（部分 Capacitor 版本支持）作為兜底
-  document.addEventListener('backbutton', (e) => {
-    e.preventDefault();
-    handleAndroidBack();
-  });
-  
-  // 也嘗試使用 Capacitor App 插件（如果可用）
-  if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-    try {
-      window.Capacitor.Plugins.App.addListener('backButton', (event) => {
-        handleAndroidBack();
-      });
-    } catch (e) {
-      // 插件不可用，依賴 popstate 處理
-    }
-  }
+  // 暴露給 Android 原生層調用（通過 evaluateJavascript）
+  window.__handleAndroidBack = handleAndroidBack;
 
   // 0.1 從 manifest.json 讀取版本號，統一管理版本顯示
   try {
