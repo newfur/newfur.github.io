@@ -1420,6 +1420,11 @@ function initUIEventBindings() {
     updatePlayPauseButtonIcon();
     updateEdgeFilterButtonVisibility();
     
+    // 當暫停或停止時，立即強制保存最新朗讀位置，不使用防抖，確保在後台或藍牙暫停時進度被即時寫入資料庫
+    if (!tts.isPlaying || tts.isPaused) {
+      saveTTSProgressImmediately();
+    }
+    
     if (tts.voices.length !== lastVoicesCount) {
       lastVoicesCount = tts.voices.length;
       initTTSPanelVoices(currentBook ? currentBook.file.name : '');
@@ -1457,8 +1462,10 @@ function initUIEventBindings() {
 
     // 朗讀句子時更新進度 (儲存於獨立的 tts 進度欄位)
     if (currentBook) {
-      const sentence = tts.sentences[index];
-      const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : index) : index;
+      const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
+      const safeIdx = Math.max(0, Math.min(index, maxIdx));
+      const sentence = tts.sentences[safeIdx];
+      const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : safeIdx) : safeIdx;
       saveProgressDebounced({ 
         ttsActiveSentenceIndex: relativeIdx,
         ttsChapterIndex: currentChapterIndex
@@ -1697,10 +1704,10 @@ function initUIEventBindings() {
           try {
             versionDisplay.textContent = 'v' + chrome.runtime.getManifest().version;
           } catch (e) {
-            versionDisplay.textContent = 'v3.1.4';
+            versionDisplay.textContent = 'v3.1.5';
           }
         } else {
-          versionDisplay.textContent = 'v3.1.4';
+          versionDisplay.textContent = 'v3.1.5';
         }
       }
       aboutDialog.showModal();
@@ -1940,6 +1947,7 @@ function initUIEventBindings() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       saveReadingTime();
+      saveTTSProgressImmediately();
       forceSaveCurrentProgress();
     } else {
       // 返回頁面時重置計時起點，防止將後台掛起時間計入
@@ -1949,6 +1957,7 @@ function initUIEventBindings() {
   });
   window.addEventListener('beforeunload', () => {
     saveReadingTime();
+    saveTTSProgressImmediately();
     forceSaveCurrentProgress();
   });
 
@@ -4518,6 +4527,37 @@ function saveProgressDebounced(update) {
   }, 1000);
 }
 
+// 立即保存 TTS 進度（無防抖，安全過渡校驗）
+function saveTTSProgressImmediately() {
+  if (currentBook) {
+    let targetChapter = currentChapterIndex;
+    let targetSentence = tts.currentIndex;
+    const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
+    
+    if (targetSentence >= tts.sentences.length && tts.sentences.length > 0) {
+      if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
+        targetChapter = currentChapterIndex + 1;
+        targetSentence = 0;
+      } else {
+        targetSentence = maxIdx;
+      }
+    } else {
+      targetSentence = Math.max(0, Math.min(targetSentence, maxIdx));
+    }
+    
+    const sentence = tts.sentences[targetSentence];
+    const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : targetSentence) : targetSentence;
+    
+    const progressUpdate = {
+      ttsActiveSentenceIndex: relativeIdx,
+      ttsChapterIndex: targetChapter
+    };
+    
+    library.updateProgress(currentBook.id, progressUpdate);
+    currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+  }
+}
+
 // 頁面關閉時的強制立即保存
 async function forceSaveCurrentProgress() {
   if (currentBook && !isSavingProgress) {
@@ -4532,8 +4572,28 @@ async function forceSaveCurrentProgress() {
       update.chapterIndex = currentChapterIndex;
       update.elementIndex = getTopVisibleElementIndex();
       update.scrollTop = window.scrollY;
-      update.ttsActiveSentenceIndex = tts.currentIndex;
-      update.ttsChapterIndex = tts.currentChapterIndex;
+      
+      let targetChapter = tts.currentChapterIndex;
+      let targetSentence = tts.currentIndex;
+      const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
+      
+      if (targetSentence >= tts.sentences.length && tts.sentences.length > 0) {
+        if (epubBookData && targetChapter < epubBookData.chapters.length - 1) {
+          targetChapter = targetChapter + 1;
+          targetSentence = 0;
+        } else {
+          targetSentence = maxIdx;
+        }
+      } else {
+        targetSentence = Math.max(0, Math.min(targetSentence, maxIdx));
+      }
+      
+      const sentence = tts.sentences[targetSentence];
+      const relativeIdx = sentence ? (sentence.relativeIndex !== undefined ? sentence.relativeIndex : targetSentence) : targetSentence;
+      
+      update.ttsActiveSentenceIndex = relativeIdx;
+      update.ttsChapterIndex = targetChapter;
+      
       if (document.body.classList.contains('layout-paginated')) {
         update.currentPageIndex = currentPageIndex;
       }
