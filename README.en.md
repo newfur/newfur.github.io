@@ -2,185 +2,71 @@
 
 Language: [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **English**
 
-[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web-blue)](javascript:;)
+[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android-blue)](javascript:;)
 [![License](https://img.shields.io/badge/license-ISC-green)](javascript:;)
 
-A modern, beautiful, powerful, and highly customizable e-book reader designed specifically for web pages and browsers. The project integrates multi-format parsers, high-quality Microsoft Edge cloud neural TTS (Text-to-Speech) reading, a local AI reading assistant, and exquisite reading statistics. It supports three deployment forms: **Browser Extension**, **Local Web Service (PWA)**, and **Single-File Offline Version**.
+A modern, beautiful, powerful, and highly customizable e-book reader designed specifically for web pages and mobile devices. The project integrates multi-format parsers, high-quality Microsoft Edge cloud neural TTS (Text-to-Speech), a local/cloud AI reading assistant, and exquisite reading statistics. It supports four deployment forms: **Browser Extension**, **Local Web Service (PWA)**, **Single-File Offline Version**, and **Android Native App**.
 
 ---
 
 ## 📖 Introduction
 
-This project aims to break the platform limitations of e-book reading, providing a premium, smooth cross-device reading and listening experience. Special deep adaptation and technical breakthroughs have been made for the **Microsoft Edge Neural Voice**, allowing you to enjoy audiobook reading comparable to human narration in any mainstream Chromium browser without installing complex clients.
+This project aims to break the platform limitations of e-book reading, providing a premium, smooth cross-device reading and listening experience. Special technical breakthroughs have been made for the **Microsoft Edge Neural Voice**, allowing you to enjoy audiobook reading comparable to human narration in any mainstream Chromium browser and mobile device without installing complex clients.
 
 ---
 
 ## ✨ Core Features
 
-### 1. 🗂️ Wide Range of E-Book Formats
-Built-in lightweight pure JS parsing engines support local parsing and rendering of various mainstream e-book and document formats:
-*   **EPUB**: Full support for chapter directories, style rendering, mixed text/image layout, and multi-level jumps.
-*   **AZW3 / MOBI**: Compatible with Kindle formats, supporting parsed embedded styles and images.
-*   **TXT / MD (Markdown)**: Intelligently extracts chapter titles and paragraphs to automatically build directory trees.
-*   **FB2**: Fully supports novel paragraphing and typesetting.
-*   **CBZ (Comic)**: Supports image-packaged comics in waterfall flow or single-page reading modes.
-
-### 2. 🎨 Ultimate Personalized Typography System
-*   **Layout Modes**: Supports **"simulate page turning"** (double-page paginated layout) and **"continuous scrolling"** modes.
-*   **Font Support**: Built-in LXGW WenKai, Noto Serif, OpenDyslexic (accessibility font), Fira Code (monospace for code), Inter (sans-serif), etc., supporting adjustments for size, line height, and letter spacing.
-*   **Visual Themes**: 8 preset themes including Light White, Deep Elegant Gray, Retro Paper, Minimalist Green, Pure Black (OLED), Cherry Blossom Pink, Ocean Blue, and Slate Gray.
-*   **Paper Textures**: Supports overlaying physical background textures like Classic Paper, Parchment, Linen, Aged Paper, and Washi.
-
-### 3. 🎙️ High-Fidelity Neural TTS Reading
-*   **Edge Official Voice Quality**: Connects directly to Microsoft Edge Neural Cloud TTS, supporting dozens of highly expressive natural voices such as Xiaoxiao, Yunxi, and Yunjian.
-*   **Dual-Player Buffer Mechanism**: Maintains two `Audio` playback objects internally, alternating preloading and decoding to completely eliminate pauses and blank delays between sentence transitions.
-*   **Anti-Background Suspension**: Specially designed silent keep-alive and audio keep-alive track configurations for iOS / Android mobile background running, supporting screen-locked/background continuous reading.
-*   **Smart Sentence Splitting**: Built-in sentence splitter intelligently recognizes decimal points (e.g., 3.14) and English abbreviations (e.g., Mr., J. F.) to prevent sentences from being crudely truncated, while automatically filtering superscripts and footnote symbols.
-
-### 4. 🤖 Local AI Reading Companion
-*   **No-Key Local AI**: Connects to the browser's experimental **Prompt API (Gemini Nano)** for completely local data processing.
-*   **Three Core AI Capabilities**: Supports **one-click word definition**, **selected paragraph/chapter summarization**, and **streamed offline translation**.
-*   **Custom AI & Local LLM**: Supports cloud APIs (OpenAI, DeepSeek) and locally deployed services (Ollama, LM Studio).
-
-### 5. 📊 In-Depth Reading Statistics
-*   **Global Overview**: Statistics on total reading time, days read, and cumulative books read.
-*   **Single Book Analysis**: Shows reading details and daily average reading duration for a single book.
-*   **Time Period Distribution**: Visualizes 24-hour reading distribution to gain insights into your reading habits.
-*   **Daily Details**: Calendar heatmap tracks daily reading time, recording your reading footprint.
-
-### 6. 📁 Library Management & Backup
-*   **Category Management**: Supports creating folders, renaming, batch moving, and batch deleting books.
-*   **Full Backup & Restore**: One-click export of a compressed/encrypted backup package (`.zip`) containing **all book files, reading progress, highlights, notes, and reading statistics**.
+1. **🗂️ Wide E-Book Formats Support**: Built-in lightweight pure JS parsing engines supporting **EPUB** (chapters, custom style, image alignment), **AZW3 / MOBI** (Kindle compatibility), **TXT / MD** (smart chaptering & markdown structure), **FB2**, and **CBZ** (comics waterfall/single page).
+2. **🎨 Personalization Typography**: Supports "simulate page turning" and "continuous scrolling"; built-in custom fonts (LXGW WenKai, Noto Serif, OpenDyslexic, etc.); 8 preset visual themes with paper texture overlays.
+3. **🎙️ High-Fidelity Neural TTS**: Direct connection to Edge cloud TTS with natural voices; dual-player preloading buffering to eliminate gap latency; iOS/Android mobile background/screen-locked keep-alive playback; smart splitting and footnote filtering.
+4. **🤖 Local/Cloud AI Assistant**: Seamlessly connects to browser built-in **Gemini Nano** API (100% local processing), as well as OpenAI, DeepSeek, Google Gemini API, SiliconFlow, and local Ollama/LM Studio. Supports one-click word translation/definition, chapter summary, and streaming offline translator.
+5. **📊 Deep Reading Statistics**: Tracking of total reading time, days read, daily logs, hourly distribution charts, and a calendar heatmap.
+6. **📁 Library Management & Backups**: Book category folder structure, batch moving/deletion; one-click export of a compressed backup zip (`.zip`) containing all books, progress, highlights, notes, and history logs.
+7. **📱 Mobile Platform Support**: Built using Ionic Capacitor, supporting compiled native Android APK package with adaptive app system icons.
 
 ---
 
-## 🔄 Recent Updates & Optimizations (v3.0.0)
+## 🔄 Version History & Logs
 
-*   **Fixed reading time double-counting after library backup & restore**:
-    - Refactored the reading stats merge in `importBook()`: for the same calendar day (`readingDays`) or the same hour (`hourlyDist`), the merge now takes the **maximum** of the two values instead of naively adding them together, preventing the same reading session from being counted twice when restoring a backup from the same device.
-    - `totalTime` is now **recalculated** by summing the merged `readingDays` entries rather than adding the two stored totals, guaranteeing the aggregate is always consistent with the per-day breakdown and cannot be artificially inflated.
+### 🚀 v3.1.x (Latest)
+* **High-Res App Icons (v3.1.8)**: Redesigned with AI and cropped high-resolution system icons for all platforms (no numbers, clean vector aesthetics). Added native round and adaptive foreground/background icon layers for Android.
+* **TTS Progress Saving (v3.1.5)**: Fixed progress saving issue in background/lock screen due to browser timer throttle. Implemented immediate database sync on pause, visibility change (background), and window closing. Corrected chapter overflow edge cases.
+* **Tuning Highlights (v3.1.4)**: Sync offset fine-tuning and startup performance optimizations.
 
----
+### 📱 v3.0.0 (Native Mobile Support)
+* **Android Native Wrapper**: Introduced Capacitor wrapper, enabling seamless compilation into a native Android App.
+* **Statistics Bug Fix**: Solved the issue where restoring a backup duplicate-counted reading time on overlapping hours/days.
 
-## 🔄 Historical Updates (v2.2.8)
-
-*   **Fixed misalignment of TTS highlighting caused by sentence count mismatch in asynchronous pre-fetching**:
-    - Refactored `_extractSentencesFromHtml()` to traverse the parsed DOM document tree using the exact same inline grouping algorithm as `prepareContainer()`, merging text nodes across formatting elements (spans, anchors, bold, italics, etc.).
-    - Ensured that the sentence array extracted during offline pre-fetching matches the rendered DOM structure 100% in count and content, completely resolving the highlight drift bug when reading chapters filled with short dialogs or heavily formatted sentences.
-
----
-
-## 🔄 Historical Updates (v2.2.7)
-
-*   **Fixed layout disruption and text crossing the central spine in paginated mode when the sidebar or AI panel is opened**:
-    - Dynamically calculated the remaining viewport width in `applyLayoutDimensions()` by subtracting the computed padding of `#reader-view` caused by sidebars, preventing column calculations from failing and falling back to a single column.
-    - Bound sidebar toggle and AI panel visibility events to trigger layout recalculation instantly, with a second verification after the 350ms CSS transition finishes.
-    - Updated paginated columns dynamically during the AI panel resize drag, allowing text and margins to stretch and scale smoothly.
-
----
-
-## 🔄 Historical Updates (v2.2.6)
-
-*   **Desktop scroll margin set to 2% by default**: The default margin width for desktop vertical scroll mode is now set to 2% to maximize screen space for text, while mobile devices and paginated layout modes retain a default of 5%.
-
----
-
-## 🔄 Historical Updates (v2.2.5)
-
-*   **Precision AI Context Extraction**:
-    - Overhauled the AI Reading Assistant's context extraction logic, supporting three-tier query classification (Global/Full-Book, Current Chapter, Current Page).
-    - Current page context extraction supports visible sentence/paragraph recognition in both double-page paginated layout and continuous scrolling viewports, avoiding context boundaries overflow or truncation.
-    - Current chapter extraction supports precise anchor boundaries detection when multiple sub-chapters share the same XHTML file, automatically stripping inline scripts/styles.
-*   **Mermaid Mindmaps Interaction & Display Optimization**:
-    - Restrained Mermaid DOM query and error blocks scanning to `#ai-content` and deferred rendering using a `MutationObserver` on `#ai-panel` until it is opened/visible, completely resolving the issue where mermaid syntax error blocks polluted the main reading page.
-    - Added zoom, pan, responsive auto-resizing, and double-click reset actions to the mindmap container.
-    - Resolved the issue where AI-generated mindmaps were not saved/persisted when exiting and re-entering a book or refreshing the page by persisting raw Mermaid source text to the database.
-*   **Layout Settings & Local Model Enhancements**:
-    - Set the default value of the "Column Count" layout setting to "Auto Adaptive".
-    - Improved local cross-origin (CORS) prompt and fallback tolerances when calling Ollama models in the standalone offline HTML version, allowing seamless connection to local LLMs.
-
----
-
-## 🔄 Historical Updates (v2.0.3)
-
-*   **AI Assistant Prompt Template Editing & Management**:
-    - Moved the prompt template configuration interface directly into the AI Reading Assistant panel, merging custom templates with default ones.
-    - Both default and custom prompt chips now support in-line hover/click edit and delete actions.
-    - The prompt suggestions container is expanded by default, appending a dashed "+" chip for adding new templates.
-    - Removed the duplicate plus sign prefix in the Add button text label.
-
-*   **Mobile Selection Menu AI Buttons Stacking & Labels**:
-    - Restructured the text selection popup HTML, grouping highlight styles, delete, note, and speak actions in a top row (icon-only to prevent squeeze).
-    - Wrapped the 4 AI actions (Summary, Explain, Translate, Ask) in a dedicated bottom row, enabling visible text labels on mobile screens with compact icons and paddings.
-*   **Fixed Desktop AI Buttons Visibility**:
-    - Ensured that both the main AI assistant header button and selection popover AI query buttons (Summary, Explain, Translate, Ask) remain permanently visible on desktop/standard browsers that do not natively support built-in AI (Gemini Nano), allowing users to use third-party custom providers.
-    - Added localized setup guidance/error prompts when using the default built-in AI in unsupported environments to guide users on selecting a custom provider (e.g. DeepSeek, OpenAI, Ollama).
-*   **Multi-Profile AI Configuration Support**:
-    - Support for saving multiple AI provider profiles, pre-populated with popular presets: OpenAI (Official), DeepSeek, Google Gemini API, SiliconFlow (DeepSeek), Ollama (Local), and LM Studio.
-    - Custom profiles can be created, deleted, and renamed.
-    - Legacy configurations automatically migrate to a custom profile named "Migrated Profile" to prevent credentials loss.
-    - Fixed empty profile name saves and placeholder updates.
-*   **Sidebar Styles & Font Hierarchy Optimization**:
-    - Forces sidebar buttons and section headers (Add Bookmark, Bookmarks, Notes & Highlights) to use stable system UI fonts to prevent book-internal CSS from polluting UI elements.
-    - Scaled sidebar typography (tabs 18px, buttons/headers 16px) to establish a clean visual hierarchy.
-*   **Desktop Layout Shift & Resizable Panel**:
-    - Adds smooth sidebar and AI panel desktop layout offsets to center book content in the remaining viewport.
-    - Supports draggable resizing of the AI panel with boundary constraints and width persistence.
-*   **Client-Side Book-Wide RAG Search Index**:
-    - Asynchronously builds a TF-IDF text search index of the entire book, providing relevant factual paragraphs to the AI prompt to prevent hallucinations.
-*   **Keyboard Navigation Focus Correction**:
-    - Bypasses page-turning shortcut handlers when pressing arrow keys or spacebar inside text input fields (`INPUT`, `TEXTAREA`, or `contenteditable` regions), fixing the bug where typing or moving the text cursor triggered page transitions.
-
----
-
-## 🔄 Historical Updates (v1.2.2)
-
-*   **Typesetting and Rendering Optimizations**:
-    - Standardized and regulated left/right margins across different formats (e.g., EPUB/AZW3) to resolve styling conflicts in certain books.
-    - Fixed page overflow for long chapter headings in multi-column paginated layouts.
-    - Resolved header vertical offset and clipping issues caused by book-specific CSS polluting `h2` elements.
-*   **Build & Repository Cleanups**:
-    - Configured Git rules to exclude temporary scripts, test files, and built zip bundles.
+### 🤖 v2.x.x (AI Assistant & RAG Search)
+* **Custom AI Providers**: Configurable profiles for OpenAI, DeepSeek, Gemini, SiliconFlow, Ollama, and LM Studio.
+* **Precision Context Extraction**: Precise context isolation at Global, Chapter, and visible Page level.
+* **Client-Side RAG Search Index**: Asynchronous TF-IDF indexing of imported books to inject relevant context snippets to AI prompts, reducing hallucinations.
+* **Mermaid Mindmaps**: Streamed generation of SVG mindmaps with pan, zoom, fit actions and database persistence.
 
 ---
 
 ## 🛠️ Architecture Design
 
-The project uses a pure client-driven architecture, saving all user data inside the browser's local **IndexedDB**. Depending on the environment, three distribution modes are implemented:
+The project uses a pure client-driven architecture, saving all user data inside the browser's local **IndexedDB**. Depending on the environment, four distribution modes are implemented:
 
 ```
-                              ┌────────────────────────┐
-                              │    Core Application    │
-                              │ (i18n, Parsers, Engine)│
-                              └───────────┬────────────┘
-                                          │
-                  ┌───────────────────────┼───────────────────────┐
-                  ▼                       ▼                       ▼
-       ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
-       │   Extension Mode    │ │   Web Server Mode   │ │  Standalone Offline  │
-       │ (Chrome/Edge MV3)   │ │ (Node.js + PWA App) │ │    (Single HTML)    │
-       └──────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────┘
-                  │                       │                       │
-         declarativeNetRequest        WebSockets API         IndexedDB + base64
-         Dynamically modifies         Proxies TTS traffic     Data URL bypasses Chrome
-         request headers to bypass    via Node.js server      local file:// security
-         Bing TTS CORS policies       to resolve CORS         restrictions
+                               ┌────────────────────────┐
+                               │    Core Application    │
+                               │ (i18n, Parsers, Engine)│
+                               └───────────┬────────────┘
+                                           │
+         ┌─────────────────────────┬───────┴─────────┬─────────────────────────┐
+         ▼                         ▼                 ▼                         ▼
+   ┌───────────┐             ┌───────────┐     ┌───────────┐             ┌───────────┐
+   │ Extension │             │Web Server │     │Standalone │             │Android App│
+   │ (MV3)     │             │(Node+PWA) │     │(SingleHTML│             │(Capacitor)│
+   └─────┬─────┘             └─────┬─────┘     └─────┬─────┘             └─────┬─────┘
+         │                         │                 │                         │
+ declarativeNetRequest         WebSockets      IndexedDB+base64         Capacitor Plugins
+ Modify request headers        Node server proxy Data URL bypasses       Native API / Filesystem
+ to bypass Bing CORS           TTS traffic       local file:// limits    Sandbox Local Storage
 ```
-
-### 1. Extension Mode (Chrome/Edge MV3)
-*   **Mechanism**: Adheres to the Chrome Extension Manifest V3 standard.
-*   **Key Advantage**: Leverages `chrome.declarativeNetRequest` to dynamically modify HTTP request headers, rewriting the connection Origin to the official Edge extension ID (`chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold`) to bypass CORS and authenticate with Edge Neural TTS.
-*   **Service Worker**: `service-worker.js` handles remote API proxying and chunk stream forwarding.
-
-### 2. Web Server Mode (Node.js + PWA)
-*   **Mechanism**: Runs a lightweight Node.js server using `server.js`.
-*   **Proxy Endpoint**: For standard browsers that do not support extensions, the server exposes `/api/voices` and a WebSocket proxy at `/api/tts` to relay speech traffic, bypassing CORS restrictions.
-*   **PWA Cache**: Incorporates `sw.js` and `manifest.webmanifest` to enable offline assets caching, allowing instant load times even without an active internet connection.
-
-### 3. Standalone Offline Mode (Single HTML)
-*   **Mechanism**: Compiles the entire application into a single, zero-dependency HTML file `reader_offline.html`.
-*   **Bundler**: The script `scratch/compile_offline.js` reads CSS, JS, libs (JSZip), and locale JSON files and injects them inline into `<script>` and `<style>` tags.
-*   **Chrome local file:// workaround**: Running in `file://` protocol normally triggers `ERR_REQUEST_RANGE_NOT_SATISFIABLE` in Chrome when playing audio blobs consecutively. The engine automatically converts audio blobs into Base64 Data URLs, solving offline reading issues.
 
 ---
 
@@ -188,74 +74,77 @@ The project uses a pure client-driven architecture, saving all user data inside 
 
 ### 📦 Method A: Install as a Browser Extension (Recommended)
 1. Download this repository.
-2. Open Chrome or Edge and navigate to **Extensions** (`chrome://extensions/` or `edge://extensions/`).
+2. Open Chrome or Edge and navigate to **Extensions** (`chrome://extensions/`).
 3. Toggle on **Developer Mode** (top-right).
 4. Click **Load unpacked** and select the root directory of the project.
-5. Click the extension icon in the toolbar to open the reader.
 
-### 🌐 Method B: Local Node.js Server
-1. Ensure Node.js is installed.
-2. Install dependencies:
+### 🌐 Method B: Local Node.js Web Server
+1. Install dependencies and start the developer server:
    ```bash
    npm install
-   ```
-3. Start the server:
-   ```bash
    npm start
    ```
-4. Access `http://localhost:3000` in your browser.
+2. Open your browser to `http://localhost:3000`.
 
-### 💾 Method C: Build Offline Single-File HTML
+### 💾 Method C: Build Standalone Offline HTML
 1. Run the compilation script:
    ```bash
    npm run build:offline
    ```
-2. Two files will be output to the root directory: `reader_offline.html` and `index.html`.
-3. Double-click `reader_offline.html` to run locally and offline. You can drag and drop e-books directly onto the bookshelf.
-4. Upload `index.html` directly to static hosting sites (GitHub Pages, Vercel, Cloudflare Pages).
+2. Two files will be output to the root directory: `reader_offline.html` and `index.html` (double-click `reader_offline.html` to run offline immediately).
+3. `index.html` can be uploaded directly to static hosting sites (Vercel, GitHub Pages, etc.).
+
+### 📱 Method D: Build Android Native App
+1. Ensure Android SDK and Gradle are installed.
+2. Build mobile assets and sync:
+   ```bash
+   npm run build:mobile
+   ```
+3. Open the `android/` directory in Android Studio to build the APK, or run gradle assembly tasks.
 
 ---
 
 ## ⚠️ Limitations & Disclaimers
 
-1.  **DRM Encryption**: Cannot parse DRM-encrypted files (such as Adobe DRM or protected Kindle files). Books must be decrypted before import.
-2.  **Local Gemini Nano Hardware Requirements**:
-    *   Requires Chrome/Edge 128+ Dev/Canary or enabled flags.
-    *   Enable `#optimization-guide-on-device-model` and `#prompt-api-for-gemini-nano` in `chrome://flags`.
-    *   Your device must have sufficient memory/GPU resources to download and run the model (~1.5GB - 3GB).
-3.  **TTS Server Availability**: Direct connection to Bing TTS endpoints requires active internet connection. If Microsoft changes its authentication protocol, direct connections might temporarily fail until updated. If fully offline, the engine falls back to standard Web Speech API.
-4.  **IndexedDB Storage Caps**: All books are saved locally. Clearing browser data or running out of disk space might cause the browser to reclaim space, wiping the database. **Regularly back up your library using the export feature**.
-5.  **Mobile Background Suspension**: Despite keep-alive strategies, iOS and some aggressive Android battery savers might suspend the background browser tab. Keeping the screen slightly dimmed or using a wrapper app helps mitigate this.
+1. **DRM Encryption**: Cannot parse DRM-encrypted files (such as Adobe DRM or protected Kindle files). Books must be decrypted before import.
+2. **Local AI Hardware Requirements**: Built-in Gemini Nano requires Chrome/Edge 128+ Dev/Canary with correct flags enabled. Sufficient memory and GPU are required to run the local model.
+3. **TTS Server Availability**: Direct connection to Bing TTS endpoints requires active internet connection. If Microsoft changes its authentication protocol, direct connections might temporarily fail until updated. If fully offline, the engine falls back to standard Web Speech API.
+4. **IndexedDB Storage Security**: Data is saved locally in IndexedDB. Clearing browser data or running out of disk space might cause the browser to reclaim space. Regular backups are strongly recommended.
 
 ---
 
 ## 📂 Project Structure
 
 ```
-mysterious-oppenheimer/
-├── _locales/              # Localized string dictionaries (EN, ZH-TW, ZH-CN)
+Edge-Reader/
+├── _locales/              # i18n language bundles (EN, ZH-TW, ZH-CN)
+├── android/               # Android native project (Capacitor)
 ├── icons/                 # Extension & PWA icons
-├── reader/                # Core reader assets
+├── reader/                # Core reader source code
 │   ├── css/
 │   ├── libs/              # Third-party dependency (JSZip)
 │   ├── parsers/           # Book parsers (EPUB, AZW3, TXT, CBZ)
-│   ├── ai.js              # Built-in Prompt API & Custom LLM wrapper
+│   ├── ai.js              # Prompt API & Custom LLM wrapper
 │   ├── i18n.js            # Translator modules
 │   ├── library.js         # Library layout & IndexedDB interactions
 │   ├── reader.css         # Visual styles and themes
 │   ├── reader.html        # Main reader viewport DOM
 │   ├── reader.js          # Navigation, settings, and event loops
 │   └── tts.js             # High-quality Edge TTS wrapper
-├── scratch/               # Local developer scripts
-│   └── compile_offline.js # Single-file bundler script
+├── scratch/               # Developer script utility directory
+│   ├── build_dist.js      # Web asset bundler script for mobile/PWA
+│   └── compile_offline.js # Single-file offline bundler script
+├── www/                   # Compiled PWA/mobile web assets output directory
+├── capacitor.config.json  # Capacitor configuration
 ├── manifest.json          # Chrome Extension V3 manifest config
 ├── manifest.webmanifest   # PWA manifest
 ├── sw.js                  # PWA service worker caching
 ├── service-worker.js      # Extension background script (Origin headers modifier)
 ├── server.js              # Local Node.js server and API proxy
-├── index.html             # Built web reader page (identcal to reader_offline.html)
+├── index.html             # Built web reader page (identical to reader_offline.html)
+├── reader_offline.html    # Standalone offline page (double-click to use)
 ├── vercel.json            # Vercel static routing config
-└── README.md              # Project documentation (Simplified Chinese)
+└── README.md              # Project documentation
 ```
 
 ---
