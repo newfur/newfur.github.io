@@ -503,25 +503,25 @@
     "message": "关于阅读器"
   },
   "about_dialog_desc": {
-    "message": "一款专为网页和浏览器设计的高级电子书阅读器。支持多种电子书格式以及微软高质量云端神经网络语音朗读（TTS）。"
+    "message": "一款面向网页、浏览器及移动设备的现代化电子书阅读器。集成多格式解析、高品质 Edge 神经网络语音朗读、智能 AI 伴侣与深度阅读统计。"
   },
   "about_features_title": {
     "message": "核心特性:"
   },
   "about_feature_1": {
-    "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等"
+    "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等多格式本地解析"
   },
   "about_feature_2": {
-    "message": "朗读引擎：微软云端神经网络高品质语音 (TTS)，支持双播放器无缝切换"
+    "message": "语音朗读：直连 Edge 高品质云端神经网络 TTS，双播放器无缝预加载，支持移动端后台静音保活"
   },
   "about_feature_3": {
-    "message": "个性排版：支持连续滚动与翻页布局，内置多种阅读字体与纸张纹理底纹"
+    "message": "极致排版：滚动与翻页布局，内置思源宋体、霞鹜文楷等字体，支持多款纸张质感底纹"
   },
   "about_feature_4": {
-    "message": "AI 助手：对接浏览器内置 Gemini Nano API，提供本地划词翻译、释义和摘要"
+    "message": "AI 伴侣：支持划词释义、摘要与离线翻译，适配本地 Gemini Nano 及云端/本地大语言模型"
   },
   "about_feature_5": {
-    "message": "数据分析：深度阅读时长统计、频次分布与每日阅读明细历史"
+    "message": "数据与多端：包含阅读时间段分布与日历热力图，支持全量备份，适配插件、PWA 及安卓原生 App"
   },
   "about_usage_title": {
     "message": "基本用法:"

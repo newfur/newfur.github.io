@@ -503,25 +503,25 @@
     "message": "About Reader"
   },
   "about_dialog_desc": {
-    "message": "A premium web-based reader for EPUB, AZW3, MOBI, TXT, MD, FB2, and CBZ with high-quality Edge TTS Read Aloud support."
+    "message": "A modern e-book reader designed for web, browsers, and mobile devices, featuring multi-format parsing, high-quality Edge neural TTS, smart AI companions, and deep reading statistics."
   },
   "about_features_title": {
     "message": "Core Features:"
   },
   "about_feature_1": {
-    "message": "Format support: EPUB, AZW3, MOBI, TXT, MD, FB2, CBZ"
+    "message": "Format support: EPUB, AZW3, MOBI, TXT, MD, FB2, CBZ, etc."
   },
   "about_feature_2": {
-    "message": "Speech Engine: High-quality Microsoft Edge online Neural TTS with dual-buffer seamless audio"
+    "message": "Speech Engine: High-quality Microsoft Edge Neural TTS with gapless dual-player preloading and background keep-alive"
   },
   "about_feature_3": {
-    "message": "Typography: Continuous scroll & paginated layouts, custom fonts and texture overlays"
+    "message": "Typography: Continuous scroll & paginated layouts, custom fonts (LXGW, Noto Serif) and texture overlays"
   },
   "about_feature_4": {
-    "message": "AI Assistant: Integrates Chrome local Gemini Nano API for summaries, explanations, and translate"
+    "message": "AI Assistant: Seamlessly connects to local Gemini Nano and cloud/local LLMs (OpenAI, DeepSeek, Ollama) for text analysis"
   },
   "about_feature_5": {
-    "message": "Data Statistics: Deep analytics tracking duration, frequency, and reading history logs"
+    "message": "Data & Platforms: Analytics time distribution, calendar heatmap, zip backups; runs as Extension, PWA, or native Android App"
   },
   "about_usage_title": {
     "message": "Basic Usage:"
