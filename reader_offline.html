@@ -22581,18 +22581,29 @@ async function initAISettings() {
       // 8. 载入 AI 提示词模板
       if (res.aiPromptsTemplates && Array.isArray(res.aiPromptsTemplates)) {
         aiPromptsTemplatesList = res.aiPromptsTemplates;
-        // 同步更新默認提示詞：用最新的 locale 值覆蓋 isDefault=true 的項目
+        // 同步更新默认提示词：用最新的 locale 值覆盖对应的项目
         const latestDefaults = getAISuggestions();
         let needsSync = false;
         for (const defaultItem of latestDefaults) {
-          const stored = aiPromptsTemplatesList.find(t => t.isDefault && t.key === defaultItem.key);
+          const stored = aiPromptsTemplatesList.find(t => t.key === defaultItem.key);
           if (stored) {
-            // 更新 label 和 prompt 為最新翻譯值
-            if (stored.prompt !== defaultItem.prompt || stored.label !== defaultItem.label) {
+            // 更新 label、prompt 并确保 isDefault 为 true
+            if (stored.prompt !== defaultItem.prompt || stored.label !== defaultItem.label || !stored.isDefault) {
               stored.prompt = defaultItem.prompt;
               stored.label = defaultItem.label;
+              stored.isDefault = true;
               needsSync = true;
             }
+          } else {
+            // 如果历史数据中缺失该默认提示词（如升级新增），则追加
+            aiPromptsTemplatesList.push({
+              key: defaultItem.key,
+              icon: defaultItem.icon,
+              label: defaultItem.label,
+              prompt: defaultItem.prompt,
+              isDefault: true
+            });
+            needsSync = true;
           }
         }
         if (needsSync) {
