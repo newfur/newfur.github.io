@@ -29,7 +29,14 @@ This project aims to break the platform limitations of e-book reading, providing
 
 ## 🔄 Version History & Logs
 
-### 🚀 v3.1.x (Latest)
+### 🚀 v3.2.x (Latest)
+* **Android Native UX & Unified Versioning (v3.2.0)**:
+  - Intercepted Android native back button (`onBackPressed` in MainActivity), allowing open panels/dialogs to close first, and returning to the bookshelf on back presses (instead of exiting the app immediately).
+  - Unified version reading by loading version numbers dynamically from `manifest.json`, eliminating hardcoded strings.
+  - Automatically navigates to the exact last read sentence on TTS playback when opening a book, rather than just scrolling visually.
+  - Improved mobile drag-to-import overlay, preventing flickering under multi-touch inputs.
+
+### 🎨 v3.1.x (High-Res Icons & TTS Saving)
 * **High-Res App Icons (v3.1.8)**: Redesigned with AI and cropped high-resolution system icons for all platforms (no numbers, clean vector aesthetics). Added native round and adaptive foreground/background icon layers for Android.
 * **TTS Progress Saving (v3.1.5)**: Fixed progress saving issue in background/lock screen due to browser timer throttle. Implemented immediate database sync on pause, visibility change (background), and window closing. Corrected chapter overflow edge cases.
 * **Tuning Highlights (v3.1.4)**: Sync offset fine-tuning and startup performance optimizations.
