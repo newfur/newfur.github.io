@@ -3,6 +3,20 @@ const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
 
+// Automatically sync version from manifest.json to package.json
+try {
+  const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
+  const packageJsonPath = path.join(rootDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  if (manifest.version && packageJson.version !== manifest.version) {
+    packageJson.version = manifest.version;
+    fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf8');
+    console.log(`[Version Sync] Automatically updated package.json version to ${manifest.version}`);
+  }
+} catch (e) {
+  console.warn('[Version Sync] Failed to sync version to package.json:', e);
+}
+
 console.log('Starting offline compilation...');
 
 // 1. Read locales messages.json
