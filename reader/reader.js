@@ -10451,8 +10451,11 @@ function performBookSearch(query) {
       `;
 
       li.addEventListener('click', async () => {
-        await loadChapter(res.chapterIndex, false, false, false, true, null, null, null, null, null, true);
-        highlightAndScrollToSearchQuery(cleanQuery, res.matchIndex);
+        const isSameChapter = currentChapterIndex === res.chapterIndex;
+        if (!isSameChapter) {
+          await loadChapter(res.chapterIndex, false, false, false, true, null, null, null, null, null, true);
+        }
+        highlightAndScrollToSearchQuery(cleanQuery, res.matchIndex, isSameChapter);
       });
 
       fragment.appendChild(li);
@@ -10466,7 +10469,7 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function highlightAndScrollToSearchQuery(query, targetMatchIndex = 0) {
+function highlightAndScrollToSearchQuery(query, targetMatchIndex = 0, smoothScroll = true) {
   clearSearchHighlights();
 
   if (!query) return;
@@ -10508,7 +10511,7 @@ function highlightAndScrollToSearchQuery(query, targetMatchIndex = 0) {
   setTimeout(() => {
     const target = contentEl.querySelector('#search-target-match') || contentEl.querySelector('.search-highlight');
     if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.scrollIntoView({ behavior: smoothScroll ? 'smooth' : 'auto', block: 'center' });
     }
   }, 150);
 }
