@@ -8223,6 +8223,7 @@ function getCurrentPageText() {
       // 連續滾動模式：提取視口內可見的句子
       const viewportTop = 0;
       const viewportBottom = window.innerHeight;
+      
       const visibleTexts = [];
       for (const sentence of tts.sentences) {
         if (!sentence.element) continue;
@@ -8745,6 +8746,11 @@ async function sendCustomAIQuery() {
 
     if (summaryContext) {
       systemPrompt += `\n[Chapter-by-Chapter Summaries (Factual Foundation)]\n${summaryContext}\n[End of Chapter Summaries]\n\nThe summaries above describe each chapter of the book in detail. Use them as the factual foundation to answer the user's request (e.g., generating a mindmap, summary, outline, or plot structure). Ensure your response matches these chapter descriptions exactly.\n`;
+    }
+
+    // 如果存在全書深度分析報告，將其作為宏觀全局知識注入
+    if (currentBook && currentBook.bookSummary) {
+      systemPrompt += `\n[Book Master Overview (Deep Analysis Report)]\n${currentBook.bookSummary}\n[End of Master Overview]\n\nThe above is the comprehensive deep analysis report of the entire book. Use it as the supreme factual foundation to answer macroscopic, thematic, or general questions about the book. Ensure your answer aligns with this structural and thematic overview.\n`;
     }
 
     // 發送後清除針對性選取上下文並隱藏提示欄
