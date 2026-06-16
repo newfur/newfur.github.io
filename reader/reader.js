@@ -70,6 +70,7 @@ let currentChapterIndex = 0;
 let prefetchedChapterCache = null; // 緩存背景預載的下一章 HTML 內容，避免重複讀取數據庫
 let epubBookData = null; // 存儲 EPUB 解析後的對象
 let bookChunksCache = []; // 緩存整本書的文本切片以供 RAG 檢索
+let chapterTextsCache = []; // 緩存整本書的章節純文本以供精確搜尋
 let isIndexingBook = false; // 標記是否正在背景建立書本索引
 let currentSearchQuery = ''; // 儲存當前全書搜尋關鍵字
 let comicParserInstance = null; // 漫畫解析實例
@@ -3107,6 +3108,7 @@ async function closeCurrentBook(triggerBack = true) {
   if (nList) nList.innerHTML = '';
 
   bookChunksCache = [];
+  chapterTextsCache = [];
   isIndexingBook = false;
   updateHeaderActiveStates();
   
@@ -8960,11 +8962,13 @@ function chunkText(text, size = 800, overlap = 150) {
 async function buildBookSearchIndex() {
   if (!epubBookData || !epubBookData.chapters) {
     bookChunksCache = [];
+    chapterTextsCache = [];
     return;
   }
   
   isIndexingBook = true;
   bookChunksCache = [];
+  chapterTextsCache = [];
   console.log('Building client-side RAG search index for the entire book...');
   
   try {
@@ -8980,6 +8984,30 @@ async function buildBookSearchIndex() {
         const doc = tempParser.parseFromString(html, 'text/html');
         // 清理無效標籤
         doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+
+        // 為了精確搜尋提取包含正確空格的文本
+        function extractText(node) {
+          if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const isBlock = /^(P|DIV|BR|H[1-6]|LI|BLOCKQUOTE|TR|TD|TH|SECTION|ARTICLE|ASIDE|NAV)$/i.test(node.tagName);
+            let text = isBlock ? ' ' : '';
+            for (const child of node.childNodes) {
+              text += extractText(child);
+            }
+            return text + (isBlock ? ' ' : '');
+          }
+          return '';
+        }
+        
+        const rawText = extractText(doc.body);
+        const chapterPlainText = rawText.replace(/\s+/g, ' ').trim();
+        
+        chapterTextsCache.push({
+          chapterTitle: ch.title,
+          chapterIndex: i,
+          text: chapterPlainText
+        });
+        
         const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
         
         if (plainText.length > 50) {
@@ -10355,11 +10383,11 @@ function performBookSearch(query) {
     return;
   }
 
-  if (!bookChunksCache || bookChunksCache.length === 0) {
+  if (!chapterTextsCache || chapterTextsCache.length === 0) {
     if (indexingEl) indexingEl.style.display = 'block';
     buildBookSearchIndex().then(() => {
       if (indexingEl) indexingEl.style.display = 'none';
-      if (!bookChunksCache || bookChunksCache.length === 0) {
+      if (!chapterTextsCache || chapterTextsCache.length === 0) {
         listEl.innerHTML = `<li style="text-align: center; padding: 20px; color: var(--text-muted); font-family: var(--font-sans);">${getMsg('search_no_results') || 'No matches found.'}</li>`;
         return;
       }
@@ -10373,16 +10401,21 @@ function performBookSearch(query) {
   setTimeout(() => {
     const results = [];
     const lowerQuery = cleanQuery.toLowerCase();
+    const queryRegex = new RegExp(escapeRegExp(cleanQuery), 'gi');
 
-    for (const chunk of bookChunksCache) {
-      const index = chunk.text.toLowerCase().indexOf(lowerQuery);
-      if (index !== -1) {
+    for (const chapter of chapterTextsCache) {
+      let match;
+      let matchIndexInChapter = 0;
+      queryRegex.lastIndex = 0;
+      while ((match = queryRegex.exec(chapter.text)) !== null) {
         results.push({
-          chapterTitle: chunk.chapterTitle || 'Chapter',
-          chapterIndex: chunk.chapterIndex,
-          text: chunk.text,
-          index: index
+          chapterTitle: chapter.chapterTitle || 'Chapter',
+          chapterIndex: chapter.chapterIndex,
+          text: chapter.text,
+          index: match.index,
+          matchIndex: matchIndexInChapter
         });
+        matchIndexInChapter++;
       }
     }
 
@@ -10419,7 +10452,7 @@ function performBookSearch(query) {
 
       li.addEventListener('click', async () => {
         await loadChapter(res.chapterIndex, false, false, false, true, null, null, null, null, null, true);
-        highlightAndScrollToSearchQuery(cleanQuery);
+        highlightAndScrollToSearchQuery(cleanQuery, res.matchIndex);
       });
 
       fragment.appendChild(li);
@@ -10433,7 +10466,7 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function highlightAndScrollToSearchQuery(query) {
+function highlightAndScrollToSearchQuery(query, targetMatchIndex = 0) {
   clearSearchHighlights();
 
   if (!query) return;
@@ -10444,6 +10477,7 @@ function highlightAndScrollToSearchQuery(query) {
   if (!contentEl) return;
 
   const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
+  let matchCount = 0;
 
   const highlightTextNodes = (node) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -10451,7 +10485,13 @@ function highlightAndScrollToSearchQuery(query) {
       if (regex.test(text)) {
         const span = document.createElement('span');
         span.className = 'search-highlight-wrapper';
-        span.innerHTML = text.replace(regex, match => `<mark class="search-highlight">${match}</mark>`);
+        span.innerHTML = text.replace(regex, match => {
+          const isTarget = matchCount === targetMatchIndex;
+          const markClass = isTarget ? 'search-highlight target-match' : 'search-highlight';
+          const idAttr = isTarget ? 'id="search-target-match"' : '';
+          matchCount++;
+          return `<mark class="${markClass}" ${idAttr}>${match}</mark>`;
+        });
         node.parentNode.replaceChild(span, node);
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -10466,9 +10506,9 @@ function highlightAndScrollToSearchQuery(query) {
   highlightTextNodes(contentEl);
 
   setTimeout(() => {
-    const firstHighlight = contentEl.querySelector('.search-highlight');
-    if (firstHighlight) {
-      firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const target = contentEl.querySelector('#search-target-match') || contentEl.querySelector('.search-highlight');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, 150);
 }
