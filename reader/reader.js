@@ -10455,7 +10455,7 @@ function performBookSearch(query) {
         if (!isSameChapter) {
           await loadChapter(res.chapterIndex, false, false, false, true, null, null, null, null, null, true);
         }
-        highlightAndScrollToSearchQuery(cleanQuery, res.matchIndex, isSameChapter);
+        highlightAndScrollToSearchQuery(cleanQuery, res.matchIndex, true);
       });
 
       fragment.appendChild(li);
