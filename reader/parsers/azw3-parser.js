@@ -518,7 +518,8 @@ export class Azw3Parser {
         const content = originalFullHtml.substring(start, end);
         const contentWithOffsets = this._injectOffsets(content, start);
         const cleanedContent = this._cleanChapterHtml(contentWithOffsets);
-        const finalContent = applyReplacements(cleanedContent);
+        const cleanedFragments = this._cleanMalformedTagFragments(cleanedContent);
+        const finalContent = applyReplacements(cleanedFragments);
         
         if (!this._isChapterEmpty(finalContent)) {
           let skeleton = 0;
@@ -544,7 +545,8 @@ export class Azw3Parser {
       chapters = [];
       splitChapters.forEach(ch => {
         const rawContent = ch.getContent();
-        const finalContent = applyReplacements(rawContent);
+        const cleanedContent = this._cleanMalformedTagFragments(rawContent);
+        const finalContent = applyReplacements(cleanedContent);
         if (!this._isChapterEmpty(finalContent)) {
           chapters.push({
             title: ch.title,
@@ -1040,6 +1042,65 @@ export class Azw3Parser {
       .replace(/<\/body>/gi, '')
       .replace(/<title\b[^>]*>.*?<\/title>/gi, '')
       .replace(/<meta\b[^>]*>/gi, '');
+  }
+
+  _cleanMalformedTagFragments(html) {
+    if (!html) return '';
+    let cleaned = html.trim();
+
+    // Whitelist of common tag names, their suffixes (length >= 2), and closing versions
+    const knownTags = new Set([
+      // Standard tag names
+      "html", "body", "head", "title", "link", "meta", "style", "div", "p", "span", "a", "img", "image",
+      "svg", "path", "g", "br", "hr", "em", "strong", "i", "b", "u", "h1", "h2", "h3", "h4", "h5", "h6",
+      "blockquote", "pre", "code", "table", "tr", "td", "th", "tbody", "thead", "tfoot", "col", "colgroup",
+      "ul", "ol", "li",
+      // Common suffixes (length >= 2)
+      "tml", "ml", "ody", "dy", "ead", "ad", "itle", "tle", "le", "ink", "nk", "eta", "ta", "tyle", "yle",
+      "iv", "pan", "an", "mage", "age", "ge", "trong", "rong", "ong", "ng", "lockquote", "ockquote", 
+      "ckquote", "kquote", "quote", "uote", "ote", "te", "able", "ble", "foot", "oot", "ot", "col", "row"
+    ]);
+
+    // 1. Fix leading broken tag (e.g. "body>", "p>", "class=\"test\">")
+    const firstOpen = cleaned.indexOf('<');
+    const firstClose = cleaned.indexOf('>');
+    if (firstClose > -1 && (firstOpen === -1 || firstClose < firstOpen)) {
+      if (firstClose < 100) {
+        const fragment = cleaned.substring(0, firstClose).trim().toLowerCase();
+        
+        // Normalize fragment: remove trailing slash for self-closing tags like "br /" or "br/"
+        // and leading slash for closing tags like "/div"
+        let normFrag = fragment;
+        if (normFrag.endsWith('/')) {
+          normFrag = normFrag.substring(0, normFrag.length - 1).trim();
+        } else if (normFrag.startsWith('/')) {
+          normFrag = normFrag.substring(1).trim();
+        }
+
+        const isTag = (
+          fragment === '' ||
+          fragment.indexOf('=') > -1 ||
+          knownTags.has(normFrag)
+        );
+        if (isTag) {
+          cleaned = cleaned.substring(firstClose + 1).trim();
+        }
+      }
+    }
+
+    // 2. Fix trailing broken tag (e.g. "</", "<div")
+    const lastOpen = cleaned.lastIndexOf('<');
+    const lastClose = cleaned.lastIndexOf('>');
+    if (lastOpen > -1 && lastOpen > lastClose) {
+      const fragment = cleaned.substring(lastOpen);
+      // A valid tag fragment must start with '<' followed by a tag name letter, '/', '!', or '?'
+      // Or be exactly '<'
+      if (fragment === '<' || (fragment.length > 1 && /^[a-zA-Z/!?]/.test(fragment.charAt(1)))) {
+        cleaned = cleaned.substring(0, lastOpen).trim();
+      }
+    }
+
+    return cleaned;
   }
 
   _isChapterEmpty(html) {
