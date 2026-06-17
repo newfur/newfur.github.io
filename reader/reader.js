@@ -2833,7 +2833,7 @@ function startReadingTracker(bookId) {
     }
 
     const now = Date.now();
-    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying && document.visibilityState === 'visible');
+    const isUserActive = isReadingTimeActive(now);
 
     if (isUserActive) {
       // 限制每次 tick 最多計入 15 秒，防止主線程阻塞後一次性累計過多時間
@@ -2860,7 +2860,7 @@ function stopReadingTracker() {
 async function saveReadingTime() {
   if (currentBook) {
     const now = Date.now();
-    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying && document.visibilityState === 'visible');
+    const isUserActive = isReadingTimeActive(now);
     if (isUserActive) {
       const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
@@ -2873,6 +2873,12 @@ async function saveReadingTime() {
     }
     lastReadingHeartbeat = now;
   }
+}
+
+function isReadingTimeActive(now = Date.now()) {
+  const isVisibleReading = document.visibilityState === 'visible' && (now - lastUserActivityTime < IDLE_TIMEOUT_MS);
+  const isTTSReading = tts && tts.isPlaying;
+  return isVisibleReading || isTTSReading;
 }
 
 
