@@ -1455,15 +1455,7 @@ function initUIEventBindings() {
     }
   });
 
-  document.getElementById('tts-sync-offset-slider').addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value);
-    document.getElementById('tts-sync-offset-val').textContent = `${val >= 0 ? '+' : ''}${val.toFixed(2)}s`;
-    tts.setSyncOffset(val);
-    chrome.storage.local.set({ ttsSyncOffset: val });
-    if (currentBook) {
-      saveProgressDebounced({ ttsSyncOffset: val });
-    }
-  });
+
 
   document.getElementById('tts-voice-select').addEventListener('change', (e) => {
     const voiceName = e.target.value;
@@ -5244,18 +5236,7 @@ function initThemeAndStyles() {
     document.getElementById('tts-speed-slider').value = savedRate;
     document.getElementById('tts-speed-val').textContent = `${savedRate.toFixed(1)}x`;
 
-    // 朗讀高亮同步微調
-    let savedSyncOffset = getPref('ttsSyncOffset', 0.0);
-    tts.setSyncOffset(savedSyncOffset);
-    const syncSlider = document.getElementById('tts-sync-offset-slider');
-    if (syncSlider) {
-      syncSlider.value = savedSyncOffset;
-    }
-    const syncValText = document.getElementById('tts-sync-offset-val');
-    if (syncValText) {
-      syncValText.textContent = `${savedSyncOffset >= 0 ? '+' : ''}${savedSyncOffset.toFixed(2)}s`;
-    }
-    
+
     // 朗讀高亮樣式
     const highlightStyle = res.ttsHighlightStyle || 'highlight-style-yellow';
     tts.highlightStyle = highlightStyle;

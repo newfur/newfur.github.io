@@ -565,8 +565,10 @@ button, select, input {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.book-card:hover .book-delete-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .book-card:hover .book-delete-btn {
+    opacity: 1;
+  }
 }
 
 .book-delete-btn:hover {
@@ -596,8 +598,10 @@ button, select, input {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.book-card:hover .book-export-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .book-card:hover .book-export-btn {
+    opacity: 1;
+  }
 }
 
 .book-export-btn:hover {
@@ -3347,8 +3351,10 @@ html.transition-none .page-texture-slide {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.book-card:hover .book-stats-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .book-card:hover .book-stats-btn {
+    opacity: 1;
+  }
 }
 
 .book-stats-btn:hover {
@@ -3625,9 +3631,11 @@ html.transition-none .page-texture-slide {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.folder-card:hover .folder-rename-btn,
-.folder-card:hover .folder-delete-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .folder-card:hover .folder-rename-btn,
+  .folder-card:hover .folder-delete-btn {
+    opacity: 1;
+  }
 }
 
 .folder-card .folder-rename-btn:hover,
@@ -5446,13 +5454,6 @@ mark.search-highlight {
           <span id="tts-speed-val">1.0x</span>
         </div>
         <input type="range" id="tts-speed-slider" min="0.5" max="3.0" step="0.1" value="1.0">
-      </div>
-      <div class="setting-item">
-        <div class="slider-header">
-          <span data-i18n="tts_sync_offset">Highlight Sync</span>
-          <span id="tts-sync-offset-val">0.00s</span>
-        </div>
-        <input type="range" id="tts-sync-offset-slider" min="-0.5" max="0.5" step="0.05" value="0.0">
       </div>
     </div>
 
@@ -14774,7 +14775,6 @@ class TTSEngine {
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
     this.isAutoScrolling = false; // 標記是否為 TTS 自動滾動
-    this.syncOffset = 0.0; // 高亮同步時間補償偏移量（秒）
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
@@ -14890,15 +14890,15 @@ class TTSEngine {
       if (audio.ontimeupdate) {
         audio.ontimeupdate();
       }
-      this.pollingTimer = requestAnimationFrame(check);
     };
     
-    this.pollingTimer = requestAnimationFrame(check);
+    // 使用 setInterval 替代 requestAnimationFrame 以支援 iOS 背景執行與定時校準
+    this.pollingTimer = setInterval(check, 100);
   }
 
   _stopPolling() {
     if (this.pollingTimer) {
-      cancelAnimationFrame(this.pollingTimer);
+      clearInterval(this.pollingTimer);
       this.pollingTimer = null;
     }
   }
@@ -16311,7 +16311,7 @@ class TTSEngine {
         const boundaries = getBoundaries();
         if (!boundaries) return;
         const rawTime = audio.currentTime;
-        const currentTime = rawTime + this.syncOffset;
+        const currentTime = rawTime;
         
         // 尋找當前播放時間對應分組內的哪一句
         let currentIdxInGroup = idxInGroup;
@@ -17090,9 +17090,7 @@ class TTSEngine {
     });
   }
 
-  setSyncOffset(offset) {
-    this.syncOffset = parseFloat(offset) || 0.0;
-  }
+
 
   _prewarmNextPlayer() {
     if (!this.isPlaying) return;
@@ -19186,15 +19184,7 @@ function initUIEventBindings() {
     }
   });
 
-  document.getElementById('tts-sync-offset-slider').addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value);
-    document.getElementById('tts-sync-offset-val').textContent = `${val >= 0 ? '+' : ''}${val.toFixed(2)}s`;
-    tts.setSyncOffset(val);
-    chrome.storage.local.set({ ttsSyncOffset: val });
-    if (currentBook) {
-      saveProgressDebounced({ ttsSyncOffset: val });
-    }
-  });
+
 
   document.getElementById('tts-voice-select').addEventListener('change', (e) => {
     const voiceName = e.target.value;
@@ -20564,7 +20554,7 @@ function startReadingTracker(bookId) {
     }
 
     const now = Date.now();
-    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying && document.visibilityState === 'visible');
+    const isUserActive = isReadingTimeActive(now);
 
     if (isUserActive) {
       // 限制每次 tick 最多計入 15 秒，防止主線程阻塞後一次性累計過多時間
@@ -20591,7 +20581,7 @@ function stopReadingTracker() {
 async function saveReadingTime() {
   if (currentBook) {
     const now = Date.now();
-    const isUserActive = (now - lastUserActivityTime < IDLE_TIMEOUT_MS) || (tts && tts.isPlaying && document.visibilityState === 'visible');
+    const isUserActive = isReadingTimeActive(now);
     if (isUserActive) {
       const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
@@ -20604,6 +20594,12 @@ async function saveReadingTime() {
     }
     lastReadingHeartbeat = now;
   }
+}
+
+function isReadingTimeActive(now = Date.now()) {
+  const isVisibleReading = document.visibilityState === 'visible' && (now - lastUserActivityTime < IDLE_TIMEOUT_MS);
+  const isTTSReading = tts && tts.isPlaying;
+  return isVisibleReading || isTTSReading;
 }
 
 
@@ -22969,18 +22965,7 @@ function initThemeAndStyles() {
     document.getElementById('tts-speed-slider').value = savedRate;
     document.getElementById('tts-speed-val').textContent = `${savedRate.toFixed(1)}x`;
 
-    // 朗讀高亮同步微調
-    let savedSyncOffset = getPref('ttsSyncOffset', 0.0);
-    tts.setSyncOffset(savedSyncOffset);
-    const syncSlider = document.getElementById('tts-sync-offset-slider');
-    if (syncSlider) {
-      syncSlider.value = savedSyncOffset;
-    }
-    const syncValText = document.getElementById('tts-sync-offset-val');
-    if (syncValText) {
-      syncValText.textContent = `${savedSyncOffset >= 0 ? '+' : ''}${savedSyncOffset.toFixed(2)}s`;
-    }
-    
+
     // 朗讀高亮樣式
     const highlightStyle = res.ttsHighlightStyle || 'highlight-style-yellow';
     tts.highlightStyle = highlightStyle;

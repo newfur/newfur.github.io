@@ -99,7 +99,6 @@ export class TTSEngine {
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
     this.isAutoScrolling = false; // 標記是否為 TTS 自動滾動
-    this.syncOffset = 0.0; // 高亮同步時間補償偏移量（秒）
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
@@ -215,15 +214,15 @@ export class TTSEngine {
       if (audio.ontimeupdate) {
         audio.ontimeupdate();
       }
-      this.pollingTimer = requestAnimationFrame(check);
     };
     
-    this.pollingTimer = requestAnimationFrame(check);
+    // 使用 setInterval 替代 requestAnimationFrame 以支援 iOS 背景執行與定時校準
+    this.pollingTimer = setInterval(check, 100);
   }
 
   _stopPolling() {
     if (this.pollingTimer) {
-      cancelAnimationFrame(this.pollingTimer);
+      clearInterval(this.pollingTimer);
       this.pollingTimer = null;
     }
   }
@@ -1636,7 +1635,7 @@ export class TTSEngine {
         const boundaries = getBoundaries();
         if (!boundaries) return;
         const rawTime = audio.currentTime;
-        const currentTime = rawTime + this.syncOffset;
+        const currentTime = rawTime;
         
         // 尋找當前播放時間對應分組內的哪一句
         let currentIdxInGroup = idxInGroup;
@@ -2415,9 +2414,7 @@ export class TTSEngine {
     });
   }
 
-  setSyncOffset(offset) {
-    this.syncOffset = parseFloat(offset) || 0.0;
-  }
+
 
   _prewarmNextPlayer() {
     if (!this.isPlaying) return;

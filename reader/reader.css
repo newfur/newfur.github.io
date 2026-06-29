@@ -557,8 +557,10 @@ button, select, input {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.book-card:hover .book-delete-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .book-card:hover .book-delete-btn {
+    opacity: 1;
+  }
 }
 
 .book-delete-btn:hover {
@@ -588,8 +590,10 @@ button, select, input {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.book-card:hover .book-export-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .book-card:hover .book-export-btn {
+    opacity: 1;
+  }
 }
 
 .book-export-btn:hover {
@@ -3339,8 +3343,10 @@ html.transition-none .page-texture-slide {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.book-card:hover .book-stats-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .book-card:hover .book-stats-btn {
+    opacity: 1;
+  }
 }
 
 .book-stats-btn:hover {
@@ -3617,9 +3623,11 @@ html.transition-none .page-texture-slide {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.folder-card:hover .folder-rename-btn,
-.folder-card:hover .folder-delete-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .folder-card:hover .folder-rename-btn,
+  .folder-card:hover .folder-delete-btn {
+    opacity: 1;
+  }
 }
 
 .folder-card .folder-rename-btn:hover,
