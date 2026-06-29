@@ -433,9 +433,11 @@ button, select, input {
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-.book-card:hover {
-  transform: translateY(-8px) scale(1.02);
-  box-shadow: 0 12px 24px var(--glass-shadow);
+@media (hover: hover) {
+  .book-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 12px 24px var(--glass-shadow);
+  }
 }
 
 .book-cover-container {
@@ -456,8 +458,10 @@ button, select, input {
   transition: transform 0.3s ease;
 }
 
-.book-card:hover .book-cover {
-  transform: scale(1.05);
+@media (hover: hover) {
+  .book-card:hover .book-cover {
+    transform: scale(1.05);
+  }
 }
 
 /* 占位封面 */
@@ -3508,10 +3512,12 @@ html.transition-none .page-texture-slide {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
 }
 
-.folder-card:hover {
-  transform: translateY(-8px) scale(1.02);
-  box-shadow: 0 12px 24px var(--glass-shadow);
-  border-color: var(--primary-color);
+@media (hover: hover) {
+  .folder-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 12px 24px var(--glass-shadow);
+    border-color: var(--primary-color);
+  }
 }
 
 .folder-card.drag-over {
@@ -3544,8 +3550,10 @@ html.transition-none .page-texture-slide {
   transition: transform 0.2s ease;
 }
 
-.folder-card:hover .folder-icon-large {
-  transform: scale(1.08);
+@media (hover: hover) {
+  .folder-card:hover .folder-icon-large {
+    transform: scale(1.08);
+  }
 }
 
 .folder-count-badge {
@@ -3885,8 +3893,10 @@ html.transition-none .page-texture-slide {
   transition: transform 0.3s ease;
 }
 
-.folder-card:hover .folder-covers-grid {
-  transform: scale(1.05);
+@media (hover: hover) {
+  .folder-card:hover .folder-covers-grid {
+    transform: scale(1.05);
+  }
 }
 
 .folder-cover-item {
@@ -8742,7 +8752,8 @@ MindElixir.DARK_THEME = ue;
 </script>
 
   <!-- 引入主應用邏輯 (作為 ES Module 載入) -->
-  <script>const _offlineLocales = {
+  <script>window.__APP_VERSION__ = "3.2.8";
+const _offlineLocales = {
   "en": {
     "extension_name": {
       "message": "Raconteur"

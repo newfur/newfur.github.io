@@ -39,7 +39,9 @@ const modules = [
   'reader/reader.js'
 ];
 
-let combinedJs = `const _offlineLocales = ${JSON.stringify(locales, null, 2)};\n\n`;
+let manifestVersion = "unknown";
+try { manifestVersion = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8')).version; } catch(e) {}
+let combinedJs = `window.__APP_VERSION__ = "${manifestVersion}";\nconst _offlineLocales = ${JSON.stringify(locales, null, 2)};\n\n`;
 
 for (const modPath of modules) {
   const fullPath = path.join(rootDir, modPath);
