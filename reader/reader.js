@@ -273,23 +273,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.__handleAndroidBack = handleAndroidBack;
 
   // 0.1 從 manifest.json 讀取版本號，統一管理版本顯示
-  try {
-    // 嘗試多個路徑：在網頁版中 manifest.json 在上層目錄，在 Capacitor app 中可能在同層
-    let manifestData = null;
-    for (const path of ['../manifest.json', './manifest.json', 'manifest.json']) {
-      try {
-        const resp = await fetch(path);
-        if (resp.ok) {
-          manifestData = await resp.json();
-          break;
-        }
-      } catch (e) { /* 嘗試下一個路徑 */ }
+  if (!window.__APP_VERSION__) {
+    try {
+      // 嘗試多個路徑：在網頁版中 manifest.json 在上層目錄，在 Capacitor app 中可能在同層
+      let manifestData = null;
+      for (const path of ['../manifest.json', './manifest.json', 'manifest.json']) {
+        try {
+          const resp = await fetch(path);
+          if (resp.ok) {
+            manifestData = await resp.json();
+            break;
+          }
+        } catch (e) { /* 嘗試下一個路徑 */ }
+      }
+      if (manifestData && manifestData.version) {
+        window.__APP_VERSION__ = manifestData.version;
+      }
+    } catch (e) {
+      console.warn('[Version] Failed to load manifest.json:', e);
     }
-    if (manifestData && manifestData.version) {
-      window.__APP_VERSION__ = manifestData.version;
-    }
-  } catch (e) {
-    console.warn('[Version] Failed to load manifest.json:', e);
   }
 
   // 0.5 立即套用封面大小設定以防佈局抖動
@@ -5316,7 +5318,9 @@ function setTheme(theme, writeToStorage = true) {
 
 function setFontFamily(fontFamily, writeToStorage = true) {
   const container = document.getElementById('reader-container');
-  container.className = `reader-container ${fontFamily}`;
+  const classesToRemove = Array.from(container.classList).filter(c => c.startsWith('font-'));
+  classesToRemove.forEach(c => container.classList.remove(c));
+  container.classList.add(fontFamily);
   
   // 同步更新側邊欄的字型類別，使其與閱讀介面字型保持一致
   const sidebar = document.getElementById('reader-sidebar');
