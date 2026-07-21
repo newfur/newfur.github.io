@@ -1587,7 +1587,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .toc-item {
   display: flex !important;
   align-items: center !important;
-  padding: 8px 16px !important;
+  padding: 8px 16px;
   margin: 0 !important;
   border-radius: 8px;
   font-size: 18px !important;
@@ -12649,25 +12649,23 @@ class EpubParser {
   }
   // 解析 TOC 目錄
   async _parseTOC() {
-    // EPUB 3 使用 navigation document (通常在 manifest 中屬性含有 'nav')
-    // EPUB 2 使用 ncx 檔案 (通常是 media-type = 'application/x-dtbncx+xml')
     let navItem = Object.values(this.manifest).find(item => item.properties && item.properties.includes('nav'));
-    if (!navItem) {
-      // 容錯降級：尋找 id 或 href 中含有 nav 或 toc 關鍵字的文件
+    let ncxItem = Object.values(this.manifest).find(item => item.mediaType === 'application/x-dtbncx+xml');
+
+    // 如果沒有標準的 nav 且沒有標準的 ncx，才進行容錯降級尋找可能的文件
+    if (!navItem && !ncxItem) {
       navItem = Object.entries(this.manifest).find(([id, item]) => 
         id.toLowerCase().includes('nav') || 
         id.toLowerCase().includes('toc') || 
         (item.href && (item.href.toLowerCase().includes('nav.xhtml') || item.href.toLowerCase().includes('toc.xhtml') || item.href.toLowerCase().includes('nav.html') || item.href.toLowerCase().includes('toc.html')))
       )?.[1];
-    }
 
-    let ncxItem = Object.values(this.manifest).find(item => item.mediaType === 'application/x-dtbncx+xml');
-    if (!ncxItem) {
-      // 容錯降級：尋找 id 或 href 含有 ncx 關鍵字的文件
-      ncxItem = Object.entries(this.manifest).find(([id, item]) => 
-        id.toLowerCase().includes('ncx') || 
-        (item.href && item.href.toLowerCase().includes('.ncx'))
-      )?.[1];
+      if (!navItem) {
+        ncxItem = Object.entries(this.manifest).find(([id, item]) => 
+          id.toLowerCase().includes('ncx') || 
+          (item.href && item.href.toLowerCase().includes('.ncx'))
+        )?.[1];
+      }
     }
 
     const tocList = [];
@@ -12716,25 +12714,38 @@ class EpubParser {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(ncxText, 'text/xml');
         
-        // 容錯：XML 區分大小寫，支持 navPoint 和 navpoint
-        let navPoints = xmlDoc.querySelectorAll('navPoint');
+        // 容錯：XML 區分大小寫，支持 navPoint 和 navpoint，並忽略命名空間
+        let navPoints = Array.from(xmlDoc.getElementsByTagNameNS('*', 'navPoint'));
         if (navPoints.length === 0) {
-          navPoints = xmlDoc.querySelectorAll('navpoint');
+          navPoints = Array.from(xmlDoc.getElementsByTagNameNS('*', 'navpoint'));
+        }
+        if (navPoints.length === 0) {
+          // 最後的退路，嘗試傳統方法
+          navPoints = Array.from(xmlDoc.querySelectorAll('navPoint, navpoint'));
         }
         
         navPoints.forEach(point => {
-          // 容錯：支持 navLabel 和 navlabel，以及直接取節點內容
-          let labelNode = point.querySelector('navLabel > text') || 
-                            point.querySelector('navlabel > text') || 
-                            point.querySelector('navLabel text') || 
-                            point.querySelector('navlabel text');
-          if (!labelNode) {
-            labelNode = point.querySelector('navLabel') || point.querySelector('navlabel');
+          // 容錯：提取標題與內容節點，忽略命名空間
+          const labels = Array.from(point.getElementsByTagNameNS('*', 'navLabel'));
+          const labelsLower = Array.from(point.getElementsByTagNameNS('*', 'navlabel'));
+          const allLabels = [...labels, ...labelsLower];
+          let title = '';
+          
+          if (allLabels.length > 0) {
+            // 取第一個 label（直接子級）的 text
+            const firstLabel = allLabels[0];
+            const texts = Array.from(firstLabel.getElementsByTagNameNS('*', 'text'));
+            if (texts.length > 0) {
+              title = texts[0].textContent.trim();
+            } else {
+              title = firstLabel.textContent.trim();
+            }
           }
           
-          const contentNode = point.querySelector('content');
-          if (labelNode && contentNode) {
-            const title = labelNode.textContent.trim();
+          const contents = Array.from(point.getElementsByTagNameNS('*', 'content'));
+          const contentNode = contents.length > 0 ? contents[0] : null;
+          
+          if (title && contentNode) {
             const src = contentNode.getAttribute('src');
             const baseDir = this._getDirectory(ncxItem.href);
             const resolvedHref = this._resolvePath(baseDir, src);
