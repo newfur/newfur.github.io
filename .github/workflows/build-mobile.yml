@@ -45,7 +45,7 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building version: ${VERSION}"
           # 同步版本號到 package.json
-          node -e "const f='./package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8')).version='${VERSION}';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          node -e "const f='./package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8'));p.version='${VERSION}';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
 
       # ===== Offline Single-File Build =====
       - name: Build Offline Single-File Reader
