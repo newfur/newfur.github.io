@@ -13,8 +13,13 @@ on:
         required: false
         default: false
         type: boolean
+      clean_runs:
+        description: 'Clean old Workflow Runs'
+        required: false
+        default: true
+        type: boolean
       max_age_days:
-        description: 'Artifacts: delete older than N days'
+        description: 'Artifacts & Runs: delete older than N days'
         required: false
         default: '7'
         type: string
@@ -22,6 +27,11 @@ on:
         description: 'Releases: keep latest N releases'
         required: false
         default: '3'
+        type: string
+      keep_runs:
+        description: 'Runs: keep latest N runs per workflow'
+        required: false
+        default: '5'
         type: string
 
 permissions:
@@ -76,7 +86,6 @@ jobs:
               { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
             );
 
-            // Sort by created_at descending (newest first)
             releases.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
             const toDelete = releases.slice(keepCount);
@@ -85,14 +94,12 @@ jobs:
             for (const release of toDelete) {
               console.log(`Deleting release: ${release.name || release.tag_name} (created ${release.created_at})`);
 
-              // Delete the release
               await github.rest.repos.deleteRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 release_id: release.id
               });
 
-              // Delete the associated tag
               try {
                 await github.rest.git.deleteRef({
                   owner: context.repo.owner,
@@ -108,3 +115,58 @@ jobs:
             }
 
             console.log(`\n✅ Releases: kept latest ${keepCount}, deleted ${deleted} old releases`);
+
+      - name: Clean Old Workflow Runs
+        if: ${{ inputs.clean_runs }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const maxAgeDays = parseInt('${{ inputs.max_age_days }}') || 7;
+            const keepRuns = parseInt('${{ inputs.keep_runs }}') || 5;
+            const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+            // Get all workflows in the repo
+            const workflows = await github.paginate(
+              github.rest.actions.listRepoWorkflows,
+              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
+            );
+
+            let totalDeleted = 0;
+
+            for (const workflow of workflows) {
+              console.log(`\n📋 Processing workflow: ${workflow.name} (id: ${workflow.id})`);
+
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                { owner: context.repo.owner, repo: context.repo.repo, workflow_id: workflow.id, per_page: 100 }
+              );
+
+              // Sort newest first
+              runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+              let kept = 0;
+              for (const run of runs) {
+                // Always keep the latest N runs regardless of age
+                if (kept < keepRuns) {
+                  kept++;
+                  continue;
+                }
+
+                const createdAt = new Date(run.created_at).getTime();
+                if (createdAt < cutoff) {
+                  console.log(`  Deleting run #${run.run_number} (${run.status}, created ${run.created_at})`);
+                  try {
+                    await github.rest.actions.deleteWorkflowRun({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      run_id: run.id
+                    });
+                    totalDeleted++;
+                  } catch (e) {
+                    console.log(`  ⚠️ Failed to delete run #${run.run_number}: ${e.message}`);
+                  }
+                }
+              }
+            }
+
+            console.log(`\n✅ Workflow Runs: deleted ${totalDeleted} old runs (kept latest ${keepRuns} per workflow)`);
