@@ -2,6 +2,7 @@ node_modules/
 package-lock.json
 .DS_Store
 *.zip
+*.epub
 scratch/*
 !scratch/compile_offline.js
 !scratch/build_dist.js
