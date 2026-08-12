@@ -1,23 +1,40 @@
-name: Clean Artifacts
+name: Clean Artifacts & Releases
 
 on:
   workflow_dispatch:
     inputs:
+      clean_artifacts:
+        description: 'Clean old Artifacts'
+        required: false
+        default: true
+        type: boolean
+      clean_releases:
+        description: 'Clean old Releases (keeps latest N)'
+        required: false
+        default: false
+        type: boolean
       max_age_days:
-        description: 'Delete artifacts older than N days'
+        description: 'Artifacts: delete older than N days'
         required: false
         default: '7'
         type: string
+      keep_releases:
+        description: 'Releases: keep latest N releases'
+        required: false
+        default: '3'
+        type: string
 
 permissions:
+  contents: write
   actions: write
 
 jobs:
   cleanup:
-    name: Delete Old Artifacts
+    name: Cleanup
     runs-on: ubuntu-latest
     steps:
-      - name: Clean Up Artifacts
+      - name: Clean Old Artifacts
+        if: ${{ inputs.clean_artifacts }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -45,4 +62,49 @@ jobs:
               }
             }
 
-            console.log(`\n✅ Done! Deleted ${deleted} artifacts, freed ~${(freedBytes / 1024 / 1024).toFixed(1)} MB`);
+            console.log(`\n✅ Artifacts: deleted ${deleted}, freed ~${(freedBytes / 1024 / 1024).toFixed(1)} MB`);
+
+      - name: Clean Old Releases
+        if: ${{ inputs.clean_releases }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keepCount = parseInt('${{ inputs.keep_releases }}') || 3;
+
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
+            );
+
+            // Sort by created_at descending (newest first)
+            releases.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const toDelete = releases.slice(keepCount);
+            let deleted = 0;
+
+            for (const release of toDelete) {
+              console.log(`Deleting release: ${release.name || release.tag_name} (created ${release.created_at})`);
+
+              // Delete the release
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+
+              // Delete the associated tag
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${release.tag_name}`
+                });
+                console.log(`  └─ Deleted tag: ${release.tag_name}`);
+              } catch (e) {
+                console.log(`  └─ Tag ${release.tag_name} already deleted or not found`);
+              }
+
+              deleted++;
+            }
+
+            console.log(`\n✅ Releases: kept latest ${keepCount}, deleted ${deleted} old releases`);
