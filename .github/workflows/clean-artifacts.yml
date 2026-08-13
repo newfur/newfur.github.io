@@ -47,7 +47,7 @@ jobs:
     steps:
       - name: Clean Old Artifacts
         if: ${{ github.event_name == 'schedule' || inputs.clean_artifacts == 'true' || inputs.clean_artifacts == true }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const maxAgeDays = parseInt('${{ inputs.max_age_days }}') || 7;
@@ -78,7 +78,7 @@ jobs:
 
       - name: Clean Old Releases
         if: ${{ github.event_name == 'schedule' || inputs.clean_releases == 'true' || inputs.clean_releases == true }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const keepCount = parseInt('${{ inputs.keep_releases }}') || 3;
@@ -120,7 +120,7 @@ jobs:
 
       - name: Clean Old Workflow Runs
         if: ${{ github.event_name == 'schedule' || inputs.clean_runs == 'true' || inputs.clean_runs == true }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const maxAgeDays = parseInt('${{ inputs.max_age_days }}') || 7;
