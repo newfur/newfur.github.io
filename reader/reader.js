@@ -1479,7 +1479,7 @@ function initUIEventBindings() {
       chrome.storage.local.set({ ttsOnlyEdge: ttsOnlyEdge });
       
       const savedSelectedValue = document.getElementById('tts-voice-select').value;
-      initTTSPanelVoices(currentBook ? currentBook.file.name : '');
+      initTTSPanelVoices(currentBook ? (currentBook.file?.name || currentBook.title || '') : '');
       
       const voiceSelect = document.getElementById('tts-voice-select');
       if (voiceSelect && savedSelectedValue) {
@@ -1531,7 +1531,7 @@ function initUIEventBindings() {
     
     if (tts.voices.length !== lastVoicesCount) {
       lastVoicesCount = tts.voices.length;
-      initTTSPanelVoices(currentBook ? currentBook.file.name : '');
+      initTTSPanelVoices(currentBook ? (currentBook.file?.name || currentBook.title || '') : '');
     }
   };
 
@@ -3015,7 +3015,7 @@ async function openBook(id) {
     }
 
     // 初始化 TTS 面板
-    initTTSPanelVoices(book.file.name, true);
+    initTTSPanelVoices(book.file?.name || book.title || '', true);
     
     // 載入高亮標記
     applySavedHighlightsToDOM();
@@ -5989,7 +5989,7 @@ function toggleTTSPanel() {
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   updateHeaderActiveStates();
   if (willBeActive && currentBook) {
-    initTTSPanelVoices(currentBook.file ? currentBook.file.name : '', false);
+    initTTSPanelVoices(currentBook.file?.name || currentBook.title || '', false);
   }
 }
 
@@ -6041,37 +6041,13 @@ function updateHeaderActiveStates() {
 
 // ==================== 6. TTS 語音朗讀專屬配置 ==================== */
 
-// 自動檢測書籍語言引擎 (多層精準判定：元數據 -> 正文抽樣統計分析 -> 兜底)
+// 自動檢測書籍語言引擎 (多層精準判定：正文/標題統計分析 -> 內嵌元數據 -> 瀏覽器兜底)
 function detectBookLanguage(filename = '') {
   if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
     return currentTTSLanguage;
   }
 
-  // 1. 第一優先級：檢查書籍內嵌的官方語言元數據 (<dc:language> 或 EXTH 524)
-  let metaLang = '';
-  if (epubBookData && epubBookData.metadata && epubBookData.metadata.language) {
-    metaLang = epubBookData.metadata.language;
-  } else if (currentBook && currentBook.language) {
-    metaLang = currentBook.language;
-  }
-
-  if (metaLang && typeof metaLang === 'string') {
-    const clean = metaLang.trim().toLowerCase().replace('_', '-');
-    if (clean.startsWith('zh') || clean.startsWith('cmn') || clean.startsWith('yue')) {
-      return (clean.includes('tw') || clean.includes('hk') || clean.includes('hant')) ? 'zh-TW' : 'zh-CN';
-    }
-    if (clean.startsWith('ja') || clean.startsWith('jp')) return 'ja';
-    if (clean.startsWith('ko') || clean.startsWith('kr')) return 'ko';
-    if (clean.startsWith('en')) return 'en';
-    if (clean.startsWith('fr')) return 'fr-FR';
-    if (clean.startsWith('de')) return 'de-DE';
-    if (clean.startsWith('es')) return 'es-ES';
-    if (clean.startsWith('ru')) return 'ru-RU';
-    if (clean.startsWith('it')) return 'it-IT';
-    if (/^[a-z]{2}(-[a-z]{2,4})?$/i.test(clean)) return clean;
-  }
-
-  // 2. 第二優先級：提取實際正文樣本進行統計字符頻率分析（排除 UI 元素及預設作者佔位符）
+  // 1. 第一優先級：提取實際正文樣本與標題進行統計字符頻率分析（以實際文字為最高真理依據，防範元數據標籤錯誤）
   let contentSample = '';
   if (tts && tts.sentences && tts.sentences.length > 0) {
     // 優先使用 TTS 切分好的純文本句子
@@ -6084,6 +6060,12 @@ function detectBookLanguage(filename = '') {
       clone.querySelectorAll('.ai-loading, .loading-spinner, script, style, button, svg').forEach(el => el.remove());
       contentSample = (clone.textContent || '').trim().slice(0, 3000);
     }
+  }
+
+  // 若仍無正文樣本，嘗試從章節元數據提取第一章標題
+  if (!contentSample.trim() && epubBookData && epubBookData.chapters && epubBookData.chapters.length > 0) {
+    const ch = epubBookData.chapters[0];
+    if (ch && ch.title) contentSample = ch.title;
   }
 
   // 輔助標題樣本（排除默認佔位符如 "未知作者" / "Unknown Author"）
@@ -6119,24 +6101,28 @@ function detectBookLanguage(filename = '') {
     const cyrillicCount = cyrillicMatches.length;
     const arabicCount = arabicMatches.length;
 
-    // 韓文
-    if (hangulCount > 5 && hangulCount >= cjkCount) {
+    // 韓文 (包含韓文音節)
+    if (hangulCount >= 2 && hangulCount >= cjkCount) {
       return 'ko';
     }
-    // 日文
-    if (kanaCount > 5 || (kanaCount > 0 && kanaCount * 3 >= cjkCount)) {
+    // 日文 (包含假名)
+    if (kanaCount >= 2 || (kanaCount > 0 && kanaCount * 3 >= cjkCount)) {
       return 'ja';
     }
     // 俄文等西里爾字母
-    if (cyrillicCount > 20 && cyrillicCount > latinCount) {
+    if (cyrillicCount >= 10 && cyrillicCount > latinCount) {
       return 'ru-RU';
     }
     // 阿拉伯文
-    if (arabicCount > 20 && arabicCount > latinCount) {
+    if (arabicCount >= 10 && arabicCount > latinCount) {
       return 'ar-SA';
     }
+    // 英文/拉丁文：拉丁字母佔主導
+    if (latinCount >= 3 && latinCount > cjkCount) {
+      return 'en';
+    }
     // 中文：CJK 字符顯著多於拉丁字母
-    if (cjkCount >= 10 && cjkCount * 2 > latinCount) {
+    if (cjkCount >= 3 && cjkCount >= latinCount) {
       const tradExclusive = fullSample.match(/[這裡們點後開關體說聲經書個長發實誰國學門頁見讓動經頭時兩還給會樣無從為與應聽東廣關機電]/g) || [];
       const simpExclusive = fullSample.match(/[这里们点后开关体说声经书个长发实谁国学门页见让动经头时两还给会样无从为与应听东广关机电]/g) || [];
       if (tradExclusive.length > simpExclusive.length && tradExclusive.length >= 2) {
@@ -6147,13 +6133,33 @@ function detectBookLanguage(filename = '') {
       }
       return (navigator.language && (navigator.language.includes('TW') || navigator.language.includes('HK'))) ? 'zh-TW' : 'zh-CN';
     }
-    // 英文/拉丁文：拉丁字母佔主導
-    if (latinCount >= 10 && latinCount >= cjkCount) {
-      return 'en';
-    }
   }
 
-  // 3. 第三優先級：無書籍內容時，默認使用瀏覽器/系統語言
+  // 2. 第二優先級：無正文文本時，檢查書籍內嵌的官方語言元數據 (<dc:language> 或 EXTH 524)
+  let metaLang = '';
+  if (epubBookData && epubBookData.metadata && epubBookData.metadata.language) {
+    metaLang = epubBookData.metadata.language;
+  } else if (currentBook && currentBook.language) {
+    metaLang = currentBook.language;
+  }
+
+  if (metaLang && typeof metaLang === 'string') {
+    const clean = metaLang.trim().toLowerCase().replace('_', '-');
+    if (clean.startsWith('zh') || clean.startsWith('cmn') || clean.startsWith('yue')) {
+      return (clean.includes('tw') || clean.includes('hk') || clean.includes('hant')) ? 'zh-TW' : 'zh-CN';
+    }
+    if (clean.startsWith('ja') || clean.startsWith('jp')) return 'ja';
+    if (clean.startsWith('ko') || clean.startsWith('kr')) return 'ko';
+    if (clean.startsWith('en')) return 'en';
+    if (clean.startsWith('fr')) return 'fr-FR';
+    if (clean.startsWith('de')) return 'de-DE';
+    if (clean.startsWith('es')) return 'es-ES';
+    if (clean.startsWith('ru')) return 'ru-RU';
+    if (clean.startsWith('it')) return 'it-IT';
+    if (/^[a-z]{2}(-[a-z]{2,4})?$/i.test(clean)) return clean;
+  }
+
+  // 3. 第三優先級：無任何書籍內容與元數據時，默認使用瀏覽器/系統語言
   if (navigator.language && navigator.language.startsWith('zh')) {
     return (navigator.language.includes('TW') || navigator.language.includes('HK')) ? 'zh-TW' : 'zh-CN';
   } else if (navigator.language && navigator.language.startsWith('ja')) {
