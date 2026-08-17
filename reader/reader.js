@@ -89,6 +89,7 @@ let currentPaperTexture = 'texture-classic';
 let activeCoverUrls = [];
 let activeResourceUrls = [];
 let ttsOnlyEdge = false;
+let currentBookDetectedLanguage = ''; // 緩存當前書籍檢測到的語言，防止異步語音加載事件重新觸發時因時序差異而誤判
 let marginWidthScroll = 5;
 let marginWidthPaginated = 5;
 let pendingGoToLastPage = false;
@@ -3017,6 +3018,20 @@ async function openBook(id) {
     // 初始化 TTS 面板
     initTTSPanelVoices(book.file?.name || book.title || '', true);
     
+    // 延遲 re-check：在移動端 iOS 上，tts.sentences 可能在首次檢測時尚未準備好（WebSpeech 異步加載）
+    // 500ms 後重新確認語言檢測結果，若需要則更新
+    const cachedLangAtOpen = currentBookDetectedLanguage;
+    setTimeout(() => {
+      if (currentBook && currentBook.id === book.id) {
+        const recheckLang = detectBookLanguage(book.file?.name || book.title || '');
+        if (recheckLang !== cachedLangAtOpen) {
+          console.log(`[TTS] Delayed recheck: language changed from "${cachedLangAtOpen}" to "${recheckLang}"`);
+          currentBookDetectedLanguage = recheckLang;
+          initTTSPanelVoices(book.file?.name || book.title || '', true);
+        }
+      }
+    }, 500);
+    
     // 載入高亮標記
     applySavedHighlightsToDOM();
     
@@ -3132,6 +3147,7 @@ async function closeCurrentBook(triggerBack = true) {
   epubBookData = null;
   comicParserInstance = null;
   prefetchedChapterCache = null;
+  currentBookDetectedLanguage = ''; // 清除語言緩存
 
   // 重新渲染書櫃
   await renderBookshelf();
@@ -6086,6 +6102,8 @@ function detectBookLanguage(filename = '') {
 
   const fullSample = (contentSample + ' ' + titleSample).trim();
 
+  console.log(`[TTS detectBookLanguage] filename="${filename}" sentencesLen=${tts?.sentences?.length || 0} contentSampleLen=${contentSample.length} titleSample="${titleSample.trim()}" fullSampleLen=${fullSample.length} fullSample="${fullSample.slice(0, 100)}..."`);
+
   if (fullSample.length > 0) {
     const cjkMatches = fullSample.match(/[\u4e00-\u9fa5]/g) || [];
     const kanaMatches = fullSample.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || [];
@@ -6100,6 +6118,8 @@ function detectBookLanguage(filename = '') {
     const latinCount = latinMatches.length;
     const cyrillicCount = cyrillicMatches.length;
     const arabicCount = arabicMatches.length;
+
+    console.log(`[TTS detectBookLanguage] charCounts: latin=${latinCount} cjk=${cjkCount} kana=${kanaCount} hangul=${hangulCount} cyrillic=${cyrillicCount} arabic=${arabicCount}`);
 
     // 韓文 (包含韓文音節)
     if (hangulCount >= 2 && hangulCount >= cjkCount) {
@@ -6172,8 +6192,19 @@ function detectBookLanguage(filename = '') {
 
 // 初始化播放面板語音下拉選單
 function initTTSPanelVoices(filename, isBookOpening = false) {
-  // 檢測書籍語言
-  const lang = detectBookLanguage(filename);
+  // 檢測書籍語言：打開新書時重新檢測並緩存；異步語音列表更新時複用緩存
+  let lang;
+  if (isBookOpening) {
+    lang = detectBookLanguage(filename);
+    currentBookDetectedLanguage = lang;
+    console.log(`[TTS] Book opened: detected language = "${lang}" for "${filename}"`);
+  } else if (currentBookDetectedLanguage) {
+    lang = currentBookDetectedLanguage;
+    console.log(`[TTS] Voice refresh: reusing cached language = "${lang}"`);
+  } else {
+    lang = detectBookLanguage(filename);
+    console.log(`[TTS] No cache: detected language = "${lang}" for "${filename}"`);
+  }
 
   const select = document.getElementById('tts-voice-select');
   if (!select) return;
@@ -6184,6 +6215,8 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   if (ttsOnlyEdge && matchedVoices.some(v => v.isEdge)) {
     matchedVoices = matchedVoices.filter(v => v.isEdge);
   }
+  
+  console.log(`[TTS] Matched ${matchedVoices.length} voices for lang="${lang}". Total voices: ${tts.voices.length}`);
   
   let hasDefaultVoice = false;
   matchedVoices.forEach(voice => {
@@ -6231,6 +6264,7 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
       tts.setVoice(availableVoiceValues[0]);
     }
   }
+  console.log(`[TTS] Final selected voice: "${select.value}"`);
 }
 
 
