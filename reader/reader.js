@@ -2265,6 +2265,7 @@ async function handleImportFiles(files) {
       let title = file.name.substring(0, file.name.lastIndexOf('.'));
       let author = getMsg('unknown_author');
       let cover = '';
+      let language = '';
       
       const format = ext.replace('.', '');
       
@@ -2275,12 +2276,14 @@ async function handleImportFiles(files) {
         title = res.metadata.title || title;
         author = res.metadata.author || author;
         cover = res.metadata.cover || '';
+        language = res.metadata.language || '';
       } else if (format === 'azw3' || format === 'mobi') {
         const parser = new Azw3Parser(file);
         const res = await parser.parse();
         title = res.metadata.title || title;
         author = res.metadata.author || author;
         cover = res.metadata.cover || '';
+        language = res.metadata.language || '';
       } else {
         if (format === 'cbz') {
           const parser = new ComicParser(file);
@@ -2288,12 +2291,14 @@ async function handleImportFiles(files) {
           title = res.metadata.title || title;
           author = res.metadata.author || author;
           cover = res.metadata.cover || '';
+          language = res.metadata.language || '';
         } else {
           const parser = new TextParser(file, format);
           const res = await parser.parse();
           title = res.metadata.title || title;
           author = res.metadata.author || author;
           cover = res.metadata.cover || '';
+          language = res.metadata.language || '';
         }
       }
 
@@ -2302,6 +2307,7 @@ async function handleImportFiles(files) {
       const incomingBookData = {
         title,
         author,
+        language,
         format,
         file,
         cover,
@@ -5976,10 +5982,15 @@ function toggleSettingsPanel() {
 }
 
 function toggleTTSPanel() {
-  document.getElementById('tts-panel').classList.toggle('dropdown-active');
+  const panel = document.getElementById('tts-panel');
+  const willBeActive = !panel.classList.contains('dropdown-active');
+  panel.classList.toggle('dropdown-active');
   document.getElementById('reader-sidebar').classList.remove('active');
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   updateHeaderActiveStates();
+  if (willBeActive && currentBook) {
+    initTTSPanelVoices(currentBook.file ? currentBook.file.name : '', false);
+  }
 }
 
 function updateHeaderActiveStates() {
@@ -6030,53 +6041,133 @@ function updateHeaderActiveStates() {
 
 // ==================== 6. TTS 語音朗讀專屬配置 ==================== */
 
+// 自動檢測書籍語言引擎 (多層精準判定：元數據 -> 正文抽樣統計分析 -> 兜底)
+function detectBookLanguage(filename = '') {
+  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
+    return currentTTSLanguage;
+  }
+
+  // 1. 第一優先級：檢查書籍內嵌的官方語言元數據 (<dc:language> 或 EXTH 524)
+  let metaLang = '';
+  if (epubBookData && epubBookData.metadata && epubBookData.metadata.language) {
+    metaLang = epubBookData.metadata.language;
+  } else if (currentBook && currentBook.language) {
+    metaLang = currentBook.language;
+  }
+
+  if (metaLang && typeof metaLang === 'string') {
+    const clean = metaLang.trim().toLowerCase().replace('_', '-');
+    if (clean.startsWith('zh') || clean.startsWith('cmn') || clean.startsWith('yue')) {
+      return (clean.includes('tw') || clean.includes('hk') || clean.includes('hant')) ? 'zh-TW' : 'zh-CN';
+    }
+    if (clean.startsWith('ja') || clean.startsWith('jp')) return 'ja';
+    if (clean.startsWith('ko') || clean.startsWith('kr')) return 'ko';
+    if (clean.startsWith('en')) return 'en';
+    if (clean.startsWith('fr')) return 'fr-FR';
+    if (clean.startsWith('de')) return 'de-DE';
+    if (clean.startsWith('es')) return 'es-ES';
+    if (clean.startsWith('ru')) return 'ru-RU';
+    if (clean.startsWith('it')) return 'it-IT';
+    if (/^[a-z]{2}(-[a-z]{2,4})?$/i.test(clean)) return clean;
+  }
+
+  // 2. 第二優先級：提取實際正文樣本進行統計字符頻率分析（排除 UI 元素及預設作者佔位符）
+  let contentSample = '';
+  if (tts && tts.sentences && tts.sentences.length > 0) {
+    // 優先使用 TTS 切分好的純文本句子
+    contentSample = tts.sentences.slice(0, 30).map(s => s.text || '').join(' ');
+  } else {
+    // 從 DOM 提取，但必須過濾掉 loading 加載動畫、按鈕、腳本等 UI 干擾文字
+    const bookContent = document.getElementById('book-content');
+    if (bookContent) {
+      const clone = bookContent.cloneNode(true);
+      clone.querySelectorAll('.ai-loading, .loading-spinner, script, style, button, svg').forEach(el => el.remove());
+      contentSample = (clone.textContent || '').trim().slice(0, 3000);
+    }
+  }
+
+  // 輔助標題樣本（排除默認佔位符如 "未知作者" / "Unknown Author"）
+  let titleSample = '';
+  if (currentBook) {
+    if (currentBook.title) titleSample += ' ' + currentBook.title;
+    const authorStr = currentBook.author || '';
+    const currentUnknownAuthor = (typeof getMsg === 'function' ? getMsg('unknown_author') : '') || '未知作者';
+    if (authorStr && authorStr !== '未知作者' && authorStr !== 'Unknown Author' && authorStr !== currentUnknownAuthor) {
+      titleSample += ' ' + authorStr;
+    }
+  }
+  if (filename && typeof filename === 'string') {
+    // 移除副檔名和括號標籤
+    const cleanFilename = filename.replace(/\.[a-z0-9]+$/i, '').replace(/\[.*?\]|\(.*?\)/g, '');
+    titleSample += ' ' + cleanFilename;
+  }
+
+  const fullSample = (contentSample + ' ' + titleSample).trim();
+
+  if (fullSample.length > 0) {
+    const cjkMatches = fullSample.match(/[\u4e00-\u9fa5]/g) || [];
+    const kanaMatches = fullSample.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || [];
+    const hangulMatches = fullSample.match(/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g) || [];
+    const latinMatches = fullSample.match(/[a-zA-Z]/g) || [];
+    const cyrillicMatches = fullSample.match(/[\u0400-\u04FF]/g) || [];
+    const arabicMatches = fullSample.match(/[\u0600-\u06FF]/g) || [];
+
+    const cjkCount = cjkMatches.length;
+    const kanaCount = kanaMatches.length;
+    const hangulCount = hangulMatches.length;
+    const latinCount = latinMatches.length;
+    const cyrillicCount = cyrillicMatches.length;
+    const arabicCount = arabicMatches.length;
+
+    // 韓文
+    if (hangulCount > 5 && hangulCount >= cjkCount) {
+      return 'ko';
+    }
+    // 日文
+    if (kanaCount > 5 || (kanaCount > 0 && kanaCount * 3 >= cjkCount)) {
+      return 'ja';
+    }
+    // 俄文等西里爾字母
+    if (cyrillicCount > 20 && cyrillicCount > latinCount) {
+      return 'ru-RU';
+    }
+    // 阿拉伯文
+    if (arabicCount > 20 && arabicCount > latinCount) {
+      return 'ar-SA';
+    }
+    // 中文：CJK 字符顯著多於拉丁字母
+    if (cjkCount >= 10 && cjkCount * 2 > latinCount) {
+      const tradExclusive = fullSample.match(/[這裡們點後開關體說聲經書個長發實誰國學門頁見讓動經頭時兩還給會樣無從為與應聽東廣關機電]/g) || [];
+      const simpExclusive = fullSample.match(/[这里们点后开关体说声经书个长发实谁国学门页见让动经头时两还给会样无从为与应听东广关机电]/g) || [];
+      if (tradExclusive.length > simpExclusive.length && tradExclusive.length >= 2) {
+        return 'zh-TW';
+      }
+      if (simpExclusive.length > tradExclusive.length && simpExclusive.length >= 2) {
+        return 'zh-CN';
+      }
+      return (navigator.language && (navigator.language.includes('TW') || navigator.language.includes('HK'))) ? 'zh-TW' : 'zh-CN';
+    }
+    // 英文/拉丁文：拉丁字母佔主導
+    if (latinCount >= 10 && latinCount >= cjkCount) {
+      return 'en';
+    }
+  }
+
+  // 3. 第三優先級：無書籍內容時，默認使用瀏覽器/系統語言
+  if (navigator.language && navigator.language.startsWith('zh')) {
+    return (navigator.language.includes('TW') || navigator.language.includes('HK')) ? 'zh-TW' : 'zh-CN';
+  } else if (navigator.language && navigator.language.startsWith('ja')) {
+    return 'ja';
+  } else if (navigator.language && navigator.language.startsWith('ko')) {
+    return 'ko';
+  }
+  return 'en';
+}
+
 // 初始化播放面板語音下拉選單
 function initTTSPanelVoices(filename, isBookOpening = false) {
   // 檢測書籍語言
-  let lang = 'en';
-  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
-    lang = currentTTSLanguage;
-  } else if (currentBook || (tts && tts.sentences && tts.sentences.length > 0)) {
-    // 優先從文件名、書籍標題及當前文本中抽樣檢測
-    let sampleText = filename || '';
-    if (currentBook) {
-      if (currentBook.title) sampleText += ' ' + currentBook.title;
-      if (currentBook.author) sampleText += ' ' + currentBook.author;
-    }
-    if (epubBookData && epubBookData.metadata) {
-      if (epubBookData.metadata.title) sampleText += ' ' + epubBookData.metadata.title;
-      if (epubBookData.metadata.author) sampleText += ' ' + epubBookData.metadata.author;
-    }
-    if (tts && tts.sentences && tts.sentences.length > 0) {
-      sampleText += ' ' + tts.sentences.slice(0, 10).map(s => s.text || '').join('');
-    } else {
-      const bookContent = document.getElementById('book-content');
-      if (bookContent) {
-        sampleText += ' ' + bookContent.textContent.slice(0, 1000);
-      }
-    }
-    
-    if (/[\u4e00-\u9fa5]/.test(sampleText)) {
-      lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
-    } else if (/[\u3040-\u309F\u30A0-\u30FF]/.test(sampleText)) {
-      lang = 'ja';
-    } else if (/[\uAC00-\uD7AF]/.test(sampleText)) {
-      lang = 'ko';
-    } else {
-      lang = 'en';
-    }
-  } else {
-    // 無書籍加載時，默認使用瀏覽器系統語言
-    if (navigator.language.startsWith('zh')) {
-      lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
-    } else if (navigator.language.startsWith('ja')) {
-      lang = 'ja';
-    } else if (navigator.language.startsWith('ko')) {
-      lang = 'ko';
-    } else {
-      lang = 'en';
-    }
-  }
+  const lang = detectBookLanguage(filename);
 
   const select = document.getElementById('tts-voice-select');
   if (!select) return;
@@ -6124,10 +6215,12 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
       // If using OpenAI/Local, default to user's configured default voice if no saved progress voice
       select.value = ttsDefaultVoice;
       tts.setVoice(ttsDefaultVoice);
-    } else if (currentSelected && availableVoiceValues.includes(currentSelected)) {
+    } else if (!isBookOpening && currentSelected && availableVoiceValues.includes(currentSelected)) {
+      // 只有在非打開新書時（例如切換濾鏡按鈕、語音列表異步更新），才保持當前已選中的語音
       select.value = currentSelected;
       tts.setVoice(currentSelected);
     } else {
+      // 打開新書時，預設選擇當前書籍語言匹配的第一個高品質推薦語音
       select.value = availableVoiceValues[0];
       tts.setVoice(availableVoiceValues[0]);
     }

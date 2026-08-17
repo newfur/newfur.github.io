@@ -316,7 +316,7 @@ export class TTSEngine {
       }
 
       if (!list) {
-        // 退化降級：若無 extension context，嘗試透過本地 API 或直接 fetch
+        // 退化降級：若無 extension context，嘗試透過本地 proxy API 或直接請求微軟官方 Bing 端點
         const isNativeApp = typeof window !== 'undefined' && (
           window.Capacitor ||
           window.location.protocol === 'capacitor:' ||
@@ -324,38 +324,71 @@ export class TTSEngine {
           window.location.protocol === 'file:'
         );
         const isWeb = !isNativeApp && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
-        const url = isWeb 
-          ? "/api/voices" 
-          : "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-        const response = await fetch(url).catch(() => null);
-        if (response && response.ok) {
-          list = await response.json();
-          const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
-          if (serverDate) {
-            this.clockSkew = new Date(serverDate).getTime() - Date.now();
-            console.log(`TTS Clock synced via local web proxy. Skew: ${this.clockSkew} ms`);
-          }
+        
+        // 1. 若在 Web 模式（例如 node server.js），先嘗試本地 proxy 避免任何 CORS 警告
+        if (isWeb) {
+          try {
+            const response = await fetch("/api/voices").catch(() => null);
+            if (response && response.ok) {
+              list = await response.json();
+              const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
+              if (serverDate) {
+                this.clockSkew = new Date(serverDate).getTime() - Date.now();
+                console.log(`TTS Clock synced via local web proxy. Skew: ${this.clockSkew} ms`);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 2. 若本地 API 不可用（例如在靜態離線託管、PWA 或 Native/file:// 下），直接 fetch 官方 Bing 端點
+        if (!list) {
+          try {
+            const bingUrl = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+            const response = await fetch(bingUrl).catch(() => null);
+            if (response && response.ok) {
+              list = await response.json();
+              const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
+              if (serverDate) {
+                this.clockSkew = new Date(serverDate).getTime() - Date.now();
+                console.log(`TTS Clock synced via Bing direct endpoint. Skew: ${this.clockSkew} ms`);
+              }
+            }
+          } catch (e) {}
         }
       }
 
       if (!list) {
-        // 靜態備用列表：若無法透過網路或 background worker 取得列表（例如在 file:// 下受 CORS 限制），
-        // 我們直接硬編碼預置最熱門的高品質 Microsoft Edge Online 語音，使其可在離線版中使用 WebSocket 正常播放。
+        // 靜態備用列表：若完全離線斷網或受限，提供各主流語言最熱門的高品質 Microsoft Edge Online 語音
         list = [
+          // 中文 (簡體 / 繁體 / 粵語)
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)", Locale: "zh-CN", ShortName: "zh-CN-XiaoxiaoNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunxiNeural", Gender: "Male" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunjianNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)", Locale: "zh-CN", ShortName: "zh-CN-XiaoyiNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoChenNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoYuNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Locale: "zh-TW", ShortName: "zh-TW-YunJheNeural", Gender: "Male" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-HK, HiuMaanNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-HK, HiuMaanNeural)", Locale: "zh-HK", ShortName: "zh-HK-HiuMaanNeural", Gender: "Female" },
-          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Locale: "en-US", ShortName: "en-US-AriaNeural", Gender: "Female" },
-          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Locale: "en-US", ShortName: "en-US-GuyNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-HK, WanLungNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-HK, WanLungNeural)", Locale: "zh-HK", ShortName: "zh-HK-WanLungNeural", Gender: "Male" },
+          // 英文 (美式 / 英式 / 澳式)
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)", Locale: "en-US", ShortName: "en-US-JennyNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Locale: "en-US", ShortName: "en-US-GuyNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Locale: "en-US", ShortName: "en-US-AriaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AnaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AnaNeural)", Locale: "en-US", ShortName: "en-US-AnaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, ChristopherNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, ChristopherNeural)", Locale: "en-US", ShortName: "en-US-ChristopherNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-AU, NatashaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-AU, NatashaNeural)", Locale: "en-AU", ShortName: "en-AU-NatashaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-GB, SoniaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-GB, SoniaNeural)", Locale: "en-GB", ShortName: "en-GB-SoniaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-GB, RyanNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-GB, RyanNeural)", Locale: "en-GB", ShortName: "en-GB-RyanNeural", Gender: "Male" },
+          // 日文
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)", Locale: "ja-JP", ShortName: "ja-JP-NanamiNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ja-JP, KeitaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ja-JP, KeitaNeural)", Locale: "ja-JP", ShortName: "ja-JP-KeitaNeural", Gender: "Male" },
+          // 韓文
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)", Locale: "ko-KR", ShortName: "ko-KR-SunHiNeural", Gender: "Female" },
-          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Locale: "ko-KR", ShortName: "ko-KR-InJoonNeural", Gender: "Male" }
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Locale: "ko-KR", ShortName: "ko-KR-InJoonNeural", Gender: "Male" },
+          // 法文 / 德文 / 西班牙文
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (fr-FR, DeniseNeural)", Name: "Microsoft Server Speech Text to Speech Voice (fr-FR, DeniseNeural)", Locale: "fr-FR", ShortName: "fr-FR-DeniseNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (de-DE, KatjaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (de-DE, KatjaNeural)", Locale: "de-DE", ShortName: "de-DE-KatjaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (es-ES, ElviraNeural)", Name: "Microsoft Server Speech Text to Speech Voice (es-ES, ElviraNeural)", Locale: "es-ES", ShortName: "es-ES-ElviraNeural", Gender: "Female" }
         ];
       }
 
@@ -390,13 +423,30 @@ export class TTSEngine {
 
   // 獲取適用於指定語言的語音包，優先加載 Edge Natural / Neural 語音，且只顯示該語言分類下的語音
   getVoicesForLanguage(langCode) {
+    if (!langCode) langCode = 'en';
     const cleanLang = langCode.toLowerCase().replace('_', '-');
-    const langPrefix = cleanLang.split('-')[0]; // e.g. 'zh' or 'en'
     
+    // 語言代碼規範化函數，支援 WebSpeech API / BCP47 各種變體
+    const normalizePrefix = (l) => {
+      const s = (l || '').toLowerCase().replace('_', '-');
+      if (s.startsWith('zh') || s.startsWith('cmn') || s.startsWith('yue') || s.startsWith('wuu')) return 'zh';
+      if (s.startsWith('en') || s.startsWith('eng')) return 'en';
+      if (s.startsWith('ja') || s.startsWith('jpn')) return 'ja';
+      if (s.startsWith('ko') || s.startsWith('kor')) return 'ko';
+      if (s.startsWith('fr') || s.startsWith('fra')) return 'fr';
+      if (s.startsWith('de') || s.startsWith('deu') || s.startsWith('ger')) return 'de';
+      if (s.startsWith('es') || s.startsWith('spa')) return 'es';
+      if (s.startsWith('ru') || s.startsWith('rus')) return 'ru';
+      if (s.startsWith('it') || s.startsWith('ita')) return 'it';
+      return s.split('-')[0];
+    };
+
+    const targetPrefix = normalizePrefix(cleanLang);
+
     // 過濾出與目標語言前綴匹配的語音包，防止下拉選單顯示過多無關語言的語音
     let matched = this.voices.filter(v => {
-      const vLang = v.lang.toLowerCase().replace('_', '-');
-      return vLang.startsWith(langPrefix) || vLang === 'multilingual';
+      const vPrefix = normalizePrefix(v.lang);
+      return vPrefix === targetPrefix || v.lang === 'multilingual';
     });
     
     // 若無任何語音匹配該前綴，退化為顯示所有語音
@@ -407,24 +457,24 @@ export class TTSEngine {
     const sorted = [...matched];
     
     sorted.sort((a, b) => {
-      const aLang = a.lang.toLowerCase().replace('_', '-');
-      const bLang = b.lang.toLowerCase().replace('_', '-');
+      const aLang = (a.lang || '').toLowerCase().replace('_', '-');
+      const bLang = (b.lang || '').toLowerCase().replace('_', '-');
       
-      const aMatch = aLang.startsWith(cleanLang) || (cleanLang.startsWith('zh') && aLang.startsWith('zh'));
-      const bMatch = bLang.startsWith(cleanLang) || (cleanLang.startsWith('zh') && bLang.startsWith('zh'));
+      const aMatchExact = aLang.startsWith(cleanLang);
+      const bMatchExact = bLang.startsWith(cleanLang);
       
-      // 1. 首選語言排在最前面
-      if (aMatch && !bMatch) return -1;
-      if (!aMatch && bMatch) return 1;
+      // 1. 完全匹配地區語言（如 en-US 匹配 en-US）排在最前
+      if (aMatchExact && !bMatchExact) return -1;
+      if (!aMatchExact && bMatchExact) return 1;
       
-      // 2. 如果語言不同，按語言代碼字母排序
+      // 2. 語言前綴相同但地區不同時，按語言代碼排序
       if (aLang !== bLang) {
         return aLang.localeCompare(bLang);
       }
       
       // 3. 在同一語言中，優先 Online/Natural/Neural 語音
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
+      const aName = (a.name || '').toLowerCase();
+      const bName = (b.name || '').toLowerCase();
       const aNatural = aName.includes('natural') || aName.includes('online') || aName.includes('neural') || a.isEdge;
       const bNatural = bName.includes('natural') || bName.includes('online') || bName.includes('neural') || b.isEdge;
       
@@ -432,7 +482,7 @@ export class TTSEngine {
       if (!aNatural && bNatural) return 1;
       
       // 4. 按名稱排序
-      return a.name.localeCompare(b.name);
+      return (a.name || '').localeCompare(b.name || '');
     });
     
     return sorted;

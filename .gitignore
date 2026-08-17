@@ -7,3 +7,4 @@ scratch/*
 !scratch/compile_offline.js
 !scratch/build_dist.js
 www/
+inlined_google_fonts.css

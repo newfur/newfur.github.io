@@ -215,6 +215,7 @@ export class Azw3Parser {
     this.mobiHeaderOffset = 0;
     this.title = '';
     this.author = '';
+    this.language = '';
     this.coverRecordIndex = -1;
     this.thumbnailRecordIndex = -1;
   }
@@ -565,6 +566,7 @@ export class Azw3Parser {
       metadata: {
         title: this.title || 'Unknown MOBI Book',
         author: this.author || 'Unknown Author',
+        language: this.language || '',
         cover: coverBlob,
         size: this.fileBlob.size
       },
@@ -929,6 +931,8 @@ export class Azw3Parser {
             if (!this.author) this.author = decoder.decode(valData).trim();
           } else if (type === 503) { // 書名
             this.title = decoder.decode(valData).trim();
+          } else if (type === 524) { // 語言代碼 (Language)
+            this.language = decoder.decode(valData).trim();
           }
           
           offset += length;

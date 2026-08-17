@@ -8755,7 +8755,7 @@ MindElixir.DARK_THEME = ue;
 </script>
 
   <!-- 引入主應用邏輯 (作為 ES Module 載入) -->
-  <script>window.__APP_VERSION__ = "3.3.1";
+  <script>window.__APP_VERSION__ = "3.3.2";
 const _offlineLocales = {
   "en": {
     "extension_name": {
@@ -12526,6 +12526,7 @@ class EpubParser {
       metadata: {
         title: this.metadata.title || 'Unknown EPUB',
         author: this.metadata.author || 'Unknown Author',
+        language: this.metadata.language || '',
         cover: this.cover,
         size: this.fileBlob.size
       },
@@ -12563,10 +12564,12 @@ class EpubParser {
     const xmlDoc = parser.parseFromString(opfText, 'text/xml');
 
     // 解析元數據 (Metadata)
-    const titleNode = xmlDoc.querySelector('metadata > title') || xmlDoc.querySelector('title');
-    const creatorNode = xmlDoc.querySelector('metadata > creator') || xmlDoc.querySelector('creator');
+    const titleNode = xmlDoc.querySelector('metadata > title') || xmlDoc.querySelector('title') || xmlDoc.getElementsByTagName('dc:title')[0] || xmlDoc.getElementsByTagName('title')[0];
+    const creatorNode = xmlDoc.querySelector('metadata > creator') || xmlDoc.querySelector('creator') || xmlDoc.getElementsByTagName('dc:creator')[0] || xmlDoc.getElementsByTagName('creator')[0];
+    const langNode = xmlDoc.querySelector('metadata > language') || xmlDoc.querySelector('language') || xmlDoc.getElementsByTagName('dc:language')[0] || xmlDoc.getElementsByTagName('language')[0];
     this.metadata.title = titleNode ? titleNode.textContent.trim() : '';
     this.metadata.author = creatorNode ? creatorNode.textContent.trim() : '';
+    this.metadata.language = langNode ? langNode.textContent.trim() : '';
 
     // 解析清單 (Manifest)
     const itemNodes = xmlDoc.querySelectorAll('manifest > item');
@@ -13222,6 +13225,7 @@ class Azw3Parser {
     this.mobiHeaderOffset = 0;
     this.title = '';
     this.author = '';
+    this.language = '';
     this.coverRecordIndex = -1;
     this.thumbnailRecordIndex = -1;
   }
@@ -13572,6 +13576,7 @@ class Azw3Parser {
       metadata: {
         title: this.title || 'Unknown MOBI Book',
         author: this.author || 'Unknown Author',
+        language: this.language || '',
         cover: coverBlob,
         size: this.fileBlob.size
       },
@@ -13936,6 +13941,8 @@ class Azw3Parser {
             if (!this.author) this.author = decoder.decode(valData).trim();
           } else if (type === 503) { // 書名
             this.title = decoder.decode(valData).trim();
+          } else if (type === 524) { // 語言代碼 (Language)
+            this.language = decoder.decode(valData).trim();
           }
           
           offset += length;
@@ -15017,7 +15024,7 @@ class TTSEngine {
       }
 
       if (!list) {
-        // 退化降級：若無 extension context，嘗試透過本地 API 或直接 fetch
+        // 退化降級：若無 extension context，嘗試透過本地 proxy API 或直接請求微軟官方 Bing 端點
         const isNativeApp = typeof window !== 'undefined' && (
           window.Capacitor ||
           window.location.protocol === 'capacitor:' ||
@@ -15025,38 +15032,71 @@ class TTSEngine {
           window.location.protocol === 'file:'
         );
         const isWeb = !isNativeApp && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
-        const url = isWeb 
-          ? "/api/voices" 
-          : "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-        const response = await fetch(url).catch(() => null);
-        if (response && response.ok) {
-          list = await response.json();
-          const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
-          if (serverDate) {
-            this.clockSkew = new Date(serverDate).getTime() - Date.now();
-            console.log(`TTS Clock synced via local web proxy. Skew: ${this.clockSkew} ms`);
-          }
+        
+        // 1. 若在 Web 模式（例如 node server.js），先嘗試本地 proxy 避免任何 CORS 警告
+        if (isWeb) {
+          try {
+            const response = await fetch("/api/voices").catch(() => null);
+            if (response && response.ok) {
+              list = await response.json();
+              const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
+              if (serverDate) {
+                this.clockSkew = new Date(serverDate).getTime() - Date.now();
+                console.log(`TTS Clock synced via local web proxy. Skew: ${this.clockSkew} ms`);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 2. 若本地 API 不可用（例如在靜態離線託管、PWA 或 Native/file:// 下），直接 fetch 官方 Bing 端點
+        if (!list) {
+          try {
+            const bingUrl = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+            const response = await fetch(bingUrl).catch(() => null);
+            if (response && response.ok) {
+              list = await response.json();
+              const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
+              if (serverDate) {
+                this.clockSkew = new Date(serverDate).getTime() - Date.now();
+                console.log(`TTS Clock synced via Bing direct endpoint. Skew: ${this.clockSkew} ms`);
+              }
+            }
+          } catch (e) {}
         }
       }
 
       if (!list) {
-        // 靜態備用列表：若無法透過網路或 background worker 取得列表（例如在 file:// 下受 CORS 限制），
-        // 我們直接硬編碼預置最熱門的高品質 Microsoft Edge Online 語音，使其可在離線版中使用 WebSocket 正常播放。
+        // 靜態備用列表：若完全離線斷網或受限，提供各主流語言最熱門的高品質 Microsoft Edge Online 語音
         list = [
+          // 中文 (簡體 / 繁體 / 粵語)
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)", Locale: "zh-CN", ShortName: "zh-CN-XiaoxiaoNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunxiNeural", Gender: "Male" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunjianNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)", Locale: "zh-CN", ShortName: "zh-CN-XiaoyiNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoChenNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoYuNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Locale: "zh-TW", ShortName: "zh-TW-YunJheNeural", Gender: "Male" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-HK, HiuMaanNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-HK, HiuMaanNeural)", Locale: "zh-HK", ShortName: "zh-HK-HiuMaanNeural", Gender: "Female" },
-          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Locale: "en-US", ShortName: "en-US-AriaNeural", Gender: "Female" },
-          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Locale: "en-US", ShortName: "en-US-GuyNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-HK, WanLungNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-HK, WanLungNeural)", Locale: "zh-HK", ShortName: "zh-HK-WanLungNeural", Gender: "Male" },
+          // 英文 (美式 / 英式 / 澳式)
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)", Locale: "en-US", ShortName: "en-US-JennyNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)", Locale: "en-US", ShortName: "en-US-GuyNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)", Locale: "en-US", ShortName: "en-US-AriaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, AnaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, AnaNeural)", Locale: "en-US", ShortName: "en-US-AnaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-US, ChristopherNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-US, ChristopherNeural)", Locale: "en-US", ShortName: "en-US-ChristopherNeural", Gender: "Male" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-AU, NatashaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-AU, NatashaNeural)", Locale: "en-AU", ShortName: "en-AU-NatashaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-GB, SoniaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-GB, SoniaNeural)", Locale: "en-GB", ShortName: "en-GB-SoniaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (en-GB, RyanNeural)", Name: "Microsoft Server Speech Text to Speech Voice (en-GB, RyanNeural)", Locale: "en-GB", ShortName: "en-GB-RyanNeural", Gender: "Male" },
+          // 日文
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)", Locale: "ja-JP", ShortName: "ja-JP-NanamiNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ja-JP, KeitaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ja-JP, KeitaNeural)", Locale: "ja-JP", ShortName: "ja-JP-KeitaNeural", Gender: "Male" },
+          // 韓文
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)", Locale: "ko-KR", ShortName: "ko-KR-SunHiNeural", Gender: "Female" },
-          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Locale: "ko-KR", ShortName: "ko-KR-InJoonNeural", Gender: "Male" }
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, InJoonNeural)", Locale: "ko-KR", ShortName: "ko-KR-InJoonNeural", Gender: "Male" },
+          // 法文 / 德文 / 西班牙文
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (fr-FR, DeniseNeural)", Name: "Microsoft Server Speech Text to Speech Voice (fr-FR, DeniseNeural)", Locale: "fr-FR", ShortName: "fr-FR-DeniseNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (de-DE, KatjaNeural)", Name: "Microsoft Server Speech Text to Speech Voice (de-DE, KatjaNeural)", Locale: "de-DE", ShortName: "de-DE-KatjaNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (es-ES, ElviraNeural)", Name: "Microsoft Server Speech Text to Speech Voice (es-ES, ElviraNeural)", Locale: "es-ES", ShortName: "es-ES-ElviraNeural", Gender: "Female" }
         ];
       }
 
@@ -15091,13 +15131,30 @@ class TTSEngine {
 
   // 獲取適用於指定語言的語音包，優先加載 Edge Natural / Neural 語音，且只顯示該語言分類下的語音
   getVoicesForLanguage(langCode) {
+    if (!langCode) langCode = 'en';
     const cleanLang = langCode.toLowerCase().replace('_', '-');
-    const langPrefix = cleanLang.split('-')[0]; // e.g. 'zh' or 'en'
     
+    // 語言代碼規範化函數，支援 WebSpeech API / BCP47 各種變體
+    const normalizePrefix = (l) => {
+      const s = (l || '').toLowerCase().replace('_', '-');
+      if (s.startsWith('zh') || s.startsWith('cmn') || s.startsWith('yue') || s.startsWith('wuu')) return 'zh';
+      if (s.startsWith('en') || s.startsWith('eng')) return 'en';
+      if (s.startsWith('ja') || s.startsWith('jpn')) return 'ja';
+      if (s.startsWith('ko') || s.startsWith('kor')) return 'ko';
+      if (s.startsWith('fr') || s.startsWith('fra')) return 'fr';
+      if (s.startsWith('de') || s.startsWith('deu') || s.startsWith('ger')) return 'de';
+      if (s.startsWith('es') || s.startsWith('spa')) return 'es';
+      if (s.startsWith('ru') || s.startsWith('rus')) return 'ru';
+      if (s.startsWith('it') || s.startsWith('ita')) return 'it';
+      return s.split('-')[0];
+    };
+
+    const targetPrefix = normalizePrefix(cleanLang);
+
     // 過濾出與目標語言前綴匹配的語音包，防止下拉選單顯示過多無關語言的語音
     let matched = this.voices.filter(v => {
-      const vLang = v.lang.toLowerCase().replace('_', '-');
-      return vLang.startsWith(langPrefix) || vLang === 'multilingual';
+      const vPrefix = normalizePrefix(v.lang);
+      return vPrefix === targetPrefix || v.lang === 'multilingual';
     });
     
     // 若無任何語音匹配該前綴，退化為顯示所有語音
@@ -15108,24 +15165,24 @@ class TTSEngine {
     const sorted = [...matched];
     
     sorted.sort((a, b) => {
-      const aLang = a.lang.toLowerCase().replace('_', '-');
-      const bLang = b.lang.toLowerCase().replace('_', '-');
+      const aLang = (a.lang || '').toLowerCase().replace('_', '-');
+      const bLang = (b.lang || '').toLowerCase().replace('_', '-');
       
-      const aMatch = aLang.startsWith(cleanLang) || (cleanLang.startsWith('zh') && aLang.startsWith('zh'));
-      const bMatch = bLang.startsWith(cleanLang) || (cleanLang.startsWith('zh') && bLang.startsWith('zh'));
+      const aMatchExact = aLang.startsWith(cleanLang);
+      const bMatchExact = bLang.startsWith(cleanLang);
       
-      // 1. 首選語言排在最前面
-      if (aMatch && !bMatch) return -1;
-      if (!aMatch && bMatch) return 1;
+      // 1. 完全匹配地區語言（如 en-US 匹配 en-US）排在最前
+      if (aMatchExact && !bMatchExact) return -1;
+      if (!aMatchExact && bMatchExact) return 1;
       
-      // 2. 如果語言不同，按語言代碼字母排序
+      // 2. 語言前綴相同但地區不同時，按語言代碼排序
       if (aLang !== bLang) {
         return aLang.localeCompare(bLang);
       }
       
       // 3. 在同一語言中，優先 Online/Natural/Neural 語音
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
+      const aName = (a.name || '').toLowerCase();
+      const bName = (b.name || '').toLowerCase();
       const aNatural = aName.includes('natural') || aName.includes('online') || aName.includes('neural') || a.isEdge;
       const bNatural = bName.includes('natural') || bName.includes('online') || bName.includes('neural') || b.isEdge;
       
@@ -15133,7 +15190,7 @@ class TTSEngine {
       if (!aNatural && bNatural) return 1;
       
       // 4. 按名稱排序
-      return a.name.localeCompare(b.name);
+      return (a.name || '').localeCompare(b.name || '');
     });
     
     return sorted;
@@ -20019,6 +20076,7 @@ async function handleImportFiles(files) {
       let title = file.name.substring(0, file.name.lastIndexOf('.'));
       let author = getMsg('unknown_author');
       let cover = '';
+      let language = '';
       
       const format = ext.replace('.', '');
       
@@ -20029,12 +20087,14 @@ async function handleImportFiles(files) {
         title = res.metadata.title || title;
         author = res.metadata.author || author;
         cover = res.metadata.cover || '';
+        language = res.metadata.language || '';
       } else if (format === 'azw3' || format === 'mobi') {
         const parser = new Azw3Parser(file);
         const res = await parser.parse();
         title = res.metadata.title || title;
         author = res.metadata.author || author;
         cover = res.metadata.cover || '';
+        language = res.metadata.language || '';
       } else {
         if (format === 'cbz') {
           const parser = new ComicParser(file);
@@ -20042,12 +20102,14 @@ async function handleImportFiles(files) {
           title = res.metadata.title || title;
           author = res.metadata.author || author;
           cover = res.metadata.cover || '';
+          language = res.metadata.language || '';
         } else {
           const parser = new TextParser(file, format);
           const res = await parser.parse();
           title = res.metadata.title || title;
           author = res.metadata.author || author;
           cover = res.metadata.cover || '';
+          language = res.metadata.language || '';
         }
       }
 
@@ -20056,6 +20118,7 @@ async function handleImportFiles(files) {
       const incomingBookData = {
         title,
         author,
+        language,
         format,
         file,
         cover,
@@ -23730,10 +23793,15 @@ function toggleSettingsPanel() {
 }
 
 function toggleTTSPanel() {
-  document.getElementById('tts-panel').classList.toggle('dropdown-active');
+  const panel = document.getElementById('tts-panel');
+  const willBeActive = !panel.classList.contains('dropdown-active');
+  panel.classList.toggle('dropdown-active');
   document.getElementById('reader-sidebar').classList.remove('active');
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   updateHeaderActiveStates();
+  if (willBeActive && currentBook) {
+    initTTSPanelVoices(currentBook.file ? currentBook.file.name : '', false);
+  }
 }
 
 function updateHeaderActiveStates() {
@@ -23784,53 +23852,133 @@ function updateHeaderActiveStates() {
 
 // ==================== 6. TTS 語音朗讀專屬配置 ==================== */
 
+// 自動檢測書籍語言引擎 (多層精準判定：元數據 -> 正文抽樣統計分析 -> 兜底)
+function detectBookLanguage(filename = '') {
+  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
+    return currentTTSLanguage;
+  }
+
+  // 1. 第一優先級：檢查書籍內嵌的官方語言元數據 (<dc:language> 或 EXTH 524)
+  let metaLang = '';
+  if (epubBookData && epubBookData.metadata && epubBookData.metadata.language) {
+    metaLang = epubBookData.metadata.language;
+  } else if (currentBook && currentBook.language) {
+    metaLang = currentBook.language;
+  }
+
+  if (metaLang && typeof metaLang === 'string') {
+    const clean = metaLang.trim().toLowerCase().replace('_', '-');
+    if (clean.startsWith('zh') || clean.startsWith('cmn') || clean.startsWith('yue')) {
+      return (clean.includes('tw') || clean.includes('hk') || clean.includes('hant')) ? 'zh-TW' : 'zh-CN';
+    }
+    if (clean.startsWith('ja') || clean.startsWith('jp')) return 'ja';
+    if (clean.startsWith('ko') || clean.startsWith('kr')) return 'ko';
+    if (clean.startsWith('en')) return 'en';
+    if (clean.startsWith('fr')) return 'fr-FR';
+    if (clean.startsWith('de')) return 'de-DE';
+    if (clean.startsWith('es')) return 'es-ES';
+    if (clean.startsWith('ru')) return 'ru-RU';
+    if (clean.startsWith('it')) return 'it-IT';
+    if (/^[a-z]{2}(-[a-z]{2,4})?$/i.test(clean)) return clean;
+  }
+
+  // 2. 第二優先級：提取實際正文樣本進行統計字符頻率分析（排除 UI 元素及預設作者佔位符）
+  let contentSample = '';
+  if (tts && tts.sentences && tts.sentences.length > 0) {
+    // 優先使用 TTS 切分好的純文本句子
+    contentSample = tts.sentences.slice(0, 30).map(s => s.text || '').join(' ');
+  } else {
+    // 從 DOM 提取，但必須過濾掉 loading 加載動畫、按鈕、腳本等 UI 干擾文字
+    const bookContent = document.getElementById('book-content');
+    if (bookContent) {
+      const clone = bookContent.cloneNode(true);
+      clone.querySelectorAll('.ai-loading, .loading-spinner, script, style, button, svg').forEach(el => el.remove());
+      contentSample = (clone.textContent || '').trim().slice(0, 3000);
+    }
+  }
+
+  // 輔助標題樣本（排除默認佔位符如 "未知作者" / "Unknown Author"）
+  let titleSample = '';
+  if (currentBook) {
+    if (currentBook.title) titleSample += ' ' + currentBook.title;
+    const authorStr = currentBook.author || '';
+    const currentUnknownAuthor = (typeof getMsg === 'function' ? getMsg('unknown_author') : '') || '未知作者';
+    if (authorStr && authorStr !== '未知作者' && authorStr !== 'Unknown Author' && authorStr !== currentUnknownAuthor) {
+      titleSample += ' ' + authorStr;
+    }
+  }
+  if (filename && typeof filename === 'string') {
+    // 移除副檔名和括號標籤
+    const cleanFilename = filename.replace(/\.[a-z0-9]+$/i, '').replace(/\[.*?\]|\(.*?\)/g, '');
+    titleSample += ' ' + cleanFilename;
+  }
+
+  const fullSample = (contentSample + ' ' + titleSample).trim();
+
+  if (fullSample.length > 0) {
+    const cjkMatches = fullSample.match(/[\u4e00-\u9fa5]/g) || [];
+    const kanaMatches = fullSample.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || [];
+    const hangulMatches = fullSample.match(/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g) || [];
+    const latinMatches = fullSample.match(/[a-zA-Z]/g) || [];
+    const cyrillicMatches = fullSample.match(/[\u0400-\u04FF]/g) || [];
+    const arabicMatches = fullSample.match(/[\u0600-\u06FF]/g) || [];
+
+    const cjkCount = cjkMatches.length;
+    const kanaCount = kanaMatches.length;
+    const hangulCount = hangulMatches.length;
+    const latinCount = latinMatches.length;
+    const cyrillicCount = cyrillicMatches.length;
+    const arabicCount = arabicMatches.length;
+
+    // 韓文
+    if (hangulCount > 5 && hangulCount >= cjkCount) {
+      return 'ko';
+    }
+    // 日文
+    if (kanaCount > 5 || (kanaCount > 0 && kanaCount * 3 >= cjkCount)) {
+      return 'ja';
+    }
+    // 俄文等西里爾字母
+    if (cyrillicCount > 20 && cyrillicCount > latinCount) {
+      return 'ru-RU';
+    }
+    // 阿拉伯文
+    if (arabicCount > 20 && arabicCount > latinCount) {
+      return 'ar-SA';
+    }
+    // 中文：CJK 字符顯著多於拉丁字母
+    if (cjkCount >= 10 && cjkCount * 2 > latinCount) {
+      const tradExclusive = fullSample.match(/[這裡們點後開關體說聲經書個長發實誰國學門頁見讓動經頭時兩還給會樣無從為與應聽東廣關機電]/g) || [];
+      const simpExclusive = fullSample.match(/[这里们点后开关体说声经书个长发实谁国学门页见让动经头时两还给会样无从为与应听东广关机电]/g) || [];
+      if (tradExclusive.length > simpExclusive.length && tradExclusive.length >= 2) {
+        return 'zh-TW';
+      }
+      if (simpExclusive.length > tradExclusive.length && simpExclusive.length >= 2) {
+        return 'zh-CN';
+      }
+      return (navigator.language && (navigator.language.includes('TW') || navigator.language.includes('HK'))) ? 'zh-TW' : 'zh-CN';
+    }
+    // 英文/拉丁文：拉丁字母佔主導
+    if (latinCount >= 10 && latinCount >= cjkCount) {
+      return 'en';
+    }
+  }
+
+  // 3. 第三優先級：無書籍內容時，默認使用瀏覽器/系統語言
+  if (navigator.language && navigator.language.startsWith('zh')) {
+    return (navigator.language.includes('TW') || navigator.language.includes('HK')) ? 'zh-TW' : 'zh-CN';
+  } else if (navigator.language && navigator.language.startsWith('ja')) {
+    return 'ja';
+  } else if (navigator.language && navigator.language.startsWith('ko')) {
+    return 'ko';
+  }
+  return 'en';
+}
+
 // 初始化播放面板語音下拉選單
 function initTTSPanelVoices(filename, isBookOpening = false) {
   // 檢測書籍語言
-  let lang = 'en';
-  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
-    lang = currentTTSLanguage;
-  } else if (currentBook || (tts && tts.sentences && tts.sentences.length > 0)) {
-    // 優先從文件名、書籍標題及當前文本中抽樣檢測
-    let sampleText = filename || '';
-    if (currentBook) {
-      if (currentBook.title) sampleText += ' ' + currentBook.title;
-      if (currentBook.author) sampleText += ' ' + currentBook.author;
-    }
-    if (epubBookData && epubBookData.metadata) {
-      if (epubBookData.metadata.title) sampleText += ' ' + epubBookData.metadata.title;
-      if (epubBookData.metadata.author) sampleText += ' ' + epubBookData.metadata.author;
-    }
-    if (tts && tts.sentences && tts.sentences.length > 0) {
-      sampleText += ' ' + tts.sentences.slice(0, 10).map(s => s.text || '').join('');
-    } else {
-      const bookContent = document.getElementById('book-content');
-      if (bookContent) {
-        sampleText += ' ' + bookContent.textContent.slice(0, 1000);
-      }
-    }
-    
-    if (/[\u4e00-\u9fa5]/.test(sampleText)) {
-      lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
-    } else if (/[\u3040-\u309F\u30A0-\u30FF]/.test(sampleText)) {
-      lang = 'ja';
-    } else if (/[\uAC00-\uD7AF]/.test(sampleText)) {
-      lang = 'ko';
-    } else {
-      lang = 'en';
-    }
-  } else {
-    // 無書籍加載時，默認使用瀏覽器系統語言
-    if (navigator.language.startsWith('zh')) {
-      lang = navigator.language.includes('TW') || navigator.language.includes('HK') ? 'zh-TW' : 'zh-CN';
-    } else if (navigator.language.startsWith('ja')) {
-      lang = 'ja';
-    } else if (navigator.language.startsWith('ko')) {
-      lang = 'ko';
-    } else {
-      lang = 'en';
-    }
-  }
+  const lang = detectBookLanguage(filename);
 
   const select = document.getElementById('tts-voice-select');
   if (!select) return;
@@ -23878,10 +24026,12 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
       // If using OpenAI/Local, default to user's configured default voice if no saved progress voice
       select.value = ttsDefaultVoice;
       tts.setVoice(ttsDefaultVoice);
-    } else if (currentSelected && availableVoiceValues.includes(currentSelected)) {
+    } else if (!isBookOpening && currentSelected && availableVoiceValues.includes(currentSelected)) {
+      // 只有在非打開新書時（例如切換濾鏡按鈕、語音列表異步更新），才保持當前已選中的語音
       select.value = currentSelected;
       tts.setVoice(currentSelected);
     } else {
+      // 打開新書時，預設選擇當前書籍語言匹配的第一個高品質推薦語音
       select.value = availableVoiceValues[0];
       tts.setVoice(availableVoiceValues[0]);
     }

@@ -82,6 +82,7 @@ export class EpubParser {
       metadata: {
         title: this.metadata.title || 'Unknown EPUB',
         author: this.metadata.author || 'Unknown Author',
+        language: this.metadata.language || '',
         cover: this.cover,
         size: this.fileBlob.size
       },
@@ -119,10 +120,12 @@ export class EpubParser {
     const xmlDoc = parser.parseFromString(opfText, 'text/xml');
 
     // 解析元數據 (Metadata)
-    const titleNode = xmlDoc.querySelector('metadata > title') || xmlDoc.querySelector('title');
-    const creatorNode = xmlDoc.querySelector('metadata > creator') || xmlDoc.querySelector('creator');
+    const titleNode = xmlDoc.querySelector('metadata > title') || xmlDoc.querySelector('title') || xmlDoc.getElementsByTagName('dc:title')[0] || xmlDoc.getElementsByTagName('title')[0];
+    const creatorNode = xmlDoc.querySelector('metadata > creator') || xmlDoc.querySelector('creator') || xmlDoc.getElementsByTagName('dc:creator')[0] || xmlDoc.getElementsByTagName('creator')[0];
+    const langNode = xmlDoc.querySelector('metadata > language') || xmlDoc.querySelector('language') || xmlDoc.getElementsByTagName('dc:language')[0] || xmlDoc.getElementsByTagName('language')[0];
     this.metadata.title = titleNode ? titleNode.textContent.trim() : '';
     this.metadata.author = creatorNode ? creatorNode.textContent.trim() : '';
+    this.metadata.language = langNode ? langNode.textContent.trim() : '';
 
     // 解析清單 (Manifest)
     const itemNodes = xmlDoc.querySelectorAll('manifest > item');
