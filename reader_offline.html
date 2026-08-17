@@ -8755,7 +8755,7 @@ MindElixir.DARK_THEME = ue;
 </script>
 
   <!-- 引入主應用邏輯 (作為 ES Module 載入) -->
-  <script>window.__APP_VERSION__ = "3.3.4";
+  <script>window.__APP_VERSION__ = "3.3.5";
 const _offlineLocales = {
   "en": {
     "extension_name": {
@@ -23889,10 +23889,12 @@ function detectBookLanguage(filename = '') {
     }
   }
 
-  // 若仍無正文樣本，嘗試從章節元數據提取第一章標題
-  if (!contentSample.trim() && epubBookData && epubBookData.chapters && epubBookData.chapters.length > 0) {
-    const ch = epubBookData.chapters[0];
-    if (ch && ch.title) contentSample = ch.title;
+  // 抽樣目錄前 5 個章節的標題文字
+  if (epubBookData && epubBookData.chapters && epubBookData.chapters.length > 0) {
+    const chapterTitles = epubBookData.chapters.slice(0, 5).map(ch => ch.title || '').join(' ').trim();
+    if (chapterTitles) {
+      contentSample += ' ' + chapterTitles;
+    }
   }
 
   // 輔助標題樣本（排除默認佔位符如 "未知作者" / "Unknown Author"）
@@ -24022,24 +24024,65 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   const currentSelected = select.value;
   select.innerHTML = '';
 
+  let allAvailable = [...tts.voices];
+  if (ttsOnlyEdge && allAvailable.some(v => v.isEdge)) {
+    allAvailable = allAvailable.filter(v => v.isEdge);
+  }
+
+  // 取得該語言的推薦語音與其他語言語音
   let matchedVoices = tts.getVoicesForLanguage(lang);
   if (ttsOnlyEdge && matchedVoices.some(v => v.isEdge)) {
     matchedVoices = matchedVoices.filter(v => v.isEdge);
   }
-  
-  console.log(`[TTS] Matched ${matchedVoices.length} voices for lang="${lang}". Total voices: ${tts.voices.length}`);
-  
-  let hasDefaultVoice = false;
-  matchedVoices.forEach(voice => {
+
+  const cleanLang = (lang || 'en').toLowerCase().split('-')[0];
+  const otherVoices = allAvailable.filter(v => {
+    const vLang = (v.lang || '').toLowerCase().replace('_', '-');
+    return !vLang.startsWith(cleanLang) && v.lang !== 'multilingual';
+  });
+
+  const getLangDisplayName = (code) => {
+    if (code.startsWith('zh')) return getMsg('tts_lang_zh_cn') || '中文';
+    if (code.startsWith('en')) return getMsg('tts_lang_en') || 'English';
+    if (code.startsWith('ja')) return getMsg('tts_lang_ja') || '日本語';
+    if (code.startsWith('ko')) return getMsg('tts_lang_ko') || '한국어';
+    if (code.startsWith('fr')) return 'Français';
+    if (code.startsWith('de')) return 'Deutsch';
+    if (code.startsWith('es')) return 'Español';
+    return code.toUpperCase();
+  };
+
+  const createOption = (voice) => {
     const opt = document.createElement('option');
     opt.value = voice.name;
     const displayLang = voice.lang === 'multilingual' ? (getMsg('tts_lang_multilingual') || 'Multilingual') : voice.lang;
     opt.textContent = `${voice.name} (${displayLang})`;
-    select.appendChild(opt);
-    if (voice.name === ttsDefaultVoice) {
-      hasDefaultVoice = true;
-    }
-  });
+    return opt;
+  };
+
+  let hasDefaultVoice = false;
+
+  // 1. 添加推薦語音群組（置頂）
+  if (matchedVoices.length > 0) {
+    const groupRec = document.createElement('optgroup');
+    groupRec.label = `🌟 ${getMsg('recommended') || 'Recommended'} (${getLangDisplayName(lang)})`;
+    matchedVoices.forEach(voice => {
+      groupRec.appendChild(createOption(voice));
+      if (voice.name === ttsDefaultVoice) hasDefaultVoice = true;
+    });
+    select.appendChild(groupRec);
+  }
+
+  // 2. 添加其他語言語音群組
+  if (otherVoices.length > 0) {
+    const groupOther = document.createElement('optgroup');
+    groupOther.label = `🌐 ${getMsg('other_voices') || 'All Other Voices'}`;
+    otherVoices.forEach(voice => {
+      groupOther.appendChild(createOption(voice));
+      if (voice.name === ttsDefaultVoice) hasDefaultVoice = true;
+    });
+    select.appendChild(groupOther);
+  }
 
   // Inject default/custom voice for OpenAI/Local providers if not present
   if (ttsDefaultVoice && !hasDefaultVoice && (tts.ttsProvider === 'openai' || tts.ttsProvider === 'local')) {
@@ -24047,30 +24090,28 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
     opt.value = ttsDefaultVoice;
     opt.textContent = `${ttsDefaultVoice} (${getMsg('tts_lang_multilingual') || 'Multilingual'})`;
     select.appendChild(opt);
-    
-    // Dynamically register in the engine as well
     tts.setVoice(ttsDefaultVoice);
   }
 
-  // 優先使用保存的語音，其次保留當前已選中的語音，最後是默認優先語音
+  // 優先使用保存的語音，其次保留當前已選中的語音，最後是推薦列表第一項
   const savedVoice = currentBook?.progress?.ttsVoice;
-  const allAvailableVoices = select.querySelectorAll('option');
-  const availableVoiceValues = Array.from(allAvailableVoices).map(opt => opt.value);
+  const allOptions = select.querySelectorAll('option');
+  const availableVoiceValues = Array.from(allOptions).map(opt => opt.value);
   
   if (availableVoiceValues.length > 0) {
     if (savedVoice && availableVoiceValues.includes(savedVoice)) {
       select.value = savedVoice;
       tts.setVoice(savedVoice);
     } else if (ttsDefaultVoice && availableVoiceValues.includes(ttsDefaultVoice) && (tts.ttsProvider === 'openai' || tts.ttsProvider === 'local')) {
-      // If using OpenAI/Local, default to user's configured default voice if no saved progress voice
       select.value = ttsDefaultVoice;
       tts.setVoice(ttsDefaultVoice);
     } else if (!isBookOpening && currentSelected && availableVoiceValues.includes(currentSelected)) {
-      // 只有在非打開新書時（例如切換濾鏡按鈕、語音列表異步更新），才保持當前已選中的語音
       select.value = currentSelected;
       tts.setVoice(currentSelected);
+    } else if (matchedVoices.length > 0) {
+      select.value = matchedVoices[0].name;
+      tts.setVoice(matchedVoices[0].name);
     } else {
-      // 打開新書時，預設選擇當前書籍語言匹配的第一個高品質推薦語音
       select.value = availableVoiceValues[0];
       tts.setVoice(availableVoiceValues[0]);
     }
