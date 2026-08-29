@@ -8,7 +8,7 @@
     "start": "node server.js",
     "build:offline": "node scratch/compile_offline.js",
     "build:mobile": "node scratch/build_dist.js && npx cap sync android",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node scratch/test_tts_review_fixes.js"
   },
   "keywords": [],
   "author": "",

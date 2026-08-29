@@ -6078,10 +6078,10 @@ function detectBookLanguage(filename = '') {
     }
   }
 
-  // 抽樣目錄前 5 個章節的標題文字
+  // 僅在沒有正文樣本時，使用目錄標題作為語言檢測後備資料
   if (epubBookData && epubBookData.chapters && epubBookData.chapters.length > 0) {
     const chapterTitles = epubBookData.chapters.slice(0, 5).map(ch => ch.title || '').join(' ').trim();
-    if (chapterTitles) {
+    if (shouldAppendChapterTitles(contentSample, chapterTitles)) {
       contentSample += ' ' + chapterTitles;
     }
   }
@@ -6192,6 +6192,55 @@ function detectBookLanguage(filename = '') {
   return 'en';
 }
 
+function shouldAppendChapterTitles(contentSample, chapterTitles) {
+  return !contentSample.trim() && Boolean(chapterTitles.trim());
+}
+
+function getTTSVoiceGroups(voices, lang, edgeOnly = false) {
+  const normalizePrefix = (value) => {
+    const code = (value || '').toLowerCase().replace('_', '-');
+    if (code.startsWith('zh') || code.startsWith('cmn') || code.startsWith('yue') || code.startsWith('wuu')) return 'zh';
+    if (code.startsWith('en') || code.startsWith('eng')) return 'en';
+    if (code.startsWith('ja') || code.startsWith('jpn')) return 'ja';
+    if (code.startsWith('ko') || code.startsWith('kor')) return 'ko';
+    if (code.startsWith('fr') || code.startsWith('fra')) return 'fr';
+    if (code.startsWith('de') || code.startsWith('deu') || code.startsWith('ger')) return 'de';
+    if (code.startsWith('es') || code.startsWith('spa')) return 'es';
+    return code.split('-')[0];
+  };
+
+  const availableVoices = [];
+  const seenNames = new Set();
+  for (const voice of voices || []) {
+    if (edgeOnly && !voice.isEdge) continue;
+    if (seenNames.has(voice.name)) continue;
+    seenNames.add(voice.name);
+    availableVoices.push(voice);
+  }
+
+  const targetPrefix = normalizePrefix(lang || 'en');
+  const targetLocale = (lang || 'en').toLowerCase().replace('_', '-');
+  const matchedVoices = availableVoices.filter(voice =>
+    voice.lang === 'multilingual' || normalizePrefix(voice.lang) === targetPrefix
+  );
+  matchedVoices.sort((a, b) => {
+    const aLang = (a.lang || '').toLowerCase().replace('_', '-');
+    const bLang = (b.lang || '').toLowerCase().replace('_', '-');
+    const aExact = aLang.startsWith(targetLocale);
+    const bExact = bLang.startsWith(targetLocale);
+    if (aExact !== bExact) return aExact ? -1 : 1;
+    if (aLang !== bLang) return aLang.localeCompare(bLang);
+    const aNatural = a.isEdge || /natural|online|neural/i.test(a.name || '');
+    const bNatural = b.isEdge || /natural|online|neural/i.test(b.name || '');
+    if (aNatural !== bNatural) return aNatural ? -1 : 1;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  const matchedNames = new Set(matchedVoices.map(voice => voice.name));
+  const otherVoices = availableVoices.filter(voice => !matchedNames.has(voice.name));
+
+  return { matchedVoices, otherVoices, availableVoices };
+}
+
 // 初始化播放面板語音下拉選單
 function initTTSPanelVoices(filename, isBookOpening = false) {
   // 檢測書籍語言：打開新書時重新檢測並緩存；異步語音列表更新時複用緩存
@@ -6213,22 +6262,8 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   const currentSelected = select.value;
   select.innerHTML = '';
 
-  let allAvailable = [...tts.voices];
-  if (ttsOnlyEdge && allAvailable.some(v => v.isEdge)) {
-    allAvailable = allAvailable.filter(v => v.isEdge);
-  }
-
-  // 取得該語言的推薦語音與其他語言語音
-  let matchedVoices = tts.getVoicesForLanguage(lang);
-  if (ttsOnlyEdge && matchedVoices.some(v => v.isEdge)) {
-    matchedVoices = matchedVoices.filter(v => v.isEdge);
-  }
-
-  const cleanLang = (lang || 'en').toLowerCase().split('-')[0];
-  const otherVoices = allAvailable.filter(v => {
-    const vLang = (v.lang || '').toLowerCase().replace('_', '-');
-    return !vLang.startsWith(cleanLang) && v.lang !== 'multilingual';
-  });
+  const voiceGroups = getTTSVoiceGroups(tts.voices, lang, ttsOnlyEdge);
+  const { matchedVoices, otherVoices } = voiceGroups;
 
   const getLangDisplayName = (code) => {
     if (code.startsWith('zh')) return getMsg('tts_lang_zh_cn') || '中文';
@@ -6274,7 +6309,7 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   }
 
   // Inject default/custom voice for OpenAI/Local providers if not present
-  if (ttsDefaultVoice && !hasDefaultVoice && (tts.ttsProvider === 'openai' || tts.ttsProvider === 'local')) {
+  if (ttsDefaultVoice && !hasDefaultVoice && !ttsOnlyEdge && (tts.ttsProvider === 'openai' || tts.ttsProvider === 'local')) {
     const opt = document.createElement('option');
     opt.value = ttsDefaultVoice;
     opt.textContent = `${ttsDefaultVoice} (${getMsg('tts_lang_multilingual') || 'Multilingual'})`;

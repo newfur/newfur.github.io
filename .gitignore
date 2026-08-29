@@ -6,5 +6,6 @@ package-lock.json
 scratch/*
 !scratch/compile_offline.js
 !scratch/build_dist.js
+!scratch/test_tts_review_fixes.js
 www/
 inlined_google_fonts.css
