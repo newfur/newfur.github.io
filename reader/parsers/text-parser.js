@@ -220,8 +220,8 @@ export class TextParser {
 
     if (inList) compiledHtml.push('</ul>');
 
-    const html = security.sanitizeMarkdownHtml(compiledHtml.join('\n'));
-    return () => html;
+    const html = compiledHtml.join('\n');
+    return () => security.sanitizeMarkdownHtml(html);
   }
 
   // 3. FB2 XML 解析

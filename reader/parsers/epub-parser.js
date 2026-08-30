@@ -365,10 +365,16 @@ export class EpubParser {
       this.resourceUrls = [];
     }
 
+    const createErrorContent = (message) => {
+      const paragraph = document.createElement('p');
+      paragraph.style.color = 'red';
+      paragraph.textContent = message;
+      return security.sanitizeChapterHtml(paragraph.outerHTML);
+    };
+
     const file = this.zip.file(cleanHref);
     if (!file) {
-      const escapedHref = String(cleanHref).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      return security.sanitizeChapterHtml(`<p style="color: red">Error: Chapter file not found (${escapedHref})</p>`);
+      return createErrorContent(`Error: Chapter file not found (${cleanHref})`);
     }
     
     let htmlText = await file.async('string');
@@ -410,6 +416,7 @@ export class EpubParser {
 
     // 2. 處理 CSS 樣式表 (進行 CSS 隔離，防止書籍樣式污染全域 body/html)
     const stylesheets = doc.querySelectorAll('link[rel="stylesheet"]');
+    const localStyles = [];
     for (const link of stylesheets) {
       const href = link.getAttribute('href');
       if (href && !href.startsWith('data:') && !href.startsWith('http')) {
@@ -418,22 +425,18 @@ export class EpubParser {
         if (cssFile) {
           try {
             const cssText = await cssFile.async('string');
-            const scopedCss = this._scopeCSS(cssText, '.book-content');
-            const cssBlob = new Blob([scopedCss], { type: 'text/css' });
-            const cssUrl = URL.createObjectURL(cssBlob);
-            this.resourceUrls.push(cssUrl);
-            security.trustResourceUrl(cssUrl);
-            link.setAttribute('href', cssUrl);
+            localStyles.push(this._scopeCSS(cssText, '.book-content'));
           } catch (e) {
             console.error('Failed to load stylesheet:', absoluteCssPath, e);
           }
         }
       }
+      link.remove();
     }
 
     // 3. 獲取主體內容
     const body = doc.querySelector('body');
-    if (!body) return security.sanitizeChapterHtml('<p style="color: red">Error: Invalid chapter document</p>');
+    if (!body) return createErrorContent('Error: Invalid chapter document');
 
     // 將章節內部跳轉 a 標籤轉換為自定義跳轉事件或屬性
     const links = doc.querySelectorAll('a');
@@ -455,18 +458,18 @@ export class EpubParser {
     });
 
     // 提取並隔離所有樣式標籤 (link / style)，防止書籍內部樣式污染全域 body/html/div 等
-    const styleElements = doc.querySelectorAll('link[rel="stylesheet"], style');
+    const styleElements = doc.querySelectorAll('style');
     let stylesHtml = '';
+    localStyles.forEach((cssText) => {
+      const style = document.createElement('style');
+      style.textContent = cssText;
+      stylesHtml += `${style.outerHTML}\n`;
+    });
     styleElements.forEach(style => {
-      if (style.tagName.toLowerCase() === 'style') {
-        const cssText = style.textContent;
-        const scopedCssText = this._scopeCSS(cssText, '.book-content');
-        stylesHtml += `<style>${scopedCssText}</style>\n`;
-        style.remove(); // 從 DOM 中移除，防止 body.innerHTML 中殘留未被隔離的原始樣式
-      } else if (style.tagName.toLowerCase() === 'link') {
-        stylesHtml += style.outerHTML + '\n';
-        style.remove();
-      }
+      const scopedStyle = document.createElement('style');
+      scopedStyle.textContent = this._scopeCSS(style.textContent, '.book-content');
+      stylesHtml += `${scopedStyle.outerHTML}\n`;
+      style.remove(); // 從 DOM 中移除，防止 body.innerHTML 中殘留未被隔離的原始樣式
     });
     const finalContent = this._cleanMalformedTagFragments(stylesHtml + body.innerHTML);
     return security.sanitizeChapterHtml(finalContent);

@@ -20,6 +20,7 @@ globalThis.URL.revokeObjectURL = () => {};
 const { EpubParser } = await import('../../reader/parsers/epub-parser.js');
 const { TextParser } = await import('../../reader/parsers/text-parser.js');
 const { Azw3Parser } = await import('../../reader/parsers/azw3-parser.js');
+const { security } = await import('../../reader/security/sanitize.js');
 
 const attackHtml = `
   <p onclick="alert(1)" style="color: red; background-image: url(javascript:bad)">Safe text</p>
@@ -83,20 +84,65 @@ test('EPUB getContent sanitizes a parsed chapter and retains trusted local image
 test('EPUB returns escaped sanitized errors for missing chapters', async () => {
   const parser = new EpubParser({ size: 0 });
   parser.zip = fakeZip({});
-  const html = await parser.loadChapterContent('<img src=x onerror=alert(1)>');
+  const createElement = document.createElement.bind(document);
+  let paragraphCreated = false;
+  document.createElement = (tagName, options) => {
+    if (String(tagName).toLowerCase() === 'p') paragraphCreated = true;
+    return createElement(tagName, options);
+  };
+  let html;
+  try {
+    html = await parser.loadChapterContent('<img src=x onerror=alert(1)>');
+  } finally {
+    document.createElement = createElement;
+  }
 
+  assert.equal(paragraphCreated, true);
   assert.match(html, /Chapter file not found/);
   assert.equal(parseHtml(html).querySelector('img, [onerror]'), null);
+});
+
+test('EPUB removes external stylesheet links before the sanitizer boundary and inlines local scoped CSS', async () => {
+  const parser = new EpubParser({ size: 0 });
+  parser.zip = fakeZip({
+    'OPS/chapter.xhtml': '<html><head><link rel="stylesheet" href="https://evil.example/book.css"><link rel="stylesheet" href="book.css"></head><body><p>Safe text</p></body></html>',
+    'OPS/book.css': 'p { color: red; }',
+  });
+  const sanitize = security.sanitizeChapterHtml;
+  security.sanitizeChapterHtml = (html) => html;
+  let html;
+  try {
+    html = await parser.loadChapterContent('OPS/chapter.xhtml');
+  } finally {
+    security.sanitizeChapterHtml = sanitize;
+  }
+
+  assert.doesNotMatch(html, /<link\b|evil\.example/i);
+  assert.match(html, /<style>[\s\S]*@scope \(\.book-content\)[\s\S]*color: red/);
+  assert.equal(parser.resourceUrls.length, 0);
 });
 
 test('Markdown getContent removes executable links and preserves formatting and internal links', async () => {
   const markdown = `# Chapter\nSafe text with **bold** and [internal](#note).\n\n[bad](javascript:alert(1))\n\n<table onclick="bad"><tr><td>literal table</td></tr></table>`;
   const bytes = new TextEncoder().encode(markdown);
   const parser = new TextParser({ name: 'fixture.md', size: bytes.length, arrayBuffer: async () => bytes.buffer }, 'md');
+  const sanitize = security.sanitizeMarkdownHtml;
+  let sanitizerCalls = 0;
+  security.sanitizeMarkdownHtml = (html) => {
+    sanitizerCalls++;
+    return sanitize(html);
+  };
+  let book;
+  let html;
+  try {
+    book = await parser.parse();
+    assert.equal(sanitizerCalls, 0);
+    html = book.chapters[0].getContent();
+  } finally {
+    security.sanitizeMarkdownHtml = sanitize;
+  }
 
-  const book = await parser.parse();
-  const html = book.chapters[0].getContent();
-
+  assert.equal(sanitizerCalls, 1);
   assert.match(html, /Safe text with <strong>bold<\/strong>/);
   assert.match(html, /href="#note"/);
   assert.match(html, /&lt;table onclick=/);
