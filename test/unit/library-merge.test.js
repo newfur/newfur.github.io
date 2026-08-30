@@ -33,7 +33,7 @@ test('replacement resets derived state but retains annotations, folder, and stat
   assert.deepEqual(result.searchIndex, []);
   assert.deepEqual(result.ragIndex, []);
   assert.deepEqual(result.contentIndex, []);
-  assert.equal(result.progress.percent, 0);
+  assert.equal(result.progress.percent, 80);
   assert.equal(result.folder, 'Reading');
   assert.equal(result.notes[0].noteId, 'note-1');
   assert.equal(result.stats.totalTime, 10);
@@ -47,7 +47,7 @@ test('restore options control file and progress precedence and merge annotations
     bookmarks: [{ bookmarkId: 'bookmark-1', title: 'backup' }],
   }, { restoreFile: true, progressPreference: 'backup' });
   assert.equal(result.file.size, 3);
-  assert.equal(result.progress.percent, 0);
+  assert.equal(result.progress.percent, 20);
   assert.deepEqual(result.notes.map(note => note.noteId), ['note-1', 'note-2']);
   assert.equal(result.notes[0].text, 'backup');
   assert.equal(result.bookmarks[0].title, 'backup');
@@ -55,6 +55,9 @@ test('restore options control file and progress precedence and merge annotations
   const metadata = mergeRestoredBook(existing(), { ...result, file: new Blob(['metadata']) }, { restoreFile: false, progressPreference: 'current' });
   assert.equal(metadata.file.size, 3);
   assert.equal(metadata.progress.percent, 80);
+
+  const currentProgress = mergeRestoredBook(existing(), { ...result, progress: { percent: 20 } }, { restoreFile: true, progressPreference: 'current' });
+  assert.equal(currentProgress.progress.percent, 80);
 });
 
 test('import merges inside one write transaction and returns the committed book', async () => {

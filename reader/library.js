@@ -8,7 +8,6 @@ export function resetContentDerivedState(book) {
   result.bookSummary = '';
   result.chapterSummaries = {};
   for (const key of ['searchIndex', 'ragIndex', 'contentIndex']) if (key in result) result[key] = [];
-  result.progress = { ...(result.progress || {}), percent: 0, chapterIndex: 0, elementIndex: 0, activeSentenceIndex: 0, ttsActiveSentenceIndex: 0, ttsChapterIndex: 0, pdfPage: 1, comicImageIndex: 0, currentPageIndex: 0, scrollTop: 0 };
   return result;
 }
 
@@ -93,7 +92,11 @@ export class BookLibrary {
         draft = clone(getRequest.result);
         committedResult = updater(draft);
         if (committedResult && typeof committedResult.then === 'function') throw new TypeError('updateBook updater must be synchronous');
-        store.put(this._cleanBookForStorage(draft));
+        const nextRecord = committedResult === undefined ? draft : committedResult;
+        if (!nextRecord || typeof nextRecord !== 'object' || Array.isArray(nextRecord)) throw new TypeError('updateBook updater must return an object or undefined');
+        if (nextRecord.id !== id) throw new TypeError(`updateBook updater must preserve book id: ${id}`);
+        committedResult = this._cleanBookForStorage(nextRecord);
+        store.put(committedResult);
       } catch (error) { updaterError = error; transaction.abort(); }
     };
     return new Promise((resolve, reject) => {
@@ -107,7 +110,11 @@ export class BookLibrary {
   }
 
   async replaceBookContent(id, incoming) {
-    return this.updateBook(id, book => resetContentDerivedState({ ...book, ...incoming, format: incoming.format?.toLowerCase() || book.format, file: incoming.file, cover: incoming.cover || book.cover, size: incoming.size || book.size, fileHash: incoming.fileHash || book.fileHash }));
+    return this.updateBook(id, book => {
+      const replacement = resetContentDerivedState({ ...book, ...incoming, format: incoming.format?.toLowerCase() || book.format, file: incoming.file, cover: incoming.cover || book.cover, size: incoming.size || book.size, fileHash: incoming.fileHash || book.fileHash });
+      replacement.progress = { ...(replacement.progress || {}), percent: 0, chapterIndex: 0, elementIndex: 0, activeSentenceIndex: 0, ttsActiveSentenceIndex: 0, ttsChapterIndex: 0, pdfPage: 1, comicImageIndex: 0, currentPageIndex: 0, scrollTop: 0 };
+      return replacement;
+    });
   }
 
   async importBook(backupBook, options = {}) {
@@ -141,16 +148,16 @@ export class BookLibrary {
   async updateProgress(id, update) { return this.updateBook(id, book => { book.progress = { ...book.progress, ...update }; book.lastReadAt = Date.now(); return book; }); }
   async updateBookCover(id, cover) { return this.updateBook(id, book => { book.cover = cover; return book; }); }
   async updateBookFolder(id, folder) { return this.updateBook(id, book => { book.folder = folder; return book; }); }
-  async saveNote(id, note) { return this.updateBook(id, book => { book.notes ||= []; const index = book.notes.findIndex(item => item.noteId === note.noteId); if (index >= 0) book.notes[index] = { ...book.notes[index], ...note }; else book.notes.push({ noteId: `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: Date.now(), ...note }); return book.notes; }); }
-  async deleteNote(id, noteId) { return this.updateBook(id, book => { book.notes = (book.notes || []).filter(note => note.noteId !== noteId); return book.notes; }); }
-  async saveBookmark(id, bookmark) { return this.updateBook(id, book => { book.bookmarks ||= []; if (!book.bookmarks.some(item => item.chapterIndex === bookmark.chapterIndex && item.elementIndex === bookmark.elementIndex && item.pdfPage === bookmark.pdfPage)) book.bookmarks.push({ bookmarkId: `bookmark_${Date.now()}`, createdAt: Date.now(), title: bookmark.title || 'Bookmark', chapterIndex: bookmark.chapterIndex || 0, elementIndex: bookmark.elementIndex || 0, currentPageIndex: bookmark.currentPageIndex || 0, pdfPage: bookmark.pdfPage || 1 }); return book.bookmarks; }); }
-  async deleteBookmark(id, bookmarkId) { return this.updateBook(id, book => { book.bookmarks = (book.bookmarks || []).filter(item => item.bookmarkId !== bookmarkId); return book.bookmarks; }); }
+  async saveNote(id, note) { const book = await this.updateBook(id, book => { book.notes ||= []; const index = book.notes.findIndex(item => item.noteId === note.noteId); if (index >= 0) book.notes[index] = { ...book.notes[index], ...note }; else book.notes.push({ noteId: `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: Date.now(), ...note }); }); return book.notes; }
+  async deleteNote(id, noteId) { const book = await this.updateBook(id, book => { book.notes = (book.notes || []).filter(note => note.noteId !== noteId); }); return book.notes; }
+  async saveBookmark(id, bookmark) { const book = await this.updateBook(id, book => { book.bookmarks ||= []; if (!book.bookmarks.some(item => item.chapterIndex === bookmark.chapterIndex && item.elementIndex === bookmark.elementIndex && item.pdfPage === bookmark.pdfPage)) book.bookmarks.push({ bookmarkId: `bookmark_${Date.now()}`, createdAt: Date.now(), title: bookmark.title || 'Bookmark', chapterIndex: bookmark.chapterIndex || 0, elementIndex: bookmark.elementIndex || 0, currentPageIndex: bookmark.currentPageIndex || 0, pdfPage: bookmark.pdfPage || 1 }); }); return book.bookmarks; }
+  async deleteBookmark(id, bookmarkId) { const book = await this.updateBook(id, book => { book.bookmarks = (book.bookmarks || []).filter(item => item.bookmarkId !== bookmarkId); }); return book.bookmarks; }
   async addReadingDuration(id, seconds) { return this.updateBook(id, book => { book.stats ||= { totalTime: 0, readingDays: {}, hourlyDist: {} }; const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; const hour = now.getHours(); book.stats.totalTime = (book.stats.totalTime || 0) + seconds; book.stats.readingDays[date] = (book.stats.readingDays[date] || 0) + seconds; book.stats.hourlyDist[hour] = (book.stats.hourlyDist[hour] || 0) + seconds; book.lastReadAt = Date.now(); return book; }); }
   async clearBookStats(id) { return this.updateBook(id, book => { book.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} }; return book; }); }
   async clearAllStats() { const books = await this.getAllBooks(); await Promise.all(books.map(book => this.clearBookStats(book.id))); return true; }
-  async saveAIChat(id, chat) { return this.updateBook(id, book => { book.aiChats ||= []; book.aiChats.push({ chatId: chat.chatId || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: Date.now(), query: chat.query, reply: chat.reply }); return book.aiChats; }); }
-  async deleteAIChat(id, chatId) { return this.updateBook(id, book => { book.aiChats = (book.aiChats || []).filter(chat => chat.chatId !== chatId); return book.aiChats; }); }
-  async clearAllAIChats(id) { return this.updateBook(id, book => { book.aiChats = []; return book.aiChats; }); }
-  async saveBookSummary(id, summary) { return this.updateBook(id, book => { book.bookSummary = summary; return book.bookSummary; }); }
-  async saveChapterSummary(id, index, summary) { return this.updateBook(id, book => { book.chapterSummaries ||= {}; book.chapterSummaries[index] = summary; return book.chapterSummaries; }); }
+  async saveAIChat(id, chat) { const book = await this.updateBook(id, book => { book.aiChats ||= []; book.aiChats.push({ chatId: chat.chatId || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: Date.now(), query: chat.query, reply: chat.reply }); }); return book.aiChats; }
+  async deleteAIChat(id, chatId) { const book = await this.updateBook(id, book => { book.aiChats = (book.aiChats || []).filter(chat => chat.chatId !== chatId); }); return book.aiChats; }
+  async clearAllAIChats(id) { const book = await this.updateBook(id, book => { book.aiChats = []; }); return book.aiChats; }
+  async saveBookSummary(id, summary) { const book = await this.updateBook(id, book => { book.bookSummary = summary; }); return book.bookSummary; }
+  async saveChapterSummary(id, index, summary) { const book = await this.updateBook(id, book => { book.chapterSummaries ||= {}; book.chapterSummaries[index] = summary; }); return book.chapterSummaries; }
 }
