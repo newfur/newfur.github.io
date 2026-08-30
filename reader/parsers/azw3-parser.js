@@ -1,6 +1,8 @@
 // reader/parsers/azw3-parser.js
 // MOBI 與 AZW3 電子書二進位解析器，支持 PDB 頭解析、EXTH 元數據提取與 PalmDoc 數據解壓
 
+import { security } from '../security/sanitize.js';
+
 function getNumericValue(uint8Array) {
   if (!uint8Array || uint8Array.length === 0) return -1;
   
@@ -365,6 +367,7 @@ export class Azw3Parser {
               const url = URL.createObjectURL(blob);
               flowUrls[i] = url;
               uniqueResourceUrls.add(url);
+              security.trustResourceUrl(url);
             }
           }
         } catch (e) {
@@ -396,6 +399,7 @@ export class Azw3Parser {
             const url = URL.createObjectURL(blob);
             embedUrls[recIdx] = url;
             uniqueResourceUrls.add(url);
+            security.trustResourceUrl(url);
             return url;
           }
         } catch (e) {
@@ -520,7 +524,7 @@ export class Azw3Parser {
         const contentWithOffsets = this._injectOffsets(content, start);
         const cleanedContent = this._cleanChapterHtml(contentWithOffsets);
         const cleanedFragments = this._cleanMalformedTagFragments(cleanedContent);
-        const finalContent = applyReplacements(cleanedFragments);
+        const finalContent = security.sanitizeChapterHtml(applyReplacements(cleanedFragments));
         
         if (!this._isChapterEmpty(finalContent)) {
           let skeleton = 0;
@@ -545,9 +549,9 @@ export class Azw3Parser {
       const splitChapters = this._splitIntoChapters(this._injectOffsets(originalFullHtml, 0));
       chapters = [];
       splitChapters.forEach(ch => {
-        const rawContent = ch.getContent();
+        const rawContent = ch.content;
         const cleanedContent = this._cleanMalformedTagFragments(rawContent);
-        const finalContent = applyReplacements(cleanedContent);
+        const finalContent = security.sanitizeChapterHtml(applyReplacements(cleanedContent));
         if (!this._isChapterEmpty(finalContent)) {
           chapters.push({
             title: ch.title,
@@ -1228,7 +1232,7 @@ export class Azw3Parser {
               title,
               href: `chapter-${chapterIndex}`,
               skeleton: getSkeleton(content),
-              getContent: () => content
+              content
             });
             chapterIndex++;
           }
@@ -1251,7 +1255,7 @@ export class Azw3Parser {
           title,
           href: `chapter-${chapterIndex}`,
           skeleton: getSkeleton(content),
-          getContent: () => content
+          content
         });
       }
     } else {
@@ -1276,7 +1280,7 @@ export class Azw3Parser {
           title: `Chapter ${chapterIndex}`,
           href: `chapter-${chapterIndex}`,
           skeleton: getSkeleton(content),
-          getContent: () => content
+          content
         });
         
         offset = chunkEnd;

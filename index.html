@@ -12451,6 +12451,7 @@ class BookLibrary {
 
 
 
+
 class EpubParser {
   constructor(fileBlob) {
     this.fileBlob = fileBlob;
@@ -12813,7 +12814,10 @@ class EpubParser {
     }
 
     const file = this.zip.file(cleanHref);
-    if (!file) return `<p style="color:red;">Error: Chapter file not found (${cleanHref})</p>`;
+    if (!file) {
+      const escapedHref = String(cleanHref).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return security.sanitizeChapterHtml(`<p style="color: red">Error: Chapter file not found (${escapedHref})</p>`);
+    }
     
     let htmlText = await file.async('string');
     // Fix self-closing script tags that break DOMParser in text/html mode
@@ -12837,6 +12841,7 @@ class EpubParser {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
             this.resourceUrls.push(imgUrl);
+            security.trustResourceUrl(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
               img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', imgUrl);
               img.setAttribute('href', imgUrl);
@@ -12865,6 +12870,7 @@ class EpubParser {
             const cssBlob = new Blob([scopedCss], { type: 'text/css' });
             const cssUrl = URL.createObjectURL(cssBlob);
             this.resourceUrls.push(cssUrl);
+            security.trustResourceUrl(cssUrl);
             link.setAttribute('href', cssUrl);
           } catch (e) {
             console.error('Failed to load stylesheet:', absoluteCssPath, e);
@@ -12875,21 +12881,20 @@ class EpubParser {
 
     // 3. 獲取主體內容
     const body = doc.querySelector('body');
-    if (!body) return htmlText;
+    if (!body) return security.sanitizeChapterHtml('<p style="color: red">Error: Invalid chapter document</p>');
 
     // 將章節內部跳轉 a 標籤轉換為自定義跳轉事件或屬性
     const links = doc.querySelectorAll('a');
     links.forEach(a => {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('mailto')) {
-        // 重寫內部跳轉為 data-epub-href
-        let resolvedLink;
         if (href.startsWith('#')) {
-          // 如果是純 hash 的內部跳轉，將其解析為相對於當前檔案本身的完整路徑，防止頁面內跳轉失效
-          resolvedLink = cleanHref + href;
-        } else {
-          resolvedLink = this._resolvePath(baseDir, href);
+          a.style.cursor = 'pointer';
+          a.style.textDecoration = 'underline';
+          return;
         }
+        // 重寫內部跳轉為 data-epub-href
+        const resolvedLink = this._resolvePath(baseDir, href);
         a.setAttribute('data-epub-href', resolvedLink);
         a.removeAttribute('href'); // 移除 href 屬性以防止瀏覽器默認跳轉
         a.style.cursor = 'pointer';
@@ -12911,7 +12916,8 @@ class EpubParser {
         style.remove();
       }
     });
-    return this._cleanMalformedTagFragments(stylesHtml + body.innerHTML);
+    const finalContent = this._cleanMalformedTagFragments(stylesHtml + body.innerHTML);
+    return security.sanitizeChapterHtml(finalContent);
   }
 
   // CSS 隔離助手函數：利用現代 CSS @scope 特性進行超快速隔離，大幅減少解析時間
@@ -13014,6 +13020,8 @@ class EpubParser {
 // ==========================================
 // reader/parsers/azw3-parser.js
 // MOBI 與 AZW3 電子書二進位解析器，支持 PDB 頭解析、EXTH 元數據提取與 PalmDoc 數據解壓
+
+
 
 function getNumericValue(uint8Array) {
   if (!uint8Array || uint8Array.length === 0) return -1;
@@ -13379,6 +13387,7 @@ class Azw3Parser {
               const url = URL.createObjectURL(blob);
               flowUrls[i] = url;
               uniqueResourceUrls.add(url);
+              security.trustResourceUrl(url);
             }
           }
         } catch (e) {
@@ -13410,6 +13419,7 @@ class Azw3Parser {
             const url = URL.createObjectURL(blob);
             embedUrls[recIdx] = url;
             uniqueResourceUrls.add(url);
+            security.trustResourceUrl(url);
             return url;
           }
         } catch (e) {
@@ -13534,7 +13544,7 @@ class Azw3Parser {
         const contentWithOffsets = this._injectOffsets(content, start);
         const cleanedContent = this._cleanChapterHtml(contentWithOffsets);
         const cleanedFragments = this._cleanMalformedTagFragments(cleanedContent);
-        const finalContent = applyReplacements(cleanedFragments);
+        const finalContent = security.sanitizeChapterHtml(applyReplacements(cleanedFragments));
         
         if (!this._isChapterEmpty(finalContent)) {
           let skeleton = 0;
@@ -13559,9 +13569,9 @@ class Azw3Parser {
       const splitChapters = this._splitIntoChapters(this._injectOffsets(originalFullHtml, 0));
       chapters = [];
       splitChapters.forEach(ch => {
-        const rawContent = ch.getContent();
+        const rawContent = ch.content;
         const cleanedContent = this._cleanMalformedTagFragments(rawContent);
-        const finalContent = applyReplacements(cleanedContent);
+        const finalContent = security.sanitizeChapterHtml(applyReplacements(cleanedContent));
         if (!this._isChapterEmpty(finalContent)) {
           chapters.push({
             title: ch.title,
@@ -14242,7 +14252,7 @@ class Azw3Parser {
               title,
               href: `chapter-${chapterIndex}`,
               skeleton: getSkeleton(content),
-              getContent: () => content
+              content
             });
             chapterIndex++;
           }
@@ -14265,7 +14275,7 @@ class Azw3Parser {
           title,
           href: `chapter-${chapterIndex}`,
           skeleton: getSkeleton(content),
-          getContent: () => content
+          content
         });
       }
     } else {
@@ -14290,7 +14300,7 @@ class Azw3Parser {
           title: `Chapter ${chapterIndex}`,
           href: `chapter-${chapterIndex}`,
           skeleton: getSkeleton(content),
-          getContent: () => content
+          content
         });
         
         offset = chunkEnd;
@@ -14308,6 +14318,8 @@ class Azw3Parser {
 // ==========================================
 // reader/parsers/text-parser.js
 // 純文本 (TXT, Markdown) 與 FB2 電子書解析器，提供自動章節拆分、格式轉換與 XML DOM 提取
+
+
 
 class TextParser {
   constructor(fileBlob, format) {
@@ -14526,7 +14538,7 @@ class TextParser {
 
     if (inList) compiledHtml.push('</ul>');
 
-    const html = compiledHtml.join('\n');
+    const html = security.sanitizeMarkdownHtml(compiledHtml.join('\n'));
     return () => html;
   }
 
@@ -14538,6 +14550,7 @@ class TextParser {
         try {
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(reader.result, 'text/xml');
+          if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid FB2 XML');
           
           // 解析元數據
           const titleNode = xmlDoc.querySelector('book-title');
@@ -14585,6 +14598,7 @@ class TextParser {
               .replace(/<p>/g, '<p>').replace(/<\/p>/g, '</p>')
               .replace(/<strong>/g, '<strong>').replace(/<\/strong>/g, '</strong>')
               .replace(/<emphasis>/g, '<em>').replace(/<\/emphasis>/g, '</em>');
+            htmlContent = security.sanitizeChapterHtml(htmlContent);
               
             chapters.push({
               title,
@@ -14599,7 +14613,7 @@ class TextParser {
             chapters.push({
               title: 'Book Content',
               href: 'chapter-1',
-              getContent: () => body ? body.innerHTML : '<p>Empty Book</p>'
+              getContent: () => security.sanitizeChapterHtml(body ? body.innerHTML : '<p>Empty Book</p>')
             });
           }
 

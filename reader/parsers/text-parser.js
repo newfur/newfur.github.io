@@ -1,6 +1,8 @@
 // reader/parsers/text-parser.js
 // 純文本 (TXT, Markdown) 與 FB2 電子書解析器，提供自動章節拆分、格式轉換與 XML DOM 提取
 
+import { security } from '../security/sanitize.js';
+
 export class TextParser {
   constructor(fileBlob, format) {
     this.fileBlob = fileBlob;
@@ -218,7 +220,7 @@ export class TextParser {
 
     if (inList) compiledHtml.push('</ul>');
 
-    const html = compiledHtml.join('\n');
+    const html = security.sanitizeMarkdownHtml(compiledHtml.join('\n'));
     return () => html;
   }
 
@@ -230,6 +232,7 @@ export class TextParser {
         try {
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(reader.result, 'text/xml');
+          if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid FB2 XML');
           
           // 解析元數據
           const titleNode = xmlDoc.querySelector('book-title');
@@ -277,6 +280,7 @@ export class TextParser {
               .replace(/<p>/g, '<p>').replace(/<\/p>/g, '</p>')
               .replace(/<strong>/g, '<strong>').replace(/<\/strong>/g, '</strong>')
               .replace(/<emphasis>/g, '<em>').replace(/<\/emphasis>/g, '</em>');
+            htmlContent = security.sanitizeChapterHtml(htmlContent);
               
             chapters.push({
               title,
@@ -291,7 +295,7 @@ export class TextParser {
             chapters.push({
               title: 'Book Content',
               href: 'chapter-1',
-              getContent: () => body ? body.innerHTML : '<p>Empty Book</p>'
+              getContent: () => security.sanitizeChapterHtml(body ? body.innerHTML : '<p>Empty Book</p>')
             });
           }
 

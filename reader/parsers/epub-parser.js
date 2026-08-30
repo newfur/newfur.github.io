@@ -2,6 +2,7 @@
 // EPUB 電子書解析器，使用 JSZip 解壓並重構章節與資源
 
 import { getMsg } from '../i18n.js';
+import { security } from '../security/sanitize.js';
 
 export class EpubParser {
   constructor(fileBlob) {
@@ -365,7 +366,10 @@ export class EpubParser {
     }
 
     const file = this.zip.file(cleanHref);
-    if (!file) return `<p style="color:red;">Error: Chapter file not found (${cleanHref})</p>`;
+    if (!file) {
+      const escapedHref = String(cleanHref).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return security.sanitizeChapterHtml(`<p style="color: red">Error: Chapter file not found (${escapedHref})</p>`);
+    }
     
     let htmlText = await file.async('string');
     // Fix self-closing script tags that break DOMParser in text/html mode
@@ -389,6 +393,7 @@ export class EpubParser {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
             this.resourceUrls.push(imgUrl);
+            security.trustResourceUrl(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
               img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', imgUrl);
               img.setAttribute('href', imgUrl);
@@ -417,6 +422,7 @@ export class EpubParser {
             const cssBlob = new Blob([scopedCss], { type: 'text/css' });
             const cssUrl = URL.createObjectURL(cssBlob);
             this.resourceUrls.push(cssUrl);
+            security.trustResourceUrl(cssUrl);
             link.setAttribute('href', cssUrl);
           } catch (e) {
             console.error('Failed to load stylesheet:', absoluteCssPath, e);
@@ -427,21 +433,20 @@ export class EpubParser {
 
     // 3. 獲取主體內容
     const body = doc.querySelector('body');
-    if (!body) return htmlText;
+    if (!body) return security.sanitizeChapterHtml('<p style="color: red">Error: Invalid chapter document</p>');
 
     // 將章節內部跳轉 a 標籤轉換為自定義跳轉事件或屬性
     const links = doc.querySelectorAll('a');
     links.forEach(a => {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('mailto')) {
-        // 重寫內部跳轉為 data-epub-href
-        let resolvedLink;
         if (href.startsWith('#')) {
-          // 如果是純 hash 的內部跳轉，將其解析為相對於當前檔案本身的完整路徑，防止頁面內跳轉失效
-          resolvedLink = cleanHref + href;
-        } else {
-          resolvedLink = this._resolvePath(baseDir, href);
+          a.style.cursor = 'pointer';
+          a.style.textDecoration = 'underline';
+          return;
         }
+        // 重寫內部跳轉為 data-epub-href
+        const resolvedLink = this._resolvePath(baseDir, href);
         a.setAttribute('data-epub-href', resolvedLink);
         a.removeAttribute('href'); // 移除 href 屬性以防止瀏覽器默認跳轉
         a.style.cursor = 'pointer';
@@ -463,7 +468,8 @@ export class EpubParser {
         style.remove();
       }
     });
-    return this._cleanMalformedTagFragments(stylesHtml + body.innerHTML);
+    const finalContent = this._cleanMalformedTagFragments(stylesHtml + body.innerHTML);
+    return security.sanitizeChapterHtml(finalContent);
   }
 
   // CSS 隔離助手函數：利用現代 CSS @scope 特性進行超快速隔離，大幅減少解析時間
