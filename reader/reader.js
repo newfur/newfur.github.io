@@ -2345,7 +2345,7 @@ async function handleImportFiles(files) {
             try {
               console.log(`[handleImportFiles] Dynamically computing hash for existing book "${ex.title}" due to size match.`);
               ex.fileHash = await computeFileHash(ex.file);
-              await library.updateBook(ex); // 寫回資料庫
+              await library.updateBook(ex.id, book => { book.fileHash = ex.fileHash; return book; }); // 寫回資料庫
               if (ex.fileHash === incomingHash) {
                 duplicateBook = ex;
                 isHashMatch = true;
@@ -2392,11 +2392,11 @@ async function handleImportFiles(files) {
         continue;
       } else if (action === 'replace') {
         console.log(`[handleImportFiles] Replacing existing book: ${duplicateBook.title}`);
-        await library.replaceBookContent(duplicateBook.id, incomingBookData);
+        const committedBook = await library.replaceBookContent(duplicateBook.id, incomingBookData);
         // 更新記憶體中的 existingBooks 列表
         const idx = existingBooks.findIndex(ex => ex.id === duplicateBook.id);
         if (idx !== -1) {
-          existingBooks[idx] = { ...existingBooks[idx], ...incomingBookData };
+          existingBooks[idx] = committedBook;
         }
       } else {
         // 'import' 或 'keep_both' (生成新 ID 直接寫入)
@@ -10013,7 +10013,7 @@ function handleImportBackup(e) {
             chapterSummaries: b.chapterSummaries || {}
           };
 
-          await library.importBook(book);
+          await library.importBook(book, { restoreFile: true, progressPreference: 'backup' });
         }
 
         // 合併並還原自定義資料夾列表
@@ -10104,7 +10104,7 @@ function handleImportBackup(e) {
             chapterSummaries: b.chapterSummaries || {}
           };
 
-          await library.importBook(book);
+          await library.importBook(book, { restoreFile: true, progressPreference: 'backup' });
         }
       }
 
