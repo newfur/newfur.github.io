@@ -113,7 +113,7 @@ export class TextParser {
 
   _wrapParas(paras) {
     const html = paras.map(p => `<p>${this._escapeHTML(p)}</p>`).join('\n');
-    return () => html;
+    return () => security.sanitizeChapterHtml(html);
   }
 
   _escapeHTML(str) {

@@ -129,6 +129,35 @@ test('EPUB removes external stylesheet links before the sanitizer boundary and i
   assert.equal(parser.resourceUrls.length, 0);
 });
 
+test('TXT getContent sanitizes escaped text at retrieval while preserving ordinary paragraphs', async () => {
+  const text = `Ordinary paragraph\n<div onclick="alert(1)">HTML text</div><script>alert(2)</script><frame src="https://evil.example/frame"><embed src="https://evil.example/plugin">`;
+  const bytes = new TextEncoder().encode(text);
+  const parser = new TextParser({ name: 'fixture.txt', size: bytes.length, arrayBuffer: async () => bytes.buffer }, 'txt');
+  const sanitize = security.sanitizeChapterHtml;
+  let sanitizerCalls = 0;
+  security.sanitizeChapterHtml = (html) => {
+    sanitizerCalls++;
+    return sanitize(html);
+  };
+  let book;
+  let html;
+  try {
+    book = await parser.parse();
+    assert.equal(sanitizerCalls, 0);
+    html = book.chapters[0].getContent();
+  } finally {
+    security.sanitizeChapterHtml = sanitize;
+  }
+
+  const output = parseHtml(html);
+  assert.equal(sanitizerCalls, 1);
+  assert.equal(output.querySelectorAll('p').length, 2);
+  assert.match(output.body.textContent, /Ordinary paragraph/);
+  assert.match(output.body.textContent, /<div onclick="alert\(1\)">HTML text<\/div><script>alert\(2\)<\/script><frame/);
+  assert.equal(output.querySelector('script, [onclick]'), null);
+  assertNoActiveEmbedContent(html);
+});
+
 test('Markdown getContent removes executable links and preserves formatting and internal links', async () => {
   const markdown = `# Chapter\nSafe text with **bold** and [internal](#note).\n\n[bad](javascript:alert(1))\n\n<table onclick="bad"><tr><td>literal table</td></tr></table>\n<frame src="https://evil.example/frame"><embed src="https://evil.example/plugin">`;
   const bytes = new TextEncoder().encode(markdown);
