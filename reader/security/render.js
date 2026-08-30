@@ -8,7 +8,7 @@ export function clampProgress(value) {
   return Number.isFinite(number) ? Math.min(100, Math.max(0, Math.round(number))) : 0;
 }
 
-function escapeAttribute(value) {
+function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
@@ -18,12 +18,58 @@ function decodeMarkdownDestination(value) {
 
 export function markdownLink(label, destination, security) {
   const safeUrl = security.sanitizeUrl(decodeMarkdownDestination(destination), 'navigation');
-  return safeUrl ? `<a href="${escapeAttribute(safeUrl)}">${label}</a>` : label;
+  const safeLabel = escapeHtml(decodeMarkdownDestination(label));
+  return safeUrl ? `<a href="${escapeHtml(safeUrl)}">${safeLabel}</a>` : safeLabel;
 }
 
 export function markdownImage(alt, destination, security) {
   const safeUrl = security.sanitizeUrl(decodeMarkdownDestination(destination), 'resource');
-  return safeUrl ? `<img src="${escapeAttribute(safeUrl)}" alt="${alt}" class="obsidian-image" loading="lazy">` : alt;
+  const safeAlt = escapeHtml(decodeMarkdownDestination(alt));
+  return safeUrl ? `<img src="${escapeHtml(safeUrl)}" alt="${safeAlt}" class="obsidian-image" loading="lazy">` : safeAlt;
+}
+
+export function highlightTextNodes(root, query, targetMatchIndex = 0) {
+  const escapedQuery = String(query ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escapedQuery) return 0;
+  const regex = new RegExp(escapedQuery, 'gi');
+  const NodeCtor = root.ownerDocument.defaultView.Node;
+  let matchCount = 0;
+
+  const visit = (node) => {
+    if (node.nodeType === NodeCtor.TEXT_NODE) {
+      const text = node.nodeValue;
+      const matches = [...text.matchAll(regex)];
+      if (matches.length === 0) return;
+
+      const wrapper = root.ownerDocument.createElement('span');
+      wrapper.className = 'search-highlight-wrapper';
+      let offset = 0;
+      for (const match of matches) {
+        wrapper.appendChild(root.ownerDocument.createTextNode(text.slice(offset, match.index)));
+        const mark = root.ownerDocument.createElement('mark');
+        mark.className = 'search-highlight';
+        if (matchCount === targetMatchIndex) {
+          mark.classList.add('target-match');
+          mark.id = 'search-target-match';
+        }
+        mark.textContent = match[0];
+        wrapper.appendChild(mark);
+        offset = match.index + match[0].length;
+        matchCount++;
+      }
+      wrapper.appendChild(root.ownerDocument.createTextNode(text.slice(offset)));
+      node.parentNode.replaceChild(wrapper, node);
+      return;
+    }
+
+    if (node.nodeType !== NodeCtor.ELEMENT_NODE) return;
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer')) return;
+    [...node.childNodes].forEach(visit);
+  };
+
+  visit(root);
+  return matchCount;
 }
 
 export function insertChapterHtml(element, html, security) {

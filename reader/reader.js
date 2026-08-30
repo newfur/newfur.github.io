@@ -56,6 +56,7 @@ import { security } from './security/sanitize.js';
 import {
   appendBookCover,
   clampProgress,
+  highlightTextNodes,
   insertChapterHtml,
   markdownImage,
   markdownLink,
@@ -10750,34 +10751,7 @@ function highlightAndScrollToSearchQuery(query, targetMatchIndex = 0, smoothScro
   const contentEl = document.getElementById('book-content');
   if (!contentEl) return;
 
-  const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
-  let matchCount = 0;
-
-  const highlightTextNodes = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.nodeValue;
-      if (regex.test(text)) {
-        const span = document.createElement('span');
-        span.className = 'search-highlight-wrapper';
-        span.innerHTML = text.replace(regex, match => {
-          const isTarget = matchCount === targetMatchIndex;
-          const markClass = isTarget ? 'search-highlight target-match' : 'search-highlight';
-          const idAttr = isTarget ? 'id="search-target-match"' : '';
-          matchCount++;
-          return `<mark class="${markClass}" ${idAttr}>${match}</mark>`;
-        });
-        node.parentNode.replaceChild(span, node);
-      }
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const tagName = node.tagName.toLowerCase();
-      if (tagName !== 'script' && tagName !== 'style' && !node.classList.contains('textLayer')) {
-        const children = Array.from(node.childNodes);
-        children.forEach(child => highlightTextNodes(child));
-      }
-    }
-  };
-
-  highlightTextNodes(contentEl);
+  highlightTextNodes(contentEl, cleanQuery, targetMatchIndex);
 
   setTimeout(() => {
     const target = contentEl.querySelector('#search-target-match') || contentEl.querySelector('.search-highlight');

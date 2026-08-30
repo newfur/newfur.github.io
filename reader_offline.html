@@ -11962,7 +11962,7 @@ function clampProgress(value) {
   return Number.isFinite(number) ? Math.min(100, Math.max(0, Math.round(number))) : 0;
 }
 
-function escapeAttribute(value) {
+function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
@@ -11972,12 +11972,58 @@ function decodeMarkdownDestination(value) {
 
 function markdownLink(label, destination, security) {
   const safeUrl = security.sanitizeUrl(decodeMarkdownDestination(destination), 'navigation');
-  return safeUrl ? `<a href="${escapeAttribute(safeUrl)}">${label}</a>` : label;
+  const safeLabel = escapeHtml(decodeMarkdownDestination(label));
+  return safeUrl ? `<a href="${escapeHtml(safeUrl)}">${safeLabel}</a>` : safeLabel;
 }
 
 function markdownImage(alt, destination, security) {
   const safeUrl = security.sanitizeUrl(decodeMarkdownDestination(destination), 'resource');
-  return safeUrl ? `<img src="${escapeAttribute(safeUrl)}" alt="${alt}" class="obsidian-image" loading="lazy">` : alt;
+  const safeAlt = escapeHtml(decodeMarkdownDestination(alt));
+  return safeUrl ? `<img src="${escapeHtml(safeUrl)}" alt="${safeAlt}" class="obsidian-image" loading="lazy">` : safeAlt;
+}
+
+function highlightTextNodes(root, query, targetMatchIndex = 0) {
+  const escapedQuery = String(query ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escapedQuery) return 0;
+  const regex = new RegExp(escapedQuery, 'gi');
+  const NodeCtor = root.ownerDocument.defaultView.Node;
+  let matchCount = 0;
+
+  const visit = (node) => {
+    if (node.nodeType === NodeCtor.TEXT_NODE) {
+      const text = node.nodeValue;
+      const matches = [...text.matchAll(regex)];
+      if (matches.length === 0) return;
+
+      const wrapper = root.ownerDocument.createElement('span');
+      wrapper.className = 'search-highlight-wrapper';
+      let offset = 0;
+      for (const match of matches) {
+        wrapper.appendChild(root.ownerDocument.createTextNode(text.slice(offset, match.index)));
+        const mark = root.ownerDocument.createElement('mark');
+        mark.className = 'search-highlight';
+        if (matchCount === targetMatchIndex) {
+          mark.classList.add('target-match');
+          mark.id = 'search-target-match';
+        }
+        mark.textContent = match[0];
+        wrapper.appendChild(mark);
+        offset = match.index + match[0].length;
+        matchCount++;
+      }
+      wrapper.appendChild(root.ownerDocument.createTextNode(text.slice(offset)));
+      node.parentNode.replaceChild(wrapper, node);
+      return;
+    }
+
+    if (node.nodeType !== NodeCtor.ELEMENT_NODE) return;
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer')) return;
+    [...node.childNodes].forEach(visit);
+  };
+
+  visit(root);
+  return matchCount;
 }
 
 function insertChapterHtml(element, html, security) {
@@ -28887,34 +28933,7 @@ function highlightAndScrollToSearchQuery(query, targetMatchIndex = 0, smoothScro
   const contentEl = document.getElementById('book-content');
   if (!contentEl) return;
 
-  const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
-  let matchCount = 0;
-
-  const highlightTextNodes = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.nodeValue;
-      if (regex.test(text)) {
-        const span = document.createElement('span');
-        span.className = 'search-highlight-wrapper';
-        span.innerHTML = text.replace(regex, match => {
-          const isTarget = matchCount === targetMatchIndex;
-          const markClass = isTarget ? 'search-highlight target-match' : 'search-highlight';
-          const idAttr = isTarget ? 'id="search-target-match"' : '';
-          matchCount++;
-          return `<mark class="${markClass}" ${idAttr}>${match}</mark>`;
-        });
-        node.parentNode.replaceChild(span, node);
-      }
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const tagName = node.tagName.toLowerCase();
-      if (tagName !== 'script' && tagName !== 'style' && !node.classList.contains('textLayer')) {
-        const children = Array.from(node.childNodes);
-        children.forEach(child => highlightTextNodes(child));
-      }
-    }
-  };
-
-  highlightTextNodes(contentEl);
+  highlightTextNodes(contentEl, cleanQuery, targetMatchIndex);
 
   setTimeout(() => {
     const target = contentEl.querySelector('#search-target-match') || contentEl.querySelector('.search-highlight');

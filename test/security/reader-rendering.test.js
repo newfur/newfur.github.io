@@ -7,6 +7,7 @@ import { createSanitizer } from '../../reader/security/sanitize.js';
 import {
   appendBookCover,
   clampProgress,
+  highlightTextNodes,
   insertChapterHtml,
   markdownImage,
   markdownLink,
@@ -107,8 +108,25 @@ test('Markdown destinations are validated before link and image HTML constructio
   assert.equal(markdownLink('bad', 'javascript:alert(1)', security), 'bad');
   assert.equal(markdownImage('cover', 'data:image/png;base64,AAAA', security), '<img src="data:image/png;base64,AAAA" alt="cover" class="obsidian-image" loading="lazy">');
   assert.equal(markdownImage('bad', 'data:text/html,evil', security), 'bad');
-  const hostileLabel = new JSDOM(markdownLink('&quot; onmouseover=&quot;bad', 'https://example.com', security)).window.document.querySelector('a');
-  assert.equal(hostileLabel.hasAttribute('onmouseover'), false);
+  assert.equal(markdownLink('<img src=x onerror="bad">', 'https://example.com', security), '<a href="https://example.com">&lt;img src=x onerror=&quot;bad&quot;&gt;</a>');
+  assert.equal(markdownLink('<script>bad</script>', 'javascript:bad', security), '&lt;script&gt;bad&lt;/script&gt;');
+  assert.equal(markdownImage('" onerror="bad"><img src=x>', 'data:image/png;base64,AAAA', security), '<img src="data:image/png;base64,AAAA" alt="&quot; onerror=&quot;bad&quot;&gt;&lt;img src=x&gt;" class="obsidian-image" loading="lazy">');
+  assert.equal(markdownImage('<svg onload=bad>', 'data:text/html,evil', security), '&lt;svg onload=bad&gt;');
+});
+
+test('search highlighting constructs marks from text without reparsing sanitized content', () => {
+  const { root } = makeDom();
+  root.textContent = 'before <img src=x onerror=alert(1)> IMG after img';
+
+  const count = highlightTextNodes(root, 'img', 1);
+
+  assert.equal(count, 3);
+  assert.equal(root.querySelectorAll('mark.search-highlight').length, 3);
+  assert.deepEqual([...root.querySelectorAll('mark')].map((mark) => mark.textContent), ['img', 'IMG', 'img']);
+  assert.equal(root.querySelector('#search-target-match').textContent, 'IMG');
+  assert.ok(root.querySelector('#search-target-match').classList.contains('target-match'));
+  assert.equal(root.querySelectorAll('img, [onerror]').length, 0);
+  assert.equal(root.textContent, 'before <img src=x onerror=alert(1)> IMG after img');
 });
 
 test('final chapter insertion sanitizes parser and prefetched HTML again', () => {
