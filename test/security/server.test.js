@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { EventEmitter, once } from 'node:events';
 import http from 'node:http';
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
@@ -120,6 +123,30 @@ test('serves a valid file from an exact static mount', async (t) => {
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /^text\/html/);
   assert.ok(response.body.length > 100);
+});
+
+test('configured static mount serves normal files and rejects symlink escapes', async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-'));
+  const mount = path.join(fixture, 'mount');
+  const outside = path.join(fixture, 'outside');
+  await mkdir(mount);
+  await mkdir(outside);
+  await writeFile(path.join(mount, 'normal.txt'), 'normal');
+  await writeFile(path.join(outside, 'secret.txt'), 'secret');
+  await symlink(path.join(outside, 'secret.txt'), path.join(mount, 'secret-link.txt'));
+  await symlink(outside, path.join(mount, 'outside-link'));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+
+  const app = await start({ staticMounts: [{ prefix: '/assets/', root: mount }] });
+  t.after(() => app.close());
+  const response = await request(app, '/assets/normal.txt');
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.toString(), 'normal');
+  for (const requestPath of ['/assets/secret-link.txt', '/assets/outside-link/secret.txt']) {
+    const rejected = await request(app, requestPath);
+    assert.equal(rejected.statusCode, 404);
+    assert.doesNotMatch(rejected.body.toString(), /secret/);
+  }
 });
 
 test('rejects traversal, encoding, backslash, mount crossover, and sensitive paths', async (t) => {

@@ -54,7 +54,7 @@ function decodePathname(rawPathname) {
   return decoded;
 }
 
-function resolveStaticPath(rawPathname) {
+function resolveStaticTarget(rawPathname, staticMounts = STATIC_MOUNTS, rootFiles = ROOT_FILES) {
   let pathname;
   try {
     pathname = decodePathname(rawPathname);
@@ -69,15 +69,19 @@ function resolveStaticPath(rawPathname) {
     return null;
   }
 
-  const rootFile = ROOT_FILES.get(pathname);
-  if (rootFile) return rootFile;
+  const rootFile = rootFiles.get(pathname);
+  if (rootFile) return { filePath: rootFile, root: path.dirname(rootFile) };
 
-  const mount = STATIC_MOUNTS.find(({ prefix }) => pathname.startsWith(prefix));
+  const mount = staticMounts.find(({ prefix }) => pathname.startsWith(prefix));
   if (!mount) return null;
   const relativePath = pathname.slice(mount.prefix.length);
   if (!relativePath) return null;
   const candidate = path.resolve(mount.root, relativePath);
-  return isWithin(mount.root, candidate) ? candidate : null;
+  return isWithin(mount.root, candidate) ? { filePath: candidate, root: mount.root } : null;
+}
+
+function resolveStaticPath(rawPathname, staticMounts = STATIC_MOUNTS, rootFiles = ROOT_FILES) {
+  return resolveStaticTarget(rawPathname, staticMounts, rootFiles)?.filePath || null;
 }
 
 function rawPathname(requestUrl) {
@@ -92,6 +96,8 @@ function sendText(res, statusCode, body, headers = {}) {
 
 function createRequestHandler(options = {}) {
   const voiceRequest = options.voiceRequest || https.request;
+  const staticMounts = options.staticMounts || STATIC_MOUNTS;
+  const rootFiles = options.rootFiles || ROOT_FILES;
   return function handleRequest(req, res) {
     const pathname = rawPathname(req.url || '/');
 
@@ -123,14 +129,31 @@ function createRequestHandler(options = {}) {
     }
 
     const staticPathname = pathname === '/favicon.ico' ? '/icons/icon16.png' : pathname;
-    const localFilePath = resolveStaticPath(staticPathname);
-    if (!localFilePath) {
+    const target = resolveStaticTarget(staticPathname, staticMounts, rootFiles);
+    if (!target) {
       sendText(res, 404, '404 Not Found');
       return;
     }
 
-    fs.stat(localFilePath, (error, stats) => {
-      if (error || !stats.isFile()) {
+    Promise.all([
+      fs.promises.realpath(target.root),
+      fs.promises.realpath(target.filePath)
+    ]).then(async ([realRoot, realFilePath]) => {
+      if (!isWithin(realRoot, realFilePath)) {
+        sendText(res, 404, '404 Not Found');
+        return;
+      }
+      let file;
+      try {
+        file = await fs.promises.open(realFilePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+        const stats = await file.stat();
+        if (!stats.isFile()) {
+          await file.close();
+          sendText(res, 404, '404 Not Found');
+          return;
+        }
+      } catch {
+        if (file) await file.close().catch(() => {});
         sendText(res, 404, '404 Not Found');
         return;
       }
@@ -146,11 +169,11 @@ function createRequestHandler(options = {}) {
         '.svg': 'image/svg+xml',
         '.wasm': 'application/wasm'
       };
-      res.writeHead(200, { 'Content-Type': mimeTypes[path.extname(localFilePath).toLowerCase()] || 'application/octet-stream' });
-      const stream = fs.createReadStream(localFilePath);
+      res.writeHead(200, { 'Content-Type': mimeTypes[path.extname(realFilePath).toLowerCase()] || 'application/octet-stream' });
+      const stream = file.createReadStream();
       stream.on('error', () => res.destroy());
       stream.pipe(res);
-    });
+    }).catch(() => sendText(res, 404, '404 Not Found'));
   };
 }
 
