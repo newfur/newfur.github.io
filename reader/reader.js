@@ -52,6 +52,19 @@ import { BookLibrary } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
+import { security } from './security/sanitize.js';
+import {
+  appendBookCover,
+  clampProgress,
+  insertChapterHtml,
+  markdownImage,
+  markdownLink,
+  renderAiMarkdown,
+  renderErrorMessage,
+  renderFolderCover,
+  renderMermaidFallback,
+  renderMermaidSvg,
+} from './security/render.js';
 
 // 解析器導入
 import { EpubParser } from './parsers/epub-parser.js';
@@ -139,7 +152,10 @@ const selectedBookIds = new Set();
 
 
 function clearCoverUrls() {
-  activeCoverUrls.forEach(url => URL.revokeObjectURL(url));
+  activeCoverUrls.forEach(url => {
+    security.revokeResourceUrl(url);
+    URL.revokeObjectURL(url);
+  });
   activeCoverUrls = [];
 }
 
@@ -2571,72 +2587,76 @@ async function renderBookshelf(searchQuery = '') {
       const count = folderCounts[folderName] || 0;
       const folderBooks = books.filter(b => b.folder === folderName);
       
-      const percentSum = folderBooks.reduce((sum, b) => sum + (b.progress?.percent || 0), 0);
-      const avgPercent = folderBooks.length > 0 ? Math.round(percentSum / folderBooks.length) : 0;
+      const percentSum = folderBooks.reduce((sum, b) => sum + clampProgress(b.progress?.percent), 0);
+      const avgPercent = folderBooks.length > 0 ? clampProgress(percentSum / folderBooks.length) : 0;
       const booksCountText = getMsg('folder_books_count', [count]) || `${count} books`;
-      
-      let coverGridHtml = '';
-      if (folderBooks.length > 0) {
-        const topBooks = folderBooks.slice(0, 4);
-        coverGridHtml = `<div class="folder-covers-grid">`;
-        for (let i = 0; i < 4; i++) {
-          if (i < topBooks.length) {
-            const book = topBooks[i];
-            let bookCoverUrl = '';
-            if (book.cover) {
-              if (isBlobLike(book.cover)) {
-                bookCoverUrl = URL.createObjectURL(book.cover);
-                activeCoverUrls.push(bookCoverUrl);
-              } else if (typeof book.cover === 'string') {
-                bookCoverUrl = book.cover;
-              }
-            }
-            if (bookCoverUrl) {
-              coverGridHtml += `<img class="folder-cover-item" src="${bookCoverUrl}" alt="${book.title}">`;
-            } else {
-              coverGridHtml += `
-                <div class="folder-cover-placeholder">
-                  <span>${book.format.toUpperCase()}</span>
-                </div>
-              `;
-            }
-          } else {
-            coverGridHtml += `<div class="folder-cover-placeholder empty-cell"></div>`;
-          }
-        }
-        coverGridHtml += `</div>`;
-      } else {
-        coverGridHtml = `
-          <svg class="folder-icon-large" viewBox="0 0 24 24">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-          </svg>
-        `;
-      }
-      
+
       folderCard.innerHTML = `
-        <button class="folder-action-btn folder-rename-btn" title="${getMsg('rename_folder') || '重命名'}">
+        <button class="folder-action-btn folder-rename-btn">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
-        <button class="folder-action-btn folder-delete-btn" title="${getMsg('delete_book_title') || '刪除'}">
+        <button class="folder-action-btn folder-delete-btn">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
         <div class="folder-icon-container">
-          ${coverGridHtml}
-          <span class="folder-count-badge">${count}</span>
+          <span class="folder-count-badge"></span>
         </div>
         <div class="folder-info">
-          <h3 class="folder-title" title="${folderName}">${folderName}</h3>
-          <p class="folder-books-count">${booksCountText}</p>
+          <h3 class="folder-title"></h3>
+          <p class="folder-books-count"></p>
           <div class="book-progress-wrapper">
             <div class="book-progress-info">
-              <span>${getMsg('reading_progress', [avgPercent])}</span>
+              <span></span>
             </div>
             <div class="book-progress-bar">
-              <div class="book-progress-fill" style="width: ${avgPercent}%;"></div>
+              <div class="book-progress-fill"></div>
             </div>
           </div>
         </div>
       `;
+
+      folderCard.querySelector('.folder-rename-btn').title = getMsg('rename_folder') || '重命名';
+      folderCard.querySelector('.folder-delete-btn').title = getMsg('delete_book_title') || '刪除';
+      const folderTitle = folderCard.querySelector('.folder-title');
+      folderTitle.textContent = String(folderName);
+      folderTitle.title = String(folderName);
+      folderCard.querySelector('.folder-books-count').textContent = booksCountText;
+      folderCard.querySelector('.folder-count-badge').textContent = String(count);
+      folderCard.querySelector('.book-progress-info span').textContent = getMsg('reading_progress', [avgPercent]);
+      folderCard.querySelector('.book-progress-fill').style.width = `${avgPercent}%`;
+
+      const iconContainer = folderCard.querySelector('.folder-icon-container');
+      const countBadge = iconContainer.querySelector('.folder-count-badge');
+      if (folderBooks.length > 0) {
+        const coverGrid = document.createElement('div');
+        coverGrid.className = 'folder-covers-grid';
+        const topBooks = folderBooks.slice(0, 4);
+        for (let i = 0; i < 4; i++) {
+          if (i >= topBooks.length) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'folder-cover-placeholder empty-cell';
+            coverGrid.appendChild(emptyCell);
+            continue;
+          }
+          const coverBook = topBooks[i];
+          let coverUrl = typeof coverBook.cover === 'string' ? coverBook.cover : '';
+          if (isBlobLike(coverBook.cover)) {
+            coverUrl = URL.createObjectURL(coverBook.cover);
+            activeCoverUrls.push(coverUrl);
+            security.trustResourceUrl(coverUrl);
+          }
+          renderFolderCover(coverGrid, { title: coverBook.title, format: coverBook.format, coverUrl }, security);
+        }
+        iconContainer.insertBefore(coverGrid, countBadge);
+      } else {
+        const folderIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        folderIcon.setAttribute('class', 'folder-icon-large');
+        folderIcon.setAttribute('viewBox', '0 0 24 24');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z');
+        folderIcon.appendChild(path);
+        iconContainer.insertBefore(folderIcon, countBadge);
+      }
 
       // 點擊進入資料夾
       folderCard.addEventListener('click', async (e) => {
@@ -2668,20 +2688,20 @@ async function renderBookshelf(searchQuery = '') {
       }
       
       // 計算進度
-      const percent = Math.round(book.progress?.percent || 0);
+      const percent = clampProgress(book.progress?.percent);
       const bookTotalTime = Object.values(book.stats?.readingDays || {}).reduce((s, v) => s + v, 0);
 
       card.innerHTML = `
         <div class="book-card-checkbox-overlay">
           <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </div>
-        <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
+        <button class="book-delete-btn">
           <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
-        <button class="book-export-btn" title="${getMsg('export_book_title')}">
+        <button class="book-export-btn">
           <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         </button>
-        <button class="book-stats-btn" title="${getMsg('stats_btn_tooltip')}">
+        <button class="book-stats-btn">
           <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -2692,19 +2712,32 @@ async function renderBookshelf(searchQuery = '') {
           <!-- 封面將在此動態注入 -->
         </div>
         <div class="book-info">
-          <h3 class="book-title" title="${book.title}">${book.title}</h3>
-          <p class="book-author" title="${book.author}">${book.author}</p>
+          <h3 class="book-title"></h3>
+          <p class="book-author"></p>
           <div class="book-progress-wrapper">
             <div class="book-progress-info">
-              <span>${getMsg('reading_progress', [percent])}</span>
-              <span class="book-time-badge">${formatDuration(bookTotalTime)}</span>
+              <span class="book-progress-label"></span>
+              <span class="book-time-badge"></span>
             </div>
             <div class="book-progress-bar">
-              <div class="book-progress-fill" style="width: ${percent}%;"></div>
+              <div class="book-progress-fill"></div>
             </div>
           </div>
         </div>
       `;
+
+      card.querySelector('.book-delete-btn').title = getMsg('delete_book_title');
+      card.querySelector('.book-export-btn').title = getMsg('export_book_title');
+      card.querySelector('.book-stats-btn').title = getMsg('stats_btn_tooltip');
+      const bookTitle = card.querySelector('.book-title');
+      bookTitle.textContent = String(book.title ?? '');
+      bookTitle.title = String(book.title ?? '');
+      const bookAuthor = card.querySelector('.book-author');
+      bookAuthor.textContent = String(book.author ?? '');
+      bookAuthor.title = String(book.author ?? '');
+      card.querySelector('.book-progress-label').textContent = getMsg('reading_progress', [percent]);
+      card.querySelector('.book-time-badge').textContent = formatDuration(bookTotalTime);
+      card.querySelector('.book-progress-fill').style.width = `${percent}%`;
 
       // 拖曳事件綁定
       card.setAttribute('draggable', 'true');
@@ -2727,27 +2760,29 @@ async function renderBookshelf(searchQuery = '') {
         if (isBlobLike(book.cover)) {
           coverUrl = URL.createObjectURL(book.cover);
           activeCoverUrls.push(coverUrl);
+          security.trustResourceUrl(coverUrl);
         } else if (typeof book.cover === 'string') {
           coverUrl = book.cover;
         }
       }
 
       if (coverUrl) {
-        coverContainer.innerHTML = `
-          <img class="book-cover" src="${coverUrl}" alt="${book.title}">
-          <span class="book-format-badge">${book.format}</span>
-        `;
+        appendBookCover(coverContainer, { title: book.title, coverUrl }, security);
       } else {
         coverContainer.innerHTML = `
           <div class="book-cover-placeholder">
             <div class="book-cover-placeholder-icon">
               <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             </div>
-            <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
+            <div class="book-cover-placeholder-format" style="font-size:10px; font-weight:600;"></div>
           </div>
-          <span class="book-format-badge">${book.format}</span>
         `;
+        coverContainer.querySelector('.book-cover-placeholder-format').textContent = String(book.format ?? '').toUpperCase();
       }
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'book-format-badge';
+      formatBadge.textContent = String(book.format ?? '');
+      coverContainer.appendChild(formatBadge);
 
       // 動態綁定刪除事件
       const deleteBtn = card.querySelector('.book-delete-btn');
@@ -2962,7 +2997,8 @@ async function openBook(id) {
 
   // 設定書籍格式與排版類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
-  document.body.classList.add(`format-${book.format}`);
+  const safeFormatClass = String(book.format ?? '').toLowerCase().match(/^[a-z0-9_-]+$/)?.[0];
+  if (safeFormatClass) document.body.classList.add(`format-${safeFormatClass}`);
 
   // 初始化閱讀設定樣式
   initThemeAndStyles();
@@ -3047,7 +3083,10 @@ async function openBook(id) {
     if (requestId === openBookRequestId) {
       console.error('Failed to parse book:', err);
       clearResourceUrls();
-      contentEl.innerHTML = `<p style="color:red; padding:40px; text-align:center;">${getMsg('failed_load_book')}: ${err.message}</p>`;
+      const error = document.createElement('p');
+      error.style.cssText = 'color:red; padding:40px; text-align:center;';
+      renderErrorMessage(error, getMsg('failed_load_book'), err);
+      contentEl.replaceChildren(error);
     }
   } finally {
     if (openingBookId === id) openingBookId = null;
@@ -3645,7 +3684,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   const direction = (index > currentChapterIndex) ? 'forward' : 'backward';
 
   const updateDOM = () => {
-    contentEl.innerHTML = rawHtml;
+    insertChapterHtml(contentEl, rawHtml, security);
     
     // 清除書籍內置的干擾多欄排版的內聯樣式
     cleanUpBookInlineStyles(contentEl);
@@ -6802,12 +6841,14 @@ async function renderHighlightsList() {
       const li = document.createElement('li');
       li.className = 'sidebar-list-item';
       li.innerHTML = `
-        <div class="list-item-title">${b.title}</div>
-        <div class="list-item-meta">${new Date(b.createdAt).toLocaleString()}</div>
+        <div class="list-item-title"></div>
+        <div class="list-item-meta"></div>
         <button class="book-delete-btn-sidebar">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
       `;
+      li.querySelector('.list-item-title').textContent = String(b.title ?? '');
+      li.querySelector('.list-item-meta').textContent = new Date(b.createdAt).toLocaleString();
       li.addEventListener('click', () => {
         document.getElementById('reader-sidebar').classList.remove('active');
         updateHeaderActiveStates();
@@ -6836,12 +6877,18 @@ async function renderHighlightsList() {
             <svg class="svg-icon svg-icon-sm" style="margin-right:4px;" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg> ${getMsg('highlight_title')}
           `}
         </div>
-        <div class="list-item-text">"${n.text}"</div>
-        ${n.noteText ? `<div class="list-item-note">${n.noteText}</div>` : ''}
+        <div class="list-item-text"></div>
         <button class="book-delete-btn-sidebar">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
       `;
+      li.querySelector('.list-item-text').textContent = `"${String(n.text ?? '')}"`;
+      if (n.noteText) {
+        const note = document.createElement('div');
+        note.className = 'list-item-note';
+        note.textContent = String(n.noteText);
+        li.querySelector('.book-delete-btn-sidebar').before(note);
+      }
       li.addEventListener('click', () => {
         document.getElementById('reader-sidebar').classList.remove('active');
         updateHeaderActiveStates();
@@ -7020,10 +7067,10 @@ function formatMarkdown(text) {
   });
     
   // 1.5 圖片處理：![alt](url) -> <img src="url" alt="alt" class="obsidian-image" loading="lazy">
-  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="obsidian-image" loading="lazy">');
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (_, alt, destination) => markdownImage(alt, destination, security));
 
   // 2. 鏈接處理：[文本](鏈接) -> <a href="鏈接" target="_blank">文本</a>
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, (_, label, destination) => markdownLink(label, destination, security));
 
   // 3. 加粗：**文本** -> <strong>文本</strong>
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -7697,7 +7744,7 @@ async function renderMermaidBlocks() {
         for (const container of containers) {
           container.setAttribute('data-processed', 'true');
           const code = container.textContent.trim();
-          container.innerHTML = `<pre class="mermaid-fallback"><code>${code}</code></pre>`;
+          renderMermaidFallback(container, code);
         }
         return;
       }
@@ -7831,14 +7878,14 @@ async function renderMermaidBlocks() {
         try {
           const id = 'mermaid_' + Math.random().toString(36).substr(2, 9);
           const { svg } = await mermaid.render(id, code, container);
-          container.innerHTML = svg;
+          renderMermaidSvg(container, svg, security);
           setupMermaidPanZoom(container);
         } catch (err) {
           console.warn('Mermaid render failed for block, falling back to code display:', err.message || err);
-          container.innerHTML = `<pre class="mermaid-fallback"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+          renderMermaidFallback(container, code);
         }
       } else {
-        container.innerHTML = `<pre class="mermaid-fallback"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+        renderMermaidFallback(container, code);
       }
     }
   }
@@ -8097,7 +8144,8 @@ function initAISuggestions() {
       iconHTML = AI_SUGGESTION_ICONS[item.key];
     }
     
-    chip.innerHTML = `${iconHTML}<span>${item.label}</span>`;
+    chip.innerHTML = `${iconHTML}<span></span>`;
+    chip.querySelector('span').textContent = String(item.label ?? '');
     
     // Add edit button (pencil icon)
     const editBtn = document.createElement('button');
@@ -8206,7 +8254,7 @@ function renderAIChatHistory() {
     // AI 回答氣泡
     const assistantBubble = document.createElement('div');
     assistantBubble.className = 'ai-chat-bubble assistant-bubble';
-    assistantBubble.innerHTML = formatMarkdown(chat.reply);
+    renderAiMarkdown(assistantBubble, chat.reply, formatMarkdown, security);
     groupEl.appendChild(assistantBubble);
 
     // 添加刪除按鈕
@@ -8572,7 +8620,7 @@ function displayBookSummary(summary) {
   
   const assistantBubble = document.createElement('div');
   assistantBubble.className = 'ai-chat-bubble assistant-bubble';
-  assistantBubble.innerHTML = formatMarkdown(summary);
+  renderAiMarkdown(assistantBubble, summary, formatMarkdown, security);
   groupEl.appendChild(assistantBubble);
   
   contentEl.scrollTop = contentEl.scrollHeight;
@@ -8728,7 +8776,7 @@ Format your output nicely with markdown. Make sure it is highly professional, in
     let reportText = '';
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
       reportText = chunk;
-      assistantBubble.innerHTML = formatMarkdown(chunk);
+      renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
       contentEl.scrollTop = contentEl.scrollHeight;
     });
     
@@ -8745,7 +8793,8 @@ Format your output nicely with markdown. Make sure it is highly professional, in
     
     renderMermaidBlocks();
   } catch (err) {
-    assistantBubble.innerHTML = `<span style="color:red;">分析失敗: ${err.message}</span>`;
+    assistantBubble.style.color = 'red';
+    renderErrorMessage(assistantBubble, '分析失敗', err);
   }
 }
 
@@ -8795,7 +8844,7 @@ async function sendCustomAIQuery() {
   const allChats = (currentBook && currentBook.aiChats) ? currentBook.aiChats : [];
   const cachedChat = allChats.find(c => c.query === query);
   if (cachedChat) {
-    assistantBubble.innerHTML = formatMarkdown(cachedChat.reply);
+    renderAiMarkdown(assistantBubble, cachedChat.reply, formatMarkdown, security);
     contentEl.scrollTop = contentEl.scrollHeight;
     renderMermaidBlocks();
     return;
@@ -8960,7 +9009,7 @@ async function sendCustomAIQuery() {
 
     const history = (currentBook && currentBook.aiChats) ? currentBook.aiChats.slice(-10) : [];
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
-      assistantBubble.innerHTML = formatMarkdown(chunk);
+      renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
       contentEl.scrollTop = contentEl.scrollHeight;
     }, history);
 
@@ -8979,7 +9028,8 @@ async function sendCustomAIQuery() {
     currentBook.aiChats = updatedChats;
     renderMermaidBlocks();
   } catch (e) {
-    assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix') || 'Error'}: ${e.message}</span>`;
+    assistantBubble.style.color = 'red';
+    renderErrorMessage(assistantBubble, getMsg('error_prefix') || 'Error', e);
   }
 }
 
@@ -8995,7 +9045,7 @@ async function triggerAISummary() {
   try {
     const finalReply = await ai.summarize(selectedTextState, (chunk) => {
       if (assistantBubble) {
-        assistantBubble.innerHTML = formatMarkdown(chunk);
+        renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
@@ -9016,7 +9066,8 @@ async function triggerAISummary() {
     renderMermaidBlocks();
   } catch (e) {
     if (assistantBubble) {
-      assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
   }
 }
@@ -9037,7 +9088,7 @@ async function triggerAIExplain() {
   try {
     const finalReply = await ai.explainWord(selectedTextState, context, (chunk) => {
       if (assistantBubble) {
-        assistantBubble.innerHTML = formatMarkdown(chunk);
+        renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
@@ -9058,7 +9109,8 @@ async function triggerAIExplain() {
     renderMermaidBlocks();
   } catch (e) {
     if (assistantBubble) {
-      assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
   }
 }
@@ -9086,7 +9138,7 @@ async function triggerAITranslate() {
   try {
     const finalReply = await ai.translate(selectedTextState, targetLang, (chunk) => {
       if (assistantBubble) {
-        assistantBubble.innerHTML = formatMarkdown(chunk);
+        renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
     });
@@ -9107,7 +9159,8 @@ async function triggerAITranslate() {
     renderMermaidBlocks();
   } catch (e) {
     if (assistantBubble) {
-      assistantBubble.innerHTML = `<span style="color:red;">${getMsg('error_prefix')}: ${e.message}</span>`;
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
   }
 }
@@ -10291,10 +10344,13 @@ async function renderBookStats(bookId) {
       sortedDays.forEach(day => {
         const item = document.createElement('div');
         item.className = 'history-item';
-        item.innerHTML = `
-          <span class="history-date">${day}</span>
-          <span class="history-duration">${formatDuration(readingDays[day])}</span>
-        `;
+        const date = document.createElement('span');
+        date.className = 'history-date';
+        date.textContent = String(day);
+        const duration = document.createElement('span');
+        duration.className = 'history-duration';
+        duration.textContent = formatDuration(readingDays[day]);
+        item.append(date, duration);
         historyList.appendChild(item);
       });
     }
@@ -10501,10 +10557,8 @@ function openFolderSelectDialog(onSelected) {
   allFolders.forEach(folderName => {
     const li = document.createElement('li');
     li.className = 'folder-select-item';
-    li.innerHTML = `
-      <svg class="folder-select-item-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-      <span>${folderName}</span>
-    `;
+    li.innerHTML = '<svg class="folder-select-item-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span></span>';
+    li.querySelector('span').textContent = String(folderName);
     li.addEventListener('click', () => {
       onSelected(folderName);
       if (dialog) dialog.close();
@@ -10648,13 +10702,24 @@ function performBookSearch(query) {
       if (start > 0) snippet = '...' + snippet;
       if (end < res.text.length) snippet = snippet + '...';
 
+      const title = document.createElement('div');
+      title.style.cssText = 'font-size: 13px; color: var(--primary-color); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--font-sans);';
+      title.textContent = String(res.chapterTitle ?? '');
+      const snippetEl = document.createElement('div');
+      snippetEl.style.cssText = 'font-size: 15px; line-height: 1.5; color: var(--text-color);';
       const queryRegex = new RegExp(escapeRegExp(cleanQuery), 'gi');
-      const highlightedSnippet = snippet.replace(queryRegex, match => `<span class="search-snippet-match" style="background-color: rgba(255, 235, 59, 0.4); color: var(--text-color); font-weight: bold; border-radius: 2px; padding: 0 2px;">${match}</span>`);
-
-      li.innerHTML = `
-        <div style="font-size: 13px; color: var(--primary-color); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--font-sans);">${res.chapterTitle}</div>
-        <div style="font-size: 15px; line-height: 1.5; color: var(--text-color);">${highlightedSnippet}</div>
-      `;
+      let lastIndex = 0;
+      for (const match of snippet.matchAll(queryRegex)) {
+        snippetEl.appendChild(document.createTextNode(snippet.slice(lastIndex, match.index)));
+        const highlight = document.createElement('span');
+        highlight.className = 'search-snippet-match';
+        highlight.style.cssText = 'background-color: rgba(255, 235, 59, 0.4); color: var(--text-color); font-weight: bold; border-radius: 2px; padding: 0 2px;';
+        highlight.textContent = match[0];
+        snippetEl.appendChild(highlight);
+        lastIndex = match.index + match[0].length;
+      }
+      snippetEl.appendChild(document.createTextNode(snippet.slice(lastIndex)));
+      li.append(title, snippetEl);
 
       li.addEventListener('click', async () => {
         const isSameChapter = currentChapterIndex === res.chapterIndex;

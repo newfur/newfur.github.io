@@ -5,6 +5,8 @@ const SVG_RESOURCE_ATTRIBUTES = new Set(['href', 'xlink:href', 'clip-path', 'mas
 const SVG_PAINT_ATTRIBUTES = new Set(['fill', 'stroke']);
 const SVG_SAFE_PAINT = /^(?:none|inherit|currentColor|context-fill|context-stroke|transparent|[a-z]+|#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|url\(#[\w:.-]+\))$/i;
 const SVG_ATTRIBUTES = ['viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class'];
+const MERMAID_TAGS = ['svg', 'title', 'desc', 'defs', 'marker', 'g', 'path', 'line', 'polyline', 'rect', 'polygon', 'circle', 'ellipse', 'text', 'tspan', 'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern', 'use'];
+const MERMAID_ATTRIBUTES = [...SVG_ATTRIBUTES, 'style', 'xmlns', 'role', 'aria-label', 'aria-labelledby', 'aria-describedby', 'markerWidth', 'markerHeight', 'markerUnits', 'refX', 'refY', 'orient', 'gradientTransform', 'spreadMethod', 'dx', 'dy', 'dominant-baseline', 'alignment-baseline', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset', 'vector-effect', 'paint-order', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'];
 const FORBID_TAGS = ['audio', 'base', 'button', 'datalist', 'details', 'dialog', 'embed', 'fieldset', 'form', 'iframe', 'input', 'keygen', 'label', 'legend', 'meter', 'object', 'optgroup', 'option', 'output', 'picture', 'progress', 'script', 'select', 'source', 'style', 'summary', 'template', 'textarea', 'track', 'video', 'feimage'];
 const FORBID_ATTRIBUTES = new Set(['xlink:href', 'srcset', 'imagesrcset', 'background', 'formaction', 'action', 'ping', 'poster', 'longdesc', 'lowsrc', 'dynsrc', 'usemap', 'profile', 'manifest', 'cite', 'data', 'content', 'http-equiv', 'itemprop', 'itemtype', 'itemid', 'itemref']);
 const HTML_ATTRIBUTES = ['id', 'class', 'title', 'lang', 'dir', 'style', 'href', 'src', 'alt', 'width', 'height', 'colspan', 'rowspan', 'scope', 'headers', 'start', 'value', 'datetime', 'target', 'rel'];
@@ -167,10 +169,41 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
   };
 
   const sanitizeHtml = (html) => normalizeExternalLinks(html);
+  const sanitizeMermaidSvg = (svg) => {
+    const clean = DOMPurify.sanitize(String(svg ?? ''), {
+      USE_PROFILES: { svg: true, svgFilters: false },
+      ALLOWED_TAGS: MERMAID_TAGS,
+      ALLOWED_ATTR: MERMAID_ATTRIBUTES,
+      FORBID_TAGS: [...FORBID_TAGS, 'foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set', 'discard', 'feImage'],
+      RETURN_TRUSTED_TYPE: false,
+    });
+    const document = new windowObject.DOMParser().parseFromString(clean, 'text/html');
+    const allowedTags = new Set(MERMAID_TAGS.map((tag) => tag.toLowerCase()));
+    const allowedAttributes = new Set(MERMAID_ATTRIBUTES.map((attribute) => attribute.toLowerCase()));
+    for (const element of [...document.body.querySelectorAll('*')]) {
+      if (!allowedTags.has(element.nodeName.toLowerCase())) {
+        element.remove();
+        continue;
+      }
+      for (const attribute of [...element.attributes]) {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value.trim();
+        const isReference = SVG_RESOURCE_ATTRIBUTES.has(name);
+        if (!allowedAttributes.has(name) || name.startsWith('on') || isReference && !/^url\(#[A-Za-z0-9._:-]+\)$/.test(value) && !/^#[A-Za-z0-9._:-]+$/.test(value) || SVG_PAINT_ATTRIBUTES.has(name) && !isSafeSvgPaint(value)) {
+          element.removeAttribute(attribute.name);
+        } else if (name === 'style') {
+          const safeStyle = sanitizeStyle(value);
+          if (safeStyle) element.setAttribute('style', safeStyle); else element.removeAttribute(attribute.name);
+        }
+      }
+    }
+    return document.body.innerHTML;
+  };
   return {
     sanitizeChapterHtml: sanitizeHtml,
     sanitizeMarkdownHtml: sanitizeHtml,
     sanitizeAiHtml: sanitizeHtml,
+    sanitizeMermaidSvg,
     sanitizeUrl: (url, context = 'navigation') => isSafeUrl(url, context, trustedResourceUrls) ? String(url).trim() : null,
     trustResourceUrl: (url) => {
       const normalized = String(url || '').trim();

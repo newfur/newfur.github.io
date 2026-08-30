@@ -29,6 +29,8 @@ const locales = {
 // 2. JS Modules in order
 const modules = [
   'reader/i18n.js',
+  'reader/security/sanitize.js',
+  'reader/security/render.js',
   'reader/library.js',
   'reader/parsers/epub-parser.js',
   'reader/parsers/azw3-parser.js',
