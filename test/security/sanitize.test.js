@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import createDOMPurify from 'dompurify';
 import { createSanitizer } from '../../reader/security/sanitize.js';
@@ -89,4 +90,82 @@ test('removes unsafe CSS while retaining safe inline styles', () => {
 
 test('sanitizer requires a browser DOMPurify instance', () => {
   assert.throws(() => createSanitizer({}), /DOMPurify must be loaded first/);
+});
+
+test('removes every form and interactive control element', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(
+    '<form><button>button</button><textarea>text</textarea><select><option>one</option><optgroup><option>two</option></optgroup></select><label>label</label><fieldset><legend>legend</legend><output>out</output><progress></progress><meter></meter></fieldset><datalist><option>three</option></datalist><details><summary>summary</summary>details</details><dialog>dialog</dialog><keygen></form>',
+  );
+  for (const tag of ['form', 'button', 'textarea', 'select', 'option', 'optgroup', 'label', 'fieldset', 'legend', 'output', 'progress', 'meter', 'datalist', 'details', 'summary', 'dialog', 'keygen']) {
+    assert.doesNotMatch(html, new RegExp(`<${tag}\\b`, 'i'), `removed ${tag}`);
+  }
+});
+
+test('preserves safe SVG geometry but removes external references and active behavior', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid meet" id="icon" class="safe">
+      <circle cx="5" cy="5" r="4" fill="red" stroke="black" opacity=".8" />
+      <path d="M0 0L10 10" transform="translate(1 1)" />
+      <rect x="1" y="2" width="3" height="4" rx="1" ry="2" />
+      <line x1="0" y1="0" x2="10" y2="10" />
+      <polygon points="0,0 1,1 2,0" />
+      <linearGradient id="g" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="red" stop-opacity=".5" /></linearGradient>
+      <text x="1" y="2" text-anchor="middle" font-size="10" font-family="serif">safe</text>
+      <image href="https://evil.example/x" />
+      <use href="https://evil.example/symbol" xlink:href="https://evil.example/x" />
+      <use href="#safe-symbol" />
+    </svg>
+  `);
+  for (const attribute of ['viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'd', 'transform', 'fill', 'stroke', 'opacity', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class']) {
+    assert.match(html, new RegExp(`${attribute}=`, 'i'), `preserved ${attribute}`);
+  }
+  assert.doesNotMatch(html, /evil\.example|href="https?:/i);
+  assert.match(html, /href="#safe-symbol"/i);
+});
+
+test('rejects CSS resource URLs and preserves safe presentation styles', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <svg><circle fill="url(https://evil.example/fill)" stroke="url(#safe)" /></svg>
+    <div style="color: red; border: 1px solid red">safe</div>
+    <div style="fill: url(https://evil.example/fill)">fill</div>
+    <div style="border-image: url(https://evil.example/border)">border</div>
+  `);
+  assert.match(html, /style="color: red; border: 1px solid red"/);
+  assert.doesNotMatch(html, /url\s*\(\s*https?:/i);
+});
+
+test('validates navigation and resource URLs by context', () => {
+  const { security } = makeSecurity();
+  assert.equal(security.sanitizeUrl('https://example.com', 'navigation'), 'https://example.com');
+  assert.equal(security.sanitizeUrl('mailto:reader@example.com', 'navigation'), 'mailto:reader@example.com');
+  assert.equal(security.sanitizeUrl('#chapter', 'navigation'), '#chapter');
+  assert.equal(security.sanitizeUrl('blob:https://example.com/id', 'navigation'), null);
+  assert.equal(security.sanitizeUrl('data:image/png;base64,AAAA', 'resource'), 'data:image/png;base64,AAAA');
+  assert.equal(security.sanitizeUrl('data:image/jpeg;base64,AAAA', 'resource'), 'data:image/jpeg;base64,AAAA');
+  assert.equal(security.sanitizeUrl('data:image/gif;base64,AAAA', 'resource'), 'data:image/gif;base64,AAAA');
+  assert.equal(security.sanitizeUrl('data:image/webp;base64,AAAA', 'resource'), 'data:image/webp;base64,AAAA');
+  assert.equal(security.sanitizeUrl('data:image/svg+xml;base64,AAAA', 'resource'), 'data:image/svg+xml;base64,AAAA');
+  assert.equal(security.sanitizeUrl('blob:https://example.com/id', 'resource'), 'blob:https://example.com/id');
+  assert.equal(security.sanitizeUrl('data:text/html,evil', 'resource'), null);
+  assert.equal(security.sanitizeUrl('//example.com', 'navigation'), null);
+});
+
+test('all content helpers share the same sanitization boundary', () => {
+  const { security } = makeSecurity();
+  for (const helper of ['sanitizeChapterHtml', 'sanitizeMarkdownHtml', 'sanitizeAiHtml']) {
+    assert.doesNotMatch(security[helper]('<script>alert(1)</script><p>safe</p>'), /script/i, helper);
+    assert.match(security[helper]('<p>safe</p>'), /safe/);
+  }
+});
+
+test('loads DOMPurify before the application module in source and offline output', () => {
+  const readerHtml = fs.readFileSync(new URL('../../reader/reader.html', import.meta.url), 'utf8');
+  assert.ok(readerHtml.indexOf('libs/dompurify.min.js') < readerHtml.indexOf('type="module" src="reader.js"'));
+  for (const output of ['../../index.html', '../../reader_offline.html']) {
+    const html = fs.readFileSync(new URL(output, import.meta.url), 'utf8');
+    assert.ok(html.indexOf('DOMPurify') < html.indexOf('// Module: reader/i18n.js'), output);
+  }
 });
