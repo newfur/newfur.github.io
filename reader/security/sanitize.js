@@ -23,6 +23,13 @@ function cssIsSafe(value) {
   return !css || !/\\/.test(css) && SAFE_STYLE.test(css) && !/(?:url\s*\(|expression\s*\(|javascript\s*:|@import|position\s*:\s*(?:fixed|sticky)|(?:behavior|binding)\s*:)/i.test(normalized);
 }
 
+function isSafeSvgReference(value) {
+  const normalized = normalizeCssEscapes(value);
+  if (String(value || '').includes('\\')) return false;
+  if (/url\s*\(/i.test(normalized)) return /^url\(#[-\w:.]+\)$/i.test(normalized);
+  return true;
+}
+
 export function createSanitizer(windowObject = typeof window !== 'undefined' ? window : undefined) {
   const DOMPurify = windowObject?.DOMPurify;
   if (!DOMPurify || typeof DOMPurify.sanitize !== 'function' || typeof DOMPurify.addHook !== 'function') {
@@ -46,7 +53,8 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
       const isSvgReference = /^(?:image|use)$/i.test(node.nodeName) || ['filter', 'marker-start', 'marker-mid', 'marker-end', 'clip-path', 'mask'].includes(name);
       const context = name === 'src' && /^image$/i.test(node.nodeName) ? 'svg-reference' : (name === 'src' ? 'resource' : ((name === 'href' || isSvgReference) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation'));
       const hasExternalCssReference = /url\s*\(/i.test(value);
-      if (name.startsWith('on') || URL_ATTRIBUTES.has(name) && !isSafeUrl(value, context, trustedResourceUrls) || ['fill', 'stroke'].includes(name) && hasExternalCssReference) {
+      const svgReferenceAttribute = ['fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'].includes(name);
+      if (name.startsWith('on') || URL_ATTRIBUTES.has(name) && !isSafeUrl(value, context, trustedResourceUrls) || svgReferenceAttribute && !isSafeSvgReference(value)) {
         node.removeAttribute(attribute.name);
       }
       if (name === 'style' && !cssIsSafe(value)) node.removeAttribute(attribute.name);
@@ -61,6 +69,9 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
       const context = name === 'src' && /^image$/i.test(node.nodeName) ? 'svg-reference' : (name === 'src' ? 'resource' : ((name === 'href' || isSvgReference) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation'));
     if ((name === 'src' || name === 'href') && isSafeUrl(data.attrValue, context, trustedResourceUrls)) {
       data.keepAttr = true;
+    }
+    if (['fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'].includes(name) && !isSafeSvgReference(data.attrValue)) {
+      data.keepAttr = false;
     }
     if (SVG_PRESENTATION_ATTRIBUTES.has(name)) data.keepAttr = true;
     if (name === 'target' || name === 'rel') data.keepAttr = true;

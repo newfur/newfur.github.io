@@ -180,9 +180,27 @@ test('rejects SVG resource sources and CSS reference bypasses', () => {
     <div style="background: java\\73cript:alert(1)">javascript</div>
     <div style="\\40import url(https://evil.example/css)">import</div>
   `);
-  assert.doesNotMatch(html, /evil\.example|data:image\/png|url\s*\(|style="[^"]*(?:e\\?xpression|java\\?script|@import)/i);
+  assert.doesNotMatch(html, /evil\.example|data:image\/png|url\s*\(https?:|style="[^"]*(?:e\\?xpression|java\\?script|@import)/i);
   assert.match(html, /color: red/);
   assert.match(html, /href="#safe"/);
+});
+
+test('rejects escaped SVG paint and resource references while preserving safe values', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <svg>
+      <circle fill="red" stroke="currentColor" />
+      <path fill="url(#safe-paint)" stroke="url(#safe-stroke)" />
+      <circle fill="u\\72l(https://evil.example/fill)" />
+      <circle stroke="u\\72l(https://evil.example/stroke)" />
+      <circle clip-path="u\\72l(https://evil.example/clip)" mask="u\\72l(https://evil.example/mask)" filter="u\\72l(https://evil.example/filter)" marker-start="u\\72l(https://evil.example/marker)" />
+    </svg>
+  `);
+  assert.match(html, /fill="red"/);
+  assert.match(html, /stroke="currentColor"/);
+  assert.match(html, /url\(#safe-paint\)/);
+  assert.match(html, /url\(#safe-stroke\)/);
+  assert.doesNotMatch(html, /evil\.example|u\\72l/i);
 });
 
 test('removes active media and fetch controls while retaining ordinary images', () => {
