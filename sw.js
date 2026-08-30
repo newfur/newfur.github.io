@@ -105,7 +105,8 @@ self.addEventListener('fetch', (event) => {
   const lifetime = (async () => {
     const key = cacheKey(event.request);
     const runtime = await caches.open(RUNTIME_NAME);
-    const cached = await matchRuntime(runtime, key) || await caches.match(key);
+    const precache = await caches.open(PRECACHE_NAME);
+    const cached = await matchRuntime(runtime, key) || await precache.match(key);
     if (cached) {
       resolveResponse(cached);
       await fetch(event.request).then((fresh) => storeRuntime(event.request, fresh)).catch(() => {});

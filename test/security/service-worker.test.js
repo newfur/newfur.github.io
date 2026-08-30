@@ -238,6 +238,26 @@ test('PWA fetch serves a refreshed runtime entry instead of the older precache c
   assert.equal(await second.response.text(), 'fresh');
 });
 
+test('PWA fetch ignores matching responses in unrelated origin caches', async () => {
+  let fetches = 0;
+  const worker = await loadPwaWorker({
+    fetchImpl: async () => {
+      fetches += 1;
+      return response('network');
+    }
+  });
+  worker.stores.set('unrelated-cache', {
+    async match(request) {
+      return request.url === 'https://reader.example/icons/shared.png' ? response('unrelated') : undefined;
+    }
+  });
+
+  const result = await dispatchFetch(worker.listeners.fetch, new Request('https://reader.example/icons/shared.png'));
+
+  assert.equal(await result.response.text(), 'network');
+  assert.equal(fetches, 1);
+});
+
 test('PWA fetch excludes API, cross-origin, query variants, downloads, and non-GET requests', async () => {
   const worker = await loadPwaWorker();
   const requests = [
