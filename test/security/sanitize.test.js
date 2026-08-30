@@ -275,3 +275,34 @@ test('normalizes mixed and duplicate external links after sanitization', () => {
   assert.match(html, /href="#local"/);
   assert.match(html, /href="mailto:reader@example.com"/);
 });
+
+test('removes unsupported URL-bearing attributes and SVG URL attacks', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <a href="https://safe.example" src="javascript:bad" ping="https://evil.example/ping">safe</a>
+    <img src="data:image/png;base64,AAAA" srcset="https://evil.example/1 1x" imagesrcset="https://evil.example/2" background="https://evil.example/bg" usemap="https://evil.example/map">
+    <svg><a href="javascript:bad">bad</a><a href="#local">local</a>
+      <linearGradient href="https://evil.example/gradient" xlink:href="javascript:bad" />
+      <feImage href="https://evil.example/image" xlink:href="data:image/png;base64,AAAA" />
+    </svg>
+  `);
+  assert.match(html, /href="https:\/\/safe\.example"/);
+  assert.match(html, /src="data:image\/png/);
+  assert.match(html, /href="#local"/);
+  assert.doesNotMatch(html, /srcset|imagesrcset|background|ping|usemap|evil\.example|javascript:|xlink:href/i);
+});
+
+test('keeps safe book CSS declarations and drops malicious siblings', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <p style="color: rgb(10, 20, 30); font-size: 1.2em; text-align: justify; margin: 1em; text-transform: uppercase">safe</p>
+    <p style="position: fixed; top: 0; color: red; z-index: 9; background-image: url(https://evil.example/bg); image-set(url(https://evil.example/x) 1x); text-align: left">mixed</p>
+    <p style="/*x*/position:fixed; color: blue">comment</p>
+  `);
+  assert.match(html, /color: rgb\(10, 20, 30\)/);
+  assert.match(html, /text-align: justify/);
+  assert.match(html, /text-transform: uppercase/);
+  assert.match(html, /color: red/);
+  assert.match(html, /text-align: left/);
+  assert.doesNotMatch(html, /position|top:|z-index|background-image|image-set|evil\.example|\/\*x\*\//i);
+});
