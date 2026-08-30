@@ -59,6 +59,7 @@ for (const modPath of modules) {
 
 // 3. Read jszip.min.js, mind-elixir.js and mind-elixir.css
 const jszipJs = fs.readFileSync(path.join(rootDir, 'reader/libs/jszip.min.js'), 'utf8');
+const dompurifyJs = fs.readFileSync(path.join(rootDir, 'reader/libs/dompurify.min.js'), 'utf8');
 const mindElixirJs = fs.readFileSync(path.join(rootDir, 'reader/libs/mind-elixir.js'), 'utf8');
 const mindElixirCss = fs.readFileSync(path.join(rootDir, 'reader/libs/mind-elixir.css'), 'utf8');
 
@@ -74,9 +75,11 @@ html = html.replace('<link rel="stylesheet" href="reader.css">', () => `<style>$
 
 // Inline JSZIP, Mind Elixir and module scripts
 const scriptJszipRegex = /<script src="libs\/jszip\.min\.js"><\/script>/i;
+const scriptDompurifyRegex = /<script src="libs\/dompurify\.min\.js"><\/script>/i;
 const scriptMindElixirRegex = /<script src="libs\/mind-elixir\.js"><\/script>/i;
 const scriptModuleRegex = /<script type="module" src="reader\.js"><\/script>/i;
 
+html = html.replace(scriptDompurifyRegex, () => `<script>${dompurifyJs}</script>`);
 html = html.replace(scriptJszipRegex, () => `<script>${jszipJs}</script>`);
 html = html.replace(scriptMindElixirRegex, () => `<script>${mindElixirJs}</script>`);
 html = html.replace(scriptModuleRegex, () => `<script>${combinedJs}</script>`);

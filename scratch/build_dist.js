@@ -34,12 +34,16 @@ fs.mkdirSync(distDir, { recursive: true });
 console.log('3. Copying compiled index.html to www/index.html');
 fs.copyFileSync(path.join(rootDir, 'index.html'), path.join(distDir, 'index.html'));
 
-console.log('4. Copying reader/libs/mermaid.min.js to www/reader/libs/');
+console.log('4. Copying reader/libs/mermaid.min.js and dompurify.min.js to www/reader/libs/');
 const destLibsDir = path.join(distDir, 'reader', 'libs');
 fs.mkdirSync(destLibsDir, { recursive: true });
 fs.copyFileSync(
   path.join(rootDir, 'reader/libs/mermaid.min.js'),
   path.join(destLibsDir, 'mermaid.min.js')
+);
+fs.copyFileSync(
+  path.join(rootDir, 'reader/libs/dompurify.min.js'),
+  path.join(destLibsDir, 'dompurify.min.js')
 );
 
 console.log('5. Copying application icons...');
