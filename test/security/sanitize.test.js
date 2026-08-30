@@ -306,3 +306,39 @@ test('keeps safe book CSS declarations and drops malicious siblings', () => {
   assert.match(html, /text-align: left/);
   assert.doesNotMatch(html, /position|top:|z-index|background-image|image-set|evil\.example|\/\*x\*\//i);
 });
+
+test('applies an explicit HTML and SVG attribute allowlist', () => {
+  const { security } = makeSecurity();
+  const blob = 'blob:null/allowed-image';
+  security.trustResourceUrl(blob);
+  const html = security.sanitizeChapterHtml(`
+    <p id="p" class="chapter" title="title" lang="en" dir="ltr" style="color: red" data-secret="no" unknown="no">text</p>
+    <a href="https://example.com" target="_blank" rel="noopener" ping="https://evil.example/ping">link</a>
+    <img src="https://example.com/image.png" alt="cover" width="10" height="20" data-secret="no">
+    <img src="${blob}" alt="blob">
+    <svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" color-profile="javascript:bad" glyphRef="https://evil.example/glyph" unknown-svg="no">
+      <circle cx="5" cy="5" r="4" fill="red" />
+    </svg>
+  `);
+  assert.match(html, /id="p"|class="chapter"|lang="en"|dir="ltr"|style="color: red"/);
+  assert.match(html, /href="https:\/\/example\.com"/);
+  assert.match(html, /<img src="https:\/\/example\.com\/image\.png" alt="cover" width="10" height="20">/);
+  assert.match(html, new RegExp(`<img src="${blob}" alt="blob">`));
+  assert.match(html, /viewBox="0 0 10 10"|xmlns="http:\/\/www\.w3\.org\/2000\/svg"|cx="5"|fill="red"/);
+  assert.doesNotMatch(html, /data-secret|unknown|ping=|color-profile|glyphRef|evil\.example/i);
+});
+
+test('applies URL policy only to semantically supported href and src attributes', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <a href="https://safe.example">safe link</a>
+    <a src="https://evil.example/wrong-context">wrong context</a>
+    <img src="https://safe.example/image.png" alt="safe image">
+    <img href="https://evil.example/wrong-context" alt="wrong context">
+    <svg><a href="https://evil.example/svg-link">svg external</a><a href="#local">svg local</a></svg>
+  `);
+  assert.match(html, /href="https:\/\/safe\.example"/);
+  assert.match(html, /src="https:\/\/safe\.example\/image\.png"/);
+  assert.match(html, /href="#local"/);
+  assert.doesNotMatch(html, /evil\.example|wrong-context/);
+});
