@@ -38,6 +38,7 @@ test('removes active elements and event handlers while preserving book structure
 
 test('allows approved links and image sources but rejects executable URLs', () => {
   const { security } = makeSecurity();
+  security.trustResourceUrl('blob:https://example.com/id');
   const html = security.sanitizeChapterHtml(`
     <a href="#chapter-2">internal</a>
     <a href="https://example.com">https</a>
@@ -139,6 +140,8 @@ test('rejects CSS resource URLs and preserves safe presentation styles', () => {
 
 test('validates navigation and resource URLs by context', () => {
   const { security } = makeSecurity();
+  const trustedBlob = 'blob:https://example.com/reader-image-1';
+  security.trustResourceUrl(trustedBlob);
   assert.equal(security.sanitizeUrl('https://example.com', 'navigation'), 'https://example.com');
   assert.equal(security.sanitizeUrl('mailto:reader@example.com', 'navigation'), 'mailto:reader@example.com');
   assert.equal(security.sanitizeUrl('#chapter', 'navigation'), '#chapter');
@@ -148,9 +151,49 @@ test('validates navigation and resource URLs by context', () => {
   assert.equal(security.sanitizeUrl('data:image/gif;base64,AAAA', 'resource'), 'data:image/gif;base64,AAAA');
   assert.equal(security.sanitizeUrl('data:image/webp;base64,AAAA', 'resource'), 'data:image/webp;base64,AAAA');
   assert.equal(security.sanitizeUrl('data:image/svg+xml;base64,AAAA', 'resource'), 'data:image/svg+xml;base64,AAAA');
-  assert.equal(security.sanitizeUrl('blob:https://example.com/id', 'resource'), 'blob:https://example.com/id');
+  assert.equal(security.sanitizeUrl(trustedBlob, 'resource'), trustedBlob);
+  assert.equal(security.sanitizeUrl('blob:https://example.com/id', 'resource'), null);
+  assert.equal(security.sanitizeUrl('blob:null/offline-image', 'resource'), null);
+  assert.equal(security.sanitizeUrl('blob:javascript:alert(1)', 'resource'), null);
+  assert.equal(security.sanitizeUrl('blob:https://example.com/', 'resource'), null);
+  const offlineBlob = 'blob:null/offline-image';
+  assert.equal(security.trustResourceUrl(offlineBlob), true);
+  assert.equal(security.sanitizeUrl(offlineBlob, 'resource'), offlineBlob);
+  security.revokeResourceUrl(trustedBlob);
+  assert.equal(security.sanitizeUrl(trustedBlob, 'resource'), null);
   assert.equal(security.sanitizeUrl('data:text/html,evil', 'resource'), null);
   assert.equal(security.sanitizeUrl('//example.com', 'navigation'), null);
+});
+
+test('rejects SVG resource sources and CSS reference bypasses', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <svg>
+      <image src="https://evil.example/src" href="https://evil.example/href" xlink:href="data:image/png;base64,AAAA" />
+      <use href="#safe" xlink:href="https://evil.example/x" />
+      <circle clip-path="url(https://evil.example/clip)" mask="url(#mask)" filter="url(https://evil.example/filter)" marker-start="url(https://evil.example/marker)" fill="url(https://evil.example/fill)" stroke="url(#safe)" />
+      <style>.x { fill: u\\72l(https://evil.example/fill) }</style>
+    </svg>
+    <div style="color: red">safe</div>
+    <div style="background: u\\72l(https://evil.example/bg)">escaped</div>
+    <div style="width: e\\78pression(alert(1))">expression</div>
+    <div style="background: java\\73cript:alert(1)">javascript</div>
+    <div style="\\40import url(https://evil.example/css)">import</div>
+  `);
+  assert.doesNotMatch(html, /evil\.example|data:image\/png|url\s*\(|style="[^"]*(?:e\\?xpression|java\\?script|@import)/i);
+  assert.match(html, /color: red/);
+  assert.match(html, /href="#safe"/);
+});
+
+test('removes active media and fetch controls while retaining ordinary images', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(
+    '<video src="https://evil.example/v"></video><audio src="https://evil.example/a"></audio><source src="https://evil.example/s"><track src="https://evil.example/t"><picture><source srcset="https://evil.example/p"><img src="data:image/png;base64,AAAA"></picture><img src="data:image/png;base64,AAAA">',
+  );
+  for (const tag of ['video', 'audio', 'source', 'track', 'picture']) {
+    assert.doesNotMatch(html, new RegExp(`<${tag}\\b`, 'i'), `removed ${tag}`);
+  }
+  assert.match(html, /<img src="data:image\/png/);
 });
 
 test('all content helpers share the same sanitization boundary', () => {

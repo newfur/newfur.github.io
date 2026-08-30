@@ -1,20 +1,26 @@
 const ALLOWED_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml);/i;
-const URL_ATTRIBUTES = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'cite', 'data', 'filter', 'marker-start', 'marker-mid', 'marker-end']);
+const BLOB_URL = /^blob:(?:null|https?:\/\/[^/\s]+)\/[^\s/?#]+$/i;
+const URL_ATTRIBUTES = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'cite', 'data', 'filter', 'clip-path', 'mask', 'marker-start', 'marker-mid', 'marker-end']);
 const SAFE_STYLE = /^(?:(?:color|background-color|font|font-family|font-size|font-style|font-weight|line-height|text-align|text-decoration|white-space|margin|padding|width|max-width|height|max-height|display|vertical-align|border(?:-[a-z-]+)?|fill|stroke)\s*:\s*[^;{}]+;?\s*)+$/i;
 const SVG_PRESENTATION_ATTRIBUTES = new Set(['viewbox', 'preserveaspectratio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientunits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class']);
 
-function isSafeUrl(value, context = 'navigation') {
+function isSafeUrl(value, context = 'navigation', trustedResourceUrls = new Set()) {
   const normalized = String(value || '').trim();
   if (!normalized || /[\u0000-\u001f\u007f]/.test(normalized)) return false;
   if (context === 'svg-reference') return /^#/.test(normalized);
   if (context === 'resource' && ALLOWED_DATA_IMAGE.test(normalized)) return true;
-  if (context === 'resource' && /^blob:/i.test(normalized)) return true;
+  if (context === 'resource' && BLOB_URL.test(normalized)) return trustedResourceUrls.has(normalized);
   return /^(?:https?:|mailto:|#)/i.test(normalized);
+}
+
+function normalizeCssEscapes(value) {
+  return String(value || '').replace(/\\([0-9a-f]{1,6})\s?/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/\\(.)/g, '$1');
 }
 
 function cssIsSafe(value) {
   const css = String(value || '').trim();
-  return !css || SAFE_STYLE.test(css) && !/(?:url\s*\(|expression\s*\(|javascript\s*:|@import|position\s*:\s*(?:fixed|sticky)|(?:behavior|binding)\s*:)/i.test(css);
+  const normalized = normalizeCssEscapes(css);
+  return !css || !/\\/.test(css) && SAFE_STYLE.test(css) && !/(?:url\s*\(|expression\s*\(|javascript\s*:|@import|position\s*:\s*(?:fixed|sticky)|(?:behavior|binding)\s*:)/i.test(normalized);
 }
 
 export function createSanitizer(windowObject = typeof window !== 'undefined' ? window : undefined) {
@@ -22,10 +28,11 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
   if (!DOMPurify || typeof DOMPurify.sanitize !== 'function' || typeof DOMPurify.addHook !== 'function') {
     throw new Error('DOMPurify must be loaded first on the supplied window object');
   }
+  const trustedResourceUrls = new Set();
 
   const config = {
     ALLOW_UNKNOWN_PROTOCOLS: true,
-    FORBID_TAGS: ['base', 'button', 'datalist', 'details', 'dialog', 'embed', 'fieldset', 'form', 'iframe', 'input', 'keygen', 'label', 'legend', 'meter', 'object', 'optgroup', 'option', 'output', 'progress', 'script', 'select', 'style', 'summary', 'template', 'textarea'],
+    FORBID_TAGS: ['audio', 'base', 'button', 'datalist', 'details', 'dialog', 'embed', 'fieldset', 'form', 'iframe', 'input', 'keygen', 'label', 'legend', 'meter', 'object', 'optgroup', 'option', 'output', 'picture', 'progress', 'script', 'select', 'source', 'style', 'summary', 'template', 'textarea', 'track', 'video'],
     FORBID_ATTR: ['action', 'formaction', 'xlink:href'],
     ADD_TAGS: ['svg', 'circle', 'path', 'line', 'polyline', 'rect', 'polygon', 'linearGradient', 'stop', 'text', 'image', 'use'],
     ADD_ATTR: ['target', 'rel', 'viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class'],
@@ -36,9 +43,10 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
     for (const attribute of Array.from(node.attributes || [])) {
       const name = attribute.name.toLowerCase();
       const value = attribute.value;
-      const context = name === 'src' ? 'resource' : ((name === 'href' || ['filter', 'marker-start', 'marker-mid', 'marker-end'].includes(name)) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation');
+      const isSvgReference = /^(?:image|use)$/i.test(node.nodeName) || ['filter', 'marker-start', 'marker-mid', 'marker-end', 'clip-path', 'mask'].includes(name);
+      const context = name === 'src' && /^image$/i.test(node.nodeName) ? 'svg-reference' : (name === 'src' ? 'resource' : ((name === 'href' || isSvgReference) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation'));
       const hasExternalCssReference = /url\s*\(/i.test(value);
-      if (name.startsWith('on') || URL_ATTRIBUTES.has(name) && !isSafeUrl(value, context) || ['fill', 'stroke'].includes(name) && hasExternalCssReference) {
+      if (name.startsWith('on') || URL_ATTRIBUTES.has(name) && !isSafeUrl(value, context, trustedResourceUrls) || ['fill', 'stroke'].includes(name) && hasExternalCssReference) {
         node.removeAttribute(attribute.name);
       }
       if (name === 'style' && !cssIsSafe(value)) node.removeAttribute(attribute.name);
@@ -49,8 +57,9 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
   };
   const uponSanitizeAttribute = (node, data) => {
     const name = data.attrName?.toLowerCase();
-    const context = name === 'src' ? 'resource' : ((name === 'href' || ['filter', 'marker-start', 'marker-mid', 'marker-end'].includes(name)) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation');
-    if ((name === 'src' || name === 'href') && isSafeUrl(data.attrValue, context)) {
+      const isSvgReference = /^(?:image|use)$/i.test(node.nodeName) || ['filter', 'marker-start', 'marker-mid', 'marker-end', 'clip-path', 'mask'].includes(name);
+      const context = name === 'src' && /^image$/i.test(node.nodeName) ? 'svg-reference' : (name === 'src' ? 'resource' : ((name === 'href' || isSvgReference) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation'));
+    if ((name === 'src' || name === 'href') && isSafeUrl(data.attrValue, context, trustedResourceUrls)) {
       data.keepAttr = true;
     }
     if (SVG_PRESENTATION_ATTRIBUTES.has(name)) data.keepAttr = true;
@@ -91,7 +100,14 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
     sanitizeChapterHtml: sanitizeHtml,
     sanitizeMarkdownHtml: sanitizeHtml,
     sanitizeAiHtml: sanitizeHtml,
-    sanitizeUrl: (url, context = 'navigation') => isSafeUrl(url, context) ? String(url).trim() : null,
+    sanitizeUrl: (url, context = 'navigation') => isSafeUrl(url, context, trustedResourceUrls) ? String(url).trim() : null,
+    trustResourceUrl: (url) => {
+      const normalized = String(url || '').trim();
+      if (!BLOB_URL.test(normalized)) return false;
+      trustedResourceUrls.add(normalized);
+      return true;
+    },
+    revokeResourceUrl: (url) => trustedResourceUrls.delete(String(url || '').trim()),
     normalizeExternalLinks,
   };
 }
