@@ -172,6 +172,26 @@ test('serves a valid file from an exact static mount', async (t) => {
   assert.ok(response.body.length > 100);
 });
 
+test('adds security headers to static, redirect, API, and error responses', async (t) => {
+  const voiceRequest = () => {
+    const upstream = new EventEmitter();
+    upstream.end = () => queueMicrotask(() => upstream.emit('error', new Error('fixture failure')));
+    upstream.destroy = () => {};
+    return upstream;
+  };
+  const app = await start({ voiceRequest });
+  t.after(() => app.close());
+  for (const requestPath of ['/reader/reader.html', '/', '/missing', '/api/voices']) {
+    const response = await request(app, requestPath);
+    assert.equal(response.headers['x-content-type-options'], 'nosniff', requestPath);
+    assert.equal(response.headers['referrer-policy'], 'no-referrer', requestPath);
+    assert.equal(response.headers['x-frame-options'], 'DENY', requestPath);
+    assert.match(response.headers['permissions-policy'], /microphone=\(\)/, requestPath);
+    assert.match(response.headers['content-security-policy'], /frame-ancestors 'none'/, requestPath);
+    assert.match(response.headers['content-security-policy'], /connect-src[^;]*(?:https:|wss:)/, requestPath);
+  }
+});
+
 test('configured static mount serves normal files and rejects symlink escapes', async (t) => {
   const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-'));
   const mount = path.join(fixture, 'mount');

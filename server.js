@@ -11,6 +11,30 @@ const EDGE_VERSION = '1-143.0.3650.75';
 const EDGE_ORIGIN = 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold';
 const EDGE_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0';
 
+// Inline/generated code and data/blob book resources remain necessary today. The
+// connect policy permits configured AI services and the local/Bing TTS relays.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+  "style-src 'self' 'unsafe-inline' https:",
+  "font-src 'self' data: https:",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' data: blob: https:",
+  "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'"
+].join('; ');
+const SECURITY_HEADERS = Object.freeze({
+  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
+});
+
 const defaultConfig = Object.freeze({
   host: process.env.HOST ?? '127.0.0.1',
   port: Number(process.env.PORT ?? 3000),
@@ -135,9 +159,13 @@ function rawPathname(requestUrl) {
   return end === -1 ? requestUrl : requestUrl.slice(0, end);
 }
 
+function writeHead(res, statusCode, headers = {}) {
+  res.writeHead(statusCode, { ...SECURITY_HEADERS, ...headers });
+}
+
 function sendText(res, statusCode, body, headers = {}) {
   if (res.destroyed || res.writableEnded || res.headersSent) return false;
-  res.writeHead(statusCode, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
+  writeHead(res, statusCode, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
   res.end(body);
   return true;
 }
@@ -189,7 +217,7 @@ function createRequestHandler(options = {}) {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
-          res.writeHead(upstreamResponse.statusCode || 502, {
+          writeHead(res, upstreamResponse.statusCode || 502, {
             'Content-Type': 'application/json; charset=utf-8',
             'x-server-date': upstreamResponse.headers.date || '',
             'Access-Control-Expose-Headers': 'x-server-date'
@@ -205,7 +233,7 @@ function createRequestHandler(options = {}) {
     }
 
     if (pathname === '/' || pathname === '/index.html') {
-      res.writeHead(302, { Location: '/reader/reader.html' });
+      writeHead(res, 302, { Location: '/reader/reader.html' });
       res.end();
       return;
     }
@@ -303,7 +331,7 @@ function createRequestHandler(options = {}) {
       });
       stream.once('end', cleanup);
       stream.once('close', cleanup);
-      res.writeHead(200, { 'Content-Type': mimeTypes[path.extname(realFilePath).toLowerCase()] || 'application/octet-stream' });
+      writeHead(res, 200, { 'Content-Type': mimeTypes[path.extname(realFilePath).toLowerCase()] || 'application/octet-stream' });
       stream.pipe(res);
     }).catch(() => sendText(res, 404, '404 Not Found'));
   };
