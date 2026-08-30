@@ -34,15 +34,7 @@ if (!chrome.storage) {
 // Pre-initialize mermaid to disable automatic scan on window load event
 if (typeof mermaid !== 'undefined') {
   try {
-    mermaid.initialize({
-      startOnLoad: false,
-      mindmap: {
-        useMaxWidth: false,
-        nodeSpacing: 120,
-        rankSpacing: 90,
-        padding: 15
-      }
-    });
+    mermaid.initialize(createMermaidConfig());
   } catch (e) {
     console.warn('Failed to pre-initialize mermaid:', e);
   }
@@ -56,6 +48,7 @@ import { security } from './security/sanitize.js';
 import {
   appendBookCover,
   clampProgress,
+  createMermaidConfig,
   highlightTextNodes,
   insertChapterHtml,
   markdownImage,
@@ -65,6 +58,7 @@ import {
   renderFolderCover,
   renderMermaidFallback,
   renderMermaidSvg,
+  sanitizeMermaidSource,
 } from './security/render.js';
 
 // 解析器導入
@@ -7753,24 +7747,14 @@ async function renderMermaidBlocks() {
       mermaidLoaded = true;
     }
     if (mermaidLoaded) {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: document.body.classList.contains('theme-dark') ? 'dark' : 'default',
-        securityLevel: 'loose',
-        mindmap: {
-          useMaxWidth: false,
-          nodeSpacing: 120,
-          rankSpacing: 90,
-          padding: 15
-        }
-      });
+      mermaid.initialize(createMermaidConfig(document.body.classList.contains('theme-dark') ? 'dark' : 'default'));
     }
   }
 
   if (mermaidLoaded || typeof MindElixir !== 'undefined' || mindElixirLoaded) {
     // 逐個容器渲染，單個失敗不影響其他
     for (const container of containers) {
-      let code = container.textContent.trim();
+      let code = sanitizeMermaidSource(container.textContent);
       
       // Check if it's a mindmap block, render with Mind-Elixir
       if (code.startsWith('mindmap') || code.includes('\nmindmap')) {
@@ -7871,9 +7855,10 @@ async function renderMermaidBlocks() {
             nodeSpacing = 140;
             rankSpacing = 100;
           }
-          if (!code.includes('%%{init') && !code.startsWith('---')) {
-            code = `%%{init: { "mindmap": { "nodeSpacing": ${nodeSpacing}, "rankSpacing": ${rankSpacing}, "padding": 15 } } }%%\n` + code;
-          }
+          mermaid.initialize({
+            ...createMermaidConfig(document.body.classList.contains('theme-dark') ? 'dark' : 'default'),
+            mindmap: { useMaxWidth: false, nodeSpacing, rankSpacing, padding: 15 },
+          });
         }
         
         try {

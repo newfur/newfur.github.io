@@ -5,8 +5,9 @@ const SVG_RESOURCE_ATTRIBUTES = new Set(['href', 'xlink:href', 'clip-path', 'mas
 const SVG_PAINT_ATTRIBUTES = new Set(['fill', 'stroke']);
 const SVG_SAFE_PAINT = /^(?:none|inherit|currentColor|context-fill|context-stroke|transparent|[a-z]+|#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|url\(#[\w:.-]+\))$/i;
 const SVG_ATTRIBUTES = ['viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class'];
-const MERMAID_TAGS = ['svg', 'title', 'desc', 'defs', 'marker', 'g', 'path', 'line', 'polyline', 'rect', 'polygon', 'circle', 'ellipse', 'text', 'tspan', 'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern', 'use'];
+const MERMAID_TAGS = ['svg', 'style', 'title', 'desc', 'defs', 'marker', 'g', 'path', 'line', 'polyline', 'rect', 'polygon', 'circle', 'ellipse', 'text', 'tspan', 'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern', 'use'];
 const MERMAID_ATTRIBUTES = [...SVG_ATTRIBUTES, 'style', 'xmlns', 'role', 'aria-label', 'aria-labelledby', 'aria-describedby', 'markerWidth', 'markerHeight', 'markerUnits', 'refX', 'refY', 'orient', 'gradientTransform', 'spreadMethod', 'dx', 'dy', 'dominant-baseline', 'alignment-baseline', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset', 'vector-effect', 'paint-order', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'];
+const MERMAID_CSS_PROPERTIES = new Set(['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin', 'color', 'background-color', 'font-family', 'font-size', 'font-style', 'font-weight', 'text-align', 'text-anchor', 'dominant-baseline', 'alignment-baseline', 'white-space', 'opacity', 'fill-opacity', 'stroke-opacity', 'display', 'visibility', 'pointer-events', 'cursor', 'shape-rendering']);
 const FORBID_TAGS = ['audio', 'base', 'button', 'datalist', 'details', 'dialog', 'embed', 'fieldset', 'form', 'iframe', 'input', 'keygen', 'label', 'legend', 'meter', 'object', 'optgroup', 'option', 'output', 'picture', 'progress', 'script', 'select', 'source', 'style', 'summary', 'template', 'textarea', 'track', 'video', 'feimage'];
 const FORBID_ATTRIBUTES = new Set(['xlink:href', 'srcset', 'imagesrcset', 'background', 'formaction', 'action', 'ping', 'poster', 'longdesc', 'lowsrc', 'dynsrc', 'usemap', 'profile', 'manifest', 'cite', 'data', 'content', 'http-equiv', 'itemprop', 'itemtype', 'itemid', 'itemref']);
 const HTML_ATTRIBUTES = ['id', 'class', 'title', 'lang', 'dir', 'style', 'href', 'src', 'alt', 'width', 'height', 'colspan', 'rowspan', 'scope', 'headers', 'start', 'value', 'datetime', 'target', 'rel'];
@@ -74,6 +75,29 @@ function sanitizeStyle(value) {
 function isSafeSvgPaint(value) {
   const normalized = normalizeCssEscapes(value).trim();
   return !String(value || '').includes('\\') && SVG_SAFE_PAINT.test(normalized);
+}
+
+function sanitizeMermaidCss(css, svgId) {
+  const safeId = String(svgId || '').match(/^[A-Za-z][\w:.-]*$/)?.[0];
+  if (!safeId) return '';
+  const escapedId = safeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const selectorRoot = new RegExp(`^#${escapedId}(?:$|[\\s>+~.,:#\\[\\]=\\-()"'\\w*]+$)`);
+  const rules = [];
+  for (const match of String(css || '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selectors = match[1].split(',').map((selector) => selector.trim());
+    if (selectors.length === 0 || selectors.some((selector) => /@|\/\*|\\/.test(selector) || !selectorRoot.test(selector) || /(?:^|[\s>+~])(?:html|body|:root)(?:$|[\s>+~.#:[\]])/i.test(selector))) continue;
+    const declarations = match[2].split(';').flatMap((declaration) => {
+      const separator = declaration.indexOf(':');
+      if (separator < 1) return [];
+      const property = declaration.slice(0, separator).trim().toLowerCase();
+      const value = declaration.slice(separator + 1).replace(/\s*!important\s*$/i, '').trim();
+      if (!MERMAID_CSS_PROPERTIES.has(property) || !value || /[{}<>]|\/\*|\\|url\s*\(|expression\s*\(|javascript\s*:|data\s*:|content\s*:/i.test(`${property}:${value}`)) return [];
+      if ((property === 'fill' || property === 'stroke' || property.endsWith('color')) && !isSafeSvgPaint(value)) return [];
+      return [`${property}:${value}`];
+    });
+    if (declarations.length > 0) rules.push(`${selectors.join(',')}{${declarations.join(';')}}`);
+  }
+  return rules.join('');
 }
 
 function getUrlContext(node, name) {
@@ -170,11 +194,14 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
 
   const sanitizeHtml = (html) => normalizeExternalLinks(html);
   const sanitizeMermaidSvg = (svg) => {
+    const sourceDocument = new windowObject.DOMParser().parseFromString(String(svg ?? ''), 'image/svg+xml');
+    const sourceSvg = sourceDocument.documentElement.nodeName.toLowerCase() === 'svg' ? sourceDocument.documentElement : null;
+    const safeCss = sourceSvg ? [...sourceSvg.querySelectorAll('style')].map((style) => sanitizeMermaidCss(style.textContent, sourceSvg.id)).filter(Boolean).join('') : '';
     const clean = DOMPurify.sanitize(String(svg ?? ''), {
       USE_PROFILES: { svg: true, svgFilters: false },
       ALLOWED_TAGS: MERMAID_TAGS,
       ALLOWED_ATTR: MERMAID_ATTRIBUTES,
-      FORBID_TAGS: [...FORBID_TAGS, 'foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set', 'discard', 'feImage'],
+      FORBID_TAGS: [...FORBID_TAGS.filter((tag) => tag !== 'style'), 'foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set', 'discard', 'feImage'],
       RETURN_TRUSTED_TYPE: false,
     });
     const document = new windowObject.DOMParser().parseFromString(clean, 'text/html');
@@ -195,6 +222,15 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
           const safeStyle = sanitizeStyle(value);
           if (safeStyle) element.setAttribute('style', safeStyle); else element.removeAttribute(attribute.name);
         }
+      }
+    }
+    const cleanSvg = document.body.querySelector('svg');
+    if (cleanSvg) {
+      cleanSvg.querySelectorAll('style').forEach((style) => style.remove());
+      if (safeCss) {
+        const style = document.createElement('style');
+        style.textContent = safeCss;
+        cleanSvg.prepend(style);
       }
     }
     return document.body.innerHTML;

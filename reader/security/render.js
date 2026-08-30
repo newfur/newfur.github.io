@@ -8,6 +8,30 @@ export function clampProgress(value) {
   return Number.isFinite(number) ? Math.min(100, Math.max(0, Math.round(number))) : 0;
 }
 
+export function createMermaidConfig(theme = 'default') {
+  return {
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: theme === 'dark' ? 'dark' : 'default',
+    flowchart: { htmlLabels: false },
+    class: { htmlLabels: false },
+    state: { htmlLabels: false },
+    mindmap: {
+      useMaxWidth: false,
+      nodeSpacing: 120,
+      rankSpacing: 90,
+      padding: 15,
+    },
+  };
+}
+
+export function sanitizeMermaidSource(source) {
+  return String(source ?? '')
+    .replace(/^---\s*\n[\s\S]*?\n---\s*(?:\n|$)/, '')
+    .replace(/%%\{\s*(?:init|config)\s*:[\s\S]*?\}%%\s*/gi, '')
+    .trim();
+}
+
 function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

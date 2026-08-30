@@ -7,6 +7,7 @@ import { createSanitizer } from '../../reader/security/sanitize.js';
 import {
   appendBookCover,
   clampProgress,
+  createMermaidConfig,
   highlightTextNodes,
   insertChapterHtml,
   markdownImage,
@@ -16,6 +17,7 @@ import {
   renderFolderCover,
   renderMermaidFallback,
   renderMermaidSvg,
+  sanitizeMermaidSource,
   setText,
 } from '../../reader/security/render.js';
 
@@ -27,6 +29,22 @@ function makeDom() {
     document: window.document,
     root: window.document.querySelector('#root'),
     security: createSanitizer(window),
+  };
+}
+
+async function renderWithBundledMermaid(source) {
+  const window = new JSDOM('<!doctype html><body></body>', {
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+  }).window;
+  window.structuredClone = globalThis.structuredClone;
+  window.SVGElement.prototype.getBBox = () => ({ x: 0, y: 0, width: 100, height: 20 });
+  window.SVGElement.prototype.getComputedTextLength = () => 50;
+  window.eval(fs.readFileSync(new URL('../../reader/libs/mermaid.min.js', import.meta.url), 'utf8'));
+  window.mermaid.initialize(createMermaidConfig('default'));
+  return {
+    window,
+    result: await window.mermaid.render(`test-${Date.now()}-${Math.random().toString(36).slice(2)}`, sanitizeMermaidSource(source)),
   };
 }
 
@@ -173,6 +191,64 @@ test('Mermaid SVG sanitizer preserves static diagram structure and strips active
   assert.equal(root.querySelector('path[marker-end]').getAttribute('marker-end'), 'url(#arrow)');
   assert.equal(root.querySelectorAll('script, foreignObject, animate, set, [onload]').length, 0);
   assert.doesNotMatch(root.innerHTML, /evil\.example/);
+});
+
+test('bundled Mermaid renders strict SVG labels that survive the Mermaid sanitizer', async () => {
+  const { window, result } = await renderWithBundledMermaid('flowchart TD; A[Alpha] --> B[Beta]');
+  window.DOMPurify = createDOMPurify(window);
+  const security = createSanitizer(window);
+  const container = window.document.createElement('div');
+
+  renderMermaidSvg(container, result.svg, security);
+
+  assert.match(container.textContent, /Alpha/);
+  assert.match(container.textContent, /Beta/);
+  assert.ok(container.querySelector('svg text'));
+  assert.ok(container.querySelector('path, line, polyline'));
+  assert.ok(container.querySelector('style'));
+  assert.equal(container.querySelector('style').namespaceURI, 'http://www.w3.org/2000/svg');
+  assert.match(container.querySelector('style').textContent, /#[\w-]+\s+\.node/);
+  assert.equal(container.querySelectorAll('foreignObject, script, [onload], [onclick]').length, 0);
+  assert.doesNotMatch(container.querySelector('style').textContent, /https?:|javascript:|data:text|@import|url\s*\(/i);
+  assert.equal(container.querySelectorAll('[href^="http"], [href^="javascript:"], [src]').length, 0);
+});
+
+test('Mermaid source cannot override strict SVG labels or inject active CSS', async () => {
+  const hostile = `%%{init: { "securityLevel": "loose", "flowchart": { "htmlLabels": true } }}%%
+flowchart TD
+A[Alpha] --> B[Beta]
+classDef hostile fill:red,background-image:url(https://evil.example/x),content:"bad";
+class A hostile;`;
+  const prepared = sanitizeMermaidSource(hostile);
+  assert.doesNotMatch(prepared, /%%\{(?:init|config)/i);
+
+  const parsableHostile = hostile.replace('background-image:url(https://evil.example/x),content:"bad"', 'background-image:evil,font-family:javascript:bad,content:bad');
+  const { window, result } = await renderWithBundledMermaid(parsableHostile);
+  window.DOMPurify = createDOMPurify(window);
+  const security = createSanitizer(window);
+  const container = window.document.createElement('div');
+  renderMermaidSvg(container, result.svg, security);
+
+  assert.match(container.textContent, /Alpha/);
+  assert.equal(container.querySelectorAll('foreignObject').length, 0);
+  assert.doesNotMatch(container.innerHTML, /evil\.example|url\s*\(\s*(?!#)|@import|expression|content\s*:/i);
+});
+
+test('Mermaid CSS sanitizer keeps scoped presentation and drops unsafe or global rules', () => {
+  const { root, security } = makeDom();
+  renderMermaidSvg(root, `<svg id="diagram-safe" xmlns="http://www.w3.org/2000/svg">
+    <style>
+      #diagram-safe .node { fill: red; stroke: #333 !important; }
+      body, #diagram-safe .global { fill: black; }
+      #diagram-safe .external { fill: url(https://evil.example/fill); content: "bad"; }
+      @import url(https://evil.example/style.css);
+    </style>
+    <g class="node"><text>Safe</text><path d="M0 0L10 10" /></g>
+  </svg>`, security);
+
+  const css = root.querySelector('style').textContent;
+  assert.match(css, /#diagram-safe \.node\{fill:red;stroke:#333\}/);
+  assert.doesNotMatch(css, /body|global|external|evil\.example|url\s*\(|content|@import|!important/i);
 });
 
 test('Mermaid fallback and exception errors always render as text', () => {
