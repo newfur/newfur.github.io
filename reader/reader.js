@@ -40,7 +40,7 @@ if (typeof mermaid !== 'undefined') {
   }
 }
 
-import { BookLibrary } from './library.js';
+import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
@@ -2344,10 +2344,11 @@ async function handleImportFiles(files) {
           if (ex.size === file.size) {
             try {
               console.log(`[handleImportFiles] Dynamically computing hash for existing book "${ex.title}" due to size match.`);
-              ex.fileHash = await computeFileHash(ex.file);
-              await library.updateBook(ex.id, book => { book.fileHash = ex.fileHash; return book; }); // 寫回資料庫
-              if (ex.fileHash === incomingHash) {
-                duplicateBook = ex;
+              const fileHash = await computeFileHash(ex.file);
+              const committedBook = await library.updateBook(ex.id, book => { book.fileHash = fileHash; }); // 寫回資料庫
+              existingBooks = applyCommittedBookToList(existingBooks, committedBook);
+              if (fileHash === incomingHash) {
+                duplicateBook = committedBook;
                 isHashMatch = true;
                 break;
               }

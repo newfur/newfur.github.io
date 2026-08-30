@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import FDBFactory from 'fake-indexeddb/lib/FDBFactory';
 import FDBKeyRange from 'fake-indexeddb/lib/FDBKeyRange';
-import { BookLibrary } from '../../reader/library.js';
+import { BookLibrary, applyCommittedBookToList } from '../../reader/library.js';
 
 function installIndexedDB() {
   globalThis.indexedDB = new FDBFactory();
@@ -57,6 +57,31 @@ test('concurrent public annotation updates preserve notes, bookmarks, and chats'
   assert.deepEqual(stored.aiChats.map(chat => chat.chatId), ['chat-1']);
 });
 
+test('generated annotation IDs survive missing supplied IDs', async () => {
+  installIndexedDB();
+  const library = new BookLibrary();
+  await library.addBook(book());
+  await Promise.all([
+    library.saveNote('book-1', { noteId: undefined, text: 'note' }),
+    library.saveBookmark('book-1', { bookmarkId: null, chapterIndex: 1, elementIndex: 2, pdfPage: 3 }),
+    library.saveAIChat('book-1', { chatId: '', query: 'q', reply: 'a' }),
+  ]);
+  const stored = await library.getBook('book-1');
+  assert.match(stored.notes[0].noteId, /^note_/);
+  assert.match(stored.bookmarks[0].bookmarkId, /^bookmark_/);
+  assert.match(stored.aiChats[0].chatId, /^chat_/);
+});
+
+test('committed book application replaces a list entry without mutating the old entry', () => {
+  const oldBook = { id: 'book-1', fileHash: '' };
+  const books = [oldBook, { id: 'book-2' }];
+  const committed = { id: 'book-1', fileHash: 'hash' };
+  const updated = applyCommittedBookToList(books, committed);
+  assert.equal(oldBook.fileHash, '');
+  assert.equal(updated[0], committed);
+  assert.notEqual(updated, books);
+});
+
 test('updateBook persists a synchronous returned record instead of the draft', async () => {
   installIndexedDB();
   const library = new BookLibrary();
@@ -104,13 +129,26 @@ test('replaceBookContent persists replacement content, resets progress, and reta
   assert.equal(stored.file.size, 8);
   assert.equal(stored.progress.percent, 0);
   assert.equal(stored.progress.chapterIndex, 0);
-  assert.equal(stored.bookSummary, '');
+  assert.equal('bookSummary' in stored, false);
   assert.deepEqual(stored.chapterSummaries, {});
-  assert.deepEqual(stored.searchIndex, []);
-  assert.deepEqual(stored.ragIndex, []);
-  assert.deepEqual(stored.contentIndex, []);
+  assert.equal('searchIndex' in stored, false);
+  assert.equal('ragIndex' in stored, false);
+  assert.equal('contentIndex' in stored, false);
   assert.deepEqual(stored.notes, [{ noteId: 'note-1' }]);
   assert.equal(stored.stats.totalTime, 8);
   assert.equal(stored.folder, 'Reading');
   assert.equal(committed.title, stored.title);
+});
+
+test('concurrent summaries preserve book and chapter summaries', async () => {
+  installIndexedDB();
+  const library = new BookLibrary();
+  await library.addBook(book());
+  await Promise.all([
+    library.saveBookSummary('book-1', 'book summary'),
+    library.saveChapterSummary('book-1', 2, 'chapter summary'),
+  ]);
+  const stored = await library.getBook('book-1');
+  assert.equal(stored.bookSummary, 'book summary');
+  assert.equal(stored.chapterSummaries[2], 'chapter summary');
 });

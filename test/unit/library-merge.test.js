@@ -28,11 +28,11 @@ function existing() {
 
 test('replacement resets derived state but retains annotations, folder, and stats', () => {
   const result = resetContentDerivedState({ ...existing(), progress: { percent: 80, chapterIndex: 4 } });
-  assert.equal(result.bookSummary, '');
+  assert.equal('bookSummary' in result, false);
   assert.deepEqual(result.chapterSummaries, {});
-  assert.deepEqual(result.searchIndex, []);
-  assert.deepEqual(result.ragIndex, []);
-  assert.deepEqual(result.contentIndex, []);
+  assert.equal('searchIndex' in result, false);
+  assert.equal('ragIndex' in result, false);
+  assert.equal('contentIndex' in result, false);
   assert.equal(result.progress.percent, 80);
   assert.equal(result.folder, 'Reading');
   assert.equal(result.notes[0].noteId, 'note-1');
