@@ -27,6 +27,8 @@ const attackHtml = `
   <table><tr><td>Safe cell</td></tr></table>
   <form><input value="secret"><button>Submit</button></form>
   <script>alert(1)</script>
+  <frame src="https://evil.example/frame">
+  <embed src="https://evil.example/plugin">
   <a href="javascript:alert(1)">bad link</a>
   <svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="red" /><animate attributeName="x" /><foreignObject><div>bad</div></foreignObject></svg>
 `;
@@ -36,10 +38,15 @@ function assertSanitized(html) {
   assert.match(html, /<table>|Safe cell/);
   assert.match(html, /<circle[^>]+fill="red"/);
   assert.doesNotMatch(html, /<script\b|\sonclick=|<form\b|<input\b|<button\b|javascript:|<animate\b|foreignObject|background-image/i);
+  assertNoActiveEmbedContent(html);
 }
 
 function parseHtml(html) {
   return new DOMParser().parseFromString(html, 'text/html');
+}
+
+function assertNoActiveEmbedContent(html) {
+  assert.equal(parseHtml(html).querySelector('frame, embed'), null);
 }
 
 function fakeZip(entries) {
@@ -123,7 +130,7 @@ test('EPUB removes external stylesheet links before the sanitizer boundary and i
 });
 
 test('Markdown getContent removes executable links and preserves formatting and internal links', async () => {
-  const markdown = `# Chapter\nSafe text with **bold** and [internal](#note).\n\n[bad](javascript:alert(1))\n\n<table onclick="bad"><tr><td>literal table</td></tr></table>`;
+  const markdown = `# Chapter\nSafe text with **bold** and [internal](#note).\n\n[bad](javascript:alert(1))\n\n<table onclick="bad"><tr><td>literal table</td></tr></table>\n<frame src="https://evil.example/frame"><embed src="https://evil.example/plugin">`;
   const bytes = new TextEncoder().encode(markdown);
   const parser = new TextParser({ name: 'fixture.md', size: bytes.length, arrayBuffer: async () => bytes.buffer }, 'md');
   const sanitize = security.sanitizeMarkdownHtml;
@@ -147,10 +154,11 @@ test('Markdown getContent removes executable links and preserves formatting and 
   assert.match(html, /href="#note"/);
   assert.match(html, /&lt;table onclick=/);
   assert.equal(parseHtml(html).querySelector('[onclick], a[href^="javascript:"]'), null);
+  assertNoActiveEmbedContent(html);
 });
 
 test('FB2 getContent sanitizes converted XML and rejects malformed XML', async () => {
-  const valid = new Blob([`<?xml version="1.0"?><FictionBook><description><title-info><book-title>Fixture</book-title></title-info></description><body><section><title><p>Chapter</p></title><p onclick="alert(1)" style="color: red; background-image: url(javascript:bad)">Safe text</p><table><tr><td>Safe cell</td></tr></table><form><input value="secret"/><button>Submit</button></form><script>alert(1)</script><a href="javascript:alert(1)">bad link</a><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="red"/><animate attributeName="x"/><foreignObject><div>bad</div></foreignObject></svg></section></body></FictionBook>`], { type: 'text/xml' });
+  const valid = new Blob([`<?xml version="1.0"?><FictionBook><description><title-info><book-title>Fixture</book-title></title-info></description><body><section><title><p>Chapter</p></title><p onclick="alert(1)" style="color: red; background-image: url(javascript:bad)">Safe text</p><table><tr><td>Safe cell</td></tr></table><form><input value="secret"/><button>Submit</button></form><script>alert(1)</script><frame src="https://evil.example/frame"/><embed src="https://evil.example/plugin"/><a href="javascript:alert(1)">bad link</a><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="red"/><animate attributeName="x"/><foreignObject><div>bad</div></foreignObject></svg></section></body></FictionBook>`], { type: 'text/xml' });
   Object.defineProperty(valid, 'name', { value: 'fixture.fb2' });
   const parser = new TextParser(valid, 'fb2');
 
