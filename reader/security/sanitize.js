@@ -1,6 +1,5 @@
 const ALLOWED_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml);/i;
 const VALID_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml)(?:;base64,[A-Za-z0-9+/]+={0,2}|;,[^\s\\<>]+|,[^\s\\<>]+)$/i;
-const BLOB_URL = /^blob:(?:null|https?:\/\/[^/\s]+)\/[^\s/?#]+$/i;
 const RESOURCE_ATTRIBUTES = new Set(['src', 'poster', 'cite', 'data']);
 const SVG_RESOURCE_ATTRIBUTES = new Set(['href', 'xlink:href', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end']);
 const SVG_PAINT_ATTRIBUTES = new Set(['fill', 'stroke']);
@@ -15,8 +14,22 @@ function normalizeCssEscapes(value) {
   return String(value || '').replace(/\\([0-9a-f]{1,6})\s?/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/\\(.)/g, '$1');
 }
 
-function isSafeBlob(url) {
-  return BLOB_URL.test(String(url || '').trim());
+function parseBlobUrl(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized || /[<>"'\\\s\u0000-\u001f\u007f?#]/.test(normalized) || !normalized.startsWith('blob:')) return null;
+  const match = normalized.match(/^blob:(null|https?:\/\/[^/]+)\/(.+)$/i);
+  if (!match) return null;
+  const origin = match[1];
+  const identifier = match[2];
+  if (!/^[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/.test(identifier)) return null;
+  if (origin === 'null') return { normalized, identifier };
+  try {
+    const url = new URL(origin);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || !url.hostname || url.pathname !== '/') return null;
+    return { normalized, identifier };
+  } catch {
+    return null;
+  }
 }
 
 function isSafeUrl(value, context, trustedResourceUrls) {
@@ -25,7 +38,7 @@ function isSafeUrl(value, context, trustedResourceUrls) {
   if (normalized === '#') return false;
   if (context === 'svg-reference') return /^#[-\w:.]+$/.test(normalized);
   if (context === 'resource' && VALID_DATA_IMAGE.test(normalized) && !/,(?:[^,]*:|[^,]*\/\/)/i.test(normalized)) return true;
-  if (context === 'resource' && isSafeBlob(normalized)) return trustedResourceUrls.has(normalized);
+  if (context === 'resource' && parseBlobUrl(normalized)) return trustedResourceUrls.has(normalized);
   if (/^#[-\w:.]+$/.test(normalized)) return true;
   if (/^https?:\/\//i.test(normalized)) {
     try {
@@ -159,7 +172,7 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
     sanitizeUrl: (url, context = 'navigation') => isSafeUrl(url, context, trustedResourceUrls) ? String(url).trim() : null,
     trustResourceUrl: (url) => {
       const normalized = String(url || '').trim();
-      if (!isSafeBlob(normalized)) return false;
+      if (!parseBlobUrl(normalized)) return false;
       trustedResourceUrls.add(normalized);
       return true;
     },

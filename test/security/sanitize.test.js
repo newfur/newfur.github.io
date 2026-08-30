@@ -376,3 +376,38 @@ test('does not restore URI attributes removed by the purifier', () => {
   assert.doesNotMatch(html, /href="javascript:|src="data:text\/html/);
   assert.match(html, /alt="safe"/);
 });
+
+test('trusts only structurally valid blob object URLs and revokes them', () => {
+  const { security } = makeSecurity();
+  const validUrls = [
+    'blob:null/550e8400-e29b-41d4-a716-446655440000',
+    'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000',
+    'blob:http://localhost:8080/reader-image-1',
+  ];
+  const malformedUrls = [
+    'blob:null/',
+    'blob:null/?id',
+    'blob:null/#id',
+    'blob:null/id with spaces',
+    'blob:null/id\\with-backslash',
+    'blob:null/<id>',
+    'blob:javascript:alert(1)/id',
+    'blob:https://user:pass@example.com/id',
+    'blob:https://example.com:bad-port/id',
+    'blob:https://example.com/id?query',
+    'blob:https://example.com/id#fragment',
+    'blob:https://example.com/',
+  ];
+
+  for (const url of validUrls) {
+    assert.equal(security.trustResourceUrl(url), true, url);
+    assert.equal(security.sanitizeUrl(url, 'resource'), url, url);
+    assert.match(security.sanitizeChapterHtml(`<img src="${url}">`), new RegExp(`src="${url}"`));
+    assert.equal(security.revokeResourceUrl(url), true, url);
+    assert.equal(security.sanitizeUrl(url, 'resource'), null, url);
+  }
+  for (const url of malformedUrls) {
+    assert.equal(security.trustResourceUrl(url), false, url);
+    assert.equal(security.sanitizeUrl(url, 'resource'), null, url);
+  }
+});
