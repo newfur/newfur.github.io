@@ -22,7 +22,17 @@ function response(body = '', init = {}) {
   return new Response(body, { status: 200, ...init });
 }
 
-async function loadPwaWorker({ fetchImpl = async () => response('network'), addAll } = {}) {
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function loadPwaWorker({ fetchImpl = async () => response('network'), addAll, cacheHooks = {} } = {}) {
   const listeners = {};
   const stores = new Map();
   const deleted = [];
@@ -35,14 +45,17 @@ async function loadPwaWorker({ fetchImpl = async () => response('network'), addA
     }
 
     async match(request) {
+      await cacheHooks.match?.(request, this);
       return this.entries.get(new URL(typeof request === 'string' ? request : request.url, 'https://reader.example').href);
     }
 
     async put(request, value) {
+      await cacheHooks.put?.(request, value, this);
       this.entries.set(new URL(typeof request === 'string' ? request : request.url, 'https://reader.example').href, value);
     }
 
     async delete(request) {
+      await cacheHooks.delete?.(request, this);
       return this.entries.delete(new URL(typeof request === 'string' ? request : request.url, 'https://reader.example').href);
     }
 
@@ -174,7 +187,7 @@ function createPort(sender = validSender()) {
 
 async function waitFor(predicate, timeout = 250) {
   const end = Date.now() + timeout;
-  while (!predicate()) {
+  while (!await predicate()) {
     if (Date.now() > end) throw new Error('Timed out waiting for condition');
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
@@ -310,6 +323,100 @@ test('PWA fetch discards an expired runtime entry before responding', async () =
   assert.equal(await runtime.entries.get('https://reader.example/icons/old.png').text(), 'network');
 });
 
+test('PWA runtime cache keeps the newest same-key request when fetches finish out of order', async () => {
+  const first = deferred();
+  const second = deferred();
+  let fetches = 0;
+  const worker = await loadPwaWorker({
+    fetchImpl: () => (fetches++ === 0 ? first.promise : second.promise)
+  });
+  const request = new Request('https://reader.example/icons/race.png');
+  const older = dispatchFetch(worker.listeners.fetch, request);
+  const newer = dispatchFetch(worker.listeners.fetch, request);
+  await waitFor(() => fetches === 2);
+  second.resolve(response('newer'));
+  await newer;
+  first.resolve(response('older'));
+  await older;
+
+  const cached = worker.stores.get('raconteur-pwa-runtime-v3').entries.get(request.url);
+  assert.equal(await cached.text(), 'newer');
+});
+
+test('PWA expiry deletion cannot remove a same-key replacement', async () => {
+  const deleting = deferred();
+  const releaseDelete = deferred();
+  let held = false;
+  const worker = await loadPwaWorker({ fetchImpl: async () => response('replacement') });
+  const runtime = new (class {
+    entries = new Map([['https://reader.example/icons/expiry-race.png', response('expired', {
+      headers: { 'x-raconteur-cached-at': String(Date.now() - 8 * 24 * 60 * 60 * 1000) }
+    })]]);
+    async match(request) { return this.entries.get(request.url); }
+    async delete(request) {
+      if (!held) {
+        held = true;
+        deleting.resolve();
+        await releaseDelete.promise;
+      }
+      return this.entries.delete(request.url);
+    }
+    async put(request, value) { this.entries.set(request.url, value); }
+    async keys() { return [...this.entries.keys()].map((url) => new Request(url)); }
+  })();
+  worker.stores.set('raconteur-pwa-runtime-v3', runtime);
+  const request = new Request('https://reader.example/icons/expiry-race.png');
+  const first = dispatchFetch(worker.listeners.fetch, request);
+  await deleting.promise;
+  const replacement = dispatchFetch(worker.listeners.fetch, request);
+  releaseDelete.resolve();
+  await Promise.all([first, replacement]);
+  assert.equal(await runtime.entries.get(request.url).text(), 'replacement');
+});
+
+test('PWA trim snapshot cannot delete an entry refreshed before mutation', async () => {
+  const scanning = deferred();
+  const releaseScan = deferred();
+  let pauseScan = false;
+  let paused = false;
+  const worker = await loadPwaWorker({
+    fetchImpl: async (request) => response(request.url.endsWith('/trim-race.png') ? 'refreshed' : 'network'),
+    cacheHooks: {
+      async match(request) {
+        if (pauseScan && !paused && request.url.endsWith('/zz-blocker.png')) {
+          paused = true;
+          scanning.resolve();
+          await releaseScan.promise;
+        }
+      }
+    }
+  });
+  await dispatchFetch(worker.listeners.fetch, new Request('https://reader.example/icons/seed.png'));
+  const runtime = worker.stores.get('raconteur-pwa-runtime-v3');
+  const now = Date.now();
+  runtime.entries.clear();
+  runtime.entries.set('https://reader.example/icons/trim-race.png', response('old', {
+    headers: { 'x-raconteur-cached-at': String(now - 1000) }
+  }));
+  for (let index = 0; index < 49; index += 1) {
+    const name = index === 48 ? 'zz-blocker' : `entry-${String(index).padStart(2, '0')}`;
+    runtime.entries.set(`https://reader.example/icons/${name}.png`, response(name, {
+      headers: { 'x-raconteur-cached-at': String(now) }
+    }));
+  }
+  pauseScan = true;
+  const overflow = dispatchFetch(worker.listeners.fetch, new Request('https://reader.example/icons/overflow.png'));
+  await scanning.promise;
+  const refresh = dispatchFetch(worker.listeners.fetch, new Request('https://reader.example/icons/trim-race.png'));
+  await waitFor(async () => {
+    const value = runtime.entries.get('https://reader.example/icons/trim-race.png');
+    return value && await value.clone().text() === 'refreshed';
+  });
+  releaseScan.resolve();
+  await Promise.all([overflow, refresh]);
+  assert.equal(await runtime.entries.get('https://reader.example/icons/trim-race.png').text(), 'refreshed');
+});
+
 test('extension proxy rejects foreign senders, caller URLs, providers, credentials, and private targets', async () => {
   let fetches = 0;
   const chrome = await loadExtensionWorker(async () => { fetches += 1; return response('{}'); });
@@ -359,6 +466,61 @@ test('extension proxy permits cloud OpenAI-compatible, Ollama, and advertised LM
   ]);
 });
 
+test('extension proxy normalizes equivalent loopback hosts and rejects unspecified or private IPv6', async () => {
+  const urls = [];
+  const chrome = await loadExtensionWorker(async (url) => {
+    urls.push(String(url));
+    return response(JSON.stringify({ models: [{ name: 'local' }], data: [{ id: 'local' }] }));
+  });
+  const allowed = [
+    'http://localhost.:11434',
+    'http://[::1]:11434',
+    'http://[::ffff:127.0.0.1]:11434',
+    'http://[::ffff:7f00:1]:11434'
+  ];
+  for (const url of allowed) {
+    const result = await sendMessage(chrome, { action: 'fetchModels', provider: 'ollama', url });
+    assert.equal(result.success, true, url);
+  }
+  const rejected = [
+    'http://[::]:11434',
+    'http://[fe80::1]:11434',
+    'http://[fc00::1]:11434',
+    'http://[fd00::1]:11434',
+    'http://api.localhost:11434',
+    'http://localhost',
+    'http://localhost:11434/unrecognized'
+  ];
+  for (const url of rejected) {
+    const result = await sendMessage(chrome, { action: 'fetchModels', provider: 'ollama', url });
+    assert.equal(result.success, false, url);
+  }
+  assert.equal(urls.length, allowed.length);
+});
+
+test('extension proxy applies loopback equivalence to LM Studio and classifies mapped IPv4 ranges', async () => {
+  const urls = [];
+  const chrome = await loadExtensionWorker(async (url) => {
+    urls.push(String(url));
+    return response(JSON.stringify({ data: [{ id: 'model' }] }));
+  });
+  for (const url of [
+    'http://localhost.:1234/v1',
+    'http://[::1]:1234/v1',
+    'http://[::ffff:127.0.0.1]:1234/v1',
+    'http://[::ffff:7f00:1]:1234/v1'
+  ]) {
+    assert.equal((await sendMessage(chrome, { action: 'fetchModels', provider: 'openai', url })).success, true, url);
+  }
+  assert.equal((await sendMessage(chrome, {
+    action: 'fetchModels', provider: 'openai', url: 'http://[::ffff:c0a8:101]:1234/v1'
+  })).success, false);
+  assert.equal((await sendMessage(chrome, {
+    action: 'fetchModels', provider: 'openai', url: 'http://[::ffff:808:808]:8080/v1'
+  })).success, true);
+  assert.equal(urls.length, 5);
+});
+
 test('extension Ollama model lookup falls back to its OpenAI-compatible endpoint', async () => {
   const urls = [];
   const chrome = await loadExtensionWorker(async (url) => {
@@ -368,8 +530,118 @@ test('extension Ollama model lookup falls back to its OpenAI-compatible endpoint
   });
   const result = await sendMessage(chrome, { action: 'fetchModels', provider: 'ollama', url: 'http://localhost:11434' });
   assert.equal(result.success, true);
-  assert.deepEqual(result.models, ['fallback-model']);
+  assert.deepEqual([...result.models], ['fallback-model']);
   assert.deepEqual(urls, ['http://localhost:11434/api/tags', 'http://localhost:11434/v1/models']);
+});
+
+test('extension Ollama fallback recovers after the primary body times out', async () => {
+  const urls = [];
+  const chrome = await loadExtensionWorker(async (url, options) => {
+    urls.push(String(url));
+    if (urls.length === 1) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: {
+          getReader() {
+            return { read: () => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('stalled')))) };
+          }
+        }
+      };
+    }
+    return response(JSON.stringify({ data: [{ id: 'fallback' }] }));
+  });
+  const result = await sendMessage(chrome, {
+    action: 'fetchModels', provider: 'ollama', url: 'http://localhost:11434/api/chat/', timeoutMs: 5
+  });
+  assert.equal(result.success, true);
+  assert.deepEqual([...result.models], ['fallback']);
+  assert.deepEqual(urls, ['http://localhost:11434/api/tags', 'http://localhost:11434/v1/models']);
+});
+
+test('extension stream replaces known endpoint suffixes without duplication', async () => {
+  const urls = [];
+  const chrome = await loadExtensionWorker(async (url) => {
+    urls.push(String(url));
+    return response('');
+  });
+  for (const [provider, url] of [
+    ['ollama', 'http://localhost:11434/v1/models/'],
+    ['openai', 'http://localhost:1234/v1/models/']
+  ]) {
+    const port = createPort();
+    chrome.runtime.onConnect.emit(port);
+    port.onMessage.emit({ action: 'chat', provider, url, model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    await waitFor(() => port.messages.some(({ type }) => type === 'done'));
+  }
+  assert.deepEqual(urls, [
+    'http://localhost:11434/api/chat',
+    'http://localhost:1234/v1/chat/completions'
+  ]);
+});
+
+test('extension Ollama fallback handles malformed JSON and normalizes known suffixes', async () => {
+  const urls = [];
+  const chrome = await loadExtensionWorker(async (url) => {
+    urls.push(String(url));
+    if (urls.length === 1) return response('{malformed');
+    return response(JSON.stringify({ data: [{ id: 'fallback' }] }));
+  });
+  const result = await sendMessage(chrome, {
+    action: 'fetchModels',
+    provider: 'ollama',
+    url: 'http://localhost:11434/api/tags/'
+  });
+  assert.equal(result.success, true);
+  assert.deepEqual([...result.models], ['fallback']);
+  assert.deepEqual(urls, ['http://localhost:11434/api/tags', 'http://localhost:11434/v1/models']);
+});
+
+test('extension model timeout remains active through a stalled response body', async () => {
+  let signal;
+  const chrome = await loadExtensionWorker(async (_url, options) => {
+    signal = options.signal;
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: {
+        getReader() {
+          return { read: () => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('stalled')))) };
+        }
+      }
+    };
+  });
+  const result = await sendMessage(chrome, {
+    action: 'fetchModels', provider: 'openai', url: 'https://api.openai.com/v1', timeoutMs: 5
+  });
+  assert.equal(result.success, false);
+  assert.equal(signal.aborted, true);
+});
+
+test('extension model response aborts when its body exceeds the configured cap', async () => {
+  let signal;
+  const chunk = new Uint8Array(1024 * 1024);
+  const chrome = await loadExtensionWorker(async (_url, options) => {
+    signal = options.signal;
+    let reads = 0;
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: {
+        getReader() {
+          return { async read() { return reads++ < 5 ? { done: false, value: chunk } : { done: true }; } };
+        }
+      }
+    };
+  });
+  const result = await sendMessage(chrome, {
+    action: 'fetchModels', provider: 'openai', url: 'https://api.openai.com/v1'
+  });
+  assert.equal(result.success, false);
+  assert.equal(signal.aborted, true);
 });
 
 test('fetchVoices ignores arbitrary request URLs and uses only the fixed endpoint', async () => {

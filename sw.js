@@ -4,6 +4,10 @@ const PRECACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const RUNTIME_NAME = `${CACHE_PREFIX}runtime-${CACHE_VERSION}`;
 const RUNTIME_MAX_ENTRIES = 50;
 const RUNTIME_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const keyMutations = new Map();
+const requestGenerations = new Map();
+let requestGeneration = 0;
+let trimMutation = Promise.resolve();
 const REQUIRED_ASSETS = [
   '/',
   '/index.html',
@@ -54,22 +58,45 @@ function isCacheable(response) {
   return Boolean(response) && response.status === 200 && response.type !== 'opaque' && response.type !== 'error';
 }
 
-async function trimRuntimeCache(cache) {
-  const now = Date.now();
-  const keys = await cache.keys();
-  const dated = await Promise.all(keys.map(async (key) => {
-    const cached = await cache.match(key);
-    const storedAt = Number(cached?.headers.get('x-raconteur-cached-at')) || 0;
-    return { key, storedAt };
-  }));
-  dated.sort((left, right) => left.storedAt - right.storedAt || left.key.url.localeCompare(right.key.url));
-  const expired = dated.filter(({ storedAt }) => !storedAt || now - storedAt > RUNTIME_MAX_AGE_MS);
-  const survivors = dated.filter(({ storedAt }) => storedAt && now - storedAt <= RUNTIME_MAX_AGE_MS);
-  const excess = survivors.slice(0, Math.max(0, survivors.length - RUNTIME_MAX_ENTRIES));
-  await Promise.all([...expired, ...excess].map(({ key }) => cache.delete(key)));
+function enqueueKey(key, mutation) {
+  const name = typeof key === 'string' ? key : key.url;
+  const previous = keyMutations.get(name) || Promise.resolve();
+  const current = previous.catch(() => {}).then(mutation);
+  keyMutations.set(name, current);
+  return current.finally(() => {
+    if (keyMutations.get(name) === current) keyMutations.delete(name);
+  });
 }
 
-async function storeRuntime(request, response) {
+function nextGeneration(key) {
+  const generation = ++requestGeneration;
+  requestGenerations.set(key.url, generation);
+  return generation;
+}
+
+function trimRuntimeCache(cache) {
+  const run = async () => {
+    const now = Date.now();
+    const keys = await cache.keys();
+    const dated = await Promise.all(keys.map(async (key) => {
+      const cached = await enqueueKey(key, () => cache.match(key));
+      return { key, storedAt: Number(cached?.headers.get('x-raconteur-cached-at')) || 0 };
+    }));
+    dated.sort((left, right) => left.storedAt - right.storedAt || left.key.url.localeCompare(right.key.url));
+    const expired = dated.filter(({ storedAt }) => !storedAt || now - storedAt > RUNTIME_MAX_AGE_MS);
+    const survivors = dated.filter(({ storedAt }) => storedAt && now - storedAt <= RUNTIME_MAX_AGE_MS);
+    const excess = survivors.slice(0, Math.max(0, survivors.length - RUNTIME_MAX_ENTRIES));
+    await Promise.all([...expired, ...excess].map(({ key, storedAt }) => enqueueKey(key, async () => {
+      const current = await cache.match(key);
+      const currentStoredAt = Number(current?.headers.get('x-raconteur-cached-at')) || 0;
+      if (current && currentStoredAt === storedAt) await cache.delete(key);
+    })));
+  };
+  trimMutation = trimMutation.catch(() => {}).then(run);
+  return trimMutation;
+}
+
+async function storeRuntime(request, response, generation) {
   if (!isCacheable(response)) return;
   const headers = new Headers(response.headers);
   headers.set('x-raconteur-cached-at', String(Date.now()));
@@ -79,19 +106,29 @@ async function storeRuntime(request, response) {
     headers
   });
   const cache = await caches.open(RUNTIME_NAME);
-  await cache.put(cacheKey(request), stored);
+  const key = cacheKey(request);
+  const committed = await enqueueKey(key, async () => {
+    if (requestGenerations.get(key.url) !== generation) return false;
+    await cache.put(key, stored);
+    return true;
+  });
+  if (!committed) return;
   await trimRuntimeCache(cache);
 }
 
 async function matchRuntime(cache, key) {
-  const cached = await cache.match(key);
-  if (!cached) return undefined;
-  const storedAt = Number(cached.headers.get('x-raconteur-cached-at')) || 0;
-  if (!storedAt || Date.now() - storedAt > RUNTIME_MAX_AGE_MS) {
-    await cache.delete(key);
-    return undefined;
-  }
-  return cached;
+  return enqueueKey(key, async () => {
+    const cached = await cache.match(key);
+    if (!cached) return undefined;
+    const storedAt = Number(cached.headers.get('x-raconteur-cached-at')) || 0;
+    if (!storedAt || Date.now() - storedAt > RUNTIME_MAX_AGE_MS) {
+      const current = await cache.match(key);
+      const currentStoredAt = Number(current?.headers.get('x-raconteur-cached-at')) || 0;
+      if (current && currentStoredAt === storedAt) await cache.delete(key);
+      return undefined;
+    }
+    return cached;
+  });
 }
 
 self.addEventListener('fetch', (event) => {
@@ -102,22 +139,25 @@ self.addEventListener('fetch', (event) => {
     resolveResponse = resolve;
     rejectResponse = reject;
   });
+  const key = cacheKey(event.request);
+  const generation = nextGeneration(key);
   const lifetime = (async () => {
-    const key = cacheKey(event.request);
     const runtime = await caches.open(RUNTIME_NAME);
     const precache = await caches.open(PRECACHE_NAME);
     const cached = await matchRuntime(runtime, key) || await precache.match(key);
     if (cached) {
       resolveResponse(cached);
-      await fetch(event.request).then((fresh) => storeRuntime(event.request, fresh)).catch(() => {});
+      await fetch(event.request).then((fresh) => storeRuntime(event.request, fresh, generation)).catch(() => {});
       return;
     }
     const network = await fetch(event.request);
     resolveResponse(network);
-    await storeRuntime(event.request, network.clone());
+    await storeRuntime(event.request, network.clone(), generation);
   })().catch((error) => {
     rejectResponse(error);
     throw error;
+  }).finally(() => {
+    if (requestGenerations.get(key.url) === generation) requestGenerations.delete(key.url);
   });
   event.respondWith(responsePromise);
   event.waitUntil(lifetime);

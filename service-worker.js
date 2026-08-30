@@ -4,6 +4,7 @@ const MAX_MESSAGES = 100;
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_URL_LENGTH = 2048;
 const MAX_API_KEY_LENGTH = 8192;
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30000;
 
 chrome.action.onClicked.addListener(() => {
@@ -44,17 +45,70 @@ function isTrustedSender(sender) {
   }
 }
 
-function isPrivateHostname(hostname) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) return true;
-  const parts = host.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-    return host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe8') || host.startsWith('fe9') || host.startsWith('fea') || host.startsWith('feb');
+function normalizeHostname(hostname) {
+  return hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+}
+
+function parseIpv4(host) {
+  const parts = host.split('.');
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return null;
+  const octets = parts.map(Number);
+  return octets.every((part) => part <= 255) ? octets : null;
+}
+
+function parseIpv6(host) {
+  if (!host.includes(':') || host.includes('%')) return null;
+  let value = host;
+  const ipv4Match = value.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (ipv4Match) {
+    const ipv4 = parseIpv4(ipv4Match[2]);
+    if (!ipv4) return null;
+    value = `${ipv4Match[1]}${((ipv4[0] << 8) | ipv4[1]).toString(16)}:${((ipv4[2] << 8) | ipv4[3]).toString(16)}`;
   }
-  return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 ||
-    (parts[0] === 169 && parts[1] === 254) ||
-    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-    (parts[0] === 192 && parts[1] === 168);
+  if ((value.match(/::/g) || []).length > 1) return null;
+  const halves = value.split('::');
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if ([...left, ...right].some((part) => !/^[0-9a-f]{1,4}$/i.test(part))) return null;
+  const missing = 8 - left.length - right.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return null;
+  return [...left, ...Array(missing).fill('0'), ...right].map((part) => parseInt(part, 16));
+}
+
+function classifyIpv4(octets) {
+  const loopback = octets[0] === 127;
+  return {
+    loopback,
+    private: loopback || octets[0] === 0 || octets[0] === 10 ||
+      (octets[0] === 169 && octets[1] === 254) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168)
+  };
+}
+
+function classifyHost(hostname) {
+  const host = normalizeHostname(hostname);
+  if (host === 'localhost') return { private: true, loopback: true };
+  if (host.endsWith('.localhost')) return { private: true, loopback: false };
+  const ipv4 = parseIpv4(host);
+  if (ipv4) return classifyIpv4(ipv4);
+  const ipv6 = parseIpv6(host);
+  if (!ipv6) return { private: false, loopback: false };
+  const unspecified = ipv6.every((part) => part === 0);
+  const loopback = ipv6.slice(0, 7).every((part) => part === 0) && ipv6[7] === 1;
+  const mapped = ipv6.slice(0, 5).every((part) => part === 0) && ipv6[5] === 0xffff;
+  if (mapped) return classifyIpv4([ipv6[6] >> 8, ipv6[6] & 255, ipv6[7] >> 8, ipv6[7] & 255]);
+  const linkLocal = (ipv6[0] & 0xffc0) === 0xfe80;
+  const uniqueLocal = (ipv6[0] & 0xfe00) === 0xfc00;
+  return { private: unspecified || loopback || linkLocal || uniqueLocal, loopback };
+}
+
+function isAllowedLocalPath(provider, pathname) {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const allowed = provider === 'ollama'
+    ? ['/', '/api/tags', '/v1/models', '/api/chat']
+    : ['/', '/v1', '/models', '/v1/models', '/chat/completions', '/v1/chat/completions'];
+  return allowed.includes(normalized);
 }
 
 function validateEndpoint(provider, rawUrl) {
@@ -68,9 +122,10 @@ function validateEndpoint(provider, rawUrl) {
     throw new Error('Invalid endpoint');
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid endpoint');
-  if (isPrivateHostname(url.hostname)) {
-    const ollamaLocal = provider === 'ollama' && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && (!url.port || url.port === '11434');
-    const lmStudioLocal = provider === 'openai' && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && url.port === '1234';
+  const host = classifyHost(url.hostname);
+  if (host.private) {
+    const ollamaLocal = provider === 'ollama' && host.loopback && url.protocol === 'http:' && url.port === '11434' && isAllowedLocalPath(provider, url.pathname);
+    const lmStudioLocal = provider === 'openai' && host.loopback && url.protocol === 'http:' && url.port === '1234' && isAllowedLocalPath(provider, url.pathname);
     if (!ollamaLocal && !lmStudioLocal) throw new Error('Private endpoint is not approved');
   }
   return url;
@@ -78,10 +133,17 @@ function validateEndpoint(provider, rawUrl) {
 
 function endpointWithPath(provider, rawUrl, operation) {
   const url = validateEndpoint(provider, rawUrl);
-  const suffix = operation === 'models'
+  const suffix = operation === 'fallbackModels' ? '/v1/models' : operation === 'models'
     ? (provider === 'ollama' ? '/api/tags' : '/models')
     : (provider === 'ollama' ? '/api/chat' : '/chat/completions');
-  if (!url.pathname.endsWith(suffix)) url.pathname = url.pathname.replace(/\/+$/, '') + suffix;
+  const pathname = url.pathname.replace(/\/+$/, '');
+  if (!pathname.endsWith(suffix)) {
+    let base = pathname.replace(/\/(?:api\/tags|api\/chat|chat\/completions)$/, '').replace(/\/+$/, '');
+    if (/\/v1\/models$/.test(base)) base = provider === 'ollama' ? base.replace(/\/v1\/models$/, '') : base.replace(/\/models$/, '');
+    url.pathname = base + suffix;
+  } else {
+    url.pathname = pathname;
+  }
   return url.toString();
 }
 
@@ -91,11 +153,32 @@ function safeError(error) {
   return 'Upstream request failed';
 }
 
-async function timedFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const controller = options.controller || new AbortController();
+async function fetchJson(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(Math.max(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, 1), DEFAULT_TIMEOUT_MS));
   try {
-    return await fetch(url, { ...options, controller: undefined, signal: controller.signal });
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const reader = response.body.getReader();
+    const chunks = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        controller.abort();
+        throw new Error('Response body too large');
+      }
+      chunks.push(value);
+    }
+    const body = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { data: JSON.parse(new TextDecoder('utf-8').decode(body)), response };
   } finally {
     clearTimeout(timer);
   }
@@ -107,10 +190,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
   if (request.action === 'fetchVoices') {
-    timedFetch(VOICES_ENDPOINT)
-      .then(async (result) => {
-        if (!result.ok) throw new Error('Voice service unavailable');
-        sendResponse({ success: true, data: await result.json(), serverDate: result.headers.get('Date') });
+    fetchJson(VOICES_ENDPOINT, {}, request.timeoutMs)
+      .then(({ data, response }) => {
+        sendResponse({ success: true, data, serverDate: response.headers.get('Date') });
       })
       .catch((error) => sendResponse({ success: false, error: safeError(error) }));
     return true;
@@ -121,16 +203,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const headers = {};
       if (request.apiKey && String(request.apiKey).length > MAX_API_KEY_LENGTH) throw new Error('Request field too large');
       if (request.apiKey && request.provider === 'openai') headers.Authorization = `Bearer ${String(request.apiKey)}`;
-      let result = await timedFetch(url, { headers });
-      let data = result.ok ? await result.json() : null;
-      if (request.provider === 'ollama' && !Array.isArray(data?.models)) {
-        const fallback = validateEndpoint('ollama', request.url);
-        fallback.pathname = fallback.pathname.replace(/\/+$/, '') + '/v1/models';
-        result = await timedFetch(fallback.toString(), { headers });
-        if (!result.ok) throw new Error('Model service unavailable');
-        data = await result.json();
+      let data;
+      try {
+        ({ data } = await fetchJson(url, { headers }, request.timeoutMs));
+        if (request.provider === 'ollama' && !Array.isArray(data?.models)) throw new Error('Invalid Ollama response');
+      } catch (error) {
+        if (request.provider !== 'ollama') throw error;
+        ({ data } = await fetchJson(endpointWithPath('ollama', request.url, 'fallbackModels'), { headers }, request.timeoutMs));
       }
-      if (!result.ok || !data) throw new Error('Model service unavailable');
       const records = request.provider === 'ollama' ? (data.models || data.data || []) : (data.data || []);
       const models = records.slice(0, 1000).map((model) => String(model.name || model.id || '').slice(0, 256)).filter(Boolean);
       sendResponse({ success: true, models });
