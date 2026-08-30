@@ -22,7 +22,7 @@ function existing() {
     bookmarks: [{ bookmarkId: 'bookmark-1', title: 'current' }],
     stats: { totalTime: 10, readingDays: { day: 10 }, hourlyDist: {} },
     bookSummary: 'old summary', chapterSummaries: { 1: 'old chapter' },
-    searchIndex: ['old'], ragIndex: ['old'], contentIndex: ['old'],
+    searchIndex: ['old'], ragIndex: ['old'], contentIndex: ['old'], parserIndex: ['parser'], chapterTexts: ['text'], bookChunks: ['chunk'], ragChunks: ['rag-chunk'],
   };
 }
 
@@ -33,6 +33,10 @@ test('replacement resets derived state but retains annotations, folder, and stat
   assert.equal('searchIndex' in result, false);
   assert.equal('ragIndex' in result, false);
   assert.equal('contentIndex' in result, false);
+  assert.equal('parserIndex' in result, false);
+  assert.equal('chapterTexts' in result, false);
+  assert.equal('bookChunks' in result, false);
+  assert.equal('ragChunks' in result, false);
   assert.equal(result.progress.percent, 80);
   assert.equal(result.folder, 'Reading');
   assert.equal(result.notes[0].noteId, 'note-1');
@@ -55,6 +59,15 @@ test('restore options control file and progress precedence and merge annotations
   const metadata = mergeRestoredBook(existing(), { ...result, file: new Blob(['metadata']) }, { restoreFile: false, progressPreference: 'current' });
   assert.equal(metadata.file.size, 3);
   assert.equal(metadata.progress.percent, 80);
+  assert.equal(metadata.bookSummary, 'old summary');
+  assert.deepEqual(metadata.chapterSummaries, { 1: 'old chapter' });
+  assert.deepEqual(metadata.searchIndex, ['old']);
+  assert.deepEqual(metadata.ragIndex, ['old']);
+  assert.deepEqual(metadata.contentIndex, ['old']);
+  assert.deepEqual(metadata.parserIndex, ['parser']);
+  assert.deepEqual(metadata.chapterTexts, ['text']);
+  assert.deepEqual(metadata.bookChunks, ['chunk']);
+  assert.deepEqual(metadata.ragChunks, ['rag-chunk']);
 
   const currentProgress = mergeRestoredBook(existing(), { ...result, progress: { percent: 20 } }, { restoreFile: true, progressPreference: 'current' });
   assert.equal(currentProgress.progress.percent, 80);
@@ -71,4 +84,12 @@ test('import merges inside one write transaction and returns the committed book'
   const imported = await library.importBook({ id: 'book-1', title: 'Old', author: 'A', format: 'txt', file: new Blob(['backup']), notes: [{ noteId: 'note-2' }] });
   assert.equal(imported.id, 'book-1');
   assert.deepEqual((await library.getBook('book-1')).notes.map(note => note.noteId), ['note-1', 'note-2']);
+});
+
+test('deleteBook commits physical deletion in its own transaction', async () => {
+  setup();
+  const library = new BookLibrary();
+  await library.addBook({ ...existing(), format: 'txt' });
+  await library.deleteBook('book-1');
+  assert.equal(await library.getBook('book-1'), undefined);
 });

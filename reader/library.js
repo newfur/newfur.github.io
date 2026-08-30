@@ -33,6 +33,12 @@ export function mergeRestoredBook(current, backup, { restoreFile = false, progre
   const result = { ...clone(current), ...clone(backup), id: current.id };
   result.file = restoreFile ? backup.file : current.file;
   result.cover = restoreFile ? (backup.cover || current.cover) : current.cover;
+  if (!restoreFile) {
+    for (const key of ['bookSummary', 'chapterSummaries', 'searchIndex', 'ragIndex', 'contentIndex', 'parserIndex', 'chapterTexts', 'bookChunks', 'ragChunks']) {
+      if (key in current) result[key] = clone(current[key]);
+      else delete result[key];
+    }
+  }
   result.progress = clone(progressPreference === 'backup' ? backup.progress || current.progress : current.progress || backup.progress);
   result.notes = mergeById(current.notes, backup.notes, 'noteId');
   result.bookmarks = mergeById(current.bookmarks, backup.bookmarks, 'bookmarkId');
