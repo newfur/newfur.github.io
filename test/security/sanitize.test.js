@@ -342,3 +342,37 @@ test('applies URL policy only to semantically supported href and src attributes'
   assert.match(html, /href="#local"/);
   assert.doesNotMatch(html, /evil\.example|wrong-context/);
 });
+
+test('accepts only fully validated navigation, resource, and blob URLs', () => {
+  const { security } = makeSecurity();
+  const trustedBlob = 'blob:null/validated-image';
+  security.trustResourceUrl(trustedBlob);
+
+  for (const url of ['https://example.com/path?q=1', 'http://example.com/', 'mailto:reader@example.com', '#chapter-2']) {
+    assert.equal(security.sanitizeUrl(url, 'navigation'), url);
+  }
+  for (const url of ['#', 'https:example.com', 'https://user:pass@example.com/', 'https://example.com/has space', 'https://example.com\\path', 'mailto:', 'mailto:   ']) {
+    assert.equal(security.sanitizeUrl(url, 'navigation'), null, url);
+  }
+
+  for (const url of [
+    'data:image/png;base64,AAAA',
+    'data:image/jpeg;base64,/9j/4AAQSkZJRg==',
+    'data:image/gif,%47%49%46%38%39%61',
+    'data:image/webp,RIFF%00%00%00WEBP',
+    'data:image/svg+xml,%3Csvg%3E%3C/svg%3E',
+    trustedBlob,
+  ]) {
+    assert.equal(security.sanitizeUrl(url, 'resource'), url);
+  }
+  for (const url of ['data:image/png;base64,', 'data:image/png;base64,not valid!', 'data:image/png', 'data:image/png;foo,AAAA', 'data:image/png,javascript:alert(1)', 'blob:null/', 'blob:javascript:alert(1)']) {
+    assert.equal(security.sanitizeUrl(url, 'resource'), null, url);
+  }
+});
+
+test('does not restore URI attributes removed by the purifier', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml('<a href="javascript:bad">bad</a><img src="data:text/html,evil" alt="safe">');
+  assert.doesNotMatch(html, /href="javascript:|src="data:text\/html/);
+  assert.match(html, /alt="safe"/);
+});

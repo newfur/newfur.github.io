@@ -1,4 +1,5 @@
 const ALLOWED_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml);/i;
+const VALID_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml)(?:;base64,[A-Za-z0-9+/]+={0,2}|;,[^\s\\<>]+|,[^\s\\<>]+)$/i;
 const BLOB_URL = /^blob:(?:null|https?:\/\/[^/\s]+)\/[^\s/?#]+$/i;
 const RESOURCE_ATTRIBUTES = new Set(['src', 'poster', 'cite', 'data']);
 const SVG_RESOURCE_ATTRIBUTES = new Set(['href', 'xlink:href', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end']);
@@ -20,11 +21,21 @@ function isSafeBlob(url) {
 
 function isSafeUrl(value, context, trustedResourceUrls) {
   const normalized = String(value || '').trim();
-  if (!normalized || /[\u0000-\u001f\u007f]/.test(normalized)) return false;
+  if (!normalized || /[\u0000-\u001f\u007f\\\s]/.test(normalized)) return false;
+  if (normalized === '#') return false;
   if (context === 'svg-reference') return /^#[-\w:.]+$/.test(normalized);
-  if (context === 'resource' && ALLOWED_DATA_IMAGE.test(normalized)) return true;
+  if (context === 'resource' && VALID_DATA_IMAGE.test(normalized) && !/,(?:[^,]*:|[^,]*\/\/)/i.test(normalized)) return true;
   if (context === 'resource' && isSafeBlob(normalized)) return trustedResourceUrls.has(normalized);
-  return /^(?:https?:|mailto:|#)/i.test(normalized);
+  if (/^#[-\w:.]+$/.test(normalized)) return true;
+  if (/^https?:\/\//i.test(normalized)) {
+    try {
+      const url = new URL(normalized);
+      return !url.username && !url.password && /^https?:$/.test(url.protocol);
+    } catch {
+      return false;
+    }
+  }
+  return /^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(normalized);
 }
 
 function sanitizeStyle(value) {
@@ -112,7 +123,7 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
     const restore = (source, target) => {
       if (source.nodeName !== target.nodeName) return;
       for (const attribute of [...source.attributes]) {
-        if (allowedAttributes.has(attribute.name) && !FORBID_ATTRIBUTES.has(attribute.name.toLowerCase())) target.setAttribute(attribute.name, attribute.value);
+        if (allowedAttributes.has(attribute.name) && !['href', 'src'].includes(attribute.name.toLowerCase()) && !FORBID_ATTRIBUTES.has(attribute.name.toLowerCase())) target.setAttribute(attribute.name, attribute.value);
       }
       [...source.children].forEach((child, index) => {
         const targetChild = target.children[index];
