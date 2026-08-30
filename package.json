@@ -8,7 +8,9 @@
     "start": "node server.js",
     "build:offline": "node scratch/compile_offline.js",
     "build:mobile": "node scratch/build_dist.js && npx cap sync android",
-    "test": "node scratch/test_tts_review_fixes.js"
+    "test": "npm run test:unit && npm run test:security && node scratch/test_tts_review_fixes.js",
+    "test:unit": "node --test test/unit/*.test.js",
+    "test:security": "node --test test/security/*.test.js"
   },
   "keywords": [],
   "author": "",
