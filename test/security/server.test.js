@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { EventEmitter, once } from 'node:events';
 import http from 'node:http';
-import { mkdtemp, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdtemp, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
+import { spawnSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
@@ -127,6 +129,40 @@ test('requiring server exports helpers without automatically listening', () => {
   assert.equal(defaultConfig.host, '127.0.0.1');
 });
 
+test('validates server configuration and treats an empty origin allowlist as deny-all', async (t) => {
+  const invalid = [
+    { host: '' },
+    { port: -1 },
+    { port: 65536 },
+    { port: 1.5 },
+    { maxClients: 0 },
+    { maxPayload: 0 },
+    { maxQueueMessages: 0 },
+    { maxQueueBytes: 0 },
+    { maxBufferedBytes: 0 },
+    { upstreamConnectTimeoutMs: 0 },
+    { idleTimeoutMs: Infinity }
+  ];
+  for (const config of invalid) assert.throws(() => createServer(config), /config/i);
+  assert.doesNotThrow(() => createServer({ port: 0 }));
+
+  const app = await start({ allowedOrigins: [] });
+  t.after(() => app.close());
+  await expectRejected(openClient(app), 403);
+});
+
+test('rejects invalid environment host and port values', () => {
+  for (const env of [{ HOST: '' }, { PORT: '0' }, { PORT: 'not-a-port' }]) {
+    const result = spawnSync(process.execPath, ['-e', "require('./server').createServer()"], {
+      cwd: path.resolve(import.meta.dirname, '../..'),
+      env: { ...process.env, ...env },
+      encoding: 'utf8'
+    });
+    assert.notEqual(result.status, 0, JSON.stringify(env));
+    assert.match(result.stderr, /Invalid server config/);
+  }
+});
+
 test('serves a valid file from an exact static mount', async (t) => {
   const app = await start();
   t.after(() => app.close());
@@ -212,6 +248,97 @@ test('rejects an intermediate symlink swap between validation and open', async (
   assert.doesNotMatch(rejected.body.toString(), /secret/);
 });
 
+test('rejects mount root replacement between validation and open', async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-root-race-'));
+  const mount = path.join(fixture, 'mount');
+  const originalMount = path.join(fixture, 'original-mount');
+  const outside = path.join(fixture, 'outside');
+  await mkdir(mount);
+  await mkdir(outside);
+  await writeFile(path.join(mount, 'race.txt'), 'inside');
+  await link(path.join(mount, 'race.txt'), path.join(outside, 'race.txt'));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+
+  const app = await startHttp(createRequestHandler({
+    staticMounts: [{ prefix: '/assets/', root: mount }],
+    async beforeOpen() {
+      await rename(mount, originalMount);
+      await symlink(outside, mount);
+    }
+  }));
+  t.after(() => app.close());
+  const rejected = await request(app, '/assets/race.txt');
+  assert.equal(rejected.statusCode, 404);
+});
+
+test('destroys a static stream and closes its file once when the client disconnects', async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-close-'));
+  const mount = path.join(fixture, 'mount');
+  await mkdir(mount);
+  await writeFile(path.join(mount, 'large.bin'), Buffer.alloc(1024 * 1024));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+
+  const controlled = new PassThrough();
+  let closeCount = 0;
+  let streamDestroyed;
+  let streamReady;
+  const cleaned = new Promise((resolve) => {
+    streamDestroyed = resolve;
+  });
+  const created = new Promise((resolve) => {
+    streamReady = resolve;
+  });
+  const app = await startHttp(createRequestHandler({
+    staticMounts: [{ prefix: '/assets/', root: mount }],
+    createStaticStream(file) {
+      const close = file.close.bind(file);
+      file.close = async () => {
+        closeCount += 1;
+        await close();
+        streamDestroyed(controlled.destroyed);
+      };
+      streamReady();
+      return controlled;
+    }
+  }));
+  t.after(() => app.close());
+
+  const client = http.get(`http://127.0.0.1:${app.port}/assets/large.bin`);
+  client.on('error', () => {});
+  await created;
+  controlled.write(Buffer.alloc(64 * 1024));
+  const [response] = await once(client, 'response');
+  response.on('error', () => {});
+  response.destroy();
+  assert.equal(await cleaned, true);
+  assert.equal(closeCount, 1);
+});
+
+test('closes a static file when stream construction fails', async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-stream-error-'));
+  const mount = path.join(fixture, 'mount');
+  await mkdir(mount);
+  await writeFile(path.join(mount, 'file.txt'), 'content');
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  let closeCount = 0;
+  const app = await startHttp(createRequestHandler({
+    staticMounts: [{ prefix: '/assets/', root: mount }],
+    createStaticStream(file) {
+      const close = file.close.bind(file);
+      file.close = async () => {
+        closeCount += 1;
+        return close();
+      };
+      throw new Error('stream failed');
+    }
+  }));
+  t.after(() => app.close());
+
+  const response = await request(app, '/assets/file.txt');
+  assert.equal(response.statusCode, 404);
+  assert.equal(closeCount, 1);
+});
+
 test('rejects traversal, encoding, backslash, mount crossover, and sensitive paths', async (t) => {
   const app = await start();
   t.after(() => app.close());
@@ -274,8 +401,8 @@ test('closes oversized websocket payloads with 1009', async (t) => {
 test('caps queued messages and queued bytes before upstream opens', async (t) => {
   const upstreams = [];
   const app = await start({
-    maxQueuedMessages: 1,
-    maxQueuedBytes: 5,
+    maxQueueMessages: 1,
+    maxQueueBytes: 5,
     upstreamFactory() {
       const upstream = new FakeUpstream({ open: false });
       upstreams.push(upstream);
@@ -315,6 +442,71 @@ test('caps concurrent relay clients', async (t) => {
   replacement.close();
   await Promise.all([once(replacement, 'close'), replacementUpstreamClosed]);
   assert.equal(app.activeClients, 0);
+});
+
+test('failed websocket upgrades do not consume relay capacity', async (t) => {
+  const app = await start({ maxClients: 1 });
+  t.after(() => app.close());
+  const handleUpgrade = app.wss.handleUpgrade.bind(app.wss);
+  app.wss.handleUpgrade = (_req, socket) => socket.destroy();
+
+  const failed = openClient(app);
+  await new Promise((resolve) => {
+    failed.once('error', () => {});
+    failed.once('close', resolve);
+  });
+  assert.equal(app.activeClients, 0);
+
+  app.wss.handleUpgrade = handleUpgrade;
+  const replacement = openClient(app);
+  await once(replacement, 'open');
+  replacement.close();
+  await once(replacement, 'close');
+});
+
+test('voices proxy times out a stalled upstream exactly once', async (t) => {
+  const upstream = new EventEmitter();
+  upstream.end = () => {};
+  upstream.destroyed = 0;
+  upstream.destroy = () => {
+    upstream.destroyed += 1;
+  };
+  const app = await startHttp(createRequestHandler({
+    voicesTimeoutMs: 10,
+    voiceRequest: () => upstream
+  }));
+  t.after(() => app.close());
+
+  const response = await request(app, '/api/voices');
+  assert.equal(response.statusCode, 504);
+  upstream.emit('error', new Error('late error'));
+  assert.equal(upstream.destroyed, 1);
+});
+
+test('voices proxy cancels upstream when its client disconnects', async (t) => {
+  const upstream = new EventEmitter();
+  upstream.end = () => {};
+  let requestStarted;
+  const started = new Promise((resolve) => {
+    requestStarted = resolve;
+  });
+  const cancelled = new Promise((resolve) => {
+    upstream.destroy = resolve;
+  });
+  const app = await startHttp(createRequestHandler({
+    voicesTimeoutMs: 1000,
+    voiceRequest: () => {
+      requestStarted();
+      return upstream;
+    }
+  }));
+  t.after(() => app.close());
+
+  const client = http.get(`http://127.0.0.1:${app.port}/api/voices`);
+  client.on('error', () => {});
+  await started;
+  client.destroy();
+  await cancelled;
 });
 
 test('closes when the upstream connection times out', async (t) => {
