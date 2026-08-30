@@ -126,6 +126,38 @@ test('preserves safe SVG geometry but removes external references and active beh
   assert.match(html, /href="#safe-symbol"/i);
 });
 
+test('allows only registered blob resources for SVG image href', () => {
+  const { window, security } = makeSecurity();
+  const trustedBlob = 'blob:https://example.com/epub-svg-image';
+  const untrustedBlob = 'blob:https://example.com/untrusted-svg-image';
+  security.trustResourceUrl(trustedBlob);
+
+  assert.equal(security.sanitizeUrl(trustedBlob, 'svg-image-resource'), trustedBlob);
+  for (const url of [untrustedBlob, 'https://example.com/image.png', 'data:image/png;base64,AAAA', '#symbol']) {
+    assert.equal(security.sanitizeUrl(url, 'svg-image-resource'), null, url);
+  }
+
+  const html = security.sanitizeChapterHtml(`
+    <svg>
+      <image id="trusted" href="${trustedBlob}" />
+      <image id="untrusted" href="${untrustedBlob}" />
+      <image id="external" href="https://example.com/image.png" />
+      <image id="data" href="data:image/png;base64,AAAA" />
+      <image id="xlink" xlink:href="${trustedBlob}" />
+      <use id="use-blob" href="${trustedBlob}" />
+      <use id="use-fragment" href="#symbol" />
+    </svg>
+  `);
+  const document = new window.DOMParser().parseFromString(html, 'text/html');
+
+  assert.equal(document.querySelector('#trusted').getAttribute('href'), trustedBlob);
+  for (const id of ['untrusted', 'external', 'data', 'xlink', 'use-blob']) {
+    assert.equal(document.querySelector(`#${id}`).hasAttribute('href'), false, id);
+    assert.equal(document.querySelector(`#${id}`).hasAttribute('xlink:href'), false, id);
+  }
+  assert.equal(document.querySelector('#use-fragment').getAttribute('href'), '#symbol');
+});
+
 test('rejects CSS resource URLs and preserves safe presentation styles', () => {
   const { security } = makeSecurity();
   const html = security.sanitizeChapterHtml(`

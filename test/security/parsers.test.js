@@ -71,7 +71,7 @@ test('EPUB getContent sanitizes a parsed chapter and retains trusted local image
         <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml" />
         <item id="image" href="image.png" media-type="image/png" />
       </manifest><spine><itemref idref="chapter" /></spine></package>`,
-    'OPS/chapter.xhtml': `<html><head><style>@import url(https://evil.example/x.css); p { color: red }</style><link rel="stylesheet" href="https://evil.example/book.css"></head><body>${attackHtml}<img src="image.png" alt="Local image"><a href="#note">internal text</a><p id="note">Note</p></body></html>`,
+    'OPS/chapter.xhtml': `<html><head><style>@import url(https://evil.example/x.css); p { color: red }</style><link rel="stylesheet" href="https://evil.example/book.css"></head><body>${attackHtml}<img src="image.png" alt="Local image"><svg><image id="local-svg-image" href="image.png" width="10" height="10" /><image id="external-svg-image" href="https://evil.example/image.png" /></svg><a href="#note">internal text</a><p id="note">Note</p></body></html>`,
     'OPS/image.png': new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
   };
   globalThis.JSZip = { loadAsync: async () => fakeZip(entries) };
@@ -82,10 +82,14 @@ test('EPUB getContent sanitizes a parsed chapter and retains trusted local image
 
   assertSanitized(html);
   assert.match(html, /<img src="blob:https:\/\/reader\.example\/parser-\d+" alt="Local image">/);
+  const output = parseHtml(html);
+  assert.match(output.querySelector('#local-svg-image').getAttribute('href'), /^blob:https:\/\/reader\.example\/parser-\d+$/);
+  assert.equal(output.querySelector('#local-svg-image').hasAttribute('xlink:href'), false);
+  assert.equal(output.querySelector('#external-svg-image').hasAttribute('href'), false);
   assert.match(html, /<a href="#note"[^>]*>internal text<\/a>/);
   assert.match(html, /id="note"/);
   assert.doesNotMatch(html, /<style\b|<link\b|evil\.example/i);
-  assert.equal(parser.resourceUrls.length, 1);
+  assert.equal(parser.resourceUrls.length, 2);
 });
 
 test('EPUB returns escaped sanitized errors for missing chapters', async () => {

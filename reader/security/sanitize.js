@@ -37,6 +37,7 @@ function isSafeUrl(value, context, trustedResourceUrls) {
   if (!normalized || /[\u0000-\u001f\u007f\\\s]/.test(normalized)) return false;
   if (normalized === '#') return false;
   if (context === 'svg-reference') return /^#[-\w:.]+$/.test(normalized);
+  if (context === 'svg-image-resource') return Boolean(parseBlobUrl(normalized)) && trustedResourceUrls.has(normalized);
   if (context === 'resource' && VALID_DATA_IMAGE.test(normalized) && !/,(?:[^,]*:|[^,]*\/\/)/i.test(normalized)) return true;
   if (context === 'resource' && parseBlobUrl(normalized)) return trustedResourceUrls.has(normalized);
   if (/^#[-\w:.]+$/.test(normalized)) return true;
@@ -78,7 +79,8 @@ function getUrlContext(node, name) {
   if (name === 'src') return !isSvg && /^img$/i.test(node.nodeName) ? 'resource' : null;
   if (name === 'href') {
     if (!isSvg && /^a$/i.test(node.nodeName)) return 'navigation';
-    if (isSvg && /^(?:a|use|image)$/i.test(node.nodeName)) return 'svg-reference';
+    if (isSvg && /^image$/i.test(node.nodeName)) return 'svg-image-resource';
+    if (isSvg && /^(?:a|use)$/i.test(node.nodeName)) return 'svg-reference';
     return null;
   }
   if (SVG_RESOURCE_ATTRIBUTES.has(name) && isSvg) return 'svg-reference';

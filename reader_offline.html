@@ -12849,9 +12849,9 @@ class EpubParser {
             this.resourceUrls.push(imgUrl);
             security.trustResourceUrl(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
-              img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', imgUrl);
+              img.removeAttribute('src');
+              img.removeAttribute('xlink:href');
               img.setAttribute('href', imgUrl);
-              img.setAttribute('xlink:href', imgUrl);
             } else {
               img.setAttribute('src', imgUrl);
             }
