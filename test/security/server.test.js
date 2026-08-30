@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { EventEmitter, once } from 'node:events';
 import http from 'node:http';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
-const { createServer, defaultConfig, resolveStaticPath } = require('../../server.js');
+const { createRequestHandler, createServer, defaultConfig, resolveStaticPath } = require('../../server.js');
 
 class FakeUpstream extends EventEmitter {
   constructor({ open = true } = {}) {
@@ -69,6 +69,17 @@ async function start(overrides = {}) {
       for (const client of app.wss.clients) client.terminate();
       await new Promise((resolve) => app.server.close(resolve));
     }
+  };
+}
+
+async function startHttp(handler) {
+  const server = http.createServer(handler);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  return {
+    server,
+    port: server.address().port,
+    close: () => new Promise((resolve) => server.close(resolve))
   };
 }
 
@@ -147,6 +158,58 @@ test('configured static mount serves normal files and rejects symlink escapes', 
     assert.equal(rejected.statusCode, 404);
     assert.doesNotMatch(rejected.body.toString(), /secret/);
   }
+});
+
+test('configured static mount stays anchored when its root is replaced', async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-root-'));
+  const mount = path.join(fixture, 'mount');
+  const originalMount = path.join(fixture, 'original-mount');
+  const outside = path.join(fixture, 'outside');
+  await mkdir(mount);
+  await mkdir(outside);
+  await writeFile(path.join(mount, 'normal.txt'), 'normal');
+  await writeFile(path.join(outside, 'normal.txt'), 'secret');
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+
+  const app = await start({ staticMounts: [{ prefix: '/assets/', root: mount }] });
+  t.after(() => app.close());
+  assert.equal((await request(app, '/assets/normal.txt')).body.toString(), 'normal');
+
+  await rename(mount, originalMount);
+  await symlink(outside, mount);
+  const rejected = await request(app, '/assets/normal.txt');
+  assert.equal(rejected.statusCode, 404);
+  assert.doesNotMatch(rejected.body.toString(), /secret/);
+});
+
+test('rejects an intermediate symlink swap between validation and open', async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), 'reader-static-race-'));
+  const mount = path.join(fixture, 'mount');
+  const section = path.join(mount, 'section');
+  const originalSection = path.join(mount, 'original-section');
+  const outside = path.join(fixture, 'outside');
+  await mkdir(mount);
+  await mkdir(section);
+  await mkdir(outside);
+  await writeFile(path.join(mount, 'normal.txt'), 'normal');
+  await writeFile(path.join(section, 'race.txt'), 'inside');
+  await writeFile(path.join(outside, 'race.txt'), 'secret');
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+
+  const app = await startHttp(createRequestHandler({
+    staticMounts: [{ prefix: '/assets/', root: mount }],
+    async beforeOpen(filePath) {
+      if (!filePath.endsWith(`${path.sep}section${path.sep}race.txt`)) return;
+      await rename(section, originalSection);
+      await symlink(outside, section);
+    }
+  }));
+  t.after(() => app.close());
+  assert.equal((await request(app, '/assets/normal.txt')).body.toString(), 'normal');
+
+  const rejected = await request(app, '/assets/section/race.txt');
+  assert.equal(rejected.statusCode, 404);
+  assert.doesNotMatch(rejected.body.toString(), /secret/);
 });
 
 test('rejects traversal, encoding, backslash, mount crossover, and sensitive paths', async (t) => {

@@ -84,6 +84,28 @@ function resolveStaticPath(rawPathname, staticMounts = STATIC_MOUNTS, rootFiles 
   return resolveStaticTarget(rawPathname, staticMounts, rootFiles)?.filePath || null;
 }
 
+function sameFileIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function anchorStaticMounts(staticMounts) {
+  return staticMounts.map(({ prefix, root }) => {
+    const absoluteRoot = path.resolve(root);
+    try {
+      const realRoot = fs.realpathSync(absoluteRoot);
+      return {
+        prefix,
+        root: absoluteRoot,
+        realRoot,
+        rootIdentity: fs.lstatSync(absoluteRoot),
+        realRootIdentity: fs.lstatSync(realRoot)
+      };
+    } catch {
+      return { prefix, root: absoluteRoot, usable: false };
+    }
+  });
+}
+
 function rawPathname(requestUrl) {
   const end = requestUrl.search(/[?#]/);
   return end === -1 ? requestUrl : requestUrl.slice(0, end);
@@ -96,8 +118,9 @@ function sendText(res, statusCode, body, headers = {}) {
 
 function createRequestHandler(options = {}) {
   const voiceRequest = options.voiceRequest || https.request;
-  const staticMounts = options.staticMounts || STATIC_MOUNTS;
+  const staticMounts = anchorStaticMounts(options.staticMounts || STATIC_MOUNTS);
   const rootFiles = options.rootFiles || ROOT_FILES;
+  const beforeOpen = options.beforeOpen;
   return function handleRequest(req, res) {
     const pathname = rawPathname(req.url || '/');
 
@@ -130,24 +153,38 @@ function createRequestHandler(options = {}) {
 
     const staticPathname = pathname === '/favicon.ico' ? '/icons/icon16.png' : pathname;
     const target = resolveStaticTarget(staticPathname, staticMounts, rootFiles);
-    if (!target) {
+    const mount = staticMounts.find(({ root }) => root === target?.root);
+    if (!target || (mount && mount.usable === false)) {
       sendText(res, 404, '404 Not Found');
       return;
     }
 
     Promise.all([
-      fs.promises.realpath(target.root),
+      fs.promises.lstat(target.root),
+      mount ? fs.promises.lstat(mount.realRoot) : null,
       fs.promises.realpath(target.filePath)
-    ]).then(async ([realRoot, realFilePath]) => {
-      if (!isWithin(realRoot, realFilePath)) {
+    ]).then(async ([currentRootIdentity, currentRealRootIdentity, realFilePath]) => {
+      const realRoot = mount?.realRoot || fs.realpathSync(target.root);
+      const rootIdentity = mount?.rootIdentity;
+      if (
+        (rootIdentity && !sameFileIdentity(rootIdentity, currentRootIdentity)) ||
+        (mount && !sameFileIdentity(mount.realRootIdentity, currentRealRootIdentity)) ||
+        !isWithin(realRoot, realFilePath)
+      ) {
         sendText(res, 404, '404 Not Found');
         return;
       }
       let file;
       try {
+        const expectedStats = await fs.promises.lstat(realFilePath);
+        if (!expectedStats.isFile()) {
+          sendText(res, 404, '404 Not Found');
+          return;
+        }
+        if (beforeOpen) await beforeOpen(realFilePath);
         file = await fs.promises.open(realFilePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-        const stats = await file.stat();
-        if (!stats.isFile()) {
+        const openedStats = await file.stat();
+        if (!openedStats.isFile() || !sameFileIdentity(expectedStats, openedStats)) {
           await file.close();
           sendText(res, 404, '404 Not Found');
           return;
@@ -198,7 +235,11 @@ function createServer(overrides = {}) {
   const upstreamFactory = config.upstreamFactory || ((targetUrl) => new WebSocket(targetUrl, {
     headers: { Origin: EDGE_ORIGIN, 'User-Agent': EDGE_USER_AGENT }
   }));
-  const server = http.createServer(createRequestHandler(config));
+  const server = http.createServer(createRequestHandler({
+    voiceRequest: config.voiceRequest,
+    staticMounts: config.staticMounts,
+    rootFiles: config.rootFiles
+  }));
   const wss = new WebSocket.Server({ noServer: true, maxPayload: config.maxPayload });
   let activeClients = 0;
 
