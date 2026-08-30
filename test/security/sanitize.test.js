@@ -230,3 +230,48 @@ test('loads DOMPurify before the application module in source and offline output
     assert.ok(html.indexOf('DOMPurify') < html.indexOf('// Module: reader/i18n.js'), output);
   }
 });
+
+test('isolates trusted resources between sanitizers sharing one purifier', () => {
+  const window = new JSDOM('').window;
+  window.DOMPurify = createDOMPurify(window);
+  const first = createSanitizer(window);
+  const second = createSanitizer(window);
+  const blob = 'blob:null/isolated-image';
+
+  first.trustResourceUrl(blob);
+  assert.equal(first.sanitizeUrl(blob, 'resource'), blob);
+  assert.equal(second.sanitizeUrl(blob, 'resource'), null);
+  assert.doesNotMatch(second.sanitizeChapterHtml(`<img src="${blob}">`), /blob:null/);
+});
+
+test('rejects hostile non-url SVG reference tokens while preserving safe paint values', () => {
+  const { security } = makeSecurity();
+  const html = security.sanitizeChapterHtml(`
+    <svg>
+      <circle fill="red" stroke="none" />
+      <path fill="inherit" stroke="context-stroke" />
+      <circle fill="javascript:alert(1)" stroke="data:text/html,evil" />
+      <circle fill="evil-token" stroke="https:evil" clip-path="evil-token" mask="data:image/png;base64,AAAA" filter="javascript:bad" marker-start="https://evil.example/m" />
+    </svg>
+  `);
+  assert.match(html, /fill="red"/);
+  assert.match(html, /stroke="none"/);
+  assert.match(html, /fill="inherit"/);
+  assert.match(html, /stroke="context-stroke"/);
+  assert.doesNotMatch(html, /javascript:|data:text|evil-token|https:evil|evil\.example/i);
+});
+
+test('normalizes mixed and duplicate external links after sanitization', () => {
+  const { security } = makeSecurity();
+  const html = security.normalizeExternalLinks(`
+    <a href="javascript:bad">removed</a>
+    <a href="https://one.example">one</a>
+    <a href="https://one.example">duplicate</a>
+    <a href="#local">local</a>
+    <a href="mailto:reader@example.com">mail</a>
+  `);
+  assert.doesNotMatch(html, /javascript/);
+  assert.equal((html.match(/rel="noopener noreferrer"/g) || []).length, 2);
+  assert.match(html, /href="#local"/);
+  assert.match(html, /href="mailto:reader@example.com"/);
+});

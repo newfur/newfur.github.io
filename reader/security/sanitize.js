@@ -1,112 +1,104 @@
 const ALLOWED_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml);/i;
 const BLOB_URL = /^blob:(?:null|https?:\/\/[^/\s]+)\/[^\s/?#]+$/i;
-const URL_ATTRIBUTES = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'cite', 'data', 'filter', 'clip-path', 'mask', 'marker-start', 'marker-mid', 'marker-end']);
-const SAFE_STYLE = /^(?:(?:color|background-color|font|font-family|font-size|font-style|font-weight|line-height|text-align|text-decoration|white-space|margin|padding|width|max-width|height|max-height|display|vertical-align|border(?:-[a-z-]+)?|fill|stroke)\s*:\s*[^;{}]+;?\s*)+$/i;
-const SVG_PRESENTATION_ATTRIBUTES = new Set(['viewbox', 'preserveaspectratio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientunits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class']);
-
-function isSafeUrl(value, context = 'navigation', trustedResourceUrls = new Set()) {
-  const normalized = String(value || '').trim();
-  if (!normalized || /[\u0000-\u001f\u007f]/.test(normalized)) return false;
-  if (context === 'svg-reference') return /^#/.test(normalized);
-  if (context === 'resource' && ALLOWED_DATA_IMAGE.test(normalized)) return true;
-  if (context === 'resource' && BLOB_URL.test(normalized)) return trustedResourceUrls.has(normalized);
-  return /^(?:https?:|mailto:|#)/i.test(normalized);
-}
+const RESOURCE_ATTRIBUTES = new Set(['src', 'poster', 'cite', 'data']);
+const SVG_RESOURCE_ATTRIBUTES = new Set(['href', 'xlink:href', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end']);
+const SVG_PAINT_ATTRIBUTES = new Set(['fill', 'stroke']);
+const SVG_SAFE_PAINT = /^(?:none|inherit|currentColor|context-fill|context-stroke|transparent|[a-z]+|#[0-9a-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|url\(#[\w:.-]+\))$/i;
+const SVG_ATTRIBUTES = ['viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class'];
+const FORBID_TAGS = ['audio', 'base', 'button', 'datalist', 'details', 'dialog', 'embed', 'fieldset', 'form', 'iframe', 'input', 'keygen', 'label', 'legend', 'meter', 'object', 'optgroup', 'option', 'output', 'picture', 'progress', 'script', 'select', 'source', 'style', 'summary', 'template', 'textarea', 'track', 'video'];
 
 function normalizeCssEscapes(value) {
   return String(value || '').replace(/\\([0-9a-f]{1,6})\s?/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/\\(.)/g, '$1');
 }
 
-function cssIsSafe(value) {
-  const css = String(value || '').trim();
-  const normalized = normalizeCssEscapes(css);
-  return !css || !/\\/.test(css) && SAFE_STYLE.test(css) && !/(?:url\s*\(|expression\s*\(|javascript\s*:|@import|position\s*:\s*(?:fixed|sticky)|(?:behavior|binding)\s*:)/i.test(normalized);
+function isSafeBlob(url) {
+  return BLOB_URL.test(String(url || '').trim());
 }
 
-function isSafeSvgReference(value) {
-  const normalized = normalizeCssEscapes(value);
-  if (String(value || '').includes('\\')) return false;
-  if (/url\s*\(/i.test(normalized)) return /^url\(#[-\w:.]+\)$/i.test(normalized);
-  return true;
+function isSafeUrl(value, context, trustedResourceUrls) {
+  const normalized = String(value || '').trim();
+  if (!normalized || /[\u0000-\u001f\u007f]/.test(normalized)) return false;
+  if (context === 'svg-reference') return /^#[-\w:.]+$/.test(normalized);
+  if (context === 'resource' && ALLOWED_DATA_IMAGE.test(normalized)) return true;
+  if (context === 'resource' && isSafeBlob(normalized)) return trustedResourceUrls.has(normalized);
+  return /^(?:https?:|mailto:|#)/i.test(normalized);
+}
+
+function isSafeStyle(value) {
+  const css = String(value || '').trim();
+  const normalized = normalizeCssEscapes(css);
+  return !css || !/\\/.test(css) && !/(?:url\s*\(|expression\s*\(|javascript\s*:|@import|position\s*:\s*(?:fixed|sticky)|(?:behavior|binding)\s*:)/i.test(normalized);
+}
+
+function isSafeSvgPaint(value) {
+  const normalized = normalizeCssEscapes(value).trim();
+  return !String(value || '').includes('\\') && SVG_SAFE_PAINT.test(normalized);
+}
+
+function getUrlContext(node, name) {
+  if (name === 'src') return /^image$/i.test(node.nodeName) ? 'svg-reference' : 'resource';
+  if (SVG_RESOURCE_ATTRIBUTES.has(name) && /^(?:svg|image|use|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName)) return 'svg-reference';
+  return 'navigation';
 }
 
 export function createSanitizer(windowObject = typeof window !== 'undefined' ? window : undefined) {
   const DOMPurify = windowObject?.DOMPurify;
-  if (!DOMPurify || typeof DOMPurify.sanitize !== 'function' || typeof DOMPurify.addHook !== 'function') {
+  if (!DOMPurify || typeof DOMPurify.sanitize !== 'function' || typeof windowObject?.DOMParser !== 'function') {
     throw new Error('DOMPurify must be loaded first on the supplied window object');
   }
   const trustedResourceUrls = new Set();
 
-  const config = {
-    ALLOW_UNKNOWN_PROTOCOLS: true,
-    FORBID_TAGS: ['audio', 'base', 'button', 'datalist', 'details', 'dialog', 'embed', 'fieldset', 'form', 'iframe', 'input', 'keygen', 'label', 'legend', 'meter', 'object', 'optgroup', 'option', 'output', 'picture', 'progress', 'script', 'select', 'source', 'style', 'summary', 'template', 'textarea', 'track', 'video'],
-    FORBID_ATTR: ['action', 'formaction', 'xlink:href'],
-    ADD_TAGS: ['svg', 'circle', 'path', 'line', 'polyline', 'rect', 'polygon', 'linearGradient', 'stop', 'text', 'image', 'use'],
-    ADD_ATTR: ['target', 'rel', 'viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family', 'id', 'class'],
-    ALLOWED_ATTR: ['class', 'id', 'style', 'title', 'alt', 'href', 'src', 'target', 'rel', 'viewBox', 'preserveAspectRatio', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'd', 'points', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'fill-rule', 'clip-rule', 'gradientUnits', 'offset', 'stop-color', 'stop-opacity', 'text-anchor', 'font-size', 'font-family'],
-  };
-
-  const beforeSanitizeAttributes = (node) => {
-    for (const attribute of Array.from(node.attributes || [])) {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value;
-      const isSvgReference = /^(?:image|use)$/i.test(node.nodeName) || ['filter', 'marker-start', 'marker-mid', 'marker-end', 'clip-path', 'mask'].includes(name);
-      const context = name === 'src' && /^image$/i.test(node.nodeName) ? 'svg-reference' : (name === 'src' ? 'resource' : ((name === 'href' || isSvgReference) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation'));
-      const hasExternalCssReference = /url\s*\(/i.test(value);
-      const svgReferenceAttribute = ['fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'].includes(name);
-      if (name.startsWith('on') || URL_ATTRIBUTES.has(name) && !isSafeUrl(value, context, trustedResourceUrls) || svgReferenceAttribute && !isSafeSvgReference(value)) {
-        node.removeAttribute(attribute.name);
+  const preprocess = (html) => {
+    const document = new windowObject.DOMParser().parseFromString(String(html ?? ''), 'text/html');
+    for (const element of [...document.body.querySelectorAll('*')]) {
+      const name = element.nodeName.toLowerCase();
+      if (FORBID_TAGS.includes(name) || /^(?:animate|set|foreignobject)$/i.test(name)) {
+        element.remove();
+        continue;
       }
-      if (name === 'style' && !cssIsSafe(value)) node.removeAttribute(attribute.name);
+      for (const attribute of [...element.attributes]) {
+        const attributeName = attribute.name.toLowerCase();
+        const value = attribute.value;
+        const context = getUrlContext(element, attributeName);
+        const unsafeSvgReference = SVG_RESOURCE_ATTRIBUTES.has(attributeName) && getUrlContext(element, attributeName) === 'svg-reference' && !isSafeUrl(value, 'svg-reference', trustedResourceUrls);
+        const unsafeNavigation = attributeName === 'href' && context === 'navigation' && !isSafeUrl(value, 'navigation', trustedResourceUrls);
+        const unsafeSvgPaint = SVG_PAINT_ATTRIBUTES.has(attributeName) && !isSafeSvgPaint(value);
+        if (attributeName.startsWith('on') || attributeName === 'style' && !isSafeStyle(value) || RESOURCE_ATTRIBUTES.has(attributeName) && !isSafeUrl(value, context, trustedResourceUrls) || unsafeNavigation || unsafeSvgReference || unsafeSvgPaint) {
+          element.removeAttribute(attribute.name);
+        }
+      }
     }
-  };
-  const uponSanitizeElement = (node) => {
-    if (/^(?:animate|set|foreignobject|script|style)$/i.test(node.nodeName)) node.remove();
-  };
-  const uponSanitizeAttribute = (node, data) => {
-    const name = data.attrName?.toLowerCase();
-      const isSvgReference = /^(?:image|use)$/i.test(node.nodeName) || ['filter', 'marker-start', 'marker-mid', 'marker-end', 'clip-path', 'mask'].includes(name);
-      const context = name === 'src' && /^image$/i.test(node.nodeName) ? 'svg-reference' : (name === 'src' ? 'resource' : ((name === 'href' || isSvgReference) && /^(?:image|use|svg|circle|path|line|polyline|rect|polygon|text)$/i.test(node.nodeName) ? 'svg-reference' : 'navigation'));
-    if ((name === 'src' || name === 'href') && isSafeUrl(data.attrValue, context, trustedResourceUrls)) {
-      data.keepAttr = true;
-    }
-    if (['fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'].includes(name) && !isSafeSvgReference(data.attrValue)) {
-      data.keepAttr = false;
-    }
-    if (SVG_PRESENTATION_ATTRIBUTES.has(name)) data.keepAttr = true;
-    if (name === 'target' || name === 'rel') data.keepAttr = true;
+    return document.body.innerHTML;
   };
 
-  DOMPurify.removeHook?.('beforeSanitizeAttributes');
-  DOMPurify.removeHook?.('uponSanitizeElement');
-  DOMPurify.removeHook?.('uponSanitizeAttribute');
-  DOMPurify.addHook('beforeSanitizeAttributes', beforeSanitizeAttributes);
-  DOMPurify.addHook('uponSanitizeElement', uponSanitizeElement);
-  DOMPurify.addHook('uponSanitizeAttribute', uponSanitizeAttribute);
-
-  const sanitize = (html) => DOMPurify.sanitize(String(html ?? ''), {
-    ...config,
-    RETURN_TRUSTED_TYPE: false,
-  });
+  const sanitize = (html) => {
+    const trustedBlobPattern = [...trustedResourceUrls].map((url) => url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    // Preprocessing has removed every untrusted URL-bearing attribute. The final
+    // branch lets DOMPurify retain non-URL SVG geometry/presentation values.
+    const allowedUri = new RegExp(`^(?:(?:https?|mailto):|#|data:image/(?:png|jpeg|gif|webp|svg\\+xml);${trustedBlobPattern ? `|${trustedBlobPattern}` : ''}|none|inherit|currentColor|context-fill|context-stroke|transparent|[a-z]+|#[0-9a-f]{3,8}|rgba?\\(|hsla?\\(|url\\(#|[-\\w.,%+ ()]+)`, 'i');
+    return DOMPurify.sanitize(preprocess(html), {
+      ALLOW_UNKNOWN_PROTOCOLS: false,
+      ALLOWED_URI_REGEXP: allowedUri,
+      FORBID_TAGS,
+      ADD_TAGS: ['svg', 'circle', 'path', 'line', 'polyline', 'rect', 'polygon', 'linearGradient', 'stop', 'text', 'image', 'use'],
+      ADD_ATTR: ['target', 'rel', ...SVG_ATTRIBUTES],
+      RETURN_TRUSTED_TYPE: false,
+    });
+  };
 
   const normalizeExternalLinks = (rootOrHtml) => {
-    const source = typeof rootOrHtml === 'string'
-      ? new windowObject.DOMParser().parseFromString(String(rootOrHtml), 'text/html').body
-      : null;
-    const root = source ? new windowObject.DOMParser().parseFromString(sanitize(rootOrHtml), 'text/html').body : rootOrHtml;
-    const sourceAnchors = source ? [...source.querySelectorAll('a[href]')] : [];
-    let externalIndex = 0;
+    const html = typeof rootOrHtml === 'string' ? sanitize(rootOrHtml) : rootOrHtml;
+    const root = typeof html === 'string' ? new windowObject.DOMParser().parseFromString(html, 'text/html').body : html;
     for (const anchor of root.querySelectorAll('a[href]')) {
       if (/^https?:/i.test(anchor.getAttribute('href'))) {
-        const sourceAnchor = sourceAnchors.filter((candidate) => /^https?:/i.test(candidate.getAttribute('href')))[externalIndex++];
-        if (sourceAnchor?.getAttribute('target') === '_blank') anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('target', '_blank');
         anchor.setAttribute('rel', 'noopener noreferrer');
       }
     }
     return typeof rootOrHtml === 'string' ? root.innerHTML : root;
   };
 
-  const sanitizeHtml = (html) => normalizeExternalLinks(sanitize(html));
+  const sanitizeHtml = (html) => normalizeExternalLinks(html);
   return {
     sanitizeChapterHtml: sanitizeHtml,
     sanitizeMarkdownHtml: sanitizeHtml,
@@ -114,7 +106,7 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
     sanitizeUrl: (url, context = 'navigation') => isSafeUrl(url, context, trustedResourceUrls) ? String(url).trim() : null,
     trustResourceUrl: (url) => {
       const normalized = String(url || '').trim();
-      if (!BLOB_URL.test(normalized)) return false;
+      if (!isSafeBlob(normalized)) return false;
       trustedResourceUrls.add(normalized);
       return true;
     },
@@ -123,6 +115,4 @@ export function createSanitizer(windowObject = typeof window !== 'undefined' ? w
   };
 }
 
-export const security = typeof window !== 'undefined' && window.DOMPurify
-  ? createSanitizer(window)
-  : undefined;
+export const security = typeof window !== 'undefined' && window.DOMPurify ? createSanitizer(window) : undefined;
