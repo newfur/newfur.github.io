@@ -115,9 +115,18 @@ export class AIEngine {
     const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
     if (useExtension) {
       return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
-    } else {
-      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
     }
+
+    // file:// 協議下瀏覽器會阻止跨域 fetch，除非 AI 端點是本地地址
+    const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
+    const endpoint = (this.endpoint || '').trim();
+    const isLocalEndpoint = endpoint && (endpoint.includes('localhost') || endpoint.includes('127.0.0.1') || endpoint.includes('0.0.0.0'));
+    if (isFileProtocol && !isLocalEndpoint) {
+      const errMsg = getMsg('ai_offline_unavailable') || 'AI features require network access. The offline HTML version running under file:// cannot connect to external AI services due to browser security restrictions. Please use the Chrome extension, web version, or configure a local AI model (e.g. Ollama at localhost).';
+      throw new Error(errMsg);
+    }
+
+    return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
   }
 
   // 1. 章節/選段摘要 (流式輸出)

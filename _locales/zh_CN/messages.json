@@ -84,6 +84,12 @@
   "update_check_failed": {
     "message": "检查失败"
   },
+  "view_releases": {
+    "message": "前往 GitHub 查看版本"
+  },
+  "ai_offline_unavailable": {
+    "message": "AI 功能需要网络访问。离线 HTML 版在 file:// 协议下无法连接外部 AI 服务（浏览器安全限制）。请使用 Chrome 插件版、网页版，或配置本地 AI 模型（如 Ollama localhost）。"
+  },
   "download_latest": {
     "message": "下载最新版本"
   },

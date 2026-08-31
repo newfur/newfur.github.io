@@ -6084,8 +6084,39 @@ async function checkForUpdates() {
     }
   } catch (e) {
     console.warn('[Update Check] Failed:', e);
-    statusEl.textContent = getMsg('update_check_failed') || 'Check failed';
-    statusEl.style.color = 'var(--text-muted)';
+    // file:// 或離線環境下 fetch 會被 CORS 攔截，提供 Release 頁面直連作為 fallback
+    const releasesUrl = `https://github.com/${GITHUB_REPO}/releases`;
+    statusEl.innerHTML = `<a href="${releasesUrl}" target="_blank" style="color: var(--primary-color); text-decoration: underline; font-size: 12px;">${getMsg('view_releases') || 'View releases on GitHub'}</a>`;
+
+    // 即使版本檢查失敗，也用當前版本號填充下載區讓用戶可以手動下載
+    if (downloadSection) {
+      const v = window.__APP_VERSION__ || '';
+      if (v) {
+        const isNativeApp = typeof window !== 'undefined' && (
+          window.Capacitor ||
+          window.location.protocol === 'capacitor:' ||
+          window.location.protocol === 'app:' ||
+          window.location.protocol === 'file:'
+        );
+        const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest;
+        const apkBtn = document.getElementById('download-apk-btn');
+        const offlineBtn = document.getElementById('download-offline-link');
+        const chromeBtn = document.getElementById('download-chrome-btn');
+        if (apkBtn) {
+          apkBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-${v}.apk`;
+          apkBtn.style.display = isExtension ? 'none' : '';
+        }
+        if (offlineBtn) {
+          offlineBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Offline-${v}.html`;
+          offlineBtn.style.display = isExtension ? 'none' : '';
+        }
+        if (chromeBtn) {
+          chromeBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Chrome-${v}.zip`;
+          chromeBtn.style.display = isNativeApp ? 'none' : '';
+        }
+        downloadSection.style.display = 'block';
+      }
+    }
   }
 }
 

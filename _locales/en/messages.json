@@ -84,6 +84,12 @@
   "update_check_failed": {
     "message": "Check failed"
   },
+  "view_releases": {
+    "message": "View releases on GitHub"
+  },
+  "ai_offline_unavailable": {
+    "message": "AI features require network access. The offline HTML version running under file:// cannot connect to external AI services due to browser security restrictions. Please use the Chrome extension, web version, or configure a local AI model (e.g. Ollama at localhost)."
+  },
   "download_latest": {
     "message": "Download Latest Version"
   },
