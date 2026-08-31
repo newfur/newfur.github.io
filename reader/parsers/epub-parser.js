@@ -5,7 +5,7 @@ import { getMsg } from '../i18n.js';
 import { security } from '../security/sanitize.js';
 
 export class EpubParser {
-  constructor(fileBlob) {
+  constructor(fileBlob, resourceOwnership = null, resourceOwner = null) {
     this.fileBlob = fileBlob;
     this.zip = null;
     this.opfPath = '';
@@ -16,6 +16,8 @@ export class EpubParser {
     this.chapters = []; // list of processed chapters: { title, href, content }
     this.cover = null;
     this.resourceUrls = [];
+    this.resourceOwnership = resourceOwnership;
+    this.resourceOwner = resourceOwner;
   }
 
   // 主解析函數
@@ -55,7 +57,7 @@ export class EpubParser {
           hash: '',
           cleanHref: item.href,
           hiddenFromTOC: true,
-          getContent: async () => this.loadChapterContent(item.href)
+          getContent: async (owner = this.resourceOwner) => this.loadChapterContent(item.href, owner)
         });
         tocCleanHrefs.add(item.href);
       }
@@ -354,13 +356,13 @@ export class EpubParser {
         hash: hash || '',
         cleanHref: cleanHref,
         depth: ch.depth || 0,
-        getContent: async () => this.loadChapterContent(cleanHref)
+        getContent: async (owner = this.resourceOwner) => this.loadChapterContent(cleanHref, owner)
       };
     });
   }
 
   // 讀取某個章節內容並替換資源引用為 Object URL
-  async loadChapterContent(cleanHref) {
+  async loadChapterContent(cleanHref, owner = this.resourceOwner) {
     if (!this.resourceUrls) {
       this.resourceUrls = [];
     }
@@ -399,6 +401,7 @@ export class EpubParser {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
             this.resourceUrls.push(imgUrl);
+            this.resourceOwnership?.register(owner, imgUrl);
             security.trustResourceUrl(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
               img.removeAttribute('src');

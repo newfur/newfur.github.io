@@ -1,3 +1,5 @@
+import { ResourceOwnership } from './resource-ownership.js';
+
 // 輔助函式：將文字切分為句子，同時避免在英文縮寫、縮寫首字母（如 J. F.）或小數點（如 3.14）處發生錯誤截斷
 function splitTextIntoSentences(text) {
   const parts = text.split(/([。！？.!?\r\n]+)/);
@@ -69,7 +71,8 @@ function isSeparatorSentence(text) {
 }
 
 export class TTSEngine {
-  constructor() {
+  constructor(resourceOwnership = new ResourceOwnership()) {
+    this.resourceOwnership = resourceOwnership;
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
     
     // 播放狀態定義
@@ -209,6 +212,59 @@ export class TTSEngine {
 
   _isCurrentSession(sessionId, bookId = this.ownerBookId) {
     return sessionId === this.playbackGeneration && bookId === this.ownerBookId;
+  }
+
+  _audioOwner(index, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    return `tts:${sessionId}:${bookId ?? ''}:${index}`;
+  }
+
+  _resources() {
+    if (!this.resourceOwnership) this.resourceOwnership = new ResourceOwnership();
+    return this.resourceOwnership;
+  }
+
+  _storeAudioCache(index, blobUrl) {
+    this._deleteAudioCacheEntry(index);
+    const owner = this._audioOwner(index);
+    this._resources().register(owner, blobUrl);
+    this.audioCache.set(index, { blobUrl, isReady: true, isGroup: false, owner });
+  }
+
+  _storeGroupCache(groupStartIndex, groupSentences, blobUrl) {
+    const owner = this._audioOwner(groupStartIndex);
+    this._resources().register(owner, blobUrl);
+    this.audioCache.set(groupStartIndex, {
+      blobUrl,
+      isReady: true,
+      isGroup: true,
+      groupStartIndex,
+      sentences: groupSentences,
+      owner,
+    });
+    for (let i = 1; i < groupSentences.length; i++) {
+      this.audioCache.set(groupStartIndex + i, { isReady: true, isGroupRef: true, groupStartIndex, owner });
+    }
+  }
+
+  _deleteAudioCacheEntry(index) {
+    const cached = this.audioCache.get(index);
+    if (!cached) return false;
+    if (cached.isGroupRef) return this.audioCache.delete(index);
+    const rootIndex = index;
+    const root = cached;
+    if (root.isGroup) {
+      const length = root.sentences?.length || 1;
+      for (let i = 0; i < length; i++) this.audioCache.delete(rootIndex + i);
+    } else {
+      this.audioCache.delete(index);
+    }
+    if (root.owner != null) this._resources().revokeOwner(root.owner);
+    return true;
+  }
+
+  _clearAudioCache() {
+    [...this.audioCache.keys()].forEach(index => this._deleteAudioCacheEntry(index));
+    this.fetchingIndices.clear();
   }
 
   async _runOwnedTransition(chapterIndex, sessionId, bookId, onComplete) {
@@ -549,15 +605,7 @@ export class TTSEngine {
     this.currentIndex = 0;
     
     // 清理舊的音訊快取 blob URLs，防止章節切換時內存累積
-    if (this.audioCache.size > 0) {
-      this.audioCache.forEach(cached => {
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-      });
-      this.audioCache.clear();
-      this.fetchingIndices.clear();
-    }
+    if (this.audioCache.size > 0) this._clearAudioCache();
     
     let sentenceId = 0;
 
@@ -1577,22 +1625,14 @@ export class TTSEngine {
           releaseMarker();
           return;
         }
-        this.audioCache.set(index, {
-          blobUrl: reader.result,
-          isReady: true,
-          isGroup: false
-        });
+        this._storeAudioCache(index, reader.result);
         releaseMarker();
         this._onAudioCacheReady(index);
       };
       reader.readAsDataURL(blob);
     } else {
       const blobUrl = URL.createObjectURL(blob);
-      this.audioCache.set(index, {
-        blobUrl,
-        isReady: true,
-        isGroup: false
-      });
+      this._storeAudioCache(index, blobUrl);
       releaseMarker();
       this._onAudioCacheReady(index);
     }
@@ -1605,27 +1645,12 @@ export class TTSEngine {
     const onUrlReady = (blobUrl) => {
       if (!this._isCurrentSession(sessionId, bookId)) {
         releaseMarker();
-        if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+        const staleOwner = this._audioOwner(groupStartIndex, sessionId, bookId);
+        this._resources().register(staleOwner, blobUrl);
+        this._resources().revokeOwner(staleOwner);
         return;
       }
-      // 快取分組的音訊源，記錄所包含的句子清單
-      this.audioCache.set(groupStartIndex, {
-        blobUrl,
-        isReady: true,
-        isGroup: true,
-        groupStartIndex,
-        sentences: groupSentences
-      });
-      
-      // 將分組內的其他 index 關聯指向起點，作為 references
-      for (let i = 1; i < groupSentences.length; i++) {
-        const idx = groupStartIndex + i;
-        this.audioCache.set(idx, {
-          isReady: true,
-          isGroupRef: true,
-          groupStartIndex
-        });
-      }
+      this._storeGroupCache(groupStartIndex, groupSentences, blobUrl);
       
       releaseMarker();
       this._onAudioCacheReady(groupStartIndex);
@@ -1895,12 +1920,7 @@ export class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
-        if (audioUrl && audioUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(audioUrl);
-        }
-        for (let i = 0; i < groupSentences.length; i++) {
-          this.audioCache.delete(groupStartIndex + i);
-        }
+        this._deleteAudioCacheEntry(groupStartIndex);
         
         if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
@@ -1938,10 +1958,7 @@ export class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-        this.audioCache.delete(index);
+        this._deleteAudioCacheEntry(index);
         
         if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
@@ -2278,13 +2295,7 @@ export class TTSEngine {
       }
     });
     keysToDelete.forEach(idx => {
-      const cached = this.audioCache.get(idx);
-      if (cached) {
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-        this.audioCache.delete(idx);
-      }
+      this._deleteAudioCacheEntry(idx);
     });
     
     this.isInitialPlay = true; // 標記為點擊開始的初始播放
@@ -2572,13 +2583,7 @@ export class TTSEngine {
     });
     this.currentAudio = null;
     
-    this.audioCache.forEach(cached => {
-      if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(cached.blobUrl);
-      }
-    });
-    this.audioCache.clear();
-    this.fetchingIndices.clear();
+    this._clearAudioCache();
     
     this.prefetchedChapterIndex = null;
     this._clearHighlight();
@@ -2678,13 +2683,7 @@ export class TTSEngine {
       const currentIndex = this.currentIndex;
       const bookId = this.ownerBookId;
       this._beginSession(bookId);
-      this.audioCache.forEach(cached => {
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-      });
-      this.audioCache.clear();
-      this.fetchingIndices.clear();
+      this._clearAudioCache();
       if (wasPlaying) this.play(currentIndex, true, bookId);
     }
 

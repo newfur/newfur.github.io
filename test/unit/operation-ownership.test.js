@@ -68,14 +68,14 @@ test('tokens are immutable snapshots with monotonically increasing generations',
 test('reader async flows use captured owners and explicit persistence ids', () => {
   const source = fs.readFileSync(new URL('../../reader/reader.js', import.meta.url), 'utf8');
 
-  assert.match(source, /cleanupParserResult\(parsed, parser\)/);
-  assert.match(source, /prefetchedChapterCache = \{ index: nextIndex, html, generation: operation\.generation, bookId: operation\.bookId \}/);
-  assert.match(source, /if \(!isCurrent\(\)\) \{\s*if \(url\?\.startsWith\('blob:'\)\) URL\.revokeObjectURL\(url\)/);
+  assert.match(source, /cleanupParserResult\(parsed, parser, parserRequestOwner\)/);
+  assert.match(source, /prefetchedChapterCache\.set\(nextIndex, \{ index: nextIndex, html, generation: operation\.generation, bookId: operation\.bookId, owner \}\)/);
+  assert.match(source, /if \(!isCurrent\(\)\) \{\s*resourceOwnership\.revokeOwner\(pageOwner\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId, closingTracker\)/);
   assert.match(source, /pending: library\.updateProgress\(operation\.bookId, progressUpdate\)/);
   assert.doesNotMatch(source, /loadChapter ignored because a chapter change is already in progress/);
-  assert.match(source, /finally \{\s*if \(isCurrent\(\)\) \{\s*isChangingChapter = false;/);
+  assert.match(source, /finally \{\s*if \(chapterOwner && !chapterMounted\) resourceOwnership\.revokeOwner\(chapterOwner\);\s*if \(isCurrent\(\)\) \{\s*isChangingChapter = false;/);
   assert.match(source, /chapterScrollLock\.release\(scrollLockToken\)/);
 });
 
@@ -86,6 +86,18 @@ test('offline artifacts define operation ownership before reader startup', () =>
     const reader = source.indexOf('const readerOperations = new OperationOwner()');
     assert.ok(definition >= 0, `${output} includes OperationOwner`);
     assert.ok(definition < reader, `${output} defines OperationOwner before use`);
+  }
+});
+
+test('offline artifacts define resource ownership before TTS and reader startup', () => {
+  for (const output of ['../../index.html', '../../reader_offline.html']) {
+    const source = fs.readFileSync(new URL(output, import.meta.url), 'utf8');
+    const definition = source.indexOf('class ResourceOwnership');
+    const tts = source.indexOf('class TTSEngine');
+    const reader = source.indexOf('const resourceOwnership = new ResourceOwnership');
+    assert.ok(definition >= 0, `${output} includes ResourceOwnership`);
+    assert.ok(definition < tts, `${output} defines ResourceOwnership before TTS`);
+    assert.ok(definition < reader, `${output} defines ResourceOwnership before reader use`);
   }
 });
 

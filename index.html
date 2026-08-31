@@ -12541,6 +12541,166 @@ async function buildOwnedSearchIndex(chapters, extractChapterText, isCurrent, on
 
 
 // ==========================================
+// Module: reader/resource-ownership.js
+// ==========================================
+class ResourceOwnership {
+  #owners = new Map();
+  #urls = new Map();
+  #revoked = new Set();
+
+  constructor(urlApi = globalThis.URL, finalize = null) {
+    this.urlApi = urlApi;
+    this.finalize = finalize;
+  }
+
+  register(owner, url) {
+    if (owner == null || typeof url !== 'string' || !url.startsWith('blob:') || this.#revoked.has(url)) return url;
+    let ownerUrls = this.#owners.get(owner);
+    if (!ownerUrls) {
+      ownerUrls = new Set();
+      this.#owners.set(owner, ownerUrls);
+    }
+    if (ownerUrls.has(url)) return url;
+    ownerUrls.add(url);
+
+    let urlOwners = this.#urls.get(url);
+    if (!urlOwners) {
+      urlOwners = new Set();
+      this.#urls.set(url, urlOwners);
+    }
+    urlOwners.add(owner);
+    return url;
+  }
+
+  has(owner, url) {
+    return this.#owners.get(owner)?.has(url) || false;
+  }
+
+  transfer(fromOwner, toOwner, url = null) {
+    const source = this.#owners.get(fromOwner);
+    if (!source) return false;
+    const urls = url == null ? [...source] : source.has(url) ? [url] : [];
+    if (urls.length === 0) return false;
+    urls.forEach(value => {
+      this.register(toOwner, value);
+      this.#detach(fromOwner, value);
+    });
+    return true;
+  }
+
+  revoke(url) {
+    if (typeof url !== 'string' || !url.startsWith('blob:') || this.#revoked.has(url)) return false;
+    const owners = this.#urls.get(url);
+    if (!owners) return false;
+    [...owners].forEach(owner => this.#detach(owner, url));
+    this.#release(url);
+    return true;
+  }
+
+  revokeOwner(owner) {
+    const urls = this.#owners.get(owner);
+    if (!urls) return false;
+    [...urls].forEach(url => {
+      this.#detach(owner, url);
+      if (!this.#urls.has(url)) this.#release(url);
+    });
+    return true;
+  }
+
+  revokeMatching(predicate) {
+    [...this.#owners.keys()].forEach(owner => {
+      if (predicate(owner)) this.revokeOwner(owner);
+    });
+  }
+
+  revokeAll() {
+    [...this.#owners.keys()].forEach(owner => this.revokeOwner(owner));
+  }
+
+  #detach(owner, url) {
+    const ownerUrls = this.#owners.get(owner);
+    if (ownerUrls) {
+      ownerUrls.delete(url);
+      if (ownerUrls.size === 0) this.#owners.delete(owner);
+    }
+    const urlOwners = this.#urls.get(url);
+    if (urlOwners) {
+      urlOwners.delete(owner);
+      if (urlOwners.size === 0) this.#urls.delete(url);
+    }
+  }
+
+  #release(url) {
+    if (this.#revoked.has(url)) return;
+    this.#revoked.add(url);
+    try {
+      this.finalize?.(url);
+    } finally {
+      this.urlApi?.revokeObjectURL?.(url);
+    }
+  }
+}
+
+class OwnedResourceSlot {
+  constructor(resources) {
+    this.resources = resources;
+    this.owner = null;
+  }
+
+  replace(owner, replaceContent) {
+    const previousOwner = this.owner;
+    replaceContent();
+    this.owner = owner;
+    if (previousOwner != null && previousOwner !== owner) this.resources.revokeOwner(previousOwner);
+  }
+
+  clear(removeContent = null) {
+    const previousOwner = this.owner;
+    removeContent?.();
+    this.owner = null;
+    if (previousOwner != null) this.resources.revokeOwner(previousOwner);
+  }
+}
+
+class BoundedResourceCache extends Map {
+  constructor(limit, resources) {
+    super();
+    this.limit = limit;
+    this.resources = resources;
+  }
+
+  set(key, value) {
+    const previous = this.get(key);
+    if (previous?.owner != null && previous.owner !== value?.owner) this.resources.revokeOwner(previous.owner);
+    if (this.has(key)) super.delete(key);
+    super.set(key, value);
+    while (this.size > this.limit) {
+      const oldestKey = this.keys().next().value;
+      this.delete(oldestKey);
+    }
+    return this;
+  }
+
+  delete(key) {
+    const value = this.get(key);
+    if (!super.delete(key)) return false;
+    if (value?.owner != null) this.resources.revokeOwner(value.owner);
+    return true;
+  }
+
+  clear() {
+    [...this.keys()].forEach(key => this.delete(key));
+  }
+
+  take(key) {
+    const value = this.get(key);
+    if (value !== undefined) super.delete(key);
+    return value;
+  }
+}
+
+
+// ==========================================
 // Module: reader/parsers/epub-parser.js
 // ==========================================
 // reader/parsers/epub-parser.js
@@ -12550,7 +12710,7 @@ async function buildOwnedSearchIndex(chapters, extractChapterText, isCurrent, on
 
 
 class EpubParser {
-  constructor(fileBlob) {
+  constructor(fileBlob, resourceOwnership = null, resourceOwner = null) {
     this.fileBlob = fileBlob;
     this.zip = null;
     this.opfPath = '';
@@ -12561,6 +12721,8 @@ class EpubParser {
     this.chapters = []; // list of processed chapters: { title, href, content }
     this.cover = null;
     this.resourceUrls = [];
+    this.resourceOwnership = resourceOwnership;
+    this.resourceOwner = resourceOwner;
   }
 
   // 主解析函數
@@ -12600,7 +12762,7 @@ class EpubParser {
           hash: '',
           cleanHref: item.href,
           hiddenFromTOC: true,
-          getContent: async () => this.loadChapterContent(item.href)
+          getContent: async (owner = this.resourceOwner) => this.loadChapterContent(item.href, owner)
         });
         tocCleanHrefs.add(item.href);
       }
@@ -12899,13 +13061,13 @@ class EpubParser {
         hash: hash || '',
         cleanHref: cleanHref,
         depth: ch.depth || 0,
-        getContent: async () => this.loadChapterContent(cleanHref)
+        getContent: async (owner = this.resourceOwner) => this.loadChapterContent(cleanHref, owner)
       };
     });
   }
 
   // 讀取某個章節內容並替換資源引用為 Object URL
-  async loadChapterContent(cleanHref) {
+  async loadChapterContent(cleanHref, owner = this.resourceOwner) {
     if (!this.resourceUrls) {
       this.resourceUrls = [];
     }
@@ -12944,6 +13106,7 @@ class EpubParser {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
             this.resourceUrls.push(imgUrl);
+            this.resourceOwnership?.register(owner, imgUrl);
             security.trustResourceUrl(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
               img.removeAttribute('src');
@@ -13327,7 +13490,7 @@ class HuffCdicDecoder {
 }
 
 class Azw3Parser {
-  constructor(fileBlob) {
+  constructor(fileBlob, resourceOwnership = null, resourceOwner = null) {
     this.fileBlob = fileBlob;
     this.arrayBuffer = null;
     this.view = null;
@@ -13340,6 +13503,8 @@ class Azw3Parser {
     this.language = '';
     this.coverRecordIndex = -1;
     this.thumbnailRecordIndex = -1;
+    this.resourceOwnership = resourceOwnership;
+    this.resourceOwner = resourceOwner;
   }
 
   async parse() {
@@ -13485,6 +13650,7 @@ class Azw3Parser {
               const flowText = decoder.decode(flowBytes);
               const blob = new Blob([flowText], { type: 'text/css' });
               const url = URL.createObjectURL(blob);
+              this.resourceOwnership?.register(this.resourceOwner, url);
               flowUrls[i] = url;
               uniqueResourceUrls.add(url);
               security.trustResourceUrl(url);
@@ -13517,6 +13683,7 @@ class Azw3Parser {
             
             const blob = new Blob([imgData], { type: mime });
             const url = URL.createObjectURL(blob);
+            this.resourceOwnership?.register(this.resourceOwner, url);
             embedUrls[recIdx] = url;
             uniqueResourceUrls.add(url);
             security.trustResourceUrl(url);
@@ -14744,11 +14911,13 @@ class TextParser {
 // CBZ 漫畫存檔解析器，支持圖片過濾、自然排序與大圖 Object URL 載入
 
 class ComicParser {
-  constructor(fileBlob) {
+  constructor(fileBlob, resourceOwnership = null, resourceOwner = null) {
     this.fileBlob = fileBlob;
     this.title = (this.fileBlob && this.fileBlob.name) ? this.fileBlob.name.replace(/\.cbz$/i, '') : 'Unknown Comic';
     this.zip = null;
     this.pages = []; // 存儲每個圖片的 href/文件名
+    this.resourceOwnership = resourceOwnership;
+    this.resourceOwner = resourceOwner;
   }
 
   async parse() {
@@ -14798,11 +14967,13 @@ class ComicParser {
         pageIndex: index,
         filePath: path,
         // 當前頁面的圖片抓取器
-        getImageUrl: async () => {
+        getImageUrl: async (owner = this.resourceOwner) => {
           const file = this.zip.file(path);
           if (!file) throw new Error(`File not found: ${path}`);
           const blob = await file.async('blob');
-          return URL.createObjectURL(blob);
+          const url = URL.createObjectURL(blob);
+          this.resourceOwnership?.register(owner, url);
+          return url;
         }
       };
     });
@@ -14824,6 +14995,8 @@ class ComicParser {
 // ==========================================
 // Module: reader/tts.js
 // ==========================================
+
+
 // 輔助函式：將文字切分為句子，同時避免在英文縮寫、縮寫首字母（如 J. F.）或小數點（如 3.14）處發生錯誤截斷
 function splitTextIntoSentences(text) {
   const parts = text.split(/([。！？.!?\r\n]+)/);
@@ -14895,7 +15068,8 @@ function isSeparatorSentence(text) {
 }
 
 class TTSEngine {
-  constructor() {
+  constructor(resourceOwnership = new ResourceOwnership()) {
+    this.resourceOwnership = resourceOwnership;
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
     
     // 播放狀態定義
@@ -15035,6 +15209,59 @@ class TTSEngine {
 
   _isCurrentSession(sessionId, bookId = this.ownerBookId) {
     return sessionId === this.playbackGeneration && bookId === this.ownerBookId;
+  }
+
+  _audioOwner(index, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    return `tts:${sessionId}:${bookId ?? ''}:${index}`;
+  }
+
+  _resources() {
+    if (!this.resourceOwnership) this.resourceOwnership = new ResourceOwnership();
+    return this.resourceOwnership;
+  }
+
+  _storeAudioCache(index, blobUrl) {
+    this._deleteAudioCacheEntry(index);
+    const owner = this._audioOwner(index);
+    this._resources().register(owner, blobUrl);
+    this.audioCache.set(index, { blobUrl, isReady: true, isGroup: false, owner });
+  }
+
+  _storeGroupCache(groupStartIndex, groupSentences, blobUrl) {
+    const owner = this._audioOwner(groupStartIndex);
+    this._resources().register(owner, blobUrl);
+    this.audioCache.set(groupStartIndex, {
+      blobUrl,
+      isReady: true,
+      isGroup: true,
+      groupStartIndex,
+      sentences: groupSentences,
+      owner,
+    });
+    for (let i = 1; i < groupSentences.length; i++) {
+      this.audioCache.set(groupStartIndex + i, { isReady: true, isGroupRef: true, groupStartIndex, owner });
+    }
+  }
+
+  _deleteAudioCacheEntry(index) {
+    const cached = this.audioCache.get(index);
+    if (!cached) return false;
+    if (cached.isGroupRef) return this.audioCache.delete(index);
+    const rootIndex = index;
+    const root = cached;
+    if (root.isGroup) {
+      const length = root.sentences?.length || 1;
+      for (let i = 0; i < length; i++) this.audioCache.delete(rootIndex + i);
+    } else {
+      this.audioCache.delete(index);
+    }
+    if (root.owner != null) this._resources().revokeOwner(root.owner);
+    return true;
+  }
+
+  _clearAudioCache() {
+    [...this.audioCache.keys()].forEach(index => this._deleteAudioCacheEntry(index));
+    this.fetchingIndices.clear();
   }
 
   async _runOwnedTransition(chapterIndex, sessionId, bookId, onComplete) {
@@ -15375,15 +15602,7 @@ class TTSEngine {
     this.currentIndex = 0;
     
     // 清理舊的音訊快取 blob URLs，防止章節切換時內存累積
-    if (this.audioCache.size > 0) {
-      this.audioCache.forEach(cached => {
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-      });
-      this.audioCache.clear();
-      this.fetchingIndices.clear();
-    }
+    if (this.audioCache.size > 0) this._clearAudioCache();
     
     let sentenceId = 0;
 
@@ -16403,22 +16622,14 @@ class TTSEngine {
           releaseMarker();
           return;
         }
-        this.audioCache.set(index, {
-          blobUrl: reader.result,
-          isReady: true,
-          isGroup: false
-        });
+        this._storeAudioCache(index, reader.result);
         releaseMarker();
         this._onAudioCacheReady(index);
       };
       reader.readAsDataURL(blob);
     } else {
       const blobUrl = URL.createObjectURL(blob);
-      this.audioCache.set(index, {
-        blobUrl,
-        isReady: true,
-        isGroup: false
-      });
+      this._storeAudioCache(index, blobUrl);
       releaseMarker();
       this._onAudioCacheReady(index);
     }
@@ -16431,27 +16642,12 @@ class TTSEngine {
     const onUrlReady = (blobUrl) => {
       if (!this._isCurrentSession(sessionId, bookId)) {
         releaseMarker();
-        if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+        const staleOwner = this._audioOwner(groupStartIndex, sessionId, bookId);
+        this._resources().register(staleOwner, blobUrl);
+        this._resources().revokeOwner(staleOwner);
         return;
       }
-      // 快取分組的音訊源，記錄所包含的句子清單
-      this.audioCache.set(groupStartIndex, {
-        blobUrl,
-        isReady: true,
-        isGroup: true,
-        groupStartIndex,
-        sentences: groupSentences
-      });
-      
-      // 將分組內的其他 index 關聯指向起點，作為 references
-      for (let i = 1; i < groupSentences.length; i++) {
-        const idx = groupStartIndex + i;
-        this.audioCache.set(idx, {
-          isReady: true,
-          isGroupRef: true,
-          groupStartIndex
-        });
-      }
+      this._storeGroupCache(groupStartIndex, groupSentences, blobUrl);
       
       releaseMarker();
       this._onAudioCacheReady(groupStartIndex);
@@ -16721,12 +16917,7 @@ class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
-        if (audioUrl && audioUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(audioUrl);
-        }
-        for (let i = 0; i < groupSentences.length; i++) {
-          this.audioCache.delete(groupStartIndex + i);
-        }
+        this._deleteAudioCacheEntry(groupStartIndex);
         
         if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
@@ -16764,10 +16955,7 @@ class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-        this.audioCache.delete(index);
+        this._deleteAudioCacheEntry(index);
         
         if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
@@ -17104,13 +17292,7 @@ class TTSEngine {
       }
     });
     keysToDelete.forEach(idx => {
-      const cached = this.audioCache.get(idx);
-      if (cached) {
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-        this.audioCache.delete(idx);
-      }
+      this._deleteAudioCacheEntry(idx);
     });
     
     this.isInitialPlay = true; // 標記為點擊開始的初始播放
@@ -17398,13 +17580,7 @@ class TTSEngine {
     });
     this.currentAudio = null;
     
-    this.audioCache.forEach(cached => {
-      if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(cached.blobUrl);
-      }
-    });
-    this.audioCache.clear();
-    this.fetchingIndices.clear();
+    this._clearAudioCache();
     
     this.prefetchedChapterIndex = null;
     this._clearHighlight();
@@ -17504,13 +17680,7 @@ class TTSEngine {
       const currentIndex = this.currentIndex;
       const bookId = this.ownerBookId;
       this._beginSession(bookId);
-      this.audioCache.forEach(cached => {
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
-        }
-      });
-      this.audioCache.clear();
-      this.fetchingIndices.clear();
+      this._clearAudioCache();
       if (wasPlaying) this.play(currentIndex, true, bookId);
     }
 
@@ -18195,6 +18365,7 @@ if (typeof mermaid !== 'undefined') {
 
 
 
+
 // 解析器導入
 
 
@@ -18203,7 +18374,8 @@ if (typeof mermaid !== 'undefined') {
 
 // 全局實例
 const library = new BookLibrary();
-const tts = new TTSEngine();
+const resourceOwnership = new ResourceOwnership(URL, url => security.revokeResourceUrl(url));
+const tts = new TTSEngine(resourceOwnership);
 const ai = new AIEngine();
 const readerOperations = new OperationOwner();
 const activeAIContexts = new Set();
@@ -18211,7 +18383,7 @@ const activeAIContexts = new Set();
 // 狀態追蹤
 let currentBook = null;
 let currentChapterIndex = 0;
-let prefetchedChapterCache = null; // 緩存背景預載的下一章 HTML 內容，避免重複讀取數據庫
+const prefetchedChapterCache = new BoundedResourceCache(1, resourceOwnership); // 緩存背景預載的下一章 HTML 內容，避免重複讀取數據庫
 let epubBookData = null; // 存儲 EPUB 解析後的對象
 let bookChunksCache = []; // 緩存整本書的文本切片以供 RAG 檢索
 let chapterTextsCache = []; // 緩存整本書的章節純文本以供精確搜尋
@@ -18231,8 +18403,9 @@ let currentPagesDisplayed = 'auto';
 let currentTTSLanguage = 'auto';
 let ttsDefaultVoice = '';
 let currentPaperTexture = 'texture-classic';
-let activeCoverUrls = [];
-let activeResourceUrls = [];
+let coverResourceOwner = null;
+const chapterResourceSlot = new OwnedResourceSlot(resourceOwnership);
+const comicResourceSlot = new OwnedResourceSlot(resourceOwnership);
 let ttsOnlyEdge = false;
 let currentBookDetectedLanguage = ''; // 緩存當前書籍檢測到的語言，防止異步語音加載事件重新觸發時因時序差異而誤判
 let marginWidthScroll = 5;
@@ -18279,9 +18452,14 @@ function captureReaderContext() {
   };
 }
 
-function cleanupParserResult(result, parser = null) {
+function createResourceOwner(type, operation = readerOperations.currentToken(), extra = '') {
+  return Object.freeze({ type, bookId: operation?.bookId ?? currentBook?.id ?? null, generation: operation?.generation ?? 0, extra, id: Symbol(type) });
+}
+
+function cleanupParserResult(result, parser = null, owner = null) {
+  if (owner) resourceOwnership.revokeOwner(owner);
   const urls = new Set([...(result?.resourceUrls || []), ...(parser?.resourceUrls || [])]);
-  urls.forEach(url => URL.revokeObjectURL(url));
+  urls.forEach(url => resourceOwnership.revoke(url));
   if (result?.resourceUrls) result.resourceUrls = [];
   if (parser?.resourceUrls) parser.resourceUrls = [];
 }
@@ -18368,23 +18546,18 @@ const selectedBookIds = new Set();
 
 
 function clearCoverUrls() {
-  activeCoverUrls.forEach(url => {
-    security.revokeResourceUrl(url);
-    URL.revokeObjectURL(url);
-  });
-  activeCoverUrls = [];
+  if (coverResourceOwner) resourceOwnership.revokeOwner(coverResourceOwner);
+  coverResourceOwner = null;
 }
 
 function clearResourceUrls() {
-  activeResourceUrls.splice(0).forEach(url => URL.revokeObjectURL(url));
-  if (epubBookData && epubBookData.resourceUrls) {
-    epubBookData.resourceUrls.forEach(url => URL.revokeObjectURL(url));
-    epubBookData.resourceUrls = [];
-  }
-  if (epubBookData && epubBookData.parser && epubBookData.parser.resourceUrls) {
-    epubBookData.parser.resourceUrls.forEach(url => URL.revokeObjectURL(url));
-    epubBookData.parser.resourceUrls = [];
-  }
+  const bookId = currentBook?.id;
+  chapterResourceSlot.clear();
+  comicResourceSlot.clear();
+  prefetchedChapterCache.clear();
+  if (bookId != null) resourceOwnership.revokeMatching(owner => owner?.bookId === bookId);
+  if (epubBookData?.resourceUrls) epubBookData.resourceUrls = [];
+  if (epubBookData?.parser?.resourceUrls) epubBookData.parser.resourceUrls = [];
 }
 
 function isBlobLike(value) {
@@ -19778,9 +19951,13 @@ function initUIEventBindings() {
     if (operation && isReaderOperationCurrent(operation) && ownedBookData && chapterIndex < ownedBookData.chapters.length - 1) {
       const nextIndex = chapterIndex + 1;
       const chapter = ownedBookData.chapters[nextIndex];
-      const html = await chapter.getContent();
-      if (!isReaderOperationCurrent(operation) || epubBookData !== ownedBookData) return null;
-      prefetchedChapterCache = { index: nextIndex, html, generation: operation.generation, bookId: operation.bookId };
+      const owner = createResourceOwner('prefetch', operation, String(nextIndex));
+      const html = await chapter.getContent(owner);
+      if (!isReaderOperationCurrent(operation) || epubBookData !== ownedBookData) {
+        resourceOwnership.revokeOwner(owner);
+        return null;
+      }
+      prefetchedChapterCache.set(nextIndex, { index: nextIndex, html, generation: operation.generation, bookId: operation.bookId, owner });
       return { index: nextIndex, html };
     }
     return null;
@@ -20695,6 +20872,8 @@ async function renderBookshelf(searchQuery = '') {
   
   // 清理舊的封面 Object URL，防記憶體洩漏
   clearCoverUrls();
+  const renderCoverOwner = createResourceOwner('covers', null, String(Date.now()));
+  coverResourceOwner = renderCoverOwner;
 
   // 更新麵包屑與標題 UI 顯示
   const titleMain = document.getElementById('library-title-main');
@@ -20716,6 +20895,10 @@ async function renderBookshelf(searchQuery = '') {
   }
 
   const books = await library.getAllBooks();
+  if (coverResourceOwner !== renderCoverOwner) {
+    resourceOwnership.revokeOwner(renderCoverOwner);
+    return;
+  }
   
   // 1. 計算每個資料夾內書籍的個數以及最近打開/添加時間
   const folderCounts = {};
@@ -20909,7 +21092,7 @@ async function renderBookshelf(searchQuery = '') {
           let coverUrl = typeof coverBook.cover === 'string' ? coverBook.cover : '';
           if (isBlobLike(coverBook.cover)) {
             coverUrl = URL.createObjectURL(coverBook.cover);
-            activeCoverUrls.push(coverUrl);
+            resourceOwnership.register(renderCoverOwner, coverUrl);
             security.trustResourceUrl(coverUrl);
           }
           renderFolderCover(coverGrid, { title: coverBook.title, format: coverBook.format, coverUrl }, security);
@@ -21026,7 +21209,7 @@ async function renderBookshelf(searchQuery = '') {
       if (book.cover) {
         if (isBlobLike(book.cover)) {
           coverUrl = URL.createObjectURL(book.cover);
-          activeCoverUrls.push(coverUrl);
+          resourceOwnership.register(renderCoverOwner, coverUrl);
           security.trustResourceUrl(coverUrl);
         } else if (typeof book.cover === 'string') {
           coverUrl = book.cover;
@@ -21209,7 +21392,9 @@ async function openBook(id) {
     history.pushState({ bookId: id }, '');
   }
 
-  // 清理舊的資源 Object URL 與預載快取
+  // Replace old book DOM before releasing any object URLs it may still reference.
+  const contentEl = document.getElementById('book-content');
+  contentEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-spinner"></div><span>${getMsg('loading_book')}</span></div>`;
   clearResourceUrls();
   // 記憶體轉換：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），在記憶體中將其包裝為 File 物件，以供解析器使用（不寫回資料庫，防止 Safari IndexedDB 儲存 File 物件的失效 Bug）
   if (book.file && typeof File !== 'undefined' && !(book.file instanceof File)) {
@@ -21279,53 +21464,61 @@ async function openBook(id) {
   document.getElementById('layout-mode-container').style.display = book.format === 'cbz' ? 'none' : 'flex';
   document.getElementById('comic-navigation').style.display = book.format === 'cbz' ? 'flex' : 'none';
 
-  // 顯示加載動畫
-  const contentEl = document.getElementById('book-content');
-  contentEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-spinner"></div><span>${getMsg('loading_book')}</span></div>`;
-
+  let parserRequestOwner = null;
   try {
     // 2. 調用相應的解析器
     if (book.format === 'epub') {
-      const parser = new EpubParser(book.file);
+      parserRequestOwner = createResourceOwner('open', operation, 'epub');
+      const parser = new EpubParser(book.file, resourceOwnership, parserRequestOwner);
       const parsed = await parser.parse();
       if (!isReaderOperationCurrent(operation)) {
-        cleanupParserResult(parsed, parser);
+        cleanupParserResult(parsed, parser, parserRequestOwner);
+        parserRequestOwner = null;
         return;
       }
       parsed.parser = parser; // 保存解析器實例以進行動態 URL 的清理
       parsed.chapters = await mergeShortChapters(parsed.chapters);
       if (!isReaderOperationCurrent(operation)) {
-        cleanupParserResult(parsed, parser);
+        cleanupParserResult(parsed, parser, parserRequestOwner);
+        parserRequestOwner = null;
         return;
       }
+      resourceOwnership.transfer(parserRequestOwner, createResourceOwner('book', operation, 'epub'));
+      parserRequestOwner = null;
       epubBookData = parsed;
       renderTOC(epubBookData.chapters);
       await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     } else if (book.format === 'azw3' || book.format === 'mobi') {
-      const parser = new Azw3Parser(book.file);
+      parserRequestOwner = createResourceOwner('open', operation, book.format);
+      const parser = new Azw3Parser(book.file, resourceOwnership, parserRequestOwner);
       const res = await parser.parse();
       if (!isReaderOperationCurrent(operation)) {
-        cleanupParserResult(res, parser);
+        cleanupParserResult(res, parser, parserRequestOwner);
+        parserRequestOwner = null;
         return;
       }
       res.chapters = await mergeShortChapters(res.chapters);
       if (!isReaderOperationCurrent(operation)) {
-        cleanupParserResult(res, parser);
+        cleanupParserResult(res, parser, parserRequestOwner);
+        parserRequestOwner = null;
         return;
       }
+      resourceOwnership.transfer(parserRequestOwner, createResourceOwner('book', operation, book.format));
+      parserRequestOwner = null;
       epubBookData = res; // 複用變量名以載入章節
-      if (res.resourceUrls) {
-        activeResourceUrls.push(...res.resourceUrls);
-      }
       renderTOC(res.chapters);
       await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     } else if (book.format === 'cbz') {
-      const parser = new ComicParser(book.file);
+      parserRequestOwner = createResourceOwner('open', operation, 'comic');
+      const parser = new ComicParser(book.file, resourceOwnership, parserRequestOwner);
       const res = await parser.parse();
       if (!isReaderOperationCurrent(operation)) {
-        cleanupParserResult(res, parser);
+        cleanupParserResult(res, parser, parserRequestOwner);
+        parserRequestOwner = null;
         return;
       }
+      resourceOwnership.transfer(parserRequestOwner, createResourceOwner('book', operation, 'comic'));
+      parserRequestOwner = null;
       comicParserInstance = parser;
       // 漫畫沒有 TOC 側邊欄，直接渲染圖片
       await loadComicPage(book.progress?.comicImageIndex || 0, operation);
@@ -21382,6 +21575,7 @@ async function openBook(id) {
       contentEl.replaceChildren(error);
     }
   } finally {
+    if (parserRequestOwner) resourceOwnership.revokeOwner(parserRequestOwner);
     if (openingBookId === id) openingBookId = null;
   }
 }
@@ -21410,14 +21604,13 @@ async function closeCurrentBook(triggerBack = true) {
   if (!readerOperations.isCurrent(operation, closingBookId)) return;
   stopReadingTracker(closingTracker);
 
-  // 清理舊的資源 Object URL
-  clearResourceUrls();
-
   // 清理書本內容 (避免 CSS 洩漏影響書庫樣式)
   const contentEl = document.getElementById('book-content');
   if (contentEl) {
     contentEl.innerHTML = '';
   }
+  // DOM no longer references book resources, so they can now be released.
+  clearResourceUrls();
 
   // 3. 切換視圖
   window.scrollTo(0, 0);
@@ -21483,7 +21676,7 @@ async function closeCurrentBook(triggerBack = true) {
   currentBook = null;
   epubBookData = null;
   comicParserInstance = null;
-  prefetchedChapterCache = null;
+  prefetchedChapterCache.clear();
   currentBookDetectedLanguage = ''; // 清除語言緩存
 
   // 重新渲染書櫃
@@ -21951,6 +22144,8 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   const isPaginated = document.body.classList.contains('layout-paginated');
   let scrollLockToken = null;
   let activeHashElem = null;
+  let chapterOwner = null;
+  let chapterMounted = false;
 
   if (!isPaginated) {
     scrollLockToken = chapterScrollLock.acquire(operation);
@@ -21969,20 +22164,27 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   
   // 加載 HTML (優先使用背景預載快取)
   let rawHtml;
-  if (prefetchedChapterCache && prefetchedChapterCache.index === index && prefetchedChapterCache.generation === operation.generation && prefetchedChapterCache.bookId === operation.bookId) {
-    rawHtml = prefetchedChapterCache.html;
-    prefetchedChapterCache = null; // 用完即清空
+  const prefetched = prefetchedChapterCache.get(index);
+  if (prefetched && prefetched.generation === operation.generation && prefetched.bookId === operation.bookId) {
+    rawHtml = prefetched.html;
+    chapterOwner = prefetched.owner;
+    prefetchedChapterCache.take(index);
   } else {
-    rawHtml = await chapter.getContent();
+    chapterOwner = createResourceOwner('chapter', operation, String(index));
+    rawHtml = await chapter.getContent(chapterOwner);
   }
-  if (!isCurrent()) return;
+  if (!isCurrent()) {
+    resourceOwnership.revokeOwner(chapterOwner);
+    return;
+  }
 
   // 判斷過渡方向 (根據新舊章節索引)
   const direction = (index > currentChapterIndex) ? 'forward' : 'backward';
 
   const updateDOM = () => {
     if (!isCurrent()) return;
-    insertChapterHtml(contentEl, rawHtml, security);
+    chapterResourceSlot.replace(chapterOwner, () => insertChapterHtml(contentEl, rawHtml, security));
+    chapterMounted = true;
     
     // 清除書籍內置的干擾多欄排版的內聯樣式
     cleanUpBookInlineStyles(contentEl);
@@ -22362,6 +22564,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       }
     }
   } finally {
+    if (chapterOwner && !chapterMounted) resourceOwnership.revokeOwner(chapterOwner);
     if (isCurrent()) {
       isChangingChapter = false;
       lastChapterChangeTime = Date.now();
@@ -22392,22 +22595,23 @@ async function loadComicPage(index, existingOperation = null) {
   const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && comicParserInstance === ownedParser;
   
   const contentEl = document.getElementById('book-content');
-  contentEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-spinner"></div><span>${getMsg('loading_page', [String(index + 1)])}</span></div>`;
+  comicResourceSlot.clear(() => {
+    contentEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-spinner"></div><span>${getMsg('loading_page', [String(index + 1)])}</span></div>`;
+  });
 
   const chapter = comicParserInstance.chapters[index];
-  const url = await chapter.getImageUrl();
+  const pageOwner = createResourceOwner('comic-page', operation, String(index));
+  const url = await chapter.getImageUrl(pageOwner);
   if (!isCurrent()) {
-    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+    resourceOwnership.revokeOwner(pageOwner);
     return;
   }
-  activeResourceUrls.push(url);
 
   const img = document.createElement('img');
   img.src = url;
   img.className = 'comic-page';
   
-  contentEl.innerHTML = '';
-  contentEl.appendChild(img);
+  comicResourceSlot.replace(pageOwner, () => contentEl.replaceChildren(img));
 
   // 更新頁碼指示器
   document.getElementById('comic-page-indicator').textContent = `${index + 1} / ${comicParserInstance.pages.length}`;
@@ -22415,11 +22619,10 @@ async function loadComicPage(index, existingOperation = null) {
   // 保存進度
   const percent = ((index + 1) / ownedParser.pages.length) * 100;
   const progressUpdate = { comicImageIndex: index, percent };
-  const progressSavedForCurrentOwner = await finishTrackedResource({
-    url,
-    activeResources: activeResourceUrls,
+  const progressSavedForCurrentOwner = await completeOwnedTransition({
     pending: library.updateProgress(operation.bookId, progressUpdate),
-    isCurrent
+    isCurrent,
+    complete: () => {}
   });
   if (!progressSavedForCurrentOwner) return;
   ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };

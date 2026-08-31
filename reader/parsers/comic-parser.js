@@ -2,11 +2,13 @@
 // CBZ 漫畫存檔解析器，支持圖片過濾、自然排序與大圖 Object URL 載入
 
 export class ComicParser {
-  constructor(fileBlob) {
+  constructor(fileBlob, resourceOwnership = null, resourceOwner = null) {
     this.fileBlob = fileBlob;
     this.title = (this.fileBlob && this.fileBlob.name) ? this.fileBlob.name.replace(/\.cbz$/i, '') : 'Unknown Comic';
     this.zip = null;
     this.pages = []; // 存儲每個圖片的 href/文件名
+    this.resourceOwnership = resourceOwnership;
+    this.resourceOwner = resourceOwner;
   }
 
   async parse() {
@@ -56,11 +58,13 @@ export class ComicParser {
         pageIndex: index,
         filePath: path,
         // 當前頁面的圖片抓取器
-        getImageUrl: async () => {
+        getImageUrl: async (owner = this.resourceOwner) => {
           const file = this.zip.file(path);
           if (!file) throw new Error(`File not found: ${path}`);
           const blob = await file.async('blob');
-          return URL.createObjectURL(blob);
+          const url = URL.createObjectURL(blob);
+          this.resourceOwnership?.register(owner, url);
+          return url;
         }
       };
     });

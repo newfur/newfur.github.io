@@ -207,7 +207,7 @@ export class HuffCdicDecoder {
 }
 
 export class Azw3Parser {
-  constructor(fileBlob) {
+  constructor(fileBlob, resourceOwnership = null, resourceOwner = null) {
     this.fileBlob = fileBlob;
     this.arrayBuffer = null;
     this.view = null;
@@ -220,6 +220,8 @@ export class Azw3Parser {
     this.language = '';
     this.coverRecordIndex = -1;
     this.thumbnailRecordIndex = -1;
+    this.resourceOwnership = resourceOwnership;
+    this.resourceOwner = resourceOwner;
   }
 
   async parse() {
@@ -365,6 +367,7 @@ export class Azw3Parser {
               const flowText = decoder.decode(flowBytes);
               const blob = new Blob([flowText], { type: 'text/css' });
               const url = URL.createObjectURL(blob);
+              this.resourceOwnership?.register(this.resourceOwner, url);
               flowUrls[i] = url;
               uniqueResourceUrls.add(url);
               security.trustResourceUrl(url);
@@ -397,6 +400,7 @@ export class Azw3Parser {
             
             const blob = new Blob([imgData], { type: mime });
             const url = URL.createObjectURL(blob);
+            this.resourceOwnership?.register(this.resourceOwner, url);
             embedUrls[recIdx] = url;
             uniqueResourceUrls.add(url);
             security.trustResourceUrl(url);
