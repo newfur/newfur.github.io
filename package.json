@@ -3,6 +3,9 @@
   "version": "3.3.5",
   "description": "",
   "main": "service-worker.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
@@ -17,15 +20,15 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@capacitor/core": "^6.0.0",
-    "@capacitor/filesystem": "^6.0.4",
-    "@capacitor/share": "^6.0.4",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
     "dompurify": "^3.4.14",
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/cli": "^6.0.0",
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1"
   }

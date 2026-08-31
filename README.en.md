@@ -87,10 +87,10 @@ The project uses a pure client-driven architecture, saving all user data inside 
 
 ### 🌐 Method B: Local Node.js Web Server
 1. Install dependencies and start the developer server:
-   ```bash
-   npm install
-   npm start
-   ```
+    ```bash
+    npm ci
+    npm start
+    ```
 2. Open your browser to `http://localhost:3000`.
 
 ### 💾 Method C: Build Standalone Offline HTML

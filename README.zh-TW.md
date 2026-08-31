@@ -87,10 +87,10 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 
 ### 🌐 方法 B：本地 Node.js 網頁版執行
 1. 安裝依賴並啟動本地伺服器：
-   ```bash
-   npm install
-   npm start
-   ```
+    ```bash
+    npm ci
+    npm start
+    ```
 2. 打開瀏覽器訪問：`http://localhost:3000`。
 
 ### 💾 方法 C：建構單檔案離線版/靜態部署

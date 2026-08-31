@@ -87,10 +87,10 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 
 ### 🌐 方法 B：本地 Node.js 网页版运行
 1. 安装依赖并启动本地服务器：
-   ```bash
-   npm install
-   npm start
-   ```
+    ```bash
+    npm ci
+    npm start
+    ```
 2. 打开浏览器访问：`http://localhost:3000`。
 
 ### 💾 方法 C：构建单文件离线版/静态部署
