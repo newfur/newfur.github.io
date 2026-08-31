@@ -6264,7 +6264,21 @@ function shouldAppendChapterTitles(contentSample, chapterTitles) {
 }
 
 // 根據系統語言格式化 TTS 語音顯示名稱
-// 例如 shortName="zh-CN-XiaoxiaoNeural" → 中文顯示 "Xiaoxiao (中文(中国) · 女)"，英文顯示 "Xiaoxiao (Chinese (China) · Female)"
+// 例如 shortName="zh-CN-XiaoxiaoNeural" → 中文顯示 "晓晓 Xiaoxiao (中文(中国) · 女)"
+const VOICE_LOCAL_NAMES = {
+  // 中文 (简体)
+  'Xiaoxiao': '晓晓', 'Xiaoyi': '晓伊', 'Yunjian': '云健', 'Yunxi': '云希',
+  'Yunxia': '云夏', 'Yunyang': '云扬', 'Xiaobei': '晓北', 'Xiaoni': '晓妮',
+  // 中文 (繁體)
+  'HsiaoChen': '曉臻', 'HsiaoYu': '曉雨', 'YunJhe': '雲哲',
+  // 中文 (粵語)
+  'HiuGaai': '曉佳', 'HiuMaan': '曉曼', 'WanLung': '雲龍',
+  // 日語
+  'Nanami': '七海', 'Keita': '圭太',
+  // 韓語
+  'SunHi': '선히', 'InJoon': '인준', 'Hyunsu': '현수'
+};
+
 function formatVoiceDisplayName(voice) {
   // 非 Edge 語音或 OpenAI/Local 語音，直接用原名
   if (!voice.shortName && !voice.isEdge) {
@@ -6307,7 +6321,12 @@ function formatVoiceDisplayName(voice) {
   const genderStr = genderMap[voice.gender] || '';
 
   const meta = genderStr ? `${langDisplay} · ${genderStr}` : langDisplay;
-  return `${personName} (${meta})`;
+  // 對於有本地化名稱的語音，CJK 系統語言下顯示 "本地名 拉丁名 (語言 · 性別)"，否則只顯示拉丁名
+  const localName = VOICE_LOCAL_NAMES[personName] || '';
+  const uiLangPrefix = (navigator.language || 'en').toLowerCase().split('-')[0];
+  const isCJKUI = ['zh', 'ja', 'ko'].includes(uiLangPrefix);
+  const displayName = (localName && isCJKUI) ? `${localName} ${personName}` : personName;
+  return `${displayName} (${meta})`;
 }
 
 function getTTSVoiceGroups(voices, lang, edgeOnly = false) {
