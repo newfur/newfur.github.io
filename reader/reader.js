@@ -43,6 +43,7 @@ if (typeof mermaid !== 'undefined') {
 import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
+import { OperationOwner } from './operation-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -71,6 +72,7 @@ import { ComicParser } from './parsers/comic-parser.js';
 const library = new BookLibrary();
 const tts = new TTSEngine();
 const ai = new AIEngine();
+const readerOperations = new OperationOwner();
 
 // 狀態追蹤
 let currentBook = null;
@@ -104,8 +106,18 @@ let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
 let lastChapterChangeTime = 0;
-let openBookRequestId = 0;
 let openingBookId = null;
+
+function isReaderOperationCurrent(token) {
+  return readerOperations.isCurrent(token, token?.bookId) && currentBook?.id === token.bookId;
+}
+
+function cleanupParserResult(result, parser = null) {
+  const urls = new Set([...(result?.resourceUrls || []), ...(parser?.resourceUrls || [])]);
+  urls.forEach(url => URL.revokeObjectURL(url));
+  if (result?.resourceUrls) result.resourceUrls = [];
+  if (parser?.resourceUrls) parser.resourceUrls = [];
+}
 
 // AI 服务商配置管理全局状态
 const DEFAULT_AI_PROFILES = [
@@ -1548,17 +1560,22 @@ function initUIEventBindings() {
   };
 
   tts.getNextChapterData = async (chapterIndex) => {
-    if (epubBookData && chapterIndex < epubBookData.chapters.length - 1) {
+    const operation = readerOperations.currentToken();
+    const ownedBookData = epubBookData;
+    if (operation && isReaderOperationCurrent(operation) && ownedBookData && chapterIndex < ownedBookData.chapters.length - 1) {
       const nextIndex = chapterIndex + 1;
-      const chapter = epubBookData.chapters[nextIndex];
+      const chapter = ownedBookData.chapters[nextIndex];
       const html = await chapter.getContent();
-      prefetchedChapterCache = { index: nextIndex, html };
+      if (!isReaderOperationCurrent(operation) || epubBookData !== ownedBookData) return null;
+      prefetchedChapterCache = { index: nextIndex, html, generation: operation.generation, bookId: operation.bookId };
       return { index: nextIndex, html };
     }
     return null;
   };
 
   tts.onChapterTransition = async (nextChapterIndex) => {
+    const operation = readerOperations.currentToken();
+    if (!operation || !isReaderOperationCurrent(operation)) return;
     const currentChapter = epubBookData && epubBookData.chapters[currentChapterIndex];
     const nextChapter = epubBookData && epubBookData.chapters[nextChapterIndex];
     if (currentChapter && nextChapter && currentChapter.cleanHref === nextChapter.cleanHref) {
@@ -1569,6 +1586,7 @@ function initUIEventBindings() {
     } else {
       await loadChapter(nextChapterIndex, false, false, false, true, null, null, null, null, null, true);
     }
+    if (!isReaderOperationCurrent(operation)) return;
     updatePlayPauseButtonIcon();
   };
 
@@ -2889,15 +2907,15 @@ function stopReadingTracker() {
   }
 }
 
-async function saveReadingTime() {
-  if (currentBook) {
+async function saveReadingTime(bookId = currentBook?.id) {
+  if (bookId) {
     const now = Date.now();
     const isUserActive = isReadingTimeActive(now);
     if (isUserActive) {
       const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
         try {
-          await library.addReadingDuration(currentBook.id, elapsedSeconds);
+          await library.addReadingDuration(bookId, elapsedSeconds);
         } catch (e) {
           console.warn('[ReadingTracker] Failed to save final stats:', e);
         }
@@ -2922,11 +2940,12 @@ async function openBook(id) {
   if (openingBookId || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
     return;
   }
+  readerOperations.invalidate();
+  const operation = readerOperations.begin(id);
   openingBookId = id;
-  const requestId = ++openBookRequestId;
   const book = await library.getBook(id);
-  if (!book || requestId !== openBookRequestId) {
-    openingBookId = null;
+  if (!book || !readerOperations.isCurrent(operation, id)) {
+    if (openingBookId === id) openingBookId = null;
     return;
   }
 
@@ -3013,39 +3032,61 @@ async function openBook(id) {
     // 2. 調用相應的解析器
     if (book.format === 'epub') {
       const parser = new EpubParser(book.file);
-      epubBookData = await parser.parse();
-      if (requestId !== openBookRequestId) return;
-      epubBookData.parser = parser; // 保存解析器實例以進行動態 URL 的清理
-      epubBookData.chapters = await mergeShortChapters(epubBookData.chapters);
+      const parsed = await parser.parse();
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(parsed, parser);
+        return;
+      }
+      parsed.parser = parser; // 保存解析器實例以進行動態 URL 的清理
+      parsed.chapters = await mergeShortChapters(parsed.chapters);
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(parsed, parser);
+        return;
+      }
+      epubBookData = parsed;
       renderTOC(epubBookData.chapters);
-      await loadChapter(currentChapterIndex, false, true);
+      await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     } else if (book.format === 'azw3' || book.format === 'mobi') {
       const parser = new Azw3Parser(book.file);
       const res = await parser.parse();
-      if (requestId !== openBookRequestId) return;
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(res, parser);
+        return;
+      }
       res.chapters = await mergeShortChapters(res.chapters);
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(res, parser);
+        return;
+      }
       epubBookData = res; // 複用變量名以載入章節
       if (res.resourceUrls) {
         activeResourceUrls.push(...res.resourceUrls);
       }
       renderTOC(res.chapters);
-      await loadChapter(currentChapterIndex, false, true);
+      await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     } else if (book.format === 'cbz') {
-      comicParserInstance = new ComicParser(book.file);
-      const res = await comicParserInstance.parse();
-      if (requestId !== openBookRequestId) return;
+      const parser = new ComicParser(book.file);
+      const res = await parser.parse();
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(res, parser);
+        return;
+      }
+      comicParserInstance = parser;
       // 漫畫沒有 TOC 側邊欄，直接渲染圖片
-      await loadComicPage(currentBook.progress?.comicImageIndex || 0);
+      await loadComicPage(book.progress?.comicImageIndex || 0, operation);
     } else {
       // TXT, Markdown, FB2
       const parser = new TextParser(book.file, book.format);
       const res = await parser.parse();
-      if (requestId !== openBookRequestId) return;
+      if (!isReaderOperationCurrent(operation)) return;
       res.chapters = await mergeShortChapters(res.chapters);
+      if (!isReaderOperationCurrent(operation)) return;
       epubBookData = res;
       renderTOC(res.chapters);
-      await loadChapter(currentChapterIndex, false, true);
+      await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     }
+
+    if (!isReaderOperationCurrent(operation)) return;
 
     // 初始化 TTS 面板
     initTTSPanelVoices(book.file?.name || book.title || '', true);
@@ -3054,7 +3095,7 @@ async function openBook(id) {
     // 500ms 後重新確認語言檢測結果，若需要則更新
     const cachedLangAtOpen = currentBookDetectedLanguage;
     setTimeout(() => {
-      if (currentBook && currentBook.id === book.id) {
+      if (isReaderOperationCurrent(operation)) {
         const recheckLang = detectBookLanguage(book.file?.name || book.title || '');
         if (recheckLang !== cachedLangAtOpen) {
           console.log(`[TTS] Delayed recheck: language changed from "${cachedLangAtOpen}" to "${recheckLang}"`);
@@ -3069,6 +3110,7 @@ async function openBook(id) {
     
     // 預先渲染書籤與筆記列表，防止切換書籍時殘留舊書記錄
     await renderHighlightsList();
+    if (!isReaderOperationCurrent(operation)) return;
 
     // 啟動閱讀時間追蹤
     startReadingTracker(book.id);
@@ -3076,7 +3118,7 @@ async function openBook(id) {
     // 異步在背景建立全文檢索索引
     buildBookSearchIndex();
   } catch (err) {
-    if (requestId === openBookRequestId) {
+    if (isReaderOperationCurrent(operation)) {
       console.error('Failed to parse book:', err);
       clearResourceUrls();
       const error = document.createElement('p');
@@ -3091,7 +3133,9 @@ async function openBook(id) {
 
 // 關閉閱讀器，返回書櫃
 async function closeCurrentBook(triggerBack = true) {
-  openBookRequestId++;
+  const closingBookId = currentBook?.id;
+  readerOperations.invalidate();
+  const operation = readerOperations.begin(closingBookId);
   openingBookId = null;
   // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動
   isChangingChapter = false;
@@ -3102,11 +3146,12 @@ async function closeCurrentBook(triggerBack = true) {
   tts.stop();
 
   // 2. 停止閱讀計時並立即保存最後剩餘的時長
-  await saveReadingTime();
+  await saveReadingTime(closingBookId);
   stopReadingTracker();
 
   // 3. 強制保存進度
-  await forceSaveCurrentProgress();
+  await forceSaveCurrentProgress(closingBookId);
+  if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
   // 清理舊的資源 Object URL
   clearResourceUrls();
@@ -3186,6 +3231,7 @@ async function closeCurrentBook(triggerBack = true) {
 
   // 重新渲染書櫃
   await renderBookshelf();
+  if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
   // If programmatic close, pop state to match browser history
   if (triggerBack && history.state && history.state.bookId) {
@@ -3639,13 +3685,17 @@ function updateActiveSubChapterOnPage() {
 
 // 載入指定章節 (流式文本)
 // 載入指定章節 (流式文本)
-async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false) {
+async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false, existingOperation = null) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
   if (isChangingChapter) {
     console.warn("loadChapter ignored because a chapter change is already in progress.");
     return;
   }
 
+  const operation = existingOperation || readerOperations.begin(currentBook?.id);
+  const ownedBook = currentBook;
+  const ownedBookData = epubBookData;
+  const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && epubBookData === ownedBookData;
   const isPaginated = document.body.classList.contains('layout-paginated');
   const origHtmlOverflow = document.documentElement.style.overflow;
   const origBodyOverflow = document.body.style.overflow;
@@ -3663,23 +3713,25 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       tts.stop();
     }
 
-  const chapter = epubBookData.chapters[index];
+  const chapter = ownedBookData.chapters[index];
   const contentEl = document.getElementById('book-content');
   activeHashElem = null;
   
   // 加載 HTML (優先使用背景預載快取)
   let rawHtml;
-  if (prefetchedChapterCache && prefetchedChapterCache.index === index) {
+  if (prefetchedChapterCache && prefetchedChapterCache.index === index && prefetchedChapterCache.generation === operation.generation && prefetchedChapterCache.bookId === operation.bookId) {
     rawHtml = prefetchedChapterCache.html;
     prefetchedChapterCache = null; // 用完即清空
   } else {
     rawHtml = await chapter.getContent();
   }
+  if (!isCurrent()) return;
 
   // 判斷過渡方向 (根據新舊章節索引)
   const direction = (index > currentChapterIndex) ? 'forward' : 'backward';
 
   const updateDOM = () => {
+    if (!isCurrent()) return;
     insertChapterHtml(contentEl, rawHtml, security);
     
     // 清除書籍內置的干擾多欄排版的內聯樣式
@@ -3855,6 +3907,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 監聽圖片載入事件以重算翻頁排版與偏移
     contentEl.querySelectorAll('img').forEach(img => {
       img.addEventListener('load', () => {
+        if (!isCurrent()) return;
         if (document.body.classList.contains('layout-paginated')) {
           applyLayoutDimensions();
           updatePageTranslate(false);
@@ -3865,6 +3918,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 監聽樣式表載入事件以重算翻頁排版與偏移（主要用於 MOBI/AZW3 載入動態樣式）
     contentEl.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
       link.addEventListener('load', () => {
+        if (!isCurrent()) return;
         if (document.body.classList.contains('layout-paginated')) {
           applyLayoutDimensions();
           updatePageTranslate(false);
@@ -3875,6 +3929,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 監聽字體載入事件以重算翻頁排版與偏移，確保字體渲染完成後排版精確
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {
+        if (!isCurrent()) return;
         if (document.body.classList.contains('layout-paginated')) {
           applyLayoutDimensions();
           updatePageTranslate(false);
@@ -4015,8 +4070,8 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     applySavedHighlightsToDOM();
 
     // 更新閱讀比例百分比，並同步更新內存與異步寫入資料庫
-    if (currentBook) {
-      const totalChapters = epubBookData.chapters.length;
+    if (isCurrent()) {
+      const totalChapters = ownedBookData.chapters.length;
       let percent = ((index + 1) / totalChapters) * 100;
       if (document.body.classList.contains('layout-paginated')) {
         const { totalPages } = getPaginatedPagesInfo();
@@ -4031,12 +4086,13 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
         activeSentenceIndex: 0,
         currentPageIndex: document.body.classList.contains('layout-paginated') ? currentPageIndex : 0
       };
-      currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+      ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
       updateReaderTitle();
-      library.updateProgress(currentBook.id, progressUpdate);
+      library.updateProgress(operation.bookId, progressUpdate);
     }
 
     return waitForStylesheets(contentEl).then(() => {
+      if (!isCurrent()) return;
       if (document.body.classList.contains('layout-paginated')) {
         applyLayoutDimensions();
         updatePageTranslate(false);
@@ -4047,10 +4103,12 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 執行 View Transition
     if (animate && document.startViewTransition) {
       await transitionPage(updateDOM, direction);
+      if (!isCurrent()) return;
     } else {
       const res = updateDOM();
       if (res && typeof res.then === 'function') {
         await res;
+        if (!isCurrent()) return;
       }
     }
   } finally {
@@ -4058,6 +4116,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     lastChapterChangeTime = Date.now();
     if (!isPaginated) {
       setTimeout(() => {
+        if (!isCurrent()) return;
         document.documentElement.style.overflow = origHtmlOverflow;
         document.body.style.overflow = origBodyOverflow;
         // 確保在溢出屬性恢復後，滾動目標被正確應用
@@ -4074,14 +4133,22 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
 
 
 // 載入漫畫指定頁面
-async function loadComicPage(index) {
+async function loadComicPage(index, existingOperation = null) {
   if (!comicParserInstance || index < 0 || index >= comicParserInstance.chapters.length) return;
+  const operation = existingOperation || readerOperations.begin(currentBook?.id);
+  const ownedBook = currentBook;
+  const ownedParser = comicParserInstance;
+  const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && comicParserInstance === ownedParser;
   
   const contentEl = document.getElementById('book-content');
   contentEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-spinner"></div><span>${getMsg('loading_page', [String(index + 1)])}</span></div>`;
 
   const chapter = comicParserInstance.chapters[index];
   const url = await chapter.getImageUrl();
+  if (!isCurrent()) {
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+    return;
+  }
   activeResourceUrls.push(url);
 
   const img = document.createElement('img');
@@ -4095,10 +4162,11 @@ async function loadComicPage(index) {
   document.getElementById('comic-page-indicator').textContent = `${index + 1} / ${comicParserInstance.pages.length}`;
 
   // 保存進度
-  const percent = ((index + 1) / comicParserInstance.pages.length) * 100;
+  const percent = ((index + 1) / ownedParser.pages.length) * 100;
   const progressUpdate = { comicImageIndex: index, percent };
-  await library.updateProgress(currentBook.id, progressUpdate);
-  currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+  await library.updateProgress(operation.bookId, progressUpdate);
+  if (!isCurrent()) return;
+  ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
 
   window.scrollTo(0, 0);
   updateReaderTitle();
@@ -4792,16 +4860,17 @@ function saveTTSProgressImmediately() {
 }
 
 // 頁面關閉時的強制立即保存
-async function forceSaveCurrentProgress() {
-  if (currentBook && !isSavingProgress) {
+async function forceSaveCurrentProgress(bookId = currentBook?.id) {
+  const book = currentBook?.id === bookId ? currentBook : null;
+  if (book && !isSavingProgress) {
     // 取消待執行的防抖保存，防止之後觸發時用舊數據覆蓋本次強制保存
     if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
     
     isSavingProgress = true;
     const update = {};
     
-    if (currentBook.format === 'cbz') {
-      update.comicImageIndex = currentBook.progress?.comicImageIndex || 0;
+    if (book.format === 'cbz') {
+      update.comicImageIndex = book.progress?.comicImageIndex || 0;
       const totalPages = comicParserInstance ? comicParserInstance.pages.length : 1;
       update.percent = ((update.comicImageIndex + 1) / totalPages) * 100;
     } else {
@@ -4835,8 +4904,11 @@ async function forceSaveCurrentProgress() {
       update.percent = calculateCurrentProgressPercent();
     }
     
-    await library.updateProgress(currentBook.id, update);
-    isSavingProgress = false;
+    try {
+      await library.updateProgress(bookId, update);
+    } finally {
+      isSavingProgress = false;
+    }
   }
 }
 
