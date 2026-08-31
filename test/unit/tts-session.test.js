@@ -45,6 +45,24 @@ function bareEngine() {
   return engine;
 }
 
+function engineWithNativeListener(listenerRegistration) {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    speechSynthesis: null,
+    Capacitor: { Plugins: { NativeTTS: {
+      addListener: () => listenerRegistration,
+    } } },
+  };
+  class TestTTSEngine extends TTSEngine {
+    _initVoices() {}
+  }
+  try {
+    return new TestTTSEngine();
+  } finally {
+    globalThis.window = originalWindow;
+  }
+}
+
 test('starting a session cancels every active request exactly once', () => {
   const engine = bareEngine();
   let cancellations = 0;
@@ -367,4 +385,67 @@ test('native foreground result records degraded notification controls without pr
   assert.match(source, /nativeControlsAvailable = result\.controlsAvailable === true/);
   assert.doesNotMatch(source, /startForegroundService[\s\S]{0,500}requestNotificationPermission/);
   assert.match(source, /requestNativeNotificationPermission\(\)[\s\S]{0,300}requestNotificationPermission\(\)/);
+});
+
+test('destroy cancels once and removes a retained native listener exactly once', async () => {
+  const engine = bareEngine();
+  let stops = 0;
+  let removals = 0;
+  engine.stop = () => { stops += 1; };
+  engine.nativeMediaListener = { remove: async () => { removals += 1; } };
+  engine.destroy();
+  engine.destroy();
+  await Promise.resolve();
+  assert.equal(stops, 1);
+  assert.equal(removals, 1);
+});
+
+test('destroy before native listener registration resolves retains no listener', () => {
+  const registration = deferred();
+  const engine = engineWithNativeListener(registration.promise);
+  engine.stop = () => {};
+
+  engine.destroy();
+
+  assert.equal(engine.nativeMediaListener, null);
+});
+
+test('a native listener handle arriving after destroy is removed and never retained', async () => {
+  const registration = deferred();
+  const engine = engineWithNativeListener(registration.promise);
+  engine.stop = () => {};
+  let removals = 0;
+
+  engine.destroy();
+  registration.resolve({ remove: async () => { removals += 1; } });
+  await registration.promise;
+  await Promise.resolve();
+
+  assert.equal(removals, 1);
+  assert.equal(engine.nativeMediaListener, null);
+});
+
+test('native listener registration rejection after destroy is safely ignored', async () => {
+  const registration = deferred();
+  const engine = engineWithNativeListener(registration.promise);
+  engine.stop = () => {};
+  const originalWarn = console.warn;
+  let warnings = 0;
+  console.warn = () => { warnings += 1; };
+
+  try {
+    engine.destroy();
+    registration.reject(new Error('late registration failure'));
+    await assert.rejects(registration.promise, /late registration failure/);
+    await Promise.resolve();
+    assert.equal(engine.nativeMediaListener, null);
+    assert.equal(warnings, 0);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('reader destroys its TTS engine during page teardown', () => {
+  const source = fs.readFileSync(path.join(projectRoot, 'reader', 'reader.js'), 'utf8');
+  assert.match(source, /beforeunload[\s\S]{0,300}tts\.destroy\(\)/);
 });

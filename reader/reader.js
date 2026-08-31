@@ -77,6 +77,8 @@ const ai = new AIEngine();
 const readerOperations = new OperationOwner();
 const activeAIContexts = new Set();
 
+window.addEventListener('beforeunload', () => tts.destroy(), { once: true });
+
 // 狀態追蹤
 let currentBook = null;
 let currentChapterIndex = 0;

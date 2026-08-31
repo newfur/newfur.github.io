@@ -144,6 +144,7 @@ export class TTSEngine {
     this.requestTimeoutMs = 15000;
     this.nativeMediaSessionId = null;
     this.nativeMediaListener = null;
+    this.isDestroyed = false;
     this.nativeNotificationPermission = 'unknown';
     this.nativeControlsAvailable = false;
 
@@ -186,8 +187,14 @@ export class TTSEngine {
           }
         });
         Promise.resolve(listenerRegistration).then(handle => {
+          if (this.isDestroyed) {
+            this._removeNativeMediaListener(handle);
+            return;
+          }
           this.nativeMediaListener = handle;
-        }).catch(e => console.warn("Failed to retain NativeTTS mediaAction listener:", e));
+        }).catch(e => {
+          if (!this.isDestroyed) console.warn("Failed to retain NativeTTS mediaAction listener:", e);
+        });
       } catch (e) {
         console.warn("Failed to register NativeTTS mediaAction listener:", e);
       }
@@ -212,11 +219,20 @@ export class TTSEngine {
     this.retryTimers.clear();
   }
 
+  _removeNativeMediaListener(listener) {
+    if (!listener || typeof listener.remove !== 'function') return;
+    try {
+      Promise.resolve(listener.remove()).catch(() => {});
+    } catch (e) {}
+  }
+
   destroy() {
+    if (this.isDestroyed) return;
+    this.isDestroyed = true;
     this.stop();
     const listener = this.nativeMediaListener;
     this.nativeMediaListener = null;
-    if (listener && typeof listener.remove === 'function') listener.remove().catch(() => {});
+    this._removeNativeMediaListener(listener);
   }
 
   async requestNativeNotificationPermission() {
