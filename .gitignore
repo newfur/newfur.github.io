@@ -9,3 +9,5 @@ scratch/*
 !scratch/test_tts_review_fixes.js
 www/
 inlined_google_fonts.css
+index.html
+reader_offline.html
