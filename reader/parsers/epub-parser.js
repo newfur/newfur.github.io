@@ -401,7 +401,10 @@ export class EpubParser {
             const imgBlob = await imgFile.async('blob');
             const imgUrl = URL.createObjectURL(imgBlob);
             this.resourceUrls.push(imgUrl);
-            this.resourceOwnership?.register(owner, imgUrl);
+            this.resourceOwnership?.register(owner, imgUrl, url => {
+              const index = this.resourceUrls.indexOf(url);
+              if (index >= 0) this.resourceUrls.splice(index, 1);
+            });
             security.trustResourceUrl(imgUrl);
             if (img.tagName.toLowerCase() === 'image') {
               img.removeAttribute('src');

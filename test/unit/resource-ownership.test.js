@@ -6,6 +6,9 @@ import {
   OwnedResourceSlot,
   ResourceOwnership,
   cleanupOwnedResourceLists,
+  revokeResourceOwners,
+  transferResourceOwner,
+  withResourceOwner,
 } from '../../reader/resource-ownership.js';
 import { TTSEngine } from '../../reader/tts.js';
 import { ComicParser } from '../../reader/parsers/comic-parser.js';
@@ -106,6 +109,23 @@ test('owner-scoped parser cleanup cannot revoke another owner shared URL', () =>
   assert.deepEqual(finalized, [url]);
 });
 
+test('resource bookkeeping callback runs only after the final shared owner releases', () => {
+  const urlApi = createFakeUrlApi();
+  const resources = new ResourceOwnership(urlApi);
+  const url = urlApi.createObjectURL(new Blob(['shared callback']));
+  const active = [url];
+  const remove = value => active.splice(active.indexOf(value), 1);
+
+  resources.register('owner-a', url, remove);
+  resources.register('owner-b', url, remove);
+  resources.release('owner-a', url);
+  assert.deepEqual(active, [url]);
+
+  resources.release('owner-b', url);
+  assert.deepEqual(active, []);
+  assert.deepEqual(urlApi.revoked, [url]);
+});
+
 test('duplicate finalizers run once and non-blob URLs are ignored', () => {
   const urlApi = createFakeUrlApi();
   const finalized = [];
@@ -140,6 +160,58 @@ test('request resources can transfer to a book and stale requests clean up immed
 
   resources.revokeOwner('book:a');
   assert.deepEqual(urlApi.revoked, [stale, accepted]);
+});
+
+test('transfer persists exact parser owners and close or reopen preserves unrelated same-book owners', () => {
+  const urlApi = createFakeUrlApi();
+  const resources = new ResourceOwnership(urlApi);
+  const unrelatedOwner = { type: 'background', bookId: 'book-a' };
+  const unrelatedUrl = urlApi.createObjectURL(new Blob(['unrelated']));
+  resources.register(unrelatedOwner, unrelatedUrl);
+
+  for (let generation = 1; generation <= 2; generation++) {
+    const requestOwner = { type: 'open', bookId: 'book-a', generation };
+    const activeOwner = { type: 'book', bookId: 'book-a', generation };
+    const parserUrl = urlApi.createObjectURL(new Blob([`parser-${generation}`]));
+    const result = { resourceOwner: requestOwner };
+    const parser = { resourceOwner: requestOwner };
+    resources.register(requestOwner, parserUrl);
+
+    assert.equal(transferResourceOwner(resources, requestOwner, activeOwner, result, parser), true);
+    assert.equal(result.resourceOwner, activeOwner);
+    assert.equal(parser.resourceOwner, activeOwner);
+    revokeResourceOwners(resources, result, parser);
+
+    assert.equal(result.resourceOwner, null);
+    assert.equal(parser.resourceOwner, null);
+    assert.equal(resources.has(unrelatedOwner, unrelatedUrl), true);
+    assert.deepEqual(urlApi.revoked, [parserUrl]);
+    urlApi.revoked.length = 0;
+  }
+
+  resources.revokeOwner(unrelatedOwner);
+  assert.deepEqual(urlApi.revoked, [unrelatedUrl]);
+});
+
+test('short-lived summary owners release resources after success and failure', async () => {
+  const urlApi = createFakeUrlApi();
+  const resources = new ResourceOwnership(urlApi);
+  const successOwner = { type: 'chapter-summary', index: 1 };
+  const failureOwner = { type: 'chapter-summary', index: 2 };
+  const successUrl = urlApi.createObjectURL(new Blob(['success']));
+  const failureUrl = urlApi.createObjectURL(new Blob(['failure']));
+
+  const value = await withResourceOwner(resources, successOwner, async () => {
+    resources.register(successOwner, successUrl);
+    return 'summary';
+  });
+  await assert.rejects(withResourceOwner(resources, failureOwner, async () => {
+    resources.register(failureOwner, failureUrl);
+    throw new Error('summary failed');
+  }), /summary failed/);
+
+  assert.equal(value, 'summary');
+  assert.deepEqual(urlApi.revoked, [successUrl, failureUrl]);
 });
 
 test('chapter replacement revokes old resources only after DOM replacement', () => {

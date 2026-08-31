@@ -71,6 +71,8 @@ test('reader async flows use captured owners and explicit persistence ids', () =
   assert.match(source, /cleanupParserResult\(parsed, parser, parserRequestOwner\)/);
   assert.match(source, /prefetchedChapterCache\.set\(nextIndex, \{ index: nextIndex, html, generation: operation\.generation, bookId: operation\.bookId, owner \}\)/);
   assert.match(source, /if \(!isCurrent\(\)\) \{\s*resourceOwnership\.revokeOwner\(pageOwner\)/);
+  assert.match(source, /withResourceOwner\(resourceOwnership, summaryOwner, \(\) => ch\.getContent\(summaryOwner\)\)/);
+  assert.match(source, /withResourceOwner\(resourceOwnership, indexOwner, \(\) => chapter\.getContent\(indexOwner\)\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId, closingTracker\)/);
   assert.match(source, /pending: library\.updateProgress\(operation\.bookId, progressUpdate\)/);

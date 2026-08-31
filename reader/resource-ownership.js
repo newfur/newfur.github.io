@@ -1,6 +1,7 @@
 export class ResourceOwnership {
   #owners = new Map();
   #urls = new Map();
+  #releaseCallbacks = new Map();
   #revoked = new Set();
 
   constructor(urlApi = globalThis.URL, finalize = null) {
@@ -8,7 +9,7 @@ export class ResourceOwnership {
     this.finalize = finalize;
   }
 
-  register(owner, url) {
+  register(owner, url, onRelease = null) {
     if (owner == null || typeof url !== 'string' || !url.startsWith('blob:') || this.#revoked.has(url)) return url;
     let ownerUrls = this.#owners.get(owner);
     if (!ownerUrls) {
@@ -24,6 +25,14 @@ export class ResourceOwnership {
       this.#urls.set(url, urlOwners);
     }
     urlOwners.add(owner);
+    if (onRelease) {
+      let callbacks = this.#releaseCallbacks.get(url);
+      if (!callbacks) {
+        callbacks = new Set();
+        this.#releaseCallbacks.set(url, callbacks);
+      }
+      callbacks.add(onRelease);
+    }
     return url;
   }
 
@@ -86,11 +95,38 @@ export class ResourceOwnership {
   #release(url) {
     if (this.#revoked.has(url)) return;
     this.#revoked.add(url);
+    const callbacks = this.#releaseCallbacks.get(url);
+    this.#releaseCallbacks.delete(url);
     try {
+      callbacks?.forEach(callback => callback(url));
       this.finalize?.(url);
     } finally {
       this.urlApi?.revokeObjectURL?.(url);
     }
+  }
+}
+
+export function transferResourceOwner(resources, fromOwner, toOwner, ...targets) {
+  const transferred = resources.transfer(fromOwner, toOwner);
+  targets.forEach(target => {
+    if (target) target.resourceOwner = toOwner;
+  });
+  return transferred;
+}
+
+export function revokeResourceOwners(resources, ...targets) {
+  const owners = new Set(targets.map(target => target?.resourceOwner).filter(owner => owner != null));
+  owners.forEach(owner => resources.revokeOwner(owner));
+  targets.forEach(target => {
+    if (target) target.resourceOwner = null;
+  });
+}
+
+export async function withResourceOwner(resources, owner, operation) {
+  try {
+    return await operation();
+  } finally {
+    resources.revokeOwner(owner);
   }
 }
 

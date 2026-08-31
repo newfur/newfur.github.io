@@ -147,7 +147,7 @@ export async function finishTrackedResource({ url, activeResources, pending, isC
   return isCurrent();
 }
 
-export async function buildOwnedSearchIndex(chapters, extractChapterText, isCurrent, onChapterError = null) {
+export async function buildOwnedSearchIndex(chapters, extractChapterText, isCurrent, onChapterError = null, loadContent = chapter => chapter.getContent()) {
   const chunks = [];
   const chapterTexts = [];
 
@@ -155,7 +155,7 @@ export async function buildOwnedSearchIndex(chapters, extractChapterText, isCurr
     const chapter = chapters[i];
     if (typeof chapter.getContent !== 'function') continue;
     try {
-      const html = await chapter.getContent();
+      const html = await loadContent(chapter, i);
       if (!isCurrent()) return null;
       const { chapterText, plainText } = extractChapterText(html);
       chapterTexts.push({ chapterTitle: chapter.title, chapterIndex: i, text: chapterText });

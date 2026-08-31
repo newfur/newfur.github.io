@@ -13,14 +13,16 @@ globalThis.Blob = dom.window.Blob;
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator });
 
 let nextObjectUrl = 0;
+const revokedObjectUrls = [];
 globalThis.URL = dom.window.URL;
 globalThis.URL.createObjectURL = () => `blob:https://reader.example/parser-${++nextObjectUrl}`;
-globalThis.URL.revokeObjectURL = () => {};
+globalThis.URL.revokeObjectURL = url => revokedObjectUrls.push(url);
 
 const { EpubParser } = await import('../../reader/parsers/epub-parser.js');
 const { TextParser } = await import('../../reader/parsers/text-parser.js');
 const { Azw3Parser } = await import('../../reader/parsers/azw3-parser.js');
 const { security } = await import('../../reader/security/sanitize.js');
+const { ResourceOwnership } = await import('../../reader/resource-ownership.js');
 
 const attackHtml = `
   <p onclick="alert(1)" style="color: red; background-image: url(javascript:bad)">Safe text</p>
@@ -111,6 +113,31 @@ test('EPUB returns escaped sanitized errors for missing chapters', async () => {
   assert.equal(paragraphCreated, true);
   assert.match(html, /Chapter file not found/);
   assert.equal(parseHtml(html).querySelector('img, [onerror]'), null);
+});
+
+test('EPUB repeated chapter release keeps parser resources bounded and revokes once', async () => {
+  const entries = {
+    'OPS/chapter.xhtml': '<html><body><img src="image.png"></body></html>',
+    'OPS/image.png': new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+  };
+  const resources = new ResourceOwnership(URL, url => security.revokeResourceUrl(url));
+  const parser = new EpubParser({ size: 1 }, resources);
+  parser.zip = fakeZip(entries);
+  const revokedBefore = revokedObjectUrls.length;
+
+  for (let index = 0; index < 3; index++) {
+    const owner = { type: 'chapter', index };
+    const html = await parser.loadChapterContent('OPS/chapter.xhtml', owner);
+    const url = parseHtml(html).querySelector('img').getAttribute('src');
+    assert.equal(parser.resourceUrls.length, 1);
+    assert.equal(resources.has(owner, url), true);
+
+    resources.revokeOwner(owner);
+    resources.revokeOwner(owner);
+    assert.deepEqual(parser.resourceUrls, []);
+  }
+
+  assert.equal(revokedObjectUrls.length - revokedBefore, 3);
 });
 
 test('EPUB removes external stylesheet links before the sanitizer boundary and inlines local scoped CSS', async () => {

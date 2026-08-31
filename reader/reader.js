@@ -44,7 +44,7 @@ import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
 import { OperationOwner, OwnedDebouncer, OwnedLease, OwnedValueLock, buildOwnedSearchIndex, completeOwnedTransition, ownedCallback } from './operation-ownership.js';
-import { BoundedResourceCache, OwnedResourceSlot, ResourceOwnership, cleanupOwnedResourceLists } from './resource-ownership.js';
+import { BoundedResourceCache, OwnedResourceSlot, ResourceOwnership, cleanupOwnedResourceLists, revokeResourceOwners, transferResourceOwner, withResourceOwner } from './resource-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -244,11 +244,10 @@ function clearCoverUrls() {
 }
 
 function clearResourceUrls() {
-  const bookId = currentBook?.id;
   chapterResourceSlot.clear();
   comicResourceSlot.clear();
   prefetchedChapterCache.clear();
-  if (bookId != null) resourceOwnership.revokeMatching(owner => owner?.bookId === bookId);
+  revokeResourceOwners(resourceOwnership, epubBookData, epubBookData?.parser, comicParserInstance);
   if (epubBookData?.resourceUrls) epubBookData.resourceUrls = [];
   if (epubBookData?.parser?.resourceUrls) epubBookData.parser.resourceUrls = [];
 }
@@ -3176,7 +3175,8 @@ async function openBook(id) {
         parserRequestOwner = null;
         return;
       }
-      resourceOwnership.transfer(parserRequestOwner, createResourceOwner('book', operation, 'epub'));
+      const activeParserOwner = createResourceOwner('book', operation, 'epub');
+      transferResourceOwner(resourceOwnership, parserRequestOwner, activeParserOwner, parsed, parser);
       parserRequestOwner = null;
       epubBookData = parsed;
       renderTOC(epubBookData.chapters);
@@ -3196,7 +3196,8 @@ async function openBook(id) {
         parserRequestOwner = null;
         return;
       }
-      resourceOwnership.transfer(parserRequestOwner, createResourceOwner('book', operation, book.format));
+      const activeParserOwner = createResourceOwner('book', operation, book.format);
+      transferResourceOwner(resourceOwnership, parserRequestOwner, activeParserOwner, res, parser);
       parserRequestOwner = null;
       epubBookData = res; // 複用變量名以載入章節
       renderTOC(res.chapters);
@@ -3210,7 +3211,8 @@ async function openBook(id) {
         parserRequestOwner = null;
         return;
       }
-      resourceOwnership.transfer(parserRequestOwner, createResourceOwner('book', operation, 'comic'));
+      const activeParserOwner = createResourceOwner('book', operation, 'comic');
+      transferResourceOwner(resourceOwnership, parserRequestOwner, activeParserOwner, res, parser);
       parserRequestOwner = null;
       comicParserInstance = parser;
       // 漫畫沒有 TOC 側邊欄，直接渲染圖片
@@ -8936,7 +8938,8 @@ async function runDeepBookAnalysis() {
       contentEl.scrollTop = contentEl.scrollHeight;
       
       try {
-        const html = await ch.getContent();
+        const summaryOwner = Object.freeze({ type: 'chapter-summary', bookId: aiContext.bookId, generation: aiContext.generation, extra: String(i), id: Symbol('chapter-summary') });
+        const html = await withResourceOwner(resourceOwnership, summaryOwner, () => ch.getContent(summaryOwner));
         if (!aiContext.isCurrent()) return;
         const doc = tempParser.parseFromString(html, 'text/html');
         doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
@@ -9516,7 +9519,11 @@ async function buildBookSearchIndex(existingOperation = readerOperations.current
       ownedBookData.chapters,
       extractChapterText,
       isCurrent,
-      (err, chapter, index) => console.warn(`Failed to index chapter ${index} (${chapter.title}):`, err)
+      (err, chapter, index) => console.warn(`Failed to index chapter ${index} (${chapter.title}):`, err),
+      (chapter, index) => {
+        const indexOwner = createResourceOwner('search-index', operation, String(index));
+        return withResourceOwner(resourceOwnership, indexOwner, () => chapter.getContent(indexOwner));
+      }
     );
     if (!result || !isCurrent()) return;
     bookChunksCache = result.chunks;
