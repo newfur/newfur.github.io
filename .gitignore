@@ -5,6 +5,7 @@ node_modules/
 scratch/*
 !scratch/compile_offline.js
 !scratch/build_dist.js
+!scratch/check_versions.js
 !scratch/test_tts_review_fixes.js
 www/
 inlined_google_fonts.css

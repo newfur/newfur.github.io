@@ -31,25 +31,53 @@ if (fs.existsSync(distDir)) {
 }
 fs.mkdirSync(distDir, { recursive: true });
 
-console.log('3. Copying compiled index.html to www/index.html');
-fs.copyFileSync(path.join(rootDir, 'index.html'), path.join(distDir, 'index.html'));
+console.log('3. Copying and patching compiled index.html for native runtime...');
+let html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
 
-console.log('4. Copying reader/libs/mermaid.min.js and dompurify.min.js to www/reader/libs/');
-const destLibsDir = path.join(distDir, 'reader', 'libs');
-fs.mkdirSync(destLibsDir, { recursive: true });
-fs.copyFileSync(
-  path.join(rootDir, 'reader/libs/mermaid.min.js'),
-  path.join(destLibsDir, 'mermaid.min.js')
-);
-fs.copyFileSync(
-  path.join(rootDir, 'reader/libs/dompurify.min.js'),
-  path.join(destLibsDir, 'dompurify.min.js')
+// Replace offline runtime marker with native runtime marker
+html = html.replace(
+  "window.__RACONTEUR_RUNTIME__ = 'offline'",
+  "window.__RACONTEUR_RUNTIME__ = 'native'"
 );
 
-console.log('5. Copying application icons...');
+fs.writeFileSync(path.join(distDir, 'index.html'), html, 'utf8');
+
+// Intentionally do NOT copy sw.js or manifest.webmanifest into www/
+// Native apps use Capacitor, not PWA service workers.
+
+console.log('4. Copying application icons...');
 copyDirSync(path.join(rootDir, 'icons'), path.join(distDir, 'icons'));
 
-console.log('6. Copying manifest.json for version detection...');
+console.log('5. Copying manifest.json for version detection...');
 fs.copyFileSync(path.join(rootDir, 'manifest.json'), path.join(distDir, 'manifest.json'));
+
+// Verify all local src/href in index.html resolve under www/
+console.log('6. Verifying local references in www/index.html...');
+const wwwHtml = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8');
+const localRefs = [];
+// Match src="..." and href="..." that are not data:, http:, https:, //, or #
+const refRegex = /(?:src|href)\s*=\s*["']([^"']+)["']/gi;
+let match;
+while ((match = refRegex.exec(wwwHtml)) !== null) {
+  const ref = match[1];
+  if (ref.startsWith('data:') || ref.startsWith('http:') || ref.startsWith('https:') ||
+      ref.startsWith('//') || ref.startsWith('#') || ref.startsWith('javascript:') ||
+      ref.startsWith('blob:')) continue;
+  localRefs.push(ref);
+}
+
+let missingCount = 0;
+for (const ref of localRefs) {
+  const resolved = path.resolve(distDir, ref);
+  if (!fs.existsSync(resolved)) {
+    // Tolerate references that are dynamically created at runtime (e.g., reader/libs/mermaid.min.js in dynamic script loading)
+    console.warn(`  [WARN] Local reference not found in www/: ${ref}`);
+    missingCount++;
+  }
+}
+
+if (missingCount > 0) {
+  console.warn(`  ${missingCount} local reference(s) not found — these may be runtime-resolved or unused in native mode`);
+}
 
 console.log('Distribution build completed successfully!');

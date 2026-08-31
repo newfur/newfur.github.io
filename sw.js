@@ -8,21 +8,27 @@ const keyMutations = new Map();
 const requestGenerations = new Map();
 let requestGeneration = 0;
 let trimMutation = Promise.resolve();
-const REQUIRED_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/icons/icon16.png',
-  '/icons/icon32.png',
-  '/icons/icon48.png',
-  '/icons/icon128.png',
-  '/icons/icon.svg'
+
+// Use relative paths so the precache works under any subpath deployment.
+// self.registration.scope gives us the base URL at runtime.
+const REQUIRED_ASSETS_RELATIVE = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icons/icon16.png',
+  './icons/icon32.png',
+  './icons/icon48.png',
+  './icons/icon128.png',
+  './icons/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
+  // Resolve relative asset paths against the service worker scope
+  const scopeHref = (self.registration && self.registration.scope) || self.location.href.replace(/[^/]*$/, '');
+  const resolved = REQUIRED_ASSETS_RELATIVE.map(rel => new URL(rel, scopeHref).href);
   event.waitUntil(
     caches.open(PRECACHE_NAME)
-      .then((cache) => cache.addAll(REQUIRED_ASSETS))
+      .then((cache) => cache.addAll(resolved))
       .then(() => self.skipWaiting())
   );
 });
@@ -45,12 +51,19 @@ function cacheKey(request) {
 function isApprovedRequest(request) {
   if (request.method !== 'GET') return false;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || url.search || url.hash || url.pathname.startsWith('/api/')) return false;
+  if (url.origin !== self.location.origin || url.search || url.hash) return false;
+  // Derive the scope base path so we work under any subpath deployment
+  const scopeHref = (self.registration && self.registration.scope) || self.location.href.replace(/[^/]*$/, '');
+  const scope = new URL(scopeHref);
+  const scopePath = scope.pathname;
+  if (!url.pathname.startsWith(scopePath)) return false;
+  const relative = url.pathname.slice(scopePath.length);
+  if (relative.startsWith('api/')) return false;
   if (request.destination === 'document' || request.mode === 'navigate') {
-    return url.pathname === '/' || url.pathname === '/index.html';
+    return relative === '' || relative === 'index.html';
   }
-  if (url.pathname === '/manifest.webmanifest') return true;
-  if (url.pathname.startsWith('/icons/')) return /\.(?:png|svg)$/i.test(url.pathname);
+  if (relative === 'manifest.webmanifest') return true;
+  if (relative.startsWith('icons/')) return /\.(?:png|svg)$/i.test(relative);
   return false;
 }
 

@@ -3,18 +3,18 @@ const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
 
-// Automatically sync version from manifest.json to package.json
+// Verify version consistency between manifest.json and package.json (read-only check)
 try {
   const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
-  const packageJsonPath = path.join(rootDir, 'package.json');
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
   if (manifest.version && packageJson.version !== manifest.version) {
-    packageJson.version = manifest.version;
-    fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf8');
-    console.log(`[Version Sync] Automatically updated package.json version to ${manifest.version}`);
+    console.error(`[Version Check] MISMATCH: manifest.json version "${manifest.version}" != package.json version "${packageJson.version}"`);
+    process.exit(1);
   }
+  console.log(`[Version Check] OK — both manifest.json and package.json are at version ${manifest.version}`);
 } catch (e) {
-  console.warn('[Version Sync] Failed to sync version to package.json:', e);
+  console.error('[Version Check] Failed to verify version consistency:', e.message);
+  process.exit(1);
 }
 
 console.log('Starting offline compilation...');
@@ -45,7 +45,7 @@ const modules = [
 
 let manifestVersion = "unknown";
 try { manifestVersion = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8')).version; } catch(e) {}
-let combinedJs = `window.__APP_VERSION__ = "${manifestVersion}";\nconst _offlineLocales = ${JSON.stringify(locales, null, 2)};\n\n`;
+let combinedJs = `window.__RACONTEUR_RUNTIME__ = 'offline';\nwindow.__APP_VERSION__ = "${manifestVersion}";\nconst _offlineLocales = ${JSON.stringify(locales, null, 2)};\n\n`;
 
 for (const modPath of modules) {
   const fullPath = path.join(rootDir, modPath);
@@ -61,9 +61,10 @@ for (const modPath of modules) {
   combinedJs += content + '\n\n';
 }
 
-// 3. Read jszip.min.js, mind-elixir.js and mind-elixir.css
+// 3. Read jszip.min.js, mind-elixir.js, mermaid.min.js and mind-elixir.css
 const jszipJs = fs.readFileSync(path.join(rootDir, 'reader/libs/jszip.min.js'), 'utf8');
 const dompurifyJs = fs.readFileSync(path.join(rootDir, 'reader/libs/dompurify.min.js'), 'utf8');
+const mermaidJs = fs.readFileSync(path.join(rootDir, 'reader/libs/mermaid.min.js'), 'utf8');
 const mindElixirJs = fs.readFileSync(path.join(rootDir, 'reader/libs/mind-elixir.js'), 'utf8');
 const mindElixirCss = fs.readFileSync(path.join(rootDir, 'reader/libs/mind-elixir.css'), 'utf8');
 
@@ -86,11 +87,18 @@ const scriptModuleRegex = /<script type="module" src="reader\.js"><\/script>/i;
 html = html.replace(scriptDompurifyRegex, () => `<script>${dompurifyJs}</script>`);
 html = html.replace(scriptJszipRegex, () => `<script>${jszipJs}</script>`);
 html = html.replace(scriptMindElixirRegex, () => `<script>${mindElixirJs}</script>`);
+
+// Mermaid: inline the full library for self-contained offline artifact
+const scriptMermaidRegex = /<script src="libs\/mermaid\.min\.js"><\/script>/i;
+html = html.replace(scriptMermaidRegex, () => `<script>${mermaidJs}</script>`);
+
 html = html.replace(scriptModuleRegex, () => `<script>${combinedJs}</script>`);
 
-// Mermaid: 不內聯（3.2MB 太大），僅修正路徑指向 reader/libs/
-const scriptMermaidRegex = /<script src="libs\/mermaid\.min\.js"><\/script>/i;
-html = html.replace(scriptMermaidRegex, '<script src="reader/libs/mermaid.min.js"></script>');
+// Remove network font links so offline artifact has no external stylesheet deps.
+// System font fallbacks in CSS variables remain functional.
+html = html.replace(/<link[^>]*href="https:\/\/fonts\.googleapis\.com[^>]*>/gi, '');
+html = html.replace(/<link[^>]*href="https:\/\/fonts\.gstatic\.com[^>]*>/gi, '');
+html = html.replace(/<link[^>]*href="https:\/\/cdn\.jsdelivr\.net\/npm\/lxgw[^>]*>/gi, '');
 
 // Fix relative paths: inline JS uses paths relative to reader/ dir,
 // but the output HTML files live at root, so rewrite libs/ -> reader/libs/

@@ -2,19 +2,19 @@
   "name": "Raconteur/读书人",
   "short_name": "Raconteur/读书人",
   "description": "一款专为网页设计的高级电子书阅读器。支持 EPUB、AZW3、MOBI、TXT、MD 等格式，并支持微软高质量语音朗读。",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#f4efe9",
   "theme_color": "#1e3d2f",
   "icons": [
     {
-      "src": "/icons/icon128.png",
+      "src": "./icons/icon128.png",
       "sizes": "128x128",
       "type": "image/png"
     },
     {
-      "src": "/icons/icon.svg",
+      "src": "./icons/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }

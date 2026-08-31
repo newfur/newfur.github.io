@@ -10842,16 +10842,20 @@ function openFolderSelectDialog(onSelected) {
 }
 
 // Register PWA Service Worker & Manifest for Web Version
-if (window.location.protocol.startsWith('http')) {
+// Only register when runtime is 'web' (not offline or native)
+if (window.location.protocol.startsWith('http') && window.__RACONTEUR_RUNTIME__ !== 'offline' && window.__RACONTEUR_RUNTIME__ !== 'native') {
   // Inject Web App Manifest dynamically to prevent local file CORS errors on file://
   const link = document.createElement('link');
   link.rel = 'manifest';
-  link.href = 'manifest.webmanifest';
+  // Use base-relative URL so the manifest works under any subpath
+  link.href = new URL('./manifest.webmanifest', document.baseURI).href;
   document.head.appendChild(link);
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js')
+      // Derive scope and sw.js path from document base for subpath-friendly PWA
+      const swUrl = new URL('./sw.js', document.baseURI).href;
+      navigator.serviceWorker.register(swUrl)
         .then(reg => console.log('[PWA] Service Worker registered successfully', reg.scope))
         .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
     });

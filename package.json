@@ -10,10 +10,13 @@
     "dev": "node server.js",
     "start": "node server.js",
     "build:offline": "node scratch/compile_offline.js",
-    "build:mobile": "node scratch/build_dist.js && npx cap sync android",
+    "build:mobile": "node scratch/build_dist.js",
+    "sync:android": "npx cap sync android",
+    "check:versions": "node scratch/check_versions.js",
     "test": "npm run test:unit && npm run test:security && node scratch/test_tts_review_fixes.js",
     "test:unit": "node --test test/unit/*.test.js",
-    "test:security": "node --test test/security/*.test.js"
+    "test:security": "node --test test/security/*.test.js",
+    "test:artifacts": "node --test test/artifacts/*.test.js"
   },
   "keywords": [],
   "author": "",

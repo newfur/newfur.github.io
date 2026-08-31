@@ -227,7 +227,7 @@ test('PWA fetch handles approved same-origin GET routes and attaches writes to w
   const worker = await loadPwaWorker({ fetchImpl: async () => response('fresh') });
   await dispatchExtendable(worker.listeners.install);
   const result = await dispatchFetch(worker.listeners.fetch, new Request('https://reader.example/icons/icon16.png'));
-  assert.equal(await result.response.text(), '/icons/icon16.png');
+  assert.equal(await result.response.text(), 'https://reader.example/icons/icon16.png');
   assert.equal(result.waits.length, 1);
 });
 
