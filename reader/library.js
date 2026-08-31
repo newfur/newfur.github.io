@@ -48,7 +48,7 @@ export function mergeRestoredBook(current, backup, { restoreFile = false, progre
   const hourlyDist = { ...(current.stats?.hourlyDist || {}) };
   for (const [hour, seconds] of Object.entries(backup.stats?.hourlyDist || {})) hourlyDist[hour] = Math.max(hourlyDist[hour] || 0, seconds);
   result.stats = { ...(current.stats || {}), ...(backup.stats || {}), readingDays, hourlyDist };
-  result.stats.totalTime = Object.values(result.stats.readingDays).reduce((sum, seconds) => sum + seconds, 0) || result.stats.totalTime || 0;
+  result.stats.totalTime = Object.values(result.stats.readingDays).reduce((sum, seconds) => sum + seconds, 0);
   return restoreFile ? resetContentDerivedState(result) : result;
 }
 
@@ -167,7 +167,32 @@ export class BookLibrary {
   async deleteBookmark(id, bookmarkId) { const book = await this.updateBook(id, book => { book.bookmarks = (book.bookmarks || []).filter(item => item.bookmarkId !== bookmarkId); }); return book.bookmarks; }
   async addReadingDuration(id, seconds) { return this.updateBook(id, book => { book.stats ||= { totalTime: 0, readingDays: {}, hourlyDist: {} }; const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; const hour = now.getHours(); book.stats.totalTime = (book.stats.totalTime || 0) + seconds; book.stats.readingDays[date] = (book.stats.readingDays[date] || 0) + seconds; book.stats.hourlyDist[hour] = (book.stats.hourlyDist[hour] || 0) + seconds; book.lastReadAt = Date.now(); return book; }); }
   async clearBookStats(id) { return this.updateBook(id, book => { book.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} }; return book; }); }
-  async clearAllStats() { const books = await this.getAllBooks(); await Promise.all(books.map(book => this.clearBookStats(book.id))); return true; }
+  async clearAllStats() {
+    await this._ensureOpen();
+    const transaction = this.db.transaction('books', 'readwrite');
+    const store = transaction.objectStore('books');
+    const request = store.getAll();
+    let operationError;
+    request.onsuccess = () => {
+      try {
+        for (const book of request.result) {
+          book.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} };
+          store.put(this._cleanBookForStorage(book));
+        }
+      } catch (error) {
+        operationError = error;
+        transaction.abort();
+      }
+    };
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = error => { if (!settled) { settled = true; reject(error); } };
+      request.onerror = () => fail(request.error);
+      transaction.onerror = () => fail(operationError || transaction.error || request.error || new Error('IndexedDB transaction failed'));
+      transaction.onabort = () => fail(operationError || transaction.error || new Error('IndexedDB transaction aborted'));
+      transaction.oncomplete = () => { if (!settled) { settled = true; resolve(true); } };
+    });
+  }
   async saveAIChat(id, chat) { const book = await this.updateBook(id, book => { book.aiChats ||= []; const chatId = typeof chat.chatId === 'string' && chat.chatId.trim() ? chat.chatId : `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; book.aiChats.push({ ...chat, chatId, createdAt: Date.now(), query: chat.query, reply: chat.reply }); }); return book.aiChats; }
   async deleteAIChat(id, chatId) { const book = await this.updateBook(id, book => { book.aiChats = (book.aiChats || []).filter(chat => chat.chatId !== chatId); }); return book.aiChats; }
   async clearAllAIChats(id) { const book = await this.updateBook(id, book => { book.aiChats = []; }); return book.aiChats; }

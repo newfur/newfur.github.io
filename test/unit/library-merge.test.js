@@ -93,3 +93,9 @@ test('deleteBook commits physical deletion in its own transaction', async () => 
   await library.deleteBook('book-1');
   assert.equal(await library.getBook('book-1'), undefined);
 });
+
+test('merged stats total is zero when merged reading days total zero', () => {
+  const current = { ...existing(), stats: { totalTime: 99, readingDays: { day: 0 }, hourlyDist: {} } };
+  const backup = { ...existing(), stats: { totalTime: 42, readingDays: { day: 0 }, hourlyDist: {} } };
+  assert.equal(mergeRestoredBook(current, backup).stats.totalTime, 0);
+});

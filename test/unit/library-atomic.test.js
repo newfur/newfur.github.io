@@ -8,13 +8,6 @@ function installIndexedDB() {
   globalThis.indexedDB = new FDBFactory();
   globalThis.IDBKeyRange = FDBKeyRange;
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { storage: { persist: async () => true } } });
-  globalThis.File = class File extends Blob {
-    constructor(parts, name, options = {}) {
-      super(parts, options);
-      this.name = name;
-      this.lastModified = options.lastModified || Date.now();
-    }
-  };
 }
 
 function book(id = 'book-1') {
@@ -151,4 +144,39 @@ test('concurrent summaries preserve book and chapter summaries', async () => {
   const stored = await library.getBook('book-1');
   assert.equal(stored.bookSummary, 'book summary');
   assert.equal(stored.chapterSummaries[2], 'chapter summary');
+});
+
+test('typed Blob content survives storage cleaning and IndexedDB round trip', async () => {
+  installIndexedDB();
+  const library = new BookLibrary();
+  const file = new Blob(['actual bytes'], { type: 'text/plain;charset=utf-8' });
+  const clean = library._cleanBookForStorage({ id: 'book-1', file });
+  assert.ok(clean.file instanceof Blob);
+  assert.equal(clean.file.type, 'text/plain;charset=utf-8');
+  assert.equal(await clean.file.text(), 'actual bytes');
+
+  await library.addBook({ ...book(), file });
+  const stored = await library.getBook('book-1');
+  assert.ok(stored.file instanceof Blob);
+  assert.equal(stored.file.type, 'text/plain;charset=utf-8');
+  assert.equal(await stored.file.text(), 'actual bytes');
+  assert.equal('name' in stored.file, false);
+});
+
+test('clearAllStats abort preserves every book when any write fails', async () => {
+  installIndexedDB();
+  const library = new BookLibrary();
+  await library.addBook(book('book-1'));
+  await library.addBook(book('book-2'));
+  await library.updateBook('book-1', value => { value.stats = { totalTime: 10, readingDays: { day: 10 }, hourlyDist: {} }; });
+  await library.updateBook('book-2', value => { value.stats = { totalTime: 20, readingDays: { day: 20 }, hourlyDist: {} }; });
+  const clean = library._cleanBookForStorage.bind(library);
+  library._cleanBookForStorage = value => {
+    if (value.id === 'book-2' && value.stats.totalTime === 0) throw new Error('clean failed');
+    return clean(value);
+  };
+
+  await assert.rejects(() => library.clearAllStats(), /clean failed/);
+  assert.deepEqual((await library.getBook('book-1')).stats.readingDays, { day: 10 });
+  assert.deepEqual((await library.getBook('book-2')).stats.readingDays, { day: 20 });
 });
