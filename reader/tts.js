@@ -134,6 +134,11 @@ export class TTSEngine {
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
     this.playbackStartSessionIndex = null;
+    this.playbackGeneration = 0;
+    this.ownerBookId = null;
+    this.activeRequests = new Set();
+    this.retryTimers = new Set();
+    this.requestTimeoutMs = 15000;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -178,6 +183,38 @@ export class TTSEngine {
     }
 
     this._initVoices();
+  }
+
+  _clearTimer(timer) {
+    clearTimeout(timer);
+  }
+
+  _cancelActiveRequests(reason = 'cancelled') {
+    const requests = [...this.activeRequests];
+    this.activeRequests.clear();
+    requests.forEach(request => {
+      if (request.cancelled) return;
+      request.cancelled = true;
+      try { request.cancel?.(reason); } catch (e) {}
+    });
+    this.retryTimers.forEach(timer => this._clearTimer(timer));
+    this.retryTimers.clear();
+  }
+
+  _beginSession(bookId = this.ownerBookId) {
+    this._cancelActiveRequests('superseded');
+    this.ownerBookId = bookId ?? null;
+    return ++this.playbackGeneration;
+  }
+
+  _isCurrentSession(sessionId, bookId = this.ownerBookId) {
+    return sessionId === this.playbackGeneration && bookId === this.ownerBookId;
+  }
+
+  async _runOwnedTransition(chapterIndex, sessionId, bookId, onComplete) {
+    if (!this._isCurrentSession(sessionId, bookId) || !this.onChapterTransition) return;
+    await this.onChapterTransition(chapterIndex);
+    if (this._isCurrentSession(sessionId, bookId)) onComplete?.();
   }
 
   // 設置配置項
@@ -1042,9 +1079,36 @@ export class TTSEngine {
     return name;
   }
 
-  _downloadSentenceAudio(sentence) {
+  _downloadSentenceAudio(sentence, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
     return new Promise(async (resolve, reject) => {
+      let settled = false;
+      let ws = null;
+      let timeoutId = null;
+      let controller = null;
+      const request = {
+        cancelled: false,
+        cancel: (reason) => {
+          controller?.abort(new DOMException(reason, 'AbortError'));
+          if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
+          const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
+          if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
+          finish(new DOMException(reason, 'AbortError'));
+        }
+      };
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        this.activeRequests.delete(request);
+        if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
+        error ? reject(error) : resolve(value);
+      };
+      this.activeRequests.add(request);
       try {
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          finish(new DOMException('stale TTS session', 'AbortError'));
+          return;
+        }
         if (this.ttsProvider === 'openai' || this.ttsProvider === 'local') {
           try {
             const defaultEndpoint = this.ttsProvider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:5000/v1';
@@ -1074,9 +1138,11 @@ export class TTSEngine {
               }
             }
 
+            controller = new AbortController();
             const response = await fetch(endpoint, {
               method: 'POST',
               headers: headers,
+              signal: controller.signal,
               body: JSON.stringify({
                 model: model,
                 input: speakText,
@@ -1091,14 +1157,16 @@ export class TTSEngine {
             }
 
             const blob = await response.blob();
-            resolve(blob);
+            if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
+            finish(null, blob);
           } catch (e) {
-            reject(e);
+            finish(e);
           }
           return;
         }
 
         const secMsGec = await this._generateSecMsGecToken();
+        if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
         
@@ -1129,7 +1197,8 @@ export class TTSEngine {
               return new Blob([byteArray], { type: mimeType });
             };
             const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
-            resolve(blob);
+            if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
+            finish(null, blob);
             return;
           } catch (nativeErr) {
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
@@ -1151,12 +1220,17 @@ export class TTSEngine {
                 `&Sec-MS-GEC-Version=1-143.0.3650.75`;
         }
                     
-        const ws = new WebSocket(url);
+        ws = new WebSocket(url);
         const audioChunks = [];
+        timeoutId = setTimeout(() => finish(new Error('TTS request timed out')), this.requestTimeoutMs);
         
         ws.binaryType = 'arraybuffer';
         
         ws.onopen = () => {
+          if (!this._isCurrentSession(sessionId, bookId)) {
+            finish(new DOMException('stale TTS session', 'AbortError'));
+            return;
+          }
           const configMsg = 
             `X-Timestamp:${this._dateToString()}\r\n` +
             `Content-Type:application/json; charset=utf-8\r\n` +
@@ -1255,17 +1329,17 @@ export class TTSEngine {
         ws.onclose = () => {
           if (audioChunks.length > 0) {
             const blob = new Blob(audioChunks, { type: 'audio/mpeg' });
-            resolve(blob);
+            finish(null, blob);
           } else {
-            reject(new Error("No audio data received"));
+            finish(new Error("No audio data received"));
           }
         };
         
         ws.onerror = (err) => {
-          reject(err);
+          finish(err instanceof Error ? err : new Error('TTS WebSocket error'));
         };
       } catch (e) {
-        reject(e);
+        finish(e);
       }
     });
   }
@@ -1309,14 +1383,14 @@ export class TTSEngine {
   }
 
   // 4. 預加載控制與播放隊列
-  _fetchSentence(index, retryCount = 0) {
+  _fetchSentence(index, retryCount = 0, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
     const voice = this.selectedVoice;
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    if (index >= this.sentences.length) return;
-    if (this.audioCache.has(index)) return;
-    if (retryCount === 0 && this.fetchingIndices.has(index)) return;
+    if (index >= this.sentences.length) return Promise.resolve();
+    if (this.audioCache.has(index)) return Promise.resolve();
+    if (retryCount === 0 && this.fetchingIndices.has(index)) return Promise.resolve();
 
     // 判斷是否進入“分組（10句）發送”階段：
     // 每當開始播放（即 playbackStartSessionIndex 已設定），前10句（index < session + 10）單句獲取以保證極速啟動，
@@ -1329,17 +1403,21 @@ export class TTSEngine {
       this.fetchingIndices.add(index);
       const sentence = this.sentences[index];
       
-      this._downloadSentenceAudio(sentence).then(blob => {
+      return this._downloadSentenceAudio(sentence, sessionId, bookId).then(blob => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         this.consecutiveWsFailures = 0;
-        this._saveToCache(index, blob);
+        this._saveToCache(index, blob, sessionId, bookId);
       }).catch(err => {
-        console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         this.fetchingIndices.delete(index);
+        if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
+        console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         
         if (retryCount < 2) {
-          setTimeout(() => {
-            this._fetchSentence(index, retryCount + 1);
+          const timer = setTimeout(() => {
+            this.retryTimers.delete(timer);
+            if (this._isCurrentSession(sessionId, bookId)) this._fetchSentence(index, retryCount + 1, sessionId, bookId);
           }, 1500);
+          this.retryTimers.add(timer);
           return;
         }
         
@@ -1432,26 +1510,38 @@ export class TTSEngine {
         isHeading: groupSentences[groupSentences.length - 1].isHeading
       };
       
-      this._downloadSentenceAudio(virtualSentence).then(blob => {
+      return this._downloadSentenceAudio(virtualSentence, sessionId, bookId).then(blob => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         this.consecutiveWsFailures = 0;
-        this._saveGroupToCache(groupStartIndex, groupSentences, blob);
+        this._saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId, bookId);
       }).catch(err => {
-        console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         this.fetchingIndices.delete(groupStartIndex);
+        if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
+        console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         
         if (retryCount < 2) {
-          setTimeout(() => {
-            this._fetchSentence(groupStartIndex, retryCount + 1);
+          const timer = setTimeout(() => {
+            this.retryTimers.delete(timer);
+            if (this._isCurrentSession(sessionId, bookId)) this._fetchSentence(groupStartIndex, retryCount + 1, sessionId, bookId);
           }, 1500);
+          this.retryTimers.add(timer);
         }
       });
     }
   }
 
-  _saveToCache(index, blob) {
+  _saveToCache(index, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    if (!this._isCurrentSession(sessionId, bookId)) {
+      this.fetchingIndices.delete(index);
+      return;
+    }
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
       reader.onloadend = () => {
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          this.fetchingIndices.delete(index);
+          return;
+        }
         this.audioCache.set(index, {
           blobUrl: reader.result,
           isReady: true,
@@ -1473,8 +1563,13 @@ export class TTSEngine {
     }
   }
 
-  _saveGroupToCache(groupStartIndex, groupSentences, blob) {
+  _saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
     const onUrlReady = (blobUrl) => {
+      if (!this._isCurrentSession(sessionId, bookId)) {
+        this.fetchingIndices.delete(groupStartIndex);
+        if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+        return;
+      }
       // 快取分組的音訊源，記錄所包含的句子清單
       this.audioCache.set(groupStartIndex, {
         blobUrl,
@@ -1572,6 +1667,8 @@ export class TTSEngine {
 
   _playActiveSentence() {
     if (!this.isPlaying) return;
+    const sessionId = this.playbackGeneration;
+    const bookId = this.ownerBookId;
     
     const index = this.currentIndex;
     if (index >= this.sentences.length) {
@@ -1665,6 +1762,7 @@ export class TTSEngine {
       audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
       audio.onloadedmetadata = () => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         audio.playbackRate = this.rate;
         setupGroupSeeking();
       };
@@ -1680,7 +1778,7 @@ export class TTSEngine {
     
     if (isGroupPlay) {
       audio.ontimeupdate = () => {
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         const boundaries = getBoundaries();
         if (!boundaries) return;
@@ -1721,7 +1819,7 @@ export class TTSEngine {
                 const p = this.onChapterTransition(currentSentence.chapterIndex);
                 if (p && typeof p.then === 'function') {
                   p.then(() => {
-                    if (!this.isPlaying) return;
+                    if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
                     doGroupHighlight();
                   });
                 } else {
@@ -1766,7 +1864,7 @@ export class TTSEngine {
           this.audioCache.delete(groupStartIndex + i);
         }
         
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
@@ -1777,7 +1875,7 @@ export class TTSEngine {
       };
     } else {
       audio.ontimeupdate = () => {
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
         const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
@@ -1807,7 +1905,7 @@ export class TTSEngine {
         }
         this.audioCache.delete(index);
         
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         // 若下一句還沒有被觸發播放，則在此手動觸發
         if (!hasTriggeredNext) {
@@ -1820,8 +1918,12 @@ export class TTSEngine {
     }
 
     const startPlay = () => {
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       audio.play().then(() => {
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          audio.pause();
+          return;
+        }
         // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
         if (prevAudio && prevAudio !== audio) {
           try {
@@ -1844,6 +1946,7 @@ export class TTSEngine {
         // 在音訊實際開始播放時，才執行高亮和回調，消除播放延遲導致的高亮超前
         doHighlightAndCallbacks();
       }).catch(err => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         console.error("Audio play error:", err);
         this._stopPolling(); // 確保停止輪詢
         audio.ontimeupdate = null;
@@ -1881,7 +1984,7 @@ export class TTSEngine {
         const transitionPromise = this.onChapterTransition(sentence.chapterIndex);
         if (transitionPromise && typeof transitionPromise.then === 'function') {
           transitionPromise.then(() => {
-            if (!this.isPlaying) return;
+            if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
             startPlay();
           });
         } else {
@@ -1899,6 +2002,8 @@ export class TTSEngine {
 
   _speakNativeSentence(index) {
     if (!this.isPlaying) return;
+    const sessionId = this.playbackGeneration;
+    const bookId = this.ownerBookId;
     if (index >= this.sentences.length) {
       this.stop();
       if (this.onPlaybackEnd) this.onPlaybackEnd();
@@ -1939,7 +2044,7 @@ export class TTSEngine {
     utterance.volume = this.volume;
 
     utterance.onstart = () => {
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       this.currentIndex = index;
       this.currentlyPlayingIndex = index; // 同步更新實際播放索引
       
@@ -1960,7 +2065,7 @@ export class TTSEngine {
           const p = this.onChapterTransition(sentence.chapterIndex);
           if (p && typeof p.then === 'function') {
             p.then(() => {
-              if (!this.isPlaying) return;
+              if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
               doNativeHighlight();
             });
           } else {
@@ -1984,7 +2089,7 @@ export class TTSEngine {
 
     utterance.onend = () => {
       this.nativeQueue.delete(index);
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       
       // 若下一句已在隊列中準備播放，則交由瀏覽器原生隊列切換，防止重複觸發
       if (this.nativeQueue.has(index + 1)) {
@@ -2001,7 +2106,7 @@ export class TTSEngine {
     utterance.onerror = (err) => {
       console.error("SpeechSynthesis utterance error:", err);
       this.nativeQueue.delete(index);
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       
       if (this.nativeQueue.has(index + 1)) {
         return;
@@ -2081,8 +2186,9 @@ export class TTSEngine {
     }
   }
 
-  play(index = 0, isAbsolute = false) {
+  play(index = 0, isAbsolute = false, bookId = this.ownerBookId) {
     if (this.sentences.length === 0) return;
+    const sessionId = this._beginSession(bookId);
     
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
     this.isPlaying = false;
@@ -2148,7 +2254,7 @@ export class TTSEngine {
     this.playbackStartSessionIndex = this.currentIndex;
     
     // 點擊正文後，只向 tts 引擎發送 1 句 (當前句)
-    this._fetchSentence(this.currentIndex);
+    this._fetchSentence(this.currentIndex, 0, sessionId, bookId);
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -2157,6 +2263,7 @@ export class TTSEngine {
         const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
         const sentence = this.sentences[this.currentIndex];
         const coverBase64 = await getBookCoverBase64();
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         window.Capacitor.Plugins.NativeTTS.startForegroundService({
           title: bookTitle,
           artist: bookArtist,
@@ -2176,6 +2283,8 @@ export class TTSEngine {
   // 預加載下一章，並將句子直接追加到當前的 sentences 列表中以實現在線預合成
   async _prefetchNextChapter() {
     if (!this.getNextChapterData || this.currentChapterIndex === undefined) return;
+    const sessionId = this.playbackGeneration;
+    const bookId = this.ownerBookId;
     
     const targetNextIndex = this.currentChapterIndex + 1;
     if (this.prefetchedChapterIndex === targetNextIndex) return;
@@ -2185,7 +2294,7 @@ export class TTSEngine {
     
     try {
       const nextChapter = await this.getNextChapterData(this.currentChapterIndex);
-      if (!nextChapter || !this.isPlaying) {
+      if (!nextChapter || !this.isPlaying || !this._isCurrentSession(sessionId, bookId)) {
         if (this.prefetchedChapterIndex === targetNextIndex) {
           this.prefetchedChapterIndex = null;
         }
@@ -2388,6 +2497,7 @@ export class TTSEngine {
   }
 
   stop() {
+    this._beginSession(null);
     // 先保留 currentlyPlayingIndex 的值，以便 onStateChange 回調可以正確保存最後播放位置
     const lastPlayingIndex = this.currentlyPlayingIndex;
     this.isPlaying = false;
@@ -2526,6 +2636,10 @@ export class TTSEngine {
     this.selectedVoice = newVoice;
     
     if (isChanged) {
+      const wasPlaying = this.isPlaying;
+      const currentIndex = this.currentIndex;
+      const bookId = this.ownerBookId;
+      this._beginSession(bookId);
       this.audioCache.forEach(cached => {
         if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
           URL.revokeObjectURL(cached.blobUrl);
@@ -2533,13 +2647,9 @@ export class TTSEngine {
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
+      if (wasPlaying) this.play(currentIndex, true, bookId);
     }
 
-    if (this.isPlaying) {
-      if (isChanged) {
-        this.play(this.currentIndex, true);
-      }
-    }
   }
 
   _highlightSentence(sentence) {
