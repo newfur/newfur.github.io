@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import {
   OperationOwner,
   OwnedDebouncer,
+  OwnedLease,
   buildOwnedSearchIndex,
   finishTrackedResource,
   ownedCallback,
@@ -70,7 +71,7 @@ test('reader async flows use captured owners and explicit persistence ids', () =
   assert.match(source, /prefetchedChapterCache = \{ index: nextIndex, html, generation: operation\.generation, bookId: operation\.bookId \}/);
   assert.match(source, /if \(!isCurrent\(\)\) \{\s*if \(url\?\.startsWith\('blob:'\)\) URL\.revokeObjectURL\(url\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)/);
-  assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId\)/);
+  assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId, closingTracker\)/);
   assert.match(source, /pending: library\.updateProgress\(operation\.bookId, progressUpdate\)/);
   assert.doesNotMatch(source, /loadChapter ignored because a chapter change is already in progress/);
   assert.match(source, /finally \{\s*if \(!isCurrent\(\)\) return;\s*isChangingChapter = false;/);
@@ -255,4 +256,71 @@ test('reader TTS timers and playback completion use captured ownership', () => {
   assert.match(source, /completeOwnedTransition\(\{/);
   assert.match(source, /tts\._isCurrentSession\(ttsSessionId, ttsOwnerBookId\)/);
   assert.match(source, /tts\.play\(0, false, playbackBookId\)/);
+});
+
+test('old TTS callback during delayed new-book open cannot update the new book', () => {
+  const owner = new OperationOwner();
+  const tokenA = owner.begin('book-a');
+  let ttsGeneration = 3;
+  let ttsBookId = 'book-a';
+  const writes = [];
+  const bookB = { id: 'book-b', progress: {} };
+  let currentBook = { id: 'book-a', progress: {} };
+  const oldCallback = ownedCallback(
+    () => owner.isCurrent(tokenA, 'book-a') && currentBook.id === 'book-a' && ttsGeneration === 3 && ttsBookId === 'book-a',
+    () => writes.push('book-a')
+  );
+
+  owner.invalidate();
+  ttsGeneration = 4;
+  ttsBookId = null;
+  currentBook = bookB;
+  oldCallback();
+
+  assert.deepEqual(writes, []);
+  assert.deepEqual(bookB.progress, {});
+});
+
+test('stale close cannot stop a newer book reading tracker lease after its save await', async () => {
+  const leases = new OwnedLease();
+  const trackerA = leases.acquire('book-a');
+  const saveA = deferred();
+  const closingA = (async () => {
+    await saveA.promise;
+    return leases.release(trackerA);
+  })();
+  const trackerB = leases.acquire('book-b');
+  saveA.resolve();
+
+  assert.equal(await closingA, false);
+  assert.equal(leases.isCurrent(trackerB), true);
+});
+
+test('stale delayed selection callback cannot run for a new book', () => {
+  const owner = new OperationOwner();
+  const tokenA = owner.begin('book-a');
+  const selections = [];
+  const delayedSelection = ownedCallback(
+    () => owner.isCurrent(tokenA, 'book-a'),
+    selection => selections.push(selection)
+  );
+
+  owner.begin('book-b');
+  delayedSelection('selection-a');
+
+  assert.deepEqual(selections, []);
+});
+
+test('reader cross-book shared state is guarded by captured ownership', () => {
+  const source = fs.readFileSync(new URL('../../reader/reader.js', import.meta.url), 'utf8');
+
+  assert.match(source, /function beginReaderOperation\(bookId, stopTTS = false\) \{[\s\S]*if \(stopTTS\) tts\.stop\(\)/);
+  assert.match(source, /beginReaderOperation\(id, true\)/);
+  assert.match(source, /tts\.onSentenceStart = \(index, sessionId, ownerBookId\)/);
+  assert.match(source, /readerOperations\.isCurrent\(operation, ownerBookId\)/);
+  assert.match(source, /const closingTracker = readingTrackerLease\.current\(\)/);
+  assert.match(source, /if \(!readerOperations\.isCurrent\(operation, closingBookId\)\) return;\s*stopReadingTracker\(closingTracker\)/);
+  assert.match(source, /saveReadingTime\(closingBookId, closingTracker\)/);
+  assert.match(source, /function clearSelectionChangeTimer\(\)/);
+  assert.match(source, /const selectionOperation = readerOperations\.currentToken\(\)/);
 });

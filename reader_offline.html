@@ -12380,6 +12380,32 @@ class OperationOwner {
   }
 }
 
+class OwnedLease {
+  constructor() {
+    this.generation = 0;
+    this.active = null;
+  }
+
+  acquire(ownerId) {
+    this.active = Object.freeze({ generation: ++this.generation, ownerId });
+    return this.active;
+  }
+
+  current() {
+    return this.active;
+  }
+
+  isCurrent(lease) {
+    return lease === this.active;
+  }
+
+  release(lease) {
+    if (!this.isCurrent(lease)) return false;
+    this.active = null;
+    return true;
+  }
+}
+
 function ownedCallback(isCurrent, callback) {
   return (...args) => {
     if (isCurrent()) return callback(...args);
@@ -16587,7 +16613,7 @@ class TTSEngine {
               this._highlightSentence(sent);
               this._updateMediaSession(sent);
               if (this.onSentenceStart) {
-                this.onSentenceStart(activeIdx);
+                this.onSentenceStart(activeIdx, sessionId, bookId);
               }
               this._fillPreFetchBuffer();
             };
@@ -16750,7 +16776,7 @@ class TTSEngine {
       this._highlightSentence(sent);
       this._updateMediaSession(sent);
       if (this.onSentenceStart) {
-        this.onSentenceStart(index);
+        this.onSentenceStart(index, sessionId, bookId);
       }
     };
 
@@ -16834,7 +16860,7 @@ class TTSEngine {
         this._highlightSentence(sent);
         this._updateMediaSession(sent);
         if (this.onSentenceStart) {
-          this.onSentenceStart(index);
+          this.onSentenceStart(index, sessionId, bookId);
         }
       };
 
@@ -18121,6 +18147,7 @@ let selectedTextRange = null;
 let selectedNoteIdState = null; // 儲存當前選取的高亮/筆記的 ID
 let currentPageIndex = 0;
 let ttsClickTimeout = null;
+let selectionChangeTimeout = null;
 let currentPagesDisplayed = 'auto';
 let currentTTSLanguage = 'auto';
 let ttsDefaultVoice = '';
@@ -18136,6 +18163,7 @@ let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
 let lastChapterChangeTime = 0;
 let openingBookId = null;
+const readingTrackerLease = new OwnedLease();
 
 function clearTTSClickTimer() {
   if (!ttsClickTimeout) return;
@@ -18143,8 +18171,25 @@ function clearTTSClickTimer() {
   ttsClickTimeout = null;
 }
 
+function clearSelectionChangeTimer() {
+  if (!selectionChangeTimeout) return;
+  clearTimeout(selectionChangeTimeout);
+  selectionChangeTimeout = null;
+}
+
 function isReaderOperationCurrent(token) {
   return readerOperations.isCurrent(token, token?.bookId) && currentBook?.id === token.bookId;
+}
+
+function captureReaderContext() {
+  const operation = readerOperations.currentToken();
+  const book = currentBook;
+  return {
+    operation,
+    book,
+    bookId: book?.id,
+    isCurrent: () => Boolean(book && readerOperations.isCurrent(operation, book.id) && currentBook === book)
+  };
 }
 
 function cleanupParserResult(result, parser = null) {
@@ -18159,8 +18204,10 @@ function abortReaderAI(reason = 'reader operation superseded') {
   activeAIContexts.clear();
 }
 
-function beginReaderOperation(bookId) {
+function beginReaderOperation(bookId, stopTTS = false) {
   clearTTSClickTimer();
+  clearSelectionChangeTimer();
+  if (stopTTS) tts.stop();
   abortReaderAI();
   return readerOperations.begin(bookId);
 }
@@ -19337,8 +19384,10 @@ function initUIEventBindings() {
       const confirmMsg = getMsg('confirm_delete_all_chats') || '確定要清除本書的所有 AI 溝通記錄嗎？此操作無法撤銷。';
       if (confirm(confirmMsg)) {
         try {
-          const updatedChats = await library.clearAllAIChats(currentBook.id);
-          currentBook.aiChats = updatedChats;
+          const context = captureReaderContext();
+          const updatedChats = await library.clearAllAIChats(context.bookId);
+          if (!context.isCurrent()) return;
+          context.book.aiChats = updatedChats;
           renderAIChatHistory();
         } catch (err) {
           console.error('Failed to clear AI history:', err);
@@ -19595,9 +19644,12 @@ function initUIEventBindings() {
   let ttsProgressHeartbeatTimer = null;
   function startTTSProgressHeartbeat() {
     stopTTSProgressHeartbeat();
+    const operation = readerOperations.currentToken();
+    const ownerBookId = tts.ownerBookId;
+    const sessionId = tts.playbackGeneration;
     ttsProgressHeartbeatTimer = setInterval(() => {
-      if (tts.isPlaying && !tts.isPaused && currentBook) {
-        saveTTSProgressImmediately();
+      if (tts.isPlaying && !tts.isPaused) {
+        saveTTSProgressImmediately(operation, sessionId, ownerBookId);
       }
     }, 5000);
   }
@@ -19615,7 +19667,7 @@ function initUIEventBindings() {
     
     // 當暫停或停止時，立即強制保存最新朗讀位置，不使用防抖，確保在後台或藍牙暫停時進度被即時寫入資料庫
     if (!tts.isPlaying || tts.isPaused) {
-      saveTTSProgressImmediately();
+      saveTTSProgressImmediately(readerOperations.currentToken(), tts.playbackGeneration, tts.ownerBookId);
       stopTTSProgressHeartbeat();
     } else {
       // 播放中：啟動心跳保存
@@ -19659,14 +19711,22 @@ function initUIEventBindings() {
     updatePlayPauseButtonIcon();
   };
 
-  tts.onSentenceStart = (index) => {
+  tts.onSentenceStart = (index, sessionId, ownerBookId) => {
+    const operation = readerOperations.currentToken();
+    const ownedBook = currentBook;
+    const isCurrentTTSOwner = () =>
+      ownerBookId === ownedBook?.id &&
+      readerOperations.isCurrent(operation, ownerBookId) &&
+      currentBook === ownedBook &&
+      tts._isCurrentSession(sessionId, ownerBookId);
+    if (!isCurrentTTSOwner()) return;
     // 同步播放按鈕狀態
     updatePlayPauseButtonIcon();
 
     // 朗讀句子時更新進度 (儲存於獨立的 tts 進度欄位)
     // 使用立即保存而非防抖，確保每一句的位置都能即時持久化，
     // 防止後台被殺、藍牙暫停等場景下丟失最新進度
-    if (currentBook) {
+    if (isCurrentTTSOwner()) {
       const maxIdx = tts.sentences.length > 0 ? tts.sentences.length - 1 : 0;
       const safeIdx = Math.max(0, Math.min(index, maxIdx));
       const sentence = tts.sentences[safeIdx];
@@ -19678,13 +19738,13 @@ function initUIEventBindings() {
           ttsChapterIndex: sentenceChapter
         };
         // 立即寫入 IndexedDB（非防抖），確保 app 被殺時有最新位置
-        library.updateProgress(currentBook.id, progressUpdate).catch(e => console.warn('[TTS] Progress save failed:', e));
-        currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+        library.updateProgress(ownerBookId, progressUpdate).catch(e => console.warn('[TTS] Progress save failed:', e));
+        if (isCurrentTTSOwner()) ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
       }
     }
 
     // 在翻頁模式下，如果朗讀的句子不在當前可見頁面上，則自動翻頁
-    if (document.body.classList.contains('layout-paginated')) {
+    if (isCurrentTTSOwner() && document.body.classList.contains('layout-paginated')) {
       const sentence = tts.sentences[index];
       if (sentence && sentence.element) {
         const rect = sentence.element.getBoundingClientRect();
@@ -19746,15 +19806,26 @@ function initUIEventBindings() {
   bookContent.addEventListener('touchend', handleTextSelection);
 
   // 監聽全局 selectionchange 事件，解決行動端長按選擇後需要滑動屏幕才彈出選單的 Bug
-  let selectionChangeTimeout = null;
   document.addEventListener('selectionchange', () => {
     if (!currentBook) return;
     const readerView = document.getElementById('reader-view');
     if (readerView && readerView.classList.contains('view-active')) {
-      if (selectionChangeTimeout) clearTimeout(selectionChangeTimeout);
-      selectionChangeTimeout = setTimeout(() => {
-        handleTextSelection();
-      }, 250);
+      clearSelectionChangeTimer();
+      const selectionOperation = readerOperations.currentToken();
+      const selectionBook = currentBook;
+      const selection = window.getSelection();
+      const selectionSnapshot = selection?.rangeCount ? {
+        rangeCount: 1,
+        text: selection.toString(),
+        range: selection.getRangeAt(0).cloneRange()
+      } : { rangeCount: 0, text: '', range: null };
+      selectionChangeTimeout = setTimeout(ownedCallback(
+        () => readerOperations.isCurrent(selectionOperation, selectionBook?.id) && currentBook === selectionBook,
+        () => {
+          selectionChangeTimeout = null;
+          handleTextSelection(null, selectionSnapshot);
+        }
+      ), 250);
     }
   });
 
@@ -20962,13 +21033,14 @@ window.exportBookHandler = exportBookHandler;
 // ==================== 閱讀時間統計管理邏輯 ====================
 function startReadingTracker(bookId) {
   stopReadingTracker();
+  const tracker = readingTrackerLease.acquire(bookId);
 
   lastReadingHeartbeat = Date.now();
   lastUserActivityTime = Date.now();
 
   readingSessionTimer = setInterval(async () => {
-    if (!currentBook) {
-      stopReadingTracker();
+    if (!readingTrackerLease.isCurrent(tracker) || currentBook?.id !== bookId) {
+      stopReadingTracker(tracker);
       return;
     }
 
@@ -20986,18 +21058,19 @@ function startReadingTracker(bookId) {
         }
       }
     }
-    lastReadingHeartbeat = now;
+    if (readingTrackerLease.isCurrent(tracker)) lastReadingHeartbeat = now;
   }, 10000);
+  return tracker;
 }
 
-function stopReadingTracker() {
-  if (readingSessionTimer) {
-    clearInterval(readingSessionTimer);
-    readingSessionTimer = null;
-  }
+function stopReadingTracker(tracker = readingTrackerLease.current()) {
+  if (!tracker || !readingTrackerLease.release(tracker)) return false;
+  if (readingSessionTimer) clearInterval(readingSessionTimer);
+  readingSessionTimer = null;
+  return true;
 }
 
-async function saveReadingTime(bookId = currentBook?.id) {
+async function saveReadingTime(bookId = currentBook?.id, tracker = readingTrackerLease.current()) {
   if (bookId) {
     const now = Date.now();
     const isUserActive = isReadingTimeActive(now);
@@ -21011,7 +21084,7 @@ async function saveReadingTime(bookId = currentBook?.id) {
         }
       }
     }
-    lastReadingHeartbeat = now;
+    if (readingTrackerLease.isCurrent(tracker)) lastReadingHeartbeat = now;
   }
 }
 
@@ -21031,7 +21104,7 @@ async function openBook(id) {
     return;
   }
   readerOperations.invalidate();
-  const operation = beginReaderOperation(id);
+  const operation = beginReaderOperation(id, true);
   openingBookId = id;
   const book = await library.getBook(id);
   if (!book || !readerOperations.isCurrent(operation, id)) {
@@ -21224,6 +21297,7 @@ async function openBook(id) {
 // 關閉閱讀器，返回書櫃
 async function closeCurrentBook(triggerBack = true) {
   const closingBookId = currentBook?.id;
+  const closingTracker = readingTrackerLease.current();
   readerOperations.invalidate();
   const operation = beginReaderOperation(closingBookId);
   openingBookId = null;
@@ -21240,9 +21314,9 @@ async function closeCurrentBook(triggerBack = true) {
   if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
   // 3. 停止閱讀計時並立即保存最後剩餘的時長
-  await saveReadingTime(closingBookId);
-  stopReadingTracker();
+  await saveReadingTime(closingBookId, closingTracker);
   if (!readerOperations.isCurrent(operation, closingBookId)) return;
+  stopReadingTracker(closingTracker);
 
   // 清理舊的資源 Object URL
   clearResourceUrls();
@@ -22917,8 +22991,14 @@ function saveProgressDebounced(update) {
 
 // 立即保存 TTS 進度（無防抖，安全過渡校驗）
 // 優先使用 currentlyPlayingIndex（實際正在播放的句子），而非 currentIndex（指向下一句的指標）
-function saveTTSProgressImmediately() {
-  if (currentBook) {
+function saveTTSProgressImmediately(operation = readerOperations.currentToken(), sessionId = tts.playbackGeneration, ownerBookId = tts.ownerBookId) {
+  const book = currentBook;
+  const isCurrentTTSOwner = () =>
+    ownerBookId === book?.id &&
+    readerOperations.isCurrent(operation, ownerBookId) &&
+    currentBook === book &&
+    tts._isCurrentSession(sessionId, ownerBookId);
+  if (isCurrentTTSOwner()) {
     let targetChapter = currentChapterIndex;
     // 優先使用「正在播放」的索引，避免 currentIndex 已指向下一句導致保存錯誤位置
     let targetSentence = tts.currentlyPlayingIndex >= 0 ? tts.currentlyPlayingIndex : tts.currentIndex;
@@ -22945,8 +23025,8 @@ function saveTTSProgressImmediately() {
       ttsChapterIndex: sentenceChapter
     };
     
-    library.updateProgress(currentBook.id, progressUpdate).catch(e => console.warn('[TTS] Immediate save failed:', e));
-    currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+    library.updateProgress(ownerBookId, progressUpdate).catch(e => console.warn('[TTS] Immediate save failed:', e));
+    if (isCurrentTTSOwner()) book.progress = { ...book.progress, ...progressUpdate };
   }
 }
 
@@ -24545,20 +24625,20 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
 // ==================== 7. 文字選取、高亮劃線與筆記功能 ==================== */
 
 // 監聽文字選取
-function handleTextSelection(e) {
-  const selection = window.getSelection();
+function handleTextSelection(e, snapshot = null) {
+  const selection = snapshot || window.getSelection();
   if (!selection || selection.rangeCount === 0) {
     const menu = document.getElementById('selection-menu');
     if (menu) menu.style.display = 'none';
     selectedNoteIdState = null;
     return;
   }
-  const selectedText = selection.toString().trim();
+  const selectedText = (snapshot ? snapshot.text : selection.toString()).trim();
   const menu = document.getElementById('selection-menu');
 
   if (selectedText.length > 0) {
     selectedTextState = selectedText;
-    selectedTextRange = selection.getRangeAt(0).cloneRange();
+    selectedTextRange = snapshot ? snapshot.range : selection.getRangeAt(0).cloneRange();
 
     // 檢測是否為行動端，以便將選單渲染至底部
     const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window);
@@ -24753,6 +24833,7 @@ function applyHighlightToDOMRange(elementsOrElement, startOffset, endOffset, col
 // 添加高亮劃線
 async function handleAddHighlight(color) {
   if (!currentBook || !selectedTextState) return;
+  const context = captureReaderContext();
 
   const startSentenceEl = selectedTextRange.startContainer.nodeType === Node.ELEMENT_NODE 
     ? selectedTextRange.startContainer.closest('.tts-sentence') 
@@ -24793,8 +24874,9 @@ async function handleAddHighlight(color) {
     endOffset
   };
 
-  const updatedNotes = await library.saveNote(currentBook.id, note);
-  currentBook.notes = updatedNotes;
+  const updatedNotes = await library.saveNote(context.bookId, note);
+  if (!context.isCurrent()) return;
+  context.book.notes = updatedNotes;
 
   let savedNoteId = null;
   if (startSentenceEl && updatedNotes) {
@@ -24882,6 +24964,8 @@ function openNoteDialog() {
 
 // 保存筆記
 async function handleSaveNote() {
+  const context = captureReaderContext();
+  if (!context.book) return;
   const text = document.getElementById('note-textarea').value.trim();
   if (!text) return;
 
@@ -24908,8 +24992,9 @@ async function handleSaveNote() {
     endOffset
   };
 
-  const updatedNotes = await library.saveNote(currentBook.id, note);
-  currentBook.notes = updatedNotes;
+  const updatedNotes = await library.saveNote(context.bookId, note);
+  if (!context.isCurrent()) return;
+  context.book.notes = updatedNotes;
 
   let savedNoteId = null;
   if (sentenceEl && updatedNotes) {
@@ -24948,6 +25033,7 @@ function getHierarchicalChapterTitle(chapters, index) {
 // 書籤添加
 async function handleAddBookmark() {
   if (!currentBook) return;
+  const context = captureReaderContext();
   
   let chapterTitle = getMsg('chapter_label', [String(currentChapterIndex + 1)]);
   if (epubBookData && epubBookData.chapters) {
@@ -24980,19 +25066,22 @@ async function handleAddBookmark() {
     currentPageIndex: currentPageIndex
   };
 
-  await library.saveBookmark(currentBook.id, bookmark);
+  await library.saveBookmark(context.bookId, bookmark);
+  if (!context.isCurrent()) return;
   renderHighlightsList();
 }
 
 // 渲染筆記與書籤列表
 async function renderHighlightsList() {
+  const context = captureReaderContext();
+  if (!context.book) return;
   const bList = document.getElementById('bookmarks-list');
   const nList = document.getElementById('notes-list');
   bList.innerHTML = '';
   nList.innerHTML = '';
 
-  const book = await library.getBook(currentBook.id);
-  if (!book) return;
+  const book = await library.getBook(context.bookId);
+  if (!book || !context.isCurrent()) return;
 
   // 1. 書籤
   if (book.bookmarks && book.bookmarks.length > 0) {
@@ -25067,7 +25156,9 @@ async function renderHighlightsList() {
 // 刪除劃線筆記與書籤的事件處理
 async function deleteBookmarkHandler(bookmarkId) {
   if (currentBook) {
-    await library.deleteBookmark(currentBook.id, bookmarkId);
+    const context = captureReaderContext();
+    await library.deleteBookmark(context.bookId, bookmarkId);
+    if (!context.isCurrent()) return;
     await renderHighlightsList();
   }
 }
@@ -25075,9 +25166,11 @@ window.deleteBookmarkHandler = deleteBookmarkHandler;
 
 async function deleteNoteHandler(noteId) {
   if (currentBook) {
+    const context = captureReaderContext();
     // Delete from DB and update the in-memory array
-    const updatedNotes = await library.deleteNote(currentBook.id, noteId);
-    currentBook.notes = updatedNotes;
+    const updatedNotes = await library.deleteNote(context.bookId, noteId);
+    if (!context.isCurrent()) return;
+    context.book.notes = updatedNotes;
     
     // Update the sidebar list
     await renderHighlightsList();
@@ -26432,14 +26525,17 @@ function addDeleteButtonToGroup(groupEl, chat) {
     const confirmMsg = getMsg('confirm_delete_single_chat') || '確定要刪除這條溝通記錄嗎？';
     if (confirm(confirmMsg)) {
       try {
-        const updatedChats = await library.deleteAIChat(currentBook.id, chat.chatId);
-        currentBook.aiChats = updatedChats;
+        const context = captureReaderContext();
+        const updatedChats = await library.deleteAIChat(context.bookId, chat.chatId);
+        if (!context.isCurrent()) return;
+        context.book.aiChats = updatedChats;
         
         // 刪除動畫
         groupEl.style.transition = 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
         groupEl.style.opacity = '0';
         groupEl.style.transform = 'scale(0.92)';
         setTimeout(() => {
+          if (!context.isCurrent()) return;
           groupEl.remove();
           const contentEl = document.getElementById('ai-content');
           if (contentEl && contentEl.querySelectorAll('.ai-chat-group').length === 0) {

@@ -21,6 +21,32 @@ export class OperationOwner {
   }
 }
 
+export class OwnedLease {
+  constructor() {
+    this.generation = 0;
+    this.active = null;
+  }
+
+  acquire(ownerId) {
+    this.active = Object.freeze({ generation: ++this.generation, ownerId });
+    return this.active;
+  }
+
+  current() {
+    return this.active;
+  }
+
+  isCurrent(lease) {
+    return lease === this.active;
+  }
+
+  release(lease) {
+    if (!this.isCurrent(lease)) return false;
+    this.active = null;
+    return true;
+  }
+}
+
 export function ownedCallback(isCurrent, callback) {
   return (...args) => {
     if (isCurrent()) return callback(...args);

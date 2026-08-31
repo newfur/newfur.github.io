@@ -1824,7 +1824,7 @@ export class TTSEngine {
               this._highlightSentence(sent);
               this._updateMediaSession(sent);
               if (this.onSentenceStart) {
-                this.onSentenceStart(activeIdx);
+                this.onSentenceStart(activeIdx, sessionId, bookId);
               }
               this._fillPreFetchBuffer();
             };
@@ -1987,7 +1987,7 @@ export class TTSEngine {
       this._highlightSentence(sent);
       this._updateMediaSession(sent);
       if (this.onSentenceStart) {
-        this.onSentenceStart(index);
+        this.onSentenceStart(index, sessionId, bookId);
       }
     };
 
@@ -2071,7 +2071,7 @@ export class TTSEngine {
         this._highlightSentence(sent);
         this._updateMediaSession(sent);
         if (this.onSentenceStart) {
-          this.onSentenceStart(index);
+          this.onSentenceStart(index, sessionId, bookId);
         }
       };
 
