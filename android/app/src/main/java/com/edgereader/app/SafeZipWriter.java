@@ -4,8 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.OutputStream;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -36,40 +35,45 @@ final class SafeZipWriter {
     private SafeZipWriter() {}
 
     static void write(File source, File output, Limits limits) throws IOException {
-        Path root = source.getCanonicalFile().toPath();
-        Path destination = output.getCanonicalFile().toPath();
-        if (!Files.isDirectory(root) || Files.isSymbolicLink(source.toPath())) throw new ZipPolicyException("SOURCE_NOT_ALLOWED");
-        if (Files.isSymbolicLink(output.toPath())) throw new ZipPolicyException("SYMLINK_NOT_ALLOWED");
-        if (Files.exists(output.toPath())) throw new ZipPolicyException("OUTPUT_EXISTS");
-        if (destination.startsWith(root)) throw new ZipPolicyException("OUTPUT_IN_SOURCE");
+        File root = source.getCanonicalFile();
+        File destination = output.getCanonicalFile();
+        if (!root.isDirectory() || isSymlink(source)) throw new ZipPolicyException("SOURCE_NOT_ALLOWED");
+        if (isSymlink(output)) throw new ZipPolicyException("SYMLINK_NOT_ALLOWED");
+        if (output.exists()) throw new ZipPolicyException("OUTPUT_EXISTS");
+        if (NativeFileBoundary.isWithin(root, destination)) throw new ZipPolicyException("OUTPUT_IN_SOURCE");
         File parent = output.getParentFile();
         if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) throw new ZipPolicyException("DESTINATION_UNAVAILABLE");
 
+        boolean outputOwned = false;
         boolean completed = false;
-        try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(output))) {
-            zip.setLevel(Deflater.NO_COMPRESSION);
-            add(root, root, zip, limits, new State(), 0);
-            completed = true;
+        try {
+            if (!output.createNewFile()) throw new ZipPolicyException("OUTPUT_EXISTS");
+            outputOwned = true;
+            OutputStream fileOutput = new FileOutputStream(output);
+            try (ZipOutputStream zip = new ZipOutputStream(fileOutput)) {
+                zip.setLevel(Deflater.NO_COMPRESSION);
+                add(root, root, zip, limits, new State(), 0);
+                completed = true;
+            }
         } finally {
-            if (!completed) Files.deleteIfExists(output.toPath());
+            if (outputOwned && !completed && !output.delete() && output.exists()) output.deleteOnExit();
         }
     }
 
-    private static void add(Path root, Path directory, ZipOutputStream zip, Limits limits, State state, int depth) throws IOException {
+    private static void add(File root, File directory, ZipOutputStream zip, Limits limits, State state, int depth) throws IOException {
         if (depth > limits.maxDepth) throw new ZipPolicyException("ZIP_DEPTH_LIMIT");
-        File[] children = directory.toFile().listFiles();
+        File[] children = directory.listFiles();
         if (children == null) throw new ZipPolicyException("SOURCE_NOT_ALLOWED");
         for (File child : children) {
-            Path lexical = child.toPath();
-            if (Files.isSymbolicLink(lexical)) throw new ZipPolicyException("SYMLINK_NOT_ALLOWED");
-            Path canonical = child.getCanonicalFile().toPath();
-            if (!canonical.startsWith(root)) throw new ZipPolicyException("SOURCE_NOT_ALLOWED");
-            if (Files.isDirectory(canonical)) {
+            File canonical = child.getCanonicalFile();
+            if (isSymlink(child)) throw new ZipPolicyException("SYMLINK_NOT_ALLOWED");
+            if (!NativeFileBoundary.isWithin(root, canonical)) throw new ZipPolicyException("SOURCE_NOT_ALLOWED");
+            if (canonical.isDirectory()) {
                 add(root, canonical, zip, limits, state, depth + 1);
                 continue;
             }
             if (++state.entries > limits.maxEntries) throw new ZipPolicyException("ZIP_ENTRY_LIMIT");
-            String name = root.relativize(canonical).toString().replace(File.separatorChar, '/');
+            String name = canonical.getPath().substring(root.getPath().length() + 1).replace(File.separatorChar, '/');
             if (name.isEmpty() || name.startsWith("/") || name.equals("..") || name.startsWith("../") || name.contains("/../")) {
                 throw new ZipPolicyException("INVALID_ZIP_ENTRY");
             }
@@ -86,5 +90,12 @@ final class SafeZipWriter {
                 zip.closeEntry();
             }
         }
+    }
+
+    private static boolean isSymlink(File file) throws IOException {
+        File parent = file.getParentFile();
+        if (parent == null) return false;
+        File lexical = new File(parent.getCanonicalFile(), file.getName());
+        return !lexical.getAbsolutePath().equals(lexical.getCanonicalPath());
     }
 }

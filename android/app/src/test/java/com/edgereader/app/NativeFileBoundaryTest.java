@@ -69,6 +69,19 @@ public class NativeFileBoundaryTest {
     }
 
     @Test
+    public void symlinkDirectoryInsideApprovedRootIsNotApproved() throws Exception {
+        File cache = temporaryFolder.newFolder("cache");
+        File files = temporaryFolder.newFolder("files");
+        File target = new File(cache, "target");
+        Files.createDirectories(target.toPath());
+        Files.write(new File(target, "backup.zip").toPath(), new byte[] { 1 });
+        File link = new File(cache, "linked");
+        Files.createSymbolicLink(link.toPath(), target.toPath());
+
+        assertFalse(NativeFileBoundary.isApprovedFile(cache, files, new File(link, "backup.zip")));
+    }
+
+    @Test
     public void sourceClassificationAllowsContentAndApprovedFilesOnly() throws Exception {
         File cache = temporaryFolder.newFolder("cache");
         File files = temporaryFolder.newFolder("files");

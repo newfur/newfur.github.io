@@ -20,6 +20,18 @@ import android.util.Log;
 
 public class AudioPlayerService extends Service {
 
+    static final String ACTION_START = "ACTION_START";
+    static final String ACTION_UPDATE_STATE = "ACTION_UPDATE_STATE";
+    static final String ACTION_UPDATE_METADATA = "ACTION_UPDATE_METADATA";
+    static final String ACTION_STOP_SESSION = "ACTION_STOP_SESSION";
+    static final String EXTRA_SESSION_ID = "sessionId";
+    static final String EXTRA_TITLE = "title";
+    static final String EXTRA_ARTIST = "artist";
+    static final String EXTRA_TEXT = "text";
+    static final String EXTRA_COVER = "cover";
+    static final String EXTRA_IS_PLAYING = "isPlaying";
+    static final int MAX_COVER_EXTRA_CHARS = 2 * 1024 * 1024;
+
     private static final String TAG = "AudioPlayerService";
     private static final String CHANNEL_ID = "tts_playback_channel";
     private static final int NOTIFICATION_ID = 9527;
@@ -33,6 +45,10 @@ public class AudioPlayerService extends Service {
     private String currentArtist = "";
     private String currentText = "";
     private Bitmap coverBitmap = null;
+    private String currentSessionId;
+    private Intent pendingStateUpdate;
+    private Intent pendingMetadataUpdate;
+    private boolean foregroundStarted;
 
     @Override
     public void onCreate() {
@@ -95,8 +111,24 @@ public class AudioPlayerService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
             String action = intent.getAction();
+            String sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
             Log.d(TAG, "onStartCommand: action = " + action);
-            if (action != null) {
+            if (action != null && sessionId != null) {
+                if (ACTION_START.equals(action)) {
+                    currentSessionId = sessionId;
+                    applyStart(intent);
+                    applyPendingUpdate(sessionId, pendingMetadataUpdate);
+                    applyPendingUpdate(sessionId, pendingStateUpdate);
+                    pendingMetadataUpdate = null;
+                    pendingStateUpdate = null;
+                    return START_NOT_STICKY;
+                }
+                if (currentSessionId == null) {
+                    if (ACTION_UPDATE_STATE.equals(action)) pendingStateUpdate = new Intent(intent);
+                    if (ACTION_UPDATE_METADATA.equals(action)) pendingMetadataUpdate = new Intent(intent);
+                    return START_NOT_STICKY;
+                }
+                if (!sessionId.equals(currentSessionId)) return START_NOT_STICKY;
                 switch (action) {
                     case "ACTION_PLAY_PAUSE":
                         notifyJS("toggle");
@@ -110,40 +142,56 @@ public class AudioPlayerService extends Service {
                     case "ACTION_STOP":
                         notifyJS("stop");
                         break;
-                    case "ACTION_START":
-                        currentTitle = intent.getStringExtra("title");
-                        currentArtist = intent.getStringExtra("artist");
-                        currentText = intent.getStringExtra("text");
-                        String coverBase64 = intent.getStringExtra("cover");
-                        isPlaying = intent.getBooleanExtra("isPlaying", false);
-                        
-                        if (coverBase64 != null && !coverBase64.isEmpty()) {
-                            coverBitmap = decodeBase64ToBitmap(coverBase64);
-                        } else {
-                            coverBitmap = null;
-                        }
-                        
-                        startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
-                        updatePlaybackState(isPlaying);
-                        updateMetadata(currentTitle, currentArtist, currentText);
+                    case ACTION_UPDATE_STATE:
+                    case ACTION_UPDATE_METADATA:
+                        applyUpdate(intent);
                         break;
-                    case "ACTION_UPDATE_STATE":
-                        isPlaying = intent.getBooleanExtra("isPlaying", false);
-                        updatePlaybackState(isPlaying);
-                        updateNotification(currentTitle, currentArtist, currentText, isPlaying);
-                        break;
-                    case "ACTION_UPDATE_METADATA":
-                        currentTitle = intent.getStringExtra("title");
-                        currentArtist = intent.getStringExtra("artist");
-                        currentText = intent.getStringExtra("text");
-                        updateMetadata(currentTitle, currentArtist, currentText);
-                        updateNotification(currentTitle, currentArtist, currentText, isPlaying);
+                    case ACTION_STOP_SESSION:
+                        currentSessionId = null;
+                        pendingStateUpdate = null;
+                        pendingMetadataUpdate = null;
+                        stopForeground(true);
+                        foregroundStarted = false;
+                        stopSelf();
                         break;
                 }
             }
         }
         return START_NOT_STICKY;
     }
+
+    private void applyStart(Intent intent) {
+        currentTitle = safe(intent.getStringExtra(EXTRA_TITLE));
+        currentArtist = safe(intent.getStringExtra(EXTRA_ARTIST));
+        currentText = safe(intent.getStringExtra(EXTRA_TEXT));
+        String coverBase64 = intent.getStringExtra(EXTRA_COVER);
+        isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false);
+        recycleCover();
+        coverBitmap = decodeBase64ToBitmap(coverBase64);
+        startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
+        foregroundStarted = true;
+        updatePlaybackState(isPlaying);
+        updateMetadata(currentTitle, currentArtist, currentText);
+    }
+
+    private void applyUpdate(Intent intent) {
+        if (ACTION_UPDATE_STATE.equals(intent.getAction())) {
+            isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false);
+            updatePlaybackState(isPlaying);
+        } else {
+            currentTitle = safe(intent.getStringExtra(EXTRA_TITLE));
+            currentArtist = safe(intent.getStringExtra(EXTRA_ARTIST));
+            currentText = safe(intent.getStringExtra(EXTRA_TEXT));
+            updateMetadata(currentTitle, currentArtist, currentText);
+        }
+        if (foregroundStarted) updateNotification(currentTitle, currentArtist, currentText, isPlaying);
+    }
+
+    private void applyPendingUpdate(String sessionId, Intent update) {
+        if (update != null && sessionId.equals(update.getStringExtra(EXTRA_SESSION_ID))) applyUpdate(update);
+    }
+
+    private static String safe(String value) { return value == null ? "" : value; }
 
     private void startForegroundServiceWithNotification(String title, String artist, String text, boolean isPlaying) {
         Notification notification = createNotification(title, artist, text, isPlaying);
@@ -192,13 +240,13 @@ public class AudioPlayerService extends Service {
         }
 
         // Add Previous action
-        Intent prevIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_PREVIOUS");
+        Intent prevIntent = actionIntent("ACTION_PREVIOUS");
         PendingIntent prevPending = PendingIntent.getService(this, 2, prevIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
         builder.addAction(new Notification.Action.Builder(
                 android.R.drawable.ic_media_previous, "Previous", prevPending).build());
 
         // Add Play/Pause action
-        Intent playPauseIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_PLAY_PAUSE");
+        Intent playPauseIntent = actionIntent("ACTION_PLAY_PAUSE");
         PendingIntent playPausePending = PendingIntent.getService(this, 1, playPauseIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
         builder.addAction(new Notification.Action.Builder(
                 isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
@@ -206,13 +254,13 @@ public class AudioPlayerService extends Service {
                 playPausePending).build());
 
         // Add Next action
-        Intent nextIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_NEXT");
+        Intent nextIntent = actionIntent("ACTION_NEXT");
         PendingIntent nextPending = PendingIntent.getService(this, 3, nextIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
         builder.addAction(new Notification.Action.Builder(
                 android.R.drawable.ic_media_next, "Next", nextPending).build());
 
         // Add Stop action
-        Intent stopIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_STOP");
+        Intent stopIntent = actionIntent("ACTION_STOP");
         PendingIntent stopPending = PendingIntent.getService(this, 4, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
         builder.addAction(new Notification.Action.Builder(
                 android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending).build());
@@ -225,6 +273,10 @@ public class AudioPlayerService extends Service {
         builder.setStyle(mediaStyle);
 
         return builder.build();
+    }
+
+    private Intent actionIntent(String action) {
+        return new Intent(this, AudioPlayerService.class).setAction(action).putExtra(EXTRA_SESSION_ID, currentSessionId);
     }
 
     private void updatePlaybackState(boolean isPlaying) {
@@ -261,6 +313,7 @@ public class AudioPlayerService extends Service {
 
     private Bitmap decodeBase64ToBitmap(String base64Str) {
         try {
+            if (base64Str == null || base64Str.isEmpty() || base64Str.length() > MAX_COVER_EXTRA_CHARS) return null;
             if (base64Str.startsWith("data:")) {
                 int commaIdx = base64Str.indexOf(",");
                 if (commaIdx != -1) {
@@ -268,7 +321,15 @@ public class AudioPlayerService extends Service {
                 }
             }
             byte[] decodedBytes = android.util.Base64.decode(base64Str, android.util.Base64.DEFAULT);
-            return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length, bounds);
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = 1;
+            while (bounds.outWidth / options.inSampleSize > 1024 || bounds.outHeight / options.inSampleSize > 1024) {
+                options.inSampleSize *= 2;
+            }
+            return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length, options);
         } catch (Exception e) {
             Log.w(TAG, "Failed to decode base64 cover: " + e.getMessage());
             return null;
@@ -323,11 +384,12 @@ public class AudioPlayerService extends Service {
     }
 
     private void notifyJS(String action) {
-        if (NativeTTS.instance != null) {
-            NativeTTS.instance.sendMediaAction(action);
-        } else {
-            Log.w(TAG, "Cannot notifyJS, NativeTTS.instance is null");
-        }
+        if (!NativeTTS.deliverMediaAction(currentSessionId, action)) Log.w(TAG, "Dropping stale media action");
+    }
+
+    private void recycleCover() {
+        if (coverBitmap != null && !coverBitmap.isRecycled()) coverBitmap.recycle();
+        coverBitmap = null;
     }
 
     @Override
@@ -339,10 +401,7 @@ public class AudioPlayerService extends Service {
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
         releaseLocks();
-        if (coverBitmap != null) {
-            coverBitmap.recycle();
-            coverBitmap = null;
-        }
+        recycleCover();
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();
