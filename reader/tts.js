@@ -142,6 +142,8 @@ export class TTSEngine {
     this.activeRequests = new Set();
     this.retryTimers = new Set();
     this.requestTimeoutMs = 15000;
+    this.nativeMediaSessionId = null;
+    this.nativeMediaListener = null;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -152,8 +154,9 @@ export class TTSEngine {
     // Listen for media action events from NativeTTS
     if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
       try {
-        window.Capacitor.Plugins.NativeTTS.addListener('mediaAction', (data) => {
+        const listenerRegistration = window.Capacitor.Plugins.NativeTTS.addListener('mediaAction', (data) => {
           console.log("Received native media action:", data.action);
+          if (!this.nativeMediaSessionId || data.sessionId !== this.nativeMediaSessionId) return;
           if (!this.isPlaying) return;
           switch (data.action) {
             case 'play':
@@ -180,6 +183,9 @@ export class TTSEngine {
               break;
           }
         });
+        Promise.resolve(listenerRegistration).then(handle => {
+          this.nativeMediaListener = handle;
+        }).catch(e => console.warn("Failed to retain NativeTTS mediaAction listener:", e));
       } catch (e) {
         console.warn("Failed to register NativeTTS mediaAction listener:", e);
       }
@@ -202,6 +208,13 @@ export class TTSEngine {
     });
     this.retryTimers.forEach(timer => this._clearTimer(timer));
     this.retryTimers.clear();
+  }
+
+  destroy() {
+    this.stop();
+    const listener = this.nativeMediaListener;
+    this.nativeMediaListener = null;
+    if (listener && typeof listener.remove === 'function') listener.remove().catch(() => {});
   }
 
   _beginSession(bookId = this.ownerBookId) {
@@ -1145,10 +1158,11 @@ export class TTSEngine {
       let timeoutId = null;
       let controller = null;
       let nativeRequestStarted = false;
+      let connectionId = null;
       const cancelNative = () => {
         if (!nativeRequestStarted) return;
         const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
-        if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
+        if (typeof native?.cancelTTS === 'function') native.cancelTTS({ connectionId }).catch(() => {});
       };
       const request = {
         cancelled: false,
@@ -1239,7 +1253,7 @@ export class TTSEngine {
         const secMsGec = await this._generateSecMsGecToken();
         if (settled) return;
         if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
-        const connectionId = this._generateConnectionId();
+        connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
         
         const isNativeApp = typeof window !== 'undefined' && (
@@ -2215,6 +2229,7 @@ export class TTSEngine {
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
       window.Capacitor.Plugins.NativeTTS.updateMetadata({
+        sessionId: this.nativeMediaSessionId,
         title: title,
         artist: artist,
         text: text
@@ -2315,20 +2330,18 @@ export class TTSEngine {
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
-      (async () => {
-        const bookTitle = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
-        const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
-        const sentence = this.sentences[this.currentIndex];
-        const coverBase64 = await getBookCoverBase64();
-        if (!this._isCurrentSession(sessionId, bookId)) return;
-        window.Capacitor.Plugins.NativeTTS.startForegroundService({
-          title: bookTitle,
-          artist: bookArtist,
-          text: sentence ? sentence.text : '',
-          cover: coverBase64,
-          isPlaying: true
-        }).catch(e => console.error("Error starting native foreground service:", e));
-      })();
+      this.nativeMediaSessionId = `${bookId ?? 'none'}:${sessionId}`;
+      const bookTitle = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
+      const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
+      const sentence = this.sentences[this.currentIndex];
+      window.Capacitor.Plugins.NativeTTS.startForegroundService({
+        sessionId: this.nativeMediaSessionId,
+        title: bookTitle,
+        artist: bookArtist,
+        text: sentence ? sentence.text : '',
+        cover: '',
+        isPlaying: true
+      }).catch(e => console.error("Error starting native foreground service:", e));
     }
 
     this._startSilenceKeepAlive();
@@ -2504,6 +2517,7 @@ export class TTSEngine {
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (isCapacitorApp) {
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+          sessionId: this.nativeMediaSessionId,
           isPlaying: false
         }).catch(e => console.error("Error updating native playback state:", e));
       }
@@ -2532,6 +2546,7 @@ export class TTSEngine {
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (isCapacitorApp) {
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+          sessionId: this.nativeMediaSessionId,
           isPlaying: true
         }).catch(e => console.error("Error updating native playback state:", e));
       }
@@ -2554,6 +2569,8 @@ export class TTSEngine {
   }
 
   stop() {
+    const nativeMediaSessionId = this.nativeMediaSessionId;
+    this.nativeMediaSessionId = null;
     this._beginSession(null);
     // 先保留 currentlyPlayingIndex 的值，以便 onStateChange 回調可以正確保存最後播放位置
     const lastPlayingIndex = this.currentlyPlayingIndex;
@@ -2565,7 +2582,7 @@ export class TTSEngine {
     
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
-      window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
+      window.Capacitor.Plugins.NativeTTS.stopForegroundService({ sessionId: nativeMediaSessionId }).catch(e => console.error("Error stopping native foreground service:", e));
     }
 
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {

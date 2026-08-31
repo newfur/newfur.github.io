@@ -9964,7 +9964,7 @@ async function handleExportBackup() {
               alert(getMsg('backup_success'));
             }
           } catch (saveErr) {
-            if (saveErr.message && /cancel/i.test(saveErr.message)) {
+            if (saveErr.code === 'USER_CANCELLED') {
               console.log('User cancelled Android save dialog');
             } else {
               throw saveErr;

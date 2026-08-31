@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { TTSEngine } from '../../reader/tts.js';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 function deferred() {
   let resolve;
@@ -341,4 +346,17 @@ test('delayed DOM sync highlight ignores an obsolete playback session', () => {
   callback();
 
   assert.deepEqual(highlights, []);
+});
+
+test('native media calls carry session ownership and start without cover conversion', () => {
+  const source = fs.readFileSync(path.join(projectRoot, 'reader', 'tts.js'), 'utf8');
+  assert.match(source, /startForegroundService\(\{\s*sessionId: this\.nativeMediaSessionId,/);
+  assert.match(source, /updatePlaybackState\(\{\s*sessionId: this\.nativeMediaSessionId,/);
+  assert.match(source, /stopForegroundService\(\{ sessionId: nativeMediaSessionId \}\)/);
+  assert.doesNotMatch(source, /const coverBase64 = await getBookCoverBase64\(\);[\s\S]{0,500}startForegroundService/);
+});
+
+test('native cancellation is scoped to its connection id', () => {
+  const source = fs.readFileSync(path.join(projectRoot, 'reader', 'tts.js'), 'utf8');
+  assert.match(source, /cancelTTS\(\{ connectionId \}\)/);
 });
