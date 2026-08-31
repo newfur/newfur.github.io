@@ -102,6 +102,12 @@
   "download_chrome": {
     "message": "Chrome Extension"
   },
+  "voice_gender_female": {
+    "message": "Female"
+  },
+  "voice_gender_male": {
+    "message": "Male"
+  },
   "already_offline": {
     "message": "You are already running in the offline/local environment!"
   },

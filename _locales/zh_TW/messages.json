@@ -102,6 +102,12 @@
   "download_chrome": {
     "message": "Chrome 插件"
   },
+  "voice_gender_female": {
+    "message": "女"
+  },
+  "voice_gender_male": {
+    "message": "男"
+  },
   "already_offline": {
     "message": "您目前已經處於離線版或本地執行環境中！"
   },

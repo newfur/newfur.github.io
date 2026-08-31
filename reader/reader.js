@@ -6263,6 +6263,53 @@ function shouldAppendChapterTitles(contentSample, chapterTitles) {
   return !contentSample.trim() && Boolean(chapterTitles.trim());
 }
 
+// 根據系統語言格式化 TTS 語音顯示名稱
+// 例如 shortName="zh-CN-XiaoxiaoNeural" → 中文顯示 "Xiaoxiao (中文(中国) · 女)"，英文顯示 "Xiaoxiao (Chinese (China) · Female)"
+function formatVoiceDisplayName(voice) {
+  // 非 Edge 語音或 OpenAI/Local 語音，直接用原名
+  if (!voice.shortName && !voice.isEdge) {
+    const displayLang = voice.lang === 'multilingual' ? (getMsg('tts_lang_multilingual') || 'Multilingual') : voice.lang;
+    return `${voice.name} (${displayLang})`;
+  }
+
+  const shortName = voice.shortName || '';
+  // 從 shortName 提取人名：zh-CN-XiaoxiaoNeural → Xiaoxiao
+  const parts = shortName.split('-');
+  let personName = '';
+  if (parts.length >= 3) {
+    personName = parts.slice(2).join('-').replace(/Neural$/i, '').replace(/Multilingual$/i, '');
+  }
+  if (!personName) {
+    // 從 FriendlyName 中提取：Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)
+    const match = (voice.friendlyName || voice.name || '').match(/,\s*([A-Za-z]+?)(?:Neural|Multilingual)?\s*\)/);
+    personName = match ? match[1] : voice.name;
+  }
+
+  // 用 Intl.DisplayNames 把語言代碼翻譯成系統語言
+  let langDisplay = voice.lang || '';
+  if (voice.lang && voice.lang !== 'multilingual') {
+    try {
+      const uiLang = navigator.language || 'en';
+      const dn = new Intl.DisplayNames([uiLang], { type: 'language' });
+      langDisplay = dn.of(voice.lang) || voice.lang;
+    } catch (e) {
+      langDisplay = voice.lang;
+    }
+  } else if (voice.lang === 'multilingual') {
+    langDisplay = getMsg('tts_lang_multilingual') || 'Multilingual';
+  }
+
+  // 性別本地化
+  const genderMap = {
+    'female': getMsg('voice_gender_female') || 'Female',
+    'male': getMsg('voice_gender_male') || 'Male'
+  };
+  const genderStr = genderMap[voice.gender] || '';
+
+  const meta = genderStr ? `${langDisplay} · ${genderStr}` : langDisplay;
+  return `${personName} (${meta})`;
+}
+
 function getTTSVoiceGroups(voices, lang, edgeOnly = false) {
   const normalizePrefix = (value) => {
     const code = (value || '').toLowerCase().replace('_', '-');
@@ -6332,8 +6379,7 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   const createOption = (voice) => {
     const opt = document.createElement('option');
     opt.value = voice.name;
-    const displayLang = voice.lang === 'multilingual' ? (getMsg('tts_lang_multilingual') || 'Multilingual') : voice.lang;
-    opt.textContent = `${voice.name} (${displayLang})`;
+    opt.textContent = formatVoiceDisplayName(voice);
     return opt;
   };
 
