@@ -68,3 +68,13 @@ test('reader async flows use captured owners and explicit persistence ids', () =
   assert.doesNotMatch(source, /loadChapter ignored because a chapter change is already in progress/);
   assert.match(source, /finally \{\s*if \(!isCurrent\(\)\) return;\s*isChangingChapter = false;/);
 });
+
+test('offline artifacts define operation ownership before reader startup', () => {
+  for (const output of ['../../index.html', '../../reader_offline.html']) {
+    const source = fs.readFileSync(new URL(output, import.meta.url), 'utf8');
+    const definition = source.indexOf('class OperationOwner');
+    const reader = source.indexOf('const readerOperations = new OperationOwner()');
+    assert.ok(definition >= 0, `${output} includes OperationOwner`);
+    assert.ok(definition < reader, `${output} defines OperationOwner before use`);
+  }
+});

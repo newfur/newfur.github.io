@@ -32,6 +32,7 @@ const modules = [
   'reader/security/sanitize.js',
   'reader/security/render.js',
   'reader/library.js',
+  'reader/operation-ownership.js',
   'reader/parsers/epub-parser.js',
   'reader/parsers/azw3-parser.js',
   'reader/parsers/text-parser.js',

@@ -12150,717 +12150,233 @@ function renderErrorMessage(element, prefix, error) {
 // ==========================================
 // Module: reader/library.js
 // ==========================================
-// reader/library.js
-// 基於 IndexedDB 的書庫管理模組，提供書籍儲存、刪除、歷史記錄與進度更新功能
-
 const DB_NAME = 'EdgeReaderDB';
 const DB_VERSION = 1;
 
-class BookLibrary {
-  constructor() {
-    this.db = null;
-  }
+const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 
-  // 打開資料庫
+function applyCommittedBookToList(books, committedBook) {
+  const result = books.slice();
+  const index = result.findIndex(book => book.id === committedBook.id);
+  if (index >= 0) result[index] = committedBook;
+  return result;
+}
+
+function resetContentDerivedState(book) {
+  const result = clone(book);
+  delete result.bookSummary;
+  result.chapterSummaries = {};
+  for (const key of ['searchIndex', 'ragIndex', 'contentIndex', 'parserIndex', 'chapterTexts', 'bookChunks', 'ragChunks']) delete result[key];
+  return result;
+}
+
+function mergeById(current = [], incoming = [], idKey, incomingWins = true) {
+  const result = current.map(clone);
+  const identity = item => item[idKey] || `${idKey}:${JSON.stringify(item)}`;
+  for (const item of incoming) {
+    const index = result.findIndex(existing => identity(existing) === identity(item));
+    if (index < 0) result.push(clone(item));
+    else if (incomingWins) result[index] = { ...result[index], ...clone(item) };
+  }
+  return result;
+}
+
+function mergeRestoredBook(current, backup, { restoreFile = false, progressPreference = 'current' } = {}) {
+  const result = { ...clone(current), ...clone(backup), id: current.id };
+  result.file = restoreFile ? backup.file : current.file;
+  result.cover = restoreFile ? (backup.cover || current.cover) : current.cover;
+  if (!restoreFile) {
+    for (const key of ['bookSummary', 'chapterSummaries', 'searchIndex', 'ragIndex', 'contentIndex', 'parserIndex', 'chapterTexts', 'bookChunks', 'ragChunks']) {
+      if (key in current) result[key] = clone(current[key]);
+      else delete result[key];
+    }
+  }
+  result.progress = clone(progressPreference === 'backup' ? backup.progress || current.progress : current.progress || backup.progress);
+  result.notes = mergeById(current.notes, backup.notes, 'noteId');
+  result.bookmarks = mergeById(current.bookmarks, backup.bookmarks, 'bookmarkId');
+  result.aiChats = mergeById(current.aiChats, backup.aiChats, 'chatId');
+  const readingDays = { ...(current.stats?.readingDays || {}) };
+  for (const [date, seconds] of Object.entries(backup.stats?.readingDays || {})) readingDays[date] = Math.max(readingDays[date] || 0, seconds);
+  const hourlyDist = { ...(current.stats?.hourlyDist || {}) };
+  for (const [hour, seconds] of Object.entries(backup.stats?.hourlyDist || {})) hourlyDist[hour] = Math.max(hourlyDist[hour] || 0, seconds);
+  result.stats = { ...(current.stats || {}), ...(backup.stats || {}), readingDays, hourlyDist };
+  result.stats.totalTime = Object.values(result.stats.readingDays).reduce((sum, seconds) => sum + seconds, 0);
+  return restoreFile ? resetContentDerivedState(result) : result;
+}
+
+class BookLibrary {
+  constructor() { this.db = null; }
+
   async open() {
     if (this.db) return this.db;
-
-    // 請求瀏覽器持久化儲存保護，防止因硬碟空間不足被自動清除
-    if (navigator.storage && navigator.storage.persist) {
-      navigator.storage.persist().then(persisted => {
-        console.log('[BookLibrary] Storage persisted status:', persisted);
-      }).catch(err => {
-        console.warn('[BookLibrary] Failed to request storage persistence:', err);
-      });
-    }
-
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist) navigator.storage.persist().catch(() => {});
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onupgradeneeded = (event) => {
+      request.onupgradeneeded = event => {
         const db = event.target.result;
-        
-        // 建立書籍儲存空間
         if (!db.objectStoreNames.contains('books')) {
-          const bookStore = db.createObjectStore('books', { keyPath: 'id' });
-          bookStore.createIndex('addedAt', 'addedAt', { unique: false });
-          bookStore.createIndex('lastReadAt', 'lastReadAt', { unique: false });
+          const store = db.createObjectStore('books', { keyPath: 'id' });
+          store.createIndex('addedAt', 'addedAt', { unique: false });
+          store.createIndex('lastReadAt', 'lastReadAt', { unique: false });
         }
       };
-
-      request.onsuccess = (event) => {
-        this.db = event.target.result;
-        resolve(this.db);
-      };
-
-      request.onerror = (event) => {
-        console.error('IndexedDB open error:', event.target.error);
-        reject(event.target.error);
-      };
+      request.onsuccess = event => { this.db = event.target.result; resolve(this.db); };
+      request.onerror = () => reject(request.error);
     });
   }
 
-  // 確保 DB 處於開啟狀態
-  async _ensureOpen() {
-    if (!this.db) {
-      await this.open();
-    }
-  }
+  async _ensureOpen() { if (!this.db) await this.open(); }
 
-  // 輔助函數：將 File 物件轉回純 Blob 以保證 Safari IndexedDB 儲存時的穩定性，防止出現 NotFoundError ("The object can not be found here.")
   _cleanBookForStorage(book) {
-    if (!book) return book;
-    const clean = { ...book };
-    if (clean.file instanceof File) {
-      clean.file = new Blob([clean.file], { type: clean.file.type });
-    }
-    if (clean.cover instanceof File) {
-      clean.cover = new Blob([clean.cover], { type: clean.cover.type });
-    }
+    const clean = clone(book);
+    if (typeof File !== 'undefined' && clean.file instanceof File) clean.file = new Blob([clean.file], { type: clean.file.type });
+    if (typeof File !== 'undefined' && clean.cover instanceof File) clean.cover = new Blob([clean.cover], { type: clean.cover.type });
     return clean;
   }
 
-  // 添加書籍
   async addBook({ id, title, author, format, file, cover, size, fileHash }) {
     await this._ensureOpen();
-    const book = {
-      id: id || 'book_' + Date.now(),
-      title: title || 'Unknown Title',
-      author: author || 'Unknown Author',
-      format: format.toLowerCase(),
-      file,         // Blob
-      cover,        // string (DataURL) or Blob
-      size: size || 0,
-      fileHash: fileHash || '',
-      addedAt: Date.now(),
-      lastReadAt: 0,
-      progress: {
-        percent: 0,
-        chapterIndex: 0,
-        elementIndex: 0,
-        activeSentenceIndex: 0,
-        ttsActiveSentenceIndex: 0,
-        ttsChapterIndex: 0,
-        pdfPage: 1,
-        comicImageIndex: 0,
-        scrollTop: 0
-      },
-      bookmarks: [],
-      notes: [] // 保存劃線高亮與筆記
+    const book = { id: id || `book_${Date.now()}`, title: title || 'Unknown Title', author: author || 'Unknown Author', format: format.toLowerCase(), file, cover, size: size || 0, fileHash: fileHash || '', addedAt: Date.now(), lastReadAt: 0, progress: { percent: 0, chapterIndex: 0, elementIndex: 0, activeSentenceIndex: 0, ttsActiveSentenceIndex: 0, ttsChapterIndex: 0, pdfPage: 1, comicImageIndex: 0, scrollTop: 0 }, bookmarks: [], notes: [] };
+    const transaction = this.db.transaction('books', 'readwrite');
+    transaction.objectStore('books').add(this._cleanBookForStorage(book));
+    return new Promise((resolve, reject) => { transaction.oncomplete = () => resolve(clone(book)); transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transaction aborted')); });
+  }
+
+  async updateBook(id, updater) {
+    await this._ensureOpen();
+    if (typeof updater !== 'function') throw new TypeError('updateBook requires a synchronous updater function');
+    const transaction = this.db.transaction('books', 'readwrite');
+    const store = transaction.objectStore('books');
+    const getRequest = store.get(id);
+    let draft;
+    let committedResult;
+    let updaterError;
+    getRequest.onsuccess = () => {
+      if (!getRequest.result) { updaterError = new Error(`Book not found: ${id}`); transaction.abort(); return; }
+      try {
+        draft = clone(getRequest.result);
+        committedResult = updater(draft);
+        if (committedResult && typeof committedResult.then === 'function') throw new TypeError('updateBook updater must be synchronous');
+        const nextRecord = committedResult === undefined ? draft : committedResult;
+        if (!nextRecord || typeof nextRecord !== 'object' || Array.isArray(nextRecord)) throw new TypeError('updateBook updater must return an object or undefined');
+        if (nextRecord.id !== id) throw new TypeError(`updateBook updater must preserve book id: ${id}`);
+        committedResult = this._cleanBookForStorage(nextRecord);
+        store.put(committedResult);
+      } catch (error) { updaterError = error; transaction.abort(); }
     };
-
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.add(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+      let settled = false;
+      const fail = error => { if (!settled) { settled = true; reject(error); } };
+      getRequest.onerror = () => fail(getRequest.error);
+      transaction.onerror = () => fail(updaterError || transaction.error || getRequest.error || new Error('IndexedDB transaction failed'));
+      transaction.onabort = () => fail(updaterError || transaction.error || new Error('IndexedDB transaction aborted'));
+      transaction.oncomplete = () => { if (!settled) { settled = true; resolve(clone(committedResult === undefined ? draft : committedResult)); } };
     });
   }
 
-  // 覆蓋書籍檔案內容與元數據，但完整保留原有書籤、劃線筆記、統計資訊與資料夾
-  // 注意：進度索引（章節、句子位置）在文件替換後可能無效，需重置
-  async replaceBookContent(id, { title, author, format, file, cover, size, fileHash }) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.title = title || book.title;
-    book.author = author || book.author;
-    book.format = format ? format.toLowerCase() : book.format;
-    book.file = file;
-    book.cover = cover || book.cover;
-    book.size = size || book.size;
-    book.fileHash = fileHash || book.fileHash;
-    
-    // 重置位置相關的進度，因為新文件的章節結構可能不同
-    if (book.progress) {
-      book.progress.chapterIndex = 0;
-      book.progress.elementIndex = 0;
-      book.progress.scrollTop = 0;
-      book.progress.ttsActiveSentenceIndex = 0;
-      book.progress.ttsChapterIndex = 0;
-      book.progress.activeSentenceIndex = 0;
-      book.progress.currentPageIndex = 0;
-      book.progress.pdfPage = 1;
-      book.progress.comicImageIndex = 0;
-      book.progress.percent = 0;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+  async replaceBookContent(id, incoming) {
+    return this.updateBook(id, book => {
+      const replacement = resetContentDerivedState({ ...book, ...incoming, format: incoming.format?.toLowerCase() || book.format, file: incoming.file, cover: incoming.cover || book.cover, size: incoming.size || book.size, fileHash: incoming.fileHash || book.fileHash });
+      replacement.progress = { ...(replacement.progress || {}), percent: 0, chapterIndex: 0, elementIndex: 0, activeSentenceIndex: 0, ttsActiveSentenceIndex: 0, ttsChapterIndex: 0, pdfPage: 1, comicImageIndex: 0, currentPageIndex: 0, scrollTop: 0 };
+      return replacement;
     });
   }
 
-  // 更新書籍記錄（完整儲存）
-  async updateBook(book) {
+  async importBook(backupBook, options = {}) {
     await this._ensureOpen();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 導入/還原書籍（如果現有書庫已有相同的書籍，進行合併）
-  async importBook(backupBook) {
-    await this._ensureOpen();
-
-    // 1. 獲取所有現有書籍
-    const existingBooks = await this.getAllBooks();
-
-    // 2. 尋找相同的書籍 (ID 相同，或 書名+作者+格式 相同)
-    const existingBook = existingBooks.find(ex =>
-      ex.id === backupBook.id ||
-      (ex.title && backupBook.title && ex.title.trim() === backupBook.title.trim() &&
-       ex.author && backupBook.author && ex.author.trim() === backupBook.author.trim() &&
-       ex.format && backupBook.format && ex.format.toLowerCase() === backupBook.format.toLowerCase())
-    );
-
-    let mergedBook;
-    if (existingBook) {
-      // 合併記錄
-      // 進度合併 (以 lastReadAt 較新者為準覆寫閱讀位置)
-      const mergedProgress = { ...existingBook.progress, ...backupBook.progress };
-      const existingLastRead = existingBook.lastReadAt || 0;
-      const backupLastRead = backupBook.lastReadAt || 0;
-
-      if (existingLastRead > backupLastRead) {
-        // 保留現有書庫的位置
-        if (existingBook.progress) {
-          mergedProgress.chapterIndex = existingBook.progress.chapterIndex ?? mergedProgress.chapterIndex;
-          mergedProgress.elementIndex = existingBook.progress.elementIndex ?? mergedProgress.elementIndex;
-          mergedProgress.activeSentenceIndex = existingBook.progress.activeSentenceIndex ?? mergedProgress.activeSentenceIndex;
-          mergedProgress.ttsChapterIndex = existingBook.progress.ttsChapterIndex ?? mergedProgress.ttsChapterIndex;
-          mergedProgress.ttsActiveSentenceIndex = existingBook.progress.ttsActiveSentenceIndex ?? mergedProgress.ttsActiveSentenceIndex;
-          mergedProgress.percent = existingBook.progress.percent ?? mergedProgress.percent;
-          mergedProgress.scrollTop = existingBook.progress.scrollTop ?? mergedProgress.scrollTop;
-          mergedProgress.pdfPage = existingBook.progress.pdfPage ?? mergedProgress.pdfPage;
-          mergedProgress.comicImageIndex = existingBook.progress.comicImageIndex ?? mergedProgress.comicImageIndex;
-        }
-      }
-
-      // 合併書籤 (避免重複)
-      const mergedBookmarks = [...(existingBook.bookmarks || [])];
-      if (backupBook.bookmarks) {
-        for (const b of backupBook.bookmarks) {
-          const isDuplicate = mergedBookmarks.some(ex =>
-            ex.bookmarkId === b.bookmarkId ||
-            (ex.chapterIndex === b.chapterIndex &&
-             ex.elementIndex === b.elementIndex &&
-             ex.pdfPage === b.pdfPage &&
-             ex.currentPageIndex === b.currentPageIndex)
-          );
-          if (!isDuplicate) {
-            mergedBookmarks.push(b);
-          }
-        }
-      }
-
-      // 合併劃線筆記 (避免重複)
-      const mergedNotes = [...(existingBook.notes || [])];
-      if (backupBook.notes) {
-        for (const n of backupBook.notes) {
-          const isDuplicate = mergedNotes.some(ex =>
-            ex.noteId === n.noteId ||
-            (ex.chapterIndex === n.chapterIndex &&
-             ex.sentenceIndex === n.sentenceIndex &&
-             ex.text === n.text &&
-             ex.type === n.type &&
-             ex.pdfPage === n.pdfPage &&
-             ex.comicImageIndex === n.comicImageIndex)
-          );
-          if (!isDuplicate) {
-            mergedNotes.push(n);
-          }
-        }
-      }
-
-      // 合併 AI 溝通記錄 (避免重複)
-      const mergedAIChats = [...(existingBook.aiChats || [])];
-      if (backupBook.aiChats) {
-        for (const c of backupBook.aiChats) {
-          const isDuplicate = mergedAIChats.some(ex => ex.chatId === c.chatId);
-          if (!isDuplicate) {
-            mergedAIChats.push(c);
-          }
-        }
-      }
-
-      // 合併閱讀統計資訊
-      // 策略：同一天的閱讀時間取兩份資料中的「最大值」而非直接相加，
-      //       以防備份-還原後同一段閱讀時間被重複累計（例如同設備備份後還原）。
-      //       hourlyDist 同理，同一個小時取最大值。
-      //       totalTime 最後從合併後的 readingDays 重新加總，確保與明細一致。
-      const mergedReadingDays = { ...(existingBook.stats?.readingDays || {}) };
-      if (backupBook.stats?.readingDays) {
-        for (const [date, sec] of Object.entries(backupBook.stats.readingDays)) {
-          mergedReadingDays[date] = Math.max(mergedReadingDays[date] || 0, sec);
-        }
-      }
-
-      const mergedHourlyDist = { ...(existingBook.stats?.hourlyDist || {}) };
-      if (backupBook.stats?.hourlyDist) {
-        for (const [hour, sec] of Object.entries(backupBook.stats.hourlyDist)) {
-          mergedHourlyDist[hour] = Math.max(mergedHourlyDist[hour] || 0, sec);
-        }
-      }
-
-      // totalTime 從合併後的每日資料重新彙總，確保不出現因直接相加導致的虛報時間
-      const recalculatedTotalTime = Object.values(mergedReadingDays).reduce((sum, sec) => sum + sec, 0);
-
-      const mergedStats = {
-        totalTime: recalculatedTotalTime,
-        readingDays: mergedReadingDays,
-        hourlyDist: mergedHourlyDist
-      };
-
-      mergedBook = {
-        id: existingBook.id, // 使用現有書籍的 ID 以免重複
-        title: existingBook.title,
-        author: existingBook.author,
-        format: existingBook.format,
-        file: existingBook.file || backupBook.file, // 優先使用現有檔案
-        cover: existingBook.cover || backupBook.cover,
-        folder: existingBook.folder || backupBook.folder, // 優先使用現有資料夾
-        size: existingBook.size || backupBook.size,
-        addedAt: Math.min(existingBook.addedAt || Date.now(), backupBook.addedAt || Date.now()),
-        lastReadAt: Math.max(existingLastRead, backupLastRead),
-        progress: mergedProgress,
-        bookmarks: mergedBookmarks,
-        notes: mergedNotes,
-        aiChats: mergedAIChats,
-        stats: mergedStats,
-        bookSummary: existingBook.bookSummary || backupBook.bookSummary || '',
-        chapterSummaries: { ...(existingBook.chapterSummaries || {}), ...(backupBook.chapterSummaries || {}) }
-      };
-    } else {
-      // 沒找到相同的書籍，直接使用導入的書籍
-      mergedBook = backupBook;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(mergedBook));
-
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 獲取所有書籍 (按最後閱讀時間，再按新增時間排序)
-  async getAllBooks() {
-    await this._ensureOpen();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readonly');
-      const store = transaction.objectStore('books');
-      const request = store.getAll();
-
-      request.onsuccess = () => {
-        const books = request.result;
-        // 排序：有閱讀過的排在前面（按最後閱讀時間降序），其次按添加時間降序
-        books.sort((a, b) => {
-          if (b.lastReadAt !== a.lastReadAt) {
-            return b.lastReadAt - a.lastReadAt;
-          }
-          return b.addedAt - a.addedAt;
-        });
-        resolve(books);
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 獲取單本書籍
-  async getBook(id) {
-    await this._ensureOpen();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readonly');
-      const store = transaction.objectStore('books');
-      const request = store.get(id);
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 刪除書籍
-  async deleteBook(id) {
-    await this._ensureOpen();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.delete(id);
-
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 更新閱讀進度
-  async updateProgress(id, progressUpdate) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.progress = { ...book.progress, ...progressUpdate };
-    book.lastReadAt = Date.now();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 更新書籍封面
-  async updateBookCover(id, cover) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.cover = cover;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 更新書籍資料夾
-  async updateBookFolder(id, folder) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.folder = folder;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 保存或更新高亮筆記
-  async saveNote(id, note) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.notes) book.notes = [];
-    
-    // 檢查是否已存在同一個高亮 (基於選取字元範圍或 selector)
-    const existingIndex = book.notes.findIndex(n => n.noteId === note.noteId);
-    if (existingIndex > -1) {
-      book.notes[existingIndex] = { ...book.notes[existingIndex], ...note };
-    } else {
-      book.notes.push({
-        noteId: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-        createdAt: Date.now(),
-        ...note
-      });
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.notes);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 刪除高亮筆記
-  async deleteNote(id, noteId) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (book.notes) {
-      book.notes = book.notes.filter(n => n.noteId !== noteId);
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.notes);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 保存書籤
-  async saveBookmark(id, bookmark) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.bookmarks) book.bookmarks = [];
-    
-    // 檢查是否已存在該書籤
-    const existingIndex = book.bookmarks.findIndex(b => b.chapterIndex === bookmark.chapterIndex && b.elementIndex === bookmark.elementIndex && b.pdfPage === bookmark.pdfPage);
-    if (existingIndex === -1) {
-      book.bookmarks.push({
-        bookmarkId: 'bookmark_' + Date.now(),
-        createdAt: Date.now(),
-        title: bookmark.title || 'Bookmark',
-        chapterIndex: bookmark.chapterIndex || 0,
-        elementIndex: bookmark.elementIndex || 0,
-        currentPageIndex: bookmark.currentPageIndex || 0,
-        pdfPage: bookmark.pdfPage || 1
-      });
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.bookmarks);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 刪除書籤
-  async deleteBookmark(id, bookmarkId) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (book.bookmarks) {
-      book.bookmarks = book.bookmarks.filter(b => b.bookmarkId !== bookmarkId);
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.bookmarks);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 累加閱讀統計資訊
-  async addReadingDuration(id, seconds) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.stats) {
-      book.stats = {
-        totalTime: 0,
-        readingDays: {},
-        hourlyDist: {}
-      };
-    }
-
-    const now = new Date();
-    const dateStr = now.getFullYear() + '-' + 
-                    String(now.getMonth() + 1).padStart(2, '0') + '-' + 
-                    String(now.getDate()).padStart(2, '0');
-    const hour = now.getHours();
-
-    book.stats.totalTime = (book.stats.totalTime || 0) + seconds;
-    book.stats.readingDays[dateStr] = (book.stats.readingDays[dateStr] || 0) + seconds;
-    book.stats.hourlyDist[hour] = (book.stats.hourlyDist[hour] || 0) + seconds;
-    book.lastReadAt = Date.now();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 清理單本書籍的閱讀統計
-  async clearBookStats(id) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.stats = {
-      totalTime: 0,
-      readingDays: {},
-      hourlyDist: {}
+    const transaction = this.db.transaction('books', 'readwrite');
+    const store = transaction.objectStore('books');
+    const request = store.getAll();
+    let result;
+    let error;
+    request.onsuccess = () => {
+      try {
+        const existing = request.result.find(book => book.id === backupBook.id || (book.title && backupBook.title && book.title.trim() === backupBook.title.trim() && book.author && backupBook.author && book.author.trim() === backupBook.author.trim() && book.format && backupBook.format && book.format.toLowerCase() === backupBook.format.toLowerCase()));
+        result = existing ? mergeRestoredBook(existing, backupBook, options) : clone(backupBook);
+        store.put(this._cleanBookForStorage(result));
+      } catch (cause) { error = cause; transaction.abort(); }
     };
-
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+      let settled = false;
+      const fail = cause => { if (!settled) { settled = true; reject(cause); } };
+      request.onerror = () => fail(request.error);
+      transaction.onerror = () => fail(error || transaction.error || request.error);
+      transaction.onabort = () => fail(error || transaction.error || new Error('IndexedDB transaction aborted'));
+      transaction.oncomplete = () => { if (!settled) { settled = true; resolve(clone(result)); } };
     });
   }
 
-  // 清理所有書籍的閱讀統計
+  async getAllBooks() { await this._ensureOpen(); return new Promise((resolve, reject) => { const tx = this.db.transaction('books', 'readonly'); const request = tx.objectStore('books').getAll(); request.onsuccess = () => resolve(request.result.sort((a, b) => (b.lastReadAt - a.lastReadAt) || (b.addedAt - a.addedAt))); request.onerror = () => reject(request.error); }); }
+  async getBook(id) { await this._ensureOpen(); return new Promise((resolve, reject) => { const tx = this.db.transaction('books', 'readonly'); const request = tx.objectStore('books').get(id); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+  async deleteBook(id) { await this._ensureOpen(); return new Promise((resolve, reject) => { const tx = this.db.transaction('books', 'readwrite'); tx.objectStore('books').delete(id); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted')); }); }
+
+  async updateProgress(id, update) { return this.updateBook(id, book => { book.progress = { ...book.progress, ...update }; book.lastReadAt = Date.now(); return book; }); }
+  async updateBookCover(id, cover) { return this.updateBook(id, book => { book.cover = cover; return book; }); }
+  async updateBookFolder(id, folder) { return this.updateBook(id, book => { book.folder = folder; return book; }); }
+  async saveNote(id, note) { const book = await this.updateBook(id, book => { book.notes ||= []; const normalized = { ...note }; if (typeof normalized.noteId !== 'string' || !normalized.noteId.trim()) normalized.noteId = `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; const index = book.notes.findIndex(item => item.noteId === normalized.noteId); if (index >= 0) book.notes[index] = { ...book.notes[index], ...normalized }; else book.notes.push({ createdAt: Date.now(), ...normalized }); }); return book.notes; }
+  async deleteNote(id, noteId) { const book = await this.updateBook(id, book => { book.notes = (book.notes || []).filter(note => note.noteId !== noteId); }); return book.notes; }
+  async saveBookmark(id, bookmark) { const book = await this.updateBook(id, book => { book.bookmarks ||= []; const bookmarkId = typeof bookmark.bookmarkId === 'string' && bookmark.bookmarkId.trim() ? bookmark.bookmarkId : `bookmark_${Date.now()}`; if (!book.bookmarks.some(item => item.chapterIndex === bookmark.chapterIndex && item.elementIndex === bookmark.elementIndex && item.pdfPage === bookmark.pdfPage)) book.bookmarks.push({ ...bookmark, bookmarkId, createdAt: Date.now(), title: bookmark.title || 'Bookmark', chapterIndex: bookmark.chapterIndex || 0, elementIndex: bookmark.elementIndex || 0, currentPageIndex: bookmark.currentPageIndex || 0, pdfPage: bookmark.pdfPage || 1 }); }); return book.bookmarks; }
+  async deleteBookmark(id, bookmarkId) { const book = await this.updateBook(id, book => { book.bookmarks = (book.bookmarks || []).filter(item => item.bookmarkId !== bookmarkId); }); return book.bookmarks; }
+  async addReadingDuration(id, seconds) { return this.updateBook(id, book => { book.stats ||= { totalTime: 0, readingDays: {}, hourlyDist: {} }; const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; const hour = now.getHours(); book.stats.totalTime = (book.stats.totalTime || 0) + seconds; book.stats.readingDays[date] = (book.stats.readingDays[date] || 0) + seconds; book.stats.hourlyDist[hour] = (book.stats.hourlyDist[hour] || 0) + seconds; book.lastReadAt = Date.now(); return book; }); }
+  async clearBookStats(id) { return this.updateBook(id, book => { book.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} }; return book; }); }
   async clearAllStats() {
     await this._ensureOpen();
-    const books = await this.getAllBooks();
-
-    return new Promise((resolve, reject) => {
-      if (books.length === 0) {
-        resolve(true);
-        return;
+    const transaction = this.db.transaction('books', 'readwrite');
+    const store = transaction.objectStore('books');
+    const request = store.getAll();
+    let operationError;
+    request.onsuccess = () => {
+      try {
+        for (const book of request.result) {
+          book.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} };
+          const putRequest = store.put(this._cleanBookForStorage(book));
+          putRequest.onerror = () => { operationError = putRequest.error; };
+        }
+      } catch (error) {
+        operationError = error;
+        transaction.abort();
       }
-
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-
-      let completed = 0;
-      let hasError = false;
-
-      books.forEach(book => {
-        book.stats = {
-          totalTime: 0,
-          readingDays: {},
-          hourlyDist: {}
-        };
-        const request = store.put(this._cleanBookForStorage(book));
-        request.onsuccess = () => {
-          completed++;
-          if (completed === books.length && !hasError) {
-            resolve(true);
-          }
-        };
-        request.onerror = () => {
-          if (!hasError) {
-            hasError = true;
-            reject(request.error);
-          }
-        };
-      });
+    };
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = error => { if (!settled) { settled = true; reject(error); } };
+      request.onerror = () => fail(request.error);
+      transaction.onerror = () => fail(operationError || transaction.error || request.error || new Error('IndexedDB transaction failed'));
+      transaction.onabort = () => fail(operationError || transaction.error || new Error('IndexedDB transaction aborted'));
+      transaction.oncomplete = () => { if (!settled) { settled = true; resolve(true); } };
     });
   }
+  async saveAIChat(id, chat) { const book = await this.updateBook(id, book => { book.aiChats ||= []; const chatId = typeof chat.chatId === 'string' && chat.chatId.trim() ? chat.chatId : `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; book.aiChats.push({ ...chat, chatId, createdAt: Date.now(), query: chat.query, reply: chat.reply }); }); return book.aiChats; }
+  async deleteAIChat(id, chatId) { const book = await this.updateBook(id, book => { book.aiChats = (book.aiChats || []).filter(chat => chat.chatId !== chatId); }); return book.aiChats; }
+  async clearAllAIChats(id) { const book = await this.updateBook(id, book => { book.aiChats = []; }); return book.aiChats; }
+  async saveBookSummary(id, summary) { const book = await this.updateBook(id, book => { book.bookSummary = summary; }); return book.bookSummary; }
+  async saveChapterSummary(id, index, summary) { const book = await this.updateBook(id, book => { book.chapterSummaries ||= {}; book.chapterSummaries[index] = summary; }); return book.chapterSummaries; }
+}
 
 
+// ==========================================
+// Module: reader/operation-ownership.js
+// ==========================================
+class OperationOwner {
+  #generation = 0;
+  #token = null;
 
-  // 保存 AI 溝通記錄
-  async saveAIChat(id, chat) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.aiChats) book.aiChats = [];
-    
-    book.aiChats.push({
-      chatId: chat.chatId || 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      createdAt: Date.now(),
-      query: chat.query,
-      reply: chat.reply
-    });
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.aiChats);
-      request.onerror = () => reject(request.error);
-    });
+  begin(bookId) {
+    this.#token = Object.freeze({ generation: ++this.#generation, bookId });
+    return this.#token;
   }
 
-  // 刪除單一 AI 溝通記錄
-  async deleteAIChat(id, chatId) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (book.aiChats) {
-      book.aiChats = book.aiChats.filter(c => c.chatId !== chatId);
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.aiChats);
-      request.onerror = () => reject(request.error);
-    });
+  invalidate() {
+    this.#generation += 1;
+    this.#token = null;
   }
 
-  // 清除全部 AI 溝通記錄
-  async clearAllAIChats(id) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.aiChats = [];
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.aiChats);
-      request.onerror = () => reject(request.error);
-    });
+  currentToken() {
+    return this.#token;
   }
 
-  // 保存全書深度分析摘要
-  async saveBookSummary(id, summary) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    book.bookSummary = summary;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.bookSummary);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 保存單個章節的摘要
-  async saveChapterSummary(id, index, summary) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.chapterSummaries) book.chapterSummaries = {};
-    book.chapterSummaries[index] = summary;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.chapterSummaries);
-      request.onerror = () => reject(request.error);
-    });
+  isCurrent(token, bookId = token?.bookId) {
+    return token?.generation === this.#generation && token.bookId === bookId;
   }
 }
 
@@ -15285,6 +14801,11 @@ class TTSEngine {
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
     this.playbackStartSessionIndex = null;
+    this.playbackGeneration = 0;
+    this.ownerBookId = null;
+    this.activeRequests = new Set();
+    this.retryTimers = new Set();
+    this.requestTimeoutMs = 15000;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -15331,6 +14852,38 @@ class TTSEngine {
     this._initVoices();
   }
 
+  _clearTimer(timer) {
+    clearTimeout(timer);
+  }
+
+  _cancelActiveRequests(reason = 'cancelled') {
+    const requests = [...this.activeRequests];
+    this.activeRequests.clear();
+    requests.forEach(request => {
+      if (request.cancelled) return;
+      request.cancelled = true;
+      try { request.cancel?.(reason); } catch (e) {}
+    });
+    this.retryTimers.forEach(timer => this._clearTimer(timer));
+    this.retryTimers.clear();
+  }
+
+  _beginSession(bookId = this.ownerBookId) {
+    this._cancelActiveRequests('superseded');
+    this.ownerBookId = bookId ?? null;
+    return ++this.playbackGeneration;
+  }
+
+  _isCurrentSession(sessionId, bookId = this.ownerBookId) {
+    return sessionId === this.playbackGeneration && bookId === this.ownerBookId;
+  }
+
+  async _runOwnedTransition(chapterIndex, sessionId, bookId, onComplete) {
+    if (!this._isCurrentSession(sessionId, bookId) || !this.onChapterTransition) return;
+    await this.onChapterTransition(chapterIndex);
+    if (this._isCurrentSession(sessionId, bookId)) onComplete?.();
+  }
+
   // 設置配置項
   configure({ provider, apiKey, endpoint, model }) {
     let voiceChanged = false;
@@ -15348,6 +14901,7 @@ class TTSEngine {
       this.ttsModel = model;
     }
     if (voiceChanged) {
+      this._beginSession(this.ownerBookId);
       this._initVoices();
     }
   }
@@ -16193,9 +15747,36 @@ class TTSEngine {
     return name;
   }
 
-  _downloadSentenceAudio(sentence) {
+  _downloadSentenceAudio(sentence, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
     return new Promise(async (resolve, reject) => {
+      let settled = false;
+      let ws = null;
+      let timeoutId = null;
+      let controller = null;
+      const request = {
+        cancelled: false,
+        cancel: (reason) => {
+          controller?.abort(new DOMException(reason, 'AbortError'));
+          if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
+          const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
+          if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
+          finish(new DOMException(reason, 'AbortError'));
+        }
+      };
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        this.activeRequests.delete(request);
+        if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
+        error ? reject(error) : resolve(value);
+      };
+      this.activeRequests.add(request);
       try {
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          finish(new DOMException('stale TTS session', 'AbortError'));
+          return;
+        }
         if (this.ttsProvider === 'openai' || this.ttsProvider === 'local') {
           try {
             const defaultEndpoint = this.ttsProvider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:5000/v1';
@@ -16225,9 +15806,11 @@ class TTSEngine {
               }
             }
 
+            controller = new AbortController();
             const response = await fetch(endpoint, {
               method: 'POST',
               headers: headers,
+              signal: controller.signal,
               body: JSON.stringify({
                 model: model,
                 input: speakText,
@@ -16242,14 +15825,16 @@ class TTSEngine {
             }
 
             const blob = await response.blob();
-            resolve(blob);
+            if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
+            finish(null, blob);
           } catch (e) {
-            reject(e);
+            finish(e);
           }
           return;
         }
 
         const secMsGec = await this._generateSecMsGecToken();
+        if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
         
@@ -16280,9 +15865,11 @@ class TTSEngine {
               return new Blob([byteArray], { type: mimeType });
             };
             const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
-            resolve(blob);
+            if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
+            finish(null, blob);
             return;
           } catch (nativeErr) {
+            if (!this._isCurrentSession(sessionId, bookId)) throw nativeErr;
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
           }
         }
@@ -16302,12 +15889,17 @@ class TTSEngine {
                 `&Sec-MS-GEC-Version=1-143.0.3650.75`;
         }
                     
-        const ws = new WebSocket(url);
+        ws = new WebSocket(url);
         const audioChunks = [];
+        timeoutId = setTimeout(() => finish(new Error('TTS request timed out')), this.requestTimeoutMs);
         
         ws.binaryType = 'arraybuffer';
         
         ws.onopen = () => {
+          if (!this._isCurrentSession(sessionId, bookId)) {
+            finish(new DOMException('stale TTS session', 'AbortError'));
+            return;
+          }
           const configMsg = 
             `X-Timestamp:${this._dateToString()}\r\n` +
             `Content-Type:application/json; charset=utf-8\r\n` +
@@ -16406,17 +15998,17 @@ class TTSEngine {
         ws.onclose = () => {
           if (audioChunks.length > 0) {
             const blob = new Blob(audioChunks, { type: 'audio/mpeg' });
-            resolve(blob);
+            finish(null, blob);
           } else {
-            reject(new Error("No audio data received"));
+            finish(new Error("No audio data received"));
           }
         };
         
         ws.onerror = (err) => {
-          reject(err);
+          finish(err instanceof Error ? err : new Error('TTS WebSocket error'));
         };
       } catch (e) {
-        reject(e);
+        finish(e);
       }
     });
   }
@@ -16460,14 +16052,14 @@ class TTSEngine {
   }
 
   // 4. 預加載控制與播放隊列
-  _fetchSentence(index, retryCount = 0) {
+  _fetchSentence(index, retryCount = 0, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
     const voice = this.selectedVoice;
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    if (index >= this.sentences.length) return;
-    if (this.audioCache.has(index)) return;
-    if (retryCount === 0 && this.fetchingIndices.has(index)) return;
+    if (index >= this.sentences.length) return Promise.resolve();
+    if (this.audioCache.has(index)) return Promise.resolve();
+    if (retryCount === 0 && this.fetchingIndices.has(index)) return Promise.resolve();
 
     // 判斷是否進入“分組（10句）發送”階段：
     // 每當開始播放（即 playbackStartSessionIndex 已設定），前10句（index < session + 10）單句獲取以保證極速啟動，
@@ -16480,17 +16072,21 @@ class TTSEngine {
       this.fetchingIndices.add(index);
       const sentence = this.sentences[index];
       
-      this._downloadSentenceAudio(sentence).then(blob => {
+      return this._downloadSentenceAudio(sentence, sessionId, bookId).then(blob => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         this.consecutiveWsFailures = 0;
-        this._saveToCache(index, blob);
+        this._saveToCache(index, blob, sessionId, bookId);
       }).catch(err => {
-        console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         this.fetchingIndices.delete(index);
+        if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
+        console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         
         if (retryCount < 2) {
-          setTimeout(() => {
-            this._fetchSentence(index, retryCount + 1);
+          const timer = setTimeout(() => {
+            this.retryTimers.delete(timer);
+            if (this._isCurrentSession(sessionId, bookId)) this._fetchSentence(index, retryCount + 1, sessionId, bookId);
           }, 1500);
+          this.retryTimers.add(timer);
           return;
         }
         
@@ -16583,26 +16179,38 @@ class TTSEngine {
         isHeading: groupSentences[groupSentences.length - 1].isHeading
       };
       
-      this._downloadSentenceAudio(virtualSentence).then(blob => {
+      return this._downloadSentenceAudio(virtualSentence, sessionId, bookId).then(blob => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         this.consecutiveWsFailures = 0;
-        this._saveGroupToCache(groupStartIndex, groupSentences, blob);
+        this._saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId, bookId);
       }).catch(err => {
-        console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         this.fetchingIndices.delete(groupStartIndex);
+        if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
+        console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         
         if (retryCount < 2) {
-          setTimeout(() => {
-            this._fetchSentence(groupStartIndex, retryCount + 1);
+          const timer = setTimeout(() => {
+            this.retryTimers.delete(timer);
+            if (this._isCurrentSession(sessionId, bookId)) this._fetchSentence(groupStartIndex, retryCount + 1, sessionId, bookId);
           }, 1500);
+          this.retryTimers.add(timer);
         }
       });
     }
   }
 
-  _saveToCache(index, blob) {
+  _saveToCache(index, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    if (!this._isCurrentSession(sessionId, bookId)) {
+      this.fetchingIndices.delete(index);
+      return;
+    }
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
       reader.onloadend = () => {
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          this.fetchingIndices.delete(index);
+          return;
+        }
         this.audioCache.set(index, {
           blobUrl: reader.result,
           isReady: true,
@@ -16624,8 +16232,13 @@ class TTSEngine {
     }
   }
 
-  _saveGroupToCache(groupStartIndex, groupSentences, blob) {
+  _saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
     const onUrlReady = (blobUrl) => {
+      if (!this._isCurrentSession(sessionId, bookId)) {
+        this.fetchingIndices.delete(groupStartIndex);
+        if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+        return;
+      }
       // 快取分組的音訊源，記錄所包含的句子清單
       this.audioCache.set(groupStartIndex, {
         blobUrl,
@@ -16723,6 +16336,8 @@ class TTSEngine {
 
   _playActiveSentence() {
     if (!this.isPlaying) return;
+    const sessionId = this.playbackGeneration;
+    const bookId = this.ownerBookId;
     
     const index = this.currentIndex;
     if (index >= this.sentences.length) {
@@ -16816,6 +16431,7 @@ class TTSEngine {
       audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
       audio.onloadedmetadata = () => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         audio.playbackRate = this.rate;
         setupGroupSeeking();
       };
@@ -16831,7 +16447,7 @@ class TTSEngine {
     
     if (isGroupPlay) {
       audio.ontimeupdate = () => {
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         const boundaries = getBoundaries();
         if (!boundaries) return;
@@ -16872,7 +16488,7 @@ class TTSEngine {
                 const p = this.onChapterTransition(currentSentence.chapterIndex);
                 if (p && typeof p.then === 'function') {
                   p.then(() => {
-                    if (!this.isPlaying) return;
+                    if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
                     doGroupHighlight();
                   });
                 } else {
@@ -16917,7 +16533,7 @@ class TTSEngine {
           this.audioCache.delete(groupStartIndex + i);
         }
         
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
@@ -16928,7 +16544,7 @@ class TTSEngine {
       };
     } else {
       audio.ontimeupdate = () => {
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
         const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
@@ -16958,7 +16574,7 @@ class TTSEngine {
         }
         this.audioCache.delete(index);
         
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
         
         // 若下一句還沒有被觸發播放，則在此手動觸發
         if (!hasTriggeredNext) {
@@ -16971,8 +16587,12 @@ class TTSEngine {
     }
 
     const startPlay = () => {
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       audio.play().then(() => {
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          audio.pause();
+          return;
+        }
         // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
         if (prevAudio && prevAudio !== audio) {
           try {
@@ -16995,6 +16615,7 @@ class TTSEngine {
         // 在音訊實際開始播放時，才執行高亮和回調，消除播放延遲導致的高亮超前
         doHighlightAndCallbacks();
       }).catch(err => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         console.error("Audio play error:", err);
         this._stopPolling(); // 確保停止輪詢
         audio.ontimeupdate = null;
@@ -17032,7 +16653,7 @@ class TTSEngine {
         const transitionPromise = this.onChapterTransition(sentence.chapterIndex);
         if (transitionPromise && typeof transitionPromise.then === 'function') {
           transitionPromise.then(() => {
-            if (!this.isPlaying) return;
+            if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
             startPlay();
           });
         } else {
@@ -17050,6 +16671,8 @@ class TTSEngine {
 
   _speakNativeSentence(index) {
     if (!this.isPlaying) return;
+    const sessionId = this.playbackGeneration;
+    const bookId = this.ownerBookId;
     if (index >= this.sentences.length) {
       this.stop();
       if (this.onPlaybackEnd) this.onPlaybackEnd();
@@ -17090,7 +16713,7 @@ class TTSEngine {
     utterance.volume = this.volume;
 
     utterance.onstart = () => {
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       this.currentIndex = index;
       this.currentlyPlayingIndex = index; // 同步更新實際播放索引
       
@@ -17111,7 +16734,7 @@ class TTSEngine {
           const p = this.onChapterTransition(sentence.chapterIndex);
           if (p && typeof p.then === 'function') {
             p.then(() => {
-              if (!this.isPlaying) return;
+              if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
               doNativeHighlight();
             });
           } else {
@@ -17135,7 +16758,7 @@ class TTSEngine {
 
     utterance.onend = () => {
       this.nativeQueue.delete(index);
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       
       // 若下一句已在隊列中準備播放，則交由瀏覽器原生隊列切換，防止重複觸發
       if (this.nativeQueue.has(index + 1)) {
@@ -17152,7 +16775,7 @@ class TTSEngine {
     utterance.onerror = (err) => {
       console.error("SpeechSynthesis utterance error:", err);
       this.nativeQueue.delete(index);
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
       
       if (this.nativeQueue.has(index + 1)) {
         return;
@@ -17232,8 +16855,9 @@ class TTSEngine {
     }
   }
 
-  play(index = 0, isAbsolute = false) {
+  play(index = 0, isAbsolute = false, bookId = this.ownerBookId) {
     if (this.sentences.length === 0) return;
+    const sessionId = this._beginSession(bookId);
     
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
     this.isPlaying = false;
@@ -17299,7 +16923,7 @@ class TTSEngine {
     this.playbackStartSessionIndex = this.currentIndex;
     
     // 點擊正文後，只向 tts 引擎發送 1 句 (當前句)
-    this._fetchSentence(this.currentIndex);
+    this._fetchSentence(this.currentIndex, 0, sessionId, bookId);
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -17308,6 +16932,7 @@ class TTSEngine {
         const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
         const sentence = this.sentences[this.currentIndex];
         const coverBase64 = await getBookCoverBase64();
+        if (!this._isCurrentSession(sessionId, bookId)) return;
         window.Capacitor.Plugins.NativeTTS.startForegroundService({
           title: bookTitle,
           artist: bookArtist,
@@ -17327,6 +16952,8 @@ class TTSEngine {
   // 預加載下一章，並將句子直接追加到當前的 sentences 列表中以實現在線預合成
   async _prefetchNextChapter() {
     if (!this.getNextChapterData || this.currentChapterIndex === undefined) return;
+    const sessionId = this.playbackGeneration;
+    const bookId = this.ownerBookId;
     
     const targetNextIndex = this.currentChapterIndex + 1;
     if (this.prefetchedChapterIndex === targetNextIndex) return;
@@ -17336,7 +16963,7 @@ class TTSEngine {
     
     try {
       const nextChapter = await this.getNextChapterData(this.currentChapterIndex);
-      if (!nextChapter || !this.isPlaying) {
+      if (!nextChapter || !this.isPlaying || !this._isCurrentSession(sessionId, bookId)) {
         if (this.prefetchedChapterIndex === targetNextIndex) {
           this.prefetchedChapterIndex = null;
         }
@@ -17539,6 +17166,7 @@ class TTSEngine {
   }
 
   stop() {
+    this._beginSession(null);
     // 先保留 currentlyPlayingIndex 的值，以便 onStateChange 回調可以正確保存最後播放位置
     const lastPlayingIndex = this.currentlyPlayingIndex;
     this.isPlaying = false;
@@ -17677,6 +17305,10 @@ class TTSEngine {
     this.selectedVoice = newVoice;
     
     if (isChanged) {
+      const wasPlaying = this.isPlaying;
+      const currentIndex = this.currentIndex;
+      const bookId = this.ownerBookId;
+      this._beginSession(bookId);
       this.audioCache.forEach(cached => {
         if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
           URL.revokeObjectURL(cached.blobUrl);
@@ -17684,13 +17316,9 @@ class TTSEngine {
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
+      if (wasPlaying) this.play(currentIndex, true, bookId);
     }
 
-    if (this.isPlaying) {
-      if (isChanged) {
-        this.play(this.currentIndex, true);
-      }
-    }
   }
 
   _highlightSentence(sentence) {
@@ -17843,6 +17471,19 @@ class AIEngine {
     this.model = '';
   }
 
+  _assertCurrent(context) {
+    if (context?.controller?.signal.aborted || (context?.isCurrent && !context.isCurrent())) {
+      throw context?.controller?.signal.reason || new DOMException('stale AI operation', 'AbortError');
+    }
+  }
+
+  _ownedChunk(context, onChunk) {
+    return chunk => {
+      this._assertCurrent(context);
+      onChunk?.(chunk);
+    };
+  }
+
   // 設置配置項
   configure({ provider, apiKey, endpoint, model }) {
     if (provider) this.provider = provider;
@@ -17884,7 +17525,7 @@ class AIEngine {
   }
 
   // 建立內置 AI 會話
-  async _createSession(systemPrompt = '') {
+  async _createSession(systemPrompt = '', context = null) {
     if (!this.isSupported) {
       const errMsg = getMsg('ai_builtin_not_supported') || 'Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog.';
       throw new Error(errMsg);
@@ -17898,15 +17539,22 @@ class AIEngine {
 
     try {
       const options = systemPrompt ? { systemPrompt } : {};
-      
+      let session;
       if (window.ai.languageModel) {
-        this.session = await window.ai.languageModel.create(options);
+        session = await window.ai.languageModel.create(options);
       } else if (window.ai.assistant) {
-        this.session = await window.ai.assistant.create(options);
+        session = await window.ai.assistant.create(options);
       } else {
-        this.session = await window.ai.create(options);
+        session = await window.ai.create(options);
       }
-      return this.session;
+      try {
+        this._assertCurrent(context);
+      } catch (error) {
+        try { session.destroy(); } catch (e) {}
+        throw error;
+      }
+      this.session = session;
+      return session;
     } catch (e) {
       console.error('Failed to create AI session:', e);
       throw e;
@@ -17914,9 +17562,10 @@ class AIEngine {
   }
 
   // 核心對話入口 (流式輸出)
-  async _chat(systemPrompt, prompt, onChunk, history = []) {
+  async _chat(systemPrompt, prompt, onChunk, history = [], context = null) {
+    this._assertCurrent(context);
     if (this.provider === 'builtin') {
-      await this._createSession(systemPrompt);
+      const session = await this._createSession(systemPrompt, context);
       let fullPrompt = "";
       if (history && history.length > 0) {
         for (const turn of history) {
@@ -17924,7 +17573,7 @@ class AIEngine {
         }
       }
       fullPrompt += `User: ${prompt}\nAssistant:`;
-      return this._streamPrompt(fullPrompt, onChunk);
+      return this._streamPrompt(fullPrompt, onChunk, context, session);
     }
 
     const messages = [
@@ -17942,85 +17591,106 @@ class AIEngine {
 
     const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
     if (useExtension) {
-      return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+      return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk, context);
     } else {
-      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk, context);
     }
   }
 
   // 1. 章節/選段摘要 (流式輸出)
-  async summarize(text, onChunk) {
+  async summarize(text, onChunk, context = null) {
     const systemPrompt = getMsg('ai_system_prompt_summarize') || 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input.';
     const prompt = `Please summarize this text: \n\n${text.substring(0, 4000)}`;
-    return this._chat(systemPrompt, prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk, [], context);
   }
 
   // 2. 生詞釋義 (流式輸出)
-  async explainWord(word, context, onChunk) {
+  async explainWord(word, textContext, onChunk, operationContext = null) {
     const systemPrompt = getMsg('ai_system_prompt_explain') || 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise.';
-    const prompt = `Selected Word: "${word}"\nContext: "...${context.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
-    return this._chat(systemPrompt, prompt, onChunk);
+    const prompt = `Selected Word: "${word}"\nContext: "...${textContext.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
+    return this._chat(systemPrompt, prompt, onChunk, [], operationContext);
   }
 
   // 3. 離線翻譯 (流式輸出)
-  async translate(text, targetLangName, onChunk) {
+  async translate(text, targetLangName, onChunk, context = null) {
     const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into {target}. Output only the translation, no explanation.').replace('$target$', targetLangName).replace('{target}', targetLangName);
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
-    return this._chat(systemPrompt, prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk, [], context);
   }
 
   // 流式 Prompt 處理封裝 (內置 AI)
-  async _streamPrompt(prompt, onChunk) {
-    if (!this.session) throw new Error('AI session is not initialized');
+  async _streamPrompt(prompt, onChunk, context = null, requestSession = this.session) {
+    if (!requestSession) throw new Error('AI session is not initialized');
 
     try {
-      if (typeof this.session.promptStreaming === 'function') {
-        const stream = this.session.promptStreaming(prompt);
+      this._assertCurrent(context);
+      if (typeof requestSession.promptStreaming === 'function') {
+        const stream = requestSession.promptStreaming(prompt);
         let fullResponse = '';
         
         for await (const chunk of stream) {
+          this._assertCurrent(context);
           fullResponse = chunk;
           if (onChunk) onChunk(chunk);
         }
         return fullResponse;
       } else {
-        const response = await this.session.prompt(prompt);
+        const response = await requestSession.prompt(prompt);
+        this._assertCurrent(context);
         if (onChunk) onChunk(response);
         return response;
       }
     } catch (e) {
-      console.error('AI prompt error:', e);
+      if (e?.name !== 'AbortError') console.error('AI prompt error:', e);
       throw e;
     } finally {
-      if (this.session) {
-        try { this.session.destroy(); } catch(e) {}
-        this.session = null;
-      }
+      try { requestSession.destroy(); } catch(e) {}
+      if (this.session === requestSession) this.session = null;
     }
   }
 
   // 透過 Extension 背景 Service Worker 流式訪問 (無跨域 CORS 問題)
-  async _streamExtension(provider, url, apiKey, model, messages, onChunk) {
+  async _streamExtension(provider, url, apiKey, model, messages, onChunk, context = null) {
     return new Promise((resolve, reject) => {
       const port = chrome.runtime.connect({ name: 'ai-stream' });
       let fullResponse = '';
+      let settled = false;
+      let disconnected = false;
+      const disconnect = () => {
+        if (disconnected) return;
+        disconnected = true;
+        try { port.disconnect(); } catch (e) {}
+      };
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        context?.controller?.signal.removeEventListener('abort', abort);
+        disconnect();
+        error ? reject(error) : resolve(value);
+      };
+      const abort = () => finish(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
+      context?.controller?.signal.addEventListener('abort', abort, { once: true });
 
       port.onMessage.addListener((msg) => {
+        if (settled) return;
         if (msg.type === 'chunk') {
-          fullResponse += msg.text;
-          if (onChunk) onChunk(fullResponse);
+          try {
+            this._assertCurrent(context);
+            fullResponse += msg.text;
+            if (onChunk) onChunk(fullResponse);
+          } catch (error) { finish(error); }
         } else if (msg.type === 'done') {
-          port.disconnect();
-          resolve(fullResponse);
+          finish(null, fullResponse);
         } else if (msg.type === 'error') {
-          port.disconnect();
-          reject(new Error(msg.message));
+          finish(new Error(msg.message));
         }
       });
 
       port.onDisconnect.addListener(() => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+          finish(new Error(chrome.runtime.lastError.message));
+        } else if (!settled) {
+          finish(new Error('AI extension port disconnected'));
         }
       });
 
@@ -18032,11 +17702,13 @@ class AIEngine {
         model,
         messages
       });
+      try { this._assertCurrent(context); } catch (error) { finish(error); }
     });
   }
 
   // 獨立離線 HTML 環境下直接 Fetch 流式訪問
-  async _streamDirect(provider, url, apiKey, model, messages, onChunk) {
+  async _streamDirect(provider, url, apiKey, model, messages, onChunk, context = null) {
+    this._assertCurrent(context);
     let fetchUrl = (url ? url.trim() : "");
     if (!fetchUrl) {
       fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434';
@@ -18074,8 +17746,10 @@ class AIEngine {
     const response = await fetch(fetchUrl, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: context?.controller?.signal
     });
+    this._assertCurrent(context);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -18089,6 +17763,7 @@ class AIEngine {
 
     while (true) {
       const { done, value } = await reader.read();
+      this._assertCurrent(context);
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -18109,9 +17784,10 @@ class AIEngine {
               const text = json.choices?.[0]?.delta?.content || '';
               if (text) {
                 fullResponse += text;
-                if (onChunk) onChunk(fullResponse);
+                this._ownedChunk(context, onChunk)(fullResponse);
               }
             } catch (e) {
+              if (e?.name === 'AbortError') throw e;
               console.warn('Parse error:', cleanedLine, e);
             }
           }
@@ -18121,9 +17797,10 @@ class AIEngine {
             const text = json.message?.content || '';
             if (text) {
               fullResponse += text;
-              if (onChunk) onChunk(fullResponse);
+              this._ownedChunk(context, onChunk)(fullResponse);
             }
           } catch (e) {
+            if (e?.name === 'AbortError') throw e;
             console.warn('Parse error:', cleanedLine, e);
           }
         }
@@ -18138,18 +17815,18 @@ class AIEngine {
           const text = json.choices?.[0]?.delta?.content || '';
           if (text) {
             fullResponse += text;
-            if (onChunk) onChunk(fullResponse);
+            this._ownedChunk(context, onChunk)(fullResponse);
           }
-        } catch (e) {}
+        } catch (e) { if (e?.name === 'AbortError') throw e; }
       } else if (provider === 'ollama') {
         try {
           const json = JSON.parse(cleanedLine);
           const text = json.message?.content || '';
           if (text) {
             fullResponse += text;
-            if (onChunk) onChunk(fullResponse);
+            this._ownedChunk(context, onChunk)(fullResponse);
           }
-        } catch (e) {}
+        } catch (e) { if (e?.name === 'AbortError') throw e; }
       }
     }
 
@@ -18301,6 +17978,7 @@ if (typeof mermaid !== 'undefined') {
 
 
 
+
 // 解析器導入
 
 
@@ -18311,6 +17989,8 @@ if (typeof mermaid !== 'undefined') {
 const library = new BookLibrary();
 const tts = new TTSEngine();
 const ai = new AIEngine();
+const readerOperations = new OperationOwner();
+const activeAIContexts = new Set();
 
 // 狀態追蹤
 let currentBook = null;
@@ -18344,8 +18024,52 @@ let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
 let lastChapterChangeTime = 0;
-let openBookRequestId = 0;
 let openingBookId = null;
+
+function isReaderOperationCurrent(token) {
+  return readerOperations.isCurrent(token, token?.bookId) && currentBook?.id === token.bookId;
+}
+
+function cleanupParserResult(result, parser = null) {
+  const urls = new Set([...(result?.resourceUrls || []), ...(parser?.resourceUrls || [])]);
+  urls.forEach(url => URL.revokeObjectURL(url));
+  if (result?.resourceUrls) result.resourceUrls = [];
+  if (parser?.resourceUrls) parser.resourceUrls = [];
+}
+
+function abortReaderAI(reason = 'reader operation superseded') {
+  activeAIContexts.forEach(context => context.controller.abort(new DOMException(reason, 'AbortError')));
+  activeAIContexts.clear();
+}
+
+function beginReaderOperation(bookId) {
+  abortReaderAI();
+  return readerOperations.begin(bookId);
+}
+
+function createReaderAIContext() {
+  if (!currentBook) return null;
+  const owner = readerOperations.currentToken();
+  const context = {
+    bookId: currentBook.id,
+    generation: owner?.generation,
+    owner,
+    controller: new AbortController(),
+    isCurrent: () => readerOperations.isCurrent(owner, context.bookId) && currentBook?.id === context.bookId
+  };
+  activeAIContexts.add(context);
+  return context;
+}
+
+function releaseReaderAIContext(context) {
+  activeAIContexts.delete(context);
+}
+
+async function persistOwnedAIChat(context, chat) {
+  const updatedChats = await library.saveAIChat(context.bookId, chat);
+  if (context.isCurrent()) currentBook.aiChats = updatedChats;
+  return updatedChats;
+}
 
 // AI 服务商配置管理全局状态
 const DEFAULT_AI_PROFILES = [
@@ -19687,7 +19411,7 @@ function initUIEventBindings() {
           savedIndex = getFirstVisibleSentenceIndex();
         }
       }
-      tts.play(savedIndex);
+      tts.play(savedIndex, false, currentBook?.id);
       updatePlayPauseButtonIcon();
     }
   });
@@ -19788,17 +19512,22 @@ function initUIEventBindings() {
   };
 
   tts.getNextChapterData = async (chapterIndex) => {
-    if (epubBookData && chapterIndex < epubBookData.chapters.length - 1) {
+    const operation = readerOperations.currentToken();
+    const ownedBookData = epubBookData;
+    if (operation && isReaderOperationCurrent(operation) && ownedBookData && chapterIndex < ownedBookData.chapters.length - 1) {
       const nextIndex = chapterIndex + 1;
-      const chapter = epubBookData.chapters[nextIndex];
+      const chapter = ownedBookData.chapters[nextIndex];
       const html = await chapter.getContent();
-      prefetchedChapterCache = { index: nextIndex, html };
+      if (!isReaderOperationCurrent(operation) || epubBookData !== ownedBookData) return null;
+      prefetchedChapterCache = { index: nextIndex, html, generation: operation.generation, bookId: operation.bookId };
       return { index: nextIndex, html };
     }
     return null;
   };
 
   tts.onChapterTransition = async (nextChapterIndex) => {
+    const operation = readerOperations.currentToken();
+    if (!operation || !isReaderOperationCurrent(operation)) return;
     const currentChapter = epubBookData && epubBookData.chapters[currentChapterIndex];
     const nextChapter = epubBookData && epubBookData.chapters[nextChapterIndex];
     if (currentChapter && nextChapter && currentChapter.cleanHref === nextChapter.cleanHref) {
@@ -19809,6 +19538,7 @@ function initUIEventBindings() {
     } else {
       await loadChapter(nextChapterIndex, false, false, false, true, null, null, null, null, null, true);
     }
+    if (!isReaderOperationCurrent(operation)) return;
     updatePlayPauseButtonIcon();
   };
 
@@ -19930,7 +19660,7 @@ function initUIEventBindings() {
       const selection = window.getSelection().toString().trim();
       if (selection.length === 0) {
         const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        tts.play(sentenceIdx, true);
+        tts.play(sentenceIdx, true, currentBook?.id);
       }
     }, 150);
   });
@@ -20339,10 +20069,10 @@ function initUIEventBindings() {
           tts.currentChapterIndex = nextIdx;
           syncTOCActiveState(nextIdx);
           updateReaderTitle();
-          tts.play(0);
+          tts.play(0, false, currentBook?.id);
         } else {
           await loadChapter(nextIdx);
-          tts.play(0);
+          tts.play(0, false, currentBook?.id);
         }
         updatePlayPauseButtonIcon();
       }
@@ -20584,10 +20314,11 @@ async function handleImportFiles(files) {
           if (ex.size === file.size) {
             try {
               console.log(`[handleImportFiles] Dynamically computing hash for existing book "${ex.title}" due to size match.`);
-              ex.fileHash = await computeFileHash(ex.file);
-              await library.updateBook(ex); // 寫回資料庫
-              if (ex.fileHash === incomingHash) {
-                duplicateBook = ex;
+              const fileHash = await computeFileHash(ex.file);
+              const committedBook = await library.updateBook(ex.id, book => { book.fileHash = fileHash; }); // 寫回資料庫
+              existingBooks = applyCommittedBookToList(existingBooks, committedBook);
+              if (fileHash === incomingHash) {
+                duplicateBook = committedBook;
                 isHashMatch = true;
                 break;
               }
@@ -20632,11 +20363,11 @@ async function handleImportFiles(files) {
         continue;
       } else if (action === 'replace') {
         console.log(`[handleImportFiles] Replacing existing book: ${duplicateBook.title}`);
-        await library.replaceBookContent(duplicateBook.id, incomingBookData);
+        const committedBook = await library.replaceBookContent(duplicateBook.id, incomingBookData);
         // 更新記憶體中的 existingBooks 列表
         const idx = existingBooks.findIndex(ex => ex.id === duplicateBook.id);
         if (idx !== -1) {
-          existingBooks[idx] = { ...existingBooks[idx], ...incomingBookData };
+          existingBooks[idx] = committedBook;
         }
       } else {
         // 'import' 或 'keep_both' (生成新 ID 直接寫入)
@@ -21128,15 +20859,15 @@ function stopReadingTracker() {
   }
 }
 
-async function saveReadingTime() {
-  if (currentBook) {
+async function saveReadingTime(bookId = currentBook?.id) {
+  if (bookId) {
     const now = Date.now();
     const isUserActive = isReadingTimeActive(now);
     if (isUserActive) {
       const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
         try {
-          await library.addReadingDuration(currentBook.id, elapsedSeconds);
+          await library.addReadingDuration(bookId, elapsedSeconds);
         } catch (e) {
           console.warn('[ReadingTracker] Failed to save final stats:', e);
         }
@@ -21158,14 +20889,15 @@ function isReadingTimeActive(now = Date.now()) {
 // 打開書籍
 async function openBook(id) {
   const readerView = document.getElementById('reader-view');
-  if (openingBookId || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
+  if (openingBookId === id || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
     return;
   }
+  readerOperations.invalidate();
+  const operation = beginReaderOperation(id);
   openingBookId = id;
-  const requestId = ++openBookRequestId;
   const book = await library.getBook(id);
-  if (!book || requestId !== openBookRequestId) {
-    openingBookId = null;
+  if (!book || !readerOperations.isCurrent(operation, id)) {
+    if (openingBookId === id) openingBookId = null;
     return;
   }
 
@@ -21252,39 +20984,61 @@ async function openBook(id) {
     // 2. 調用相應的解析器
     if (book.format === 'epub') {
       const parser = new EpubParser(book.file);
-      epubBookData = await parser.parse();
-      if (requestId !== openBookRequestId) return;
-      epubBookData.parser = parser; // 保存解析器實例以進行動態 URL 的清理
-      epubBookData.chapters = await mergeShortChapters(epubBookData.chapters);
+      const parsed = await parser.parse();
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(parsed, parser);
+        return;
+      }
+      parsed.parser = parser; // 保存解析器實例以進行動態 URL 的清理
+      parsed.chapters = await mergeShortChapters(parsed.chapters);
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(parsed, parser);
+        return;
+      }
+      epubBookData = parsed;
       renderTOC(epubBookData.chapters);
-      await loadChapter(currentChapterIndex, false, true);
+      await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     } else if (book.format === 'azw3' || book.format === 'mobi') {
       const parser = new Azw3Parser(book.file);
       const res = await parser.parse();
-      if (requestId !== openBookRequestId) return;
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(res, parser);
+        return;
+      }
       res.chapters = await mergeShortChapters(res.chapters);
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(res, parser);
+        return;
+      }
       epubBookData = res; // 複用變量名以載入章節
       if (res.resourceUrls) {
         activeResourceUrls.push(...res.resourceUrls);
       }
       renderTOC(res.chapters);
-      await loadChapter(currentChapterIndex, false, true);
+      await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     } else if (book.format === 'cbz') {
-      comicParserInstance = new ComicParser(book.file);
-      const res = await comicParserInstance.parse();
-      if (requestId !== openBookRequestId) return;
+      const parser = new ComicParser(book.file);
+      const res = await parser.parse();
+      if (!isReaderOperationCurrent(operation)) {
+        cleanupParserResult(res, parser);
+        return;
+      }
+      comicParserInstance = parser;
       // 漫畫沒有 TOC 側邊欄，直接渲染圖片
-      await loadComicPage(currentBook.progress?.comicImageIndex || 0);
+      await loadComicPage(book.progress?.comicImageIndex || 0, operation);
     } else {
       // TXT, Markdown, FB2
       const parser = new TextParser(book.file, book.format);
       const res = await parser.parse();
-      if (requestId !== openBookRequestId) return;
+      if (!isReaderOperationCurrent(operation)) return;
       res.chapters = await mergeShortChapters(res.chapters);
+      if (!isReaderOperationCurrent(operation)) return;
       epubBookData = res;
       renderTOC(res.chapters);
-      await loadChapter(currentChapterIndex, false, true);
+      await loadChapter(currentChapterIndex, false, true, true, false, null, null, null, null, null, false, operation);
     }
+
+    if (!isReaderOperationCurrent(operation)) return;
 
     // 初始化 TTS 面板
     initTTSPanelVoices(book.file?.name || book.title || '', true);
@@ -21293,7 +21047,7 @@ async function openBook(id) {
     // 500ms 後重新確認語言檢測結果，若需要則更新
     const cachedLangAtOpen = currentBookDetectedLanguage;
     setTimeout(() => {
-      if (currentBook && currentBook.id === book.id) {
+      if (isReaderOperationCurrent(operation)) {
         const recheckLang = detectBookLanguage(book.file?.name || book.title || '');
         if (recheckLang !== cachedLangAtOpen) {
           console.log(`[TTS] Delayed recheck: language changed from "${cachedLangAtOpen}" to "${recheckLang}"`);
@@ -21308,6 +21062,7 @@ async function openBook(id) {
     
     // 預先渲染書籤與筆記列表，防止切換書籍時殘留舊書記錄
     await renderHighlightsList();
+    if (!isReaderOperationCurrent(operation)) return;
 
     // 啟動閱讀時間追蹤
     startReadingTracker(book.id);
@@ -21315,7 +21070,7 @@ async function openBook(id) {
     // 異步在背景建立全文檢索索引
     buildBookSearchIndex();
   } catch (err) {
-    if (requestId === openBookRequestId) {
+    if (isReaderOperationCurrent(operation)) {
       console.error('Failed to parse book:', err);
       clearResourceUrls();
       const error = document.createElement('p');
@@ -21330,7 +21085,9 @@ async function openBook(id) {
 
 // 關閉閱讀器，返回書櫃
 async function closeCurrentBook(triggerBack = true) {
-  openBookRequestId++;
+  const closingBookId = currentBook?.id;
+  readerOperations.invalidate();
+  const operation = beginReaderOperation(closingBookId);
   openingBookId = null;
   // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動
   isChangingChapter = false;
@@ -21340,12 +21097,14 @@ async function closeCurrentBook(triggerBack = true) {
   // 1. 停止 TTS 播放
   tts.stop();
 
-  // 2. 停止閱讀計時並立即保存最後剩餘的時長
-  await saveReadingTime();
-  stopReadingTracker();
+  // 2. 在任何 await 前捕獲並保存關閉中的書籍進度
+  await forceSaveCurrentProgress(closingBookId);
+  if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
-  // 3. 強制保存進度
-  await forceSaveCurrentProgress();
+  // 3. 停止閱讀計時並立即保存最後剩餘的時長
+  await saveReadingTime(closingBookId);
+  stopReadingTracker();
+  if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
   // 清理舊的資源 Object URL
   clearResourceUrls();
@@ -21425,6 +21184,7 @@ async function closeCurrentBook(triggerBack = true) {
 
   // 重新渲染書櫃
   await renderBookshelf();
+  if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
   // If programmatic close, pop state to match browser history
   if (triggerBack && history.state && history.state.bookId) {
@@ -21878,13 +21638,12 @@ function updateActiveSubChapterOnPage() {
 
 // 載入指定章節 (流式文本)
 // 載入指定章節 (流式文本)
-async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false) {
+async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false, existingOperation = null) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
-  if (isChangingChapter) {
-    console.warn("loadChapter ignored because a chapter change is already in progress.");
-    return;
-  }
-
+  const operation = existingOperation || beginReaderOperation(currentBook?.id);
+  const ownedBook = currentBook;
+  const ownedBookData = epubBookData;
+  const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && epubBookData === ownedBookData;
   const isPaginated = document.body.classList.contains('layout-paginated');
   const origHtmlOverflow = document.documentElement.style.overflow;
   const origBodyOverflow = document.body.style.overflow;
@@ -21902,23 +21661,25 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       tts.stop();
     }
 
-  const chapter = epubBookData.chapters[index];
+  const chapter = ownedBookData.chapters[index];
   const contentEl = document.getElementById('book-content');
   activeHashElem = null;
   
   // 加載 HTML (優先使用背景預載快取)
   let rawHtml;
-  if (prefetchedChapterCache && prefetchedChapterCache.index === index) {
+  if (prefetchedChapterCache && prefetchedChapterCache.index === index && prefetchedChapterCache.generation === operation.generation && prefetchedChapterCache.bookId === operation.bookId) {
     rawHtml = prefetchedChapterCache.html;
     prefetchedChapterCache = null; // 用完即清空
   } else {
     rawHtml = await chapter.getContent();
   }
+  if (!isCurrent()) return;
 
   // 判斷過渡方向 (根據新舊章節索引)
   const direction = (index > currentChapterIndex) ? 'forward' : 'backward';
 
   const updateDOM = () => {
+    if (!isCurrent()) return;
     insertChapterHtml(contentEl, rawHtml, security);
     
     // 清除書籍內置的干擾多欄排版的內聯樣式
@@ -22094,6 +21855,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 監聽圖片載入事件以重算翻頁排版與偏移
     contentEl.querySelectorAll('img').forEach(img => {
       img.addEventListener('load', () => {
+        if (!isCurrent()) return;
         if (document.body.classList.contains('layout-paginated')) {
           applyLayoutDimensions();
           updatePageTranslate(false);
@@ -22104,6 +21866,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 監聽樣式表載入事件以重算翻頁排版與偏移（主要用於 MOBI/AZW3 載入動態樣式）
     contentEl.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
       link.addEventListener('load', () => {
+        if (!isCurrent()) return;
         if (document.body.classList.contains('layout-paginated')) {
           applyLayoutDimensions();
           updatePageTranslate(false);
@@ -22114,6 +21877,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 監聽字體載入事件以重算翻頁排版與偏移，確保字體渲染完成後排版精確
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {
+        if (!isCurrent()) return;
         if (document.body.classList.contains('layout-paginated')) {
           applyLayoutDimensions();
           updatePageTranslate(false);
@@ -22254,8 +22018,8 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     applySavedHighlightsToDOM();
 
     // 更新閱讀比例百分比，並同步更新內存與異步寫入資料庫
-    if (currentBook) {
-      const totalChapters = epubBookData.chapters.length;
+    if (isCurrent()) {
+      const totalChapters = ownedBookData.chapters.length;
       let percent = ((index + 1) / totalChapters) * 100;
       if (document.body.classList.contains('layout-paginated')) {
         const { totalPages } = getPaginatedPagesInfo();
@@ -22270,12 +22034,13 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
         activeSentenceIndex: 0,
         currentPageIndex: document.body.classList.contains('layout-paginated') ? currentPageIndex : 0
       };
-      currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+      ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
       updateReaderTitle();
-      library.updateProgress(currentBook.id, progressUpdate);
+      library.updateProgress(operation.bookId, progressUpdate);
     }
 
     return waitForStylesheets(contentEl).then(() => {
+      if (!isCurrent()) return;
       if (document.body.classList.contains('layout-paginated')) {
         applyLayoutDimensions();
         updatePageTranslate(false);
@@ -22286,17 +22051,21 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     // 執行 View Transition
     if (animate && document.startViewTransition) {
       await transitionPage(updateDOM, direction);
+      if (!isCurrent()) return;
     } else {
       const res = updateDOM();
       if (res && typeof res.then === 'function') {
         await res;
+        if (!isCurrent()) return;
       }
     }
   } finally {
+    if (!isCurrent()) return;
     isChangingChapter = false;
     lastChapterChangeTime = Date.now();
     if (!isPaginated) {
       setTimeout(() => {
+        if (!isCurrent()) return;
         document.documentElement.style.overflow = origHtmlOverflow;
         document.body.style.overflow = origBodyOverflow;
         // 確保在溢出屬性恢復後，滾動目標被正確應用
@@ -22313,14 +22082,22 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
 
 
 // 載入漫畫指定頁面
-async function loadComicPage(index) {
+async function loadComicPage(index, existingOperation = null) {
   if (!comicParserInstance || index < 0 || index >= comicParserInstance.chapters.length) return;
+  const operation = existingOperation || beginReaderOperation(currentBook?.id);
+  const ownedBook = currentBook;
+  const ownedParser = comicParserInstance;
+  const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && comicParserInstance === ownedParser;
   
   const contentEl = document.getElementById('book-content');
   contentEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-spinner"></div><span>${getMsg('loading_page', [String(index + 1)])}</span></div>`;
 
   const chapter = comicParserInstance.chapters[index];
   const url = await chapter.getImageUrl();
+  if (!isCurrent()) {
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+    return;
+  }
   activeResourceUrls.push(url);
 
   const img = document.createElement('img');
@@ -22334,10 +22111,11 @@ async function loadComicPage(index) {
   document.getElementById('comic-page-indicator').textContent = `${index + 1} / ${comicParserInstance.pages.length}`;
 
   // 保存進度
-  const percent = ((index + 1) / comicParserInstance.pages.length) * 100;
+  const percent = ((index + 1) / ownedParser.pages.length) * 100;
   const progressUpdate = { comicImageIndex: index, percent };
-  await library.updateProgress(currentBook.id, progressUpdate);
-  currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+  await library.updateProgress(operation.bookId, progressUpdate);
+  if (!isCurrent()) return;
+  ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
 
   window.scrollTo(0, 0);
   updateReaderTitle();
@@ -23031,16 +22809,17 @@ function saveTTSProgressImmediately() {
 }
 
 // 頁面關閉時的強制立即保存
-async function forceSaveCurrentProgress() {
-  if (currentBook && !isSavingProgress) {
+async function forceSaveCurrentProgress(bookId = currentBook?.id) {
+  const book = currentBook?.id === bookId ? currentBook : null;
+  if (book && !isSavingProgress) {
     // 取消待執行的防抖保存，防止之後觸發時用舊數據覆蓋本次強制保存
     if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
     
     isSavingProgress = true;
     const update = {};
     
-    if (currentBook.format === 'cbz') {
-      update.comicImageIndex = currentBook.progress?.comicImageIndex || 0;
+    if (book.format === 'cbz') {
+      update.comicImageIndex = book.progress?.comicImageIndex || 0;
       const totalPages = comicParserInstance ? comicParserInstance.pages.length : 1;
       update.percent = ((update.comicImageIndex + 1) / totalPages) * 100;
     } else {
@@ -23074,8 +22853,11 @@ async function forceSaveCurrentProgress() {
       update.percent = calculateCurrentProgressPercent();
     }
     
-    await library.updateProgress(currentBook.id, update);
-    isSavingProgress = false;
+    try {
+      await library.updateProgress(bookId, update);
+    } finally {
+      isSavingProgress = false;
+    }
   }
 }
 
@@ -26855,9 +26637,15 @@ function displayBookSummary(summary) {
 
 // 執行全書深度分析報告
 async function runDeepBookAnalysis() {
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const sourceBook = currentBook;
   const panel = document.getElementById('ai-panel');
   const contentEl = document.getElementById('ai-content');
-  if (!panel || !contentEl) return;
+  if (!panel || !contentEl) {
+    releaseReaderAIContext(aiContext);
+    return;
+  }
   
   panel.style.display = 'flex';
   updateHeaderActiveStates();
@@ -26891,6 +26679,7 @@ async function runDeepBookAnalysis() {
     
     if (bookChunksCache.length === 0) {
       await buildBookSearchIndex();
+      if (!aiContext.isCurrent()) return;
     }
     
     const entitySummary = extractEntitiesAndCooccurrence(bookChunksCache);
@@ -26899,7 +26688,7 @@ async function runDeepBookAnalysis() {
     
     // ===== 階段一：Map 階段（逐章進行增量內容分析與摘要） =====
     const tempParser = new DOMParser();
-    const chapterSummaries = currentBook.chapterSummaries || {};
+    const chapterSummaries = { ...(sourceBook.chapterSummaries || {}) };
     
     for (let i = 0; i < chapters.length; i++) {
       const ch = chapters[i];
@@ -26923,13 +26712,14 @@ async function runDeepBookAnalysis() {
       
       try {
         const html = await ch.getContent();
+        if (!aiContext.isCurrent()) return;
         const doc = tempParser.parseFromString(html, 'text/html');
         doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
         const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
         
         if (plainText.length < 50) {
           chapterSummaries[i] = `本章節無實質內容或字數過少。`;
-          await library.saveChapterSummary(currentBook.id, i, chapterSummaries[i]);
+          await library.saveChapterSummary(aiContext.bookId, i, chapterSummaries[i]);
           continue;
         }
         
@@ -26939,19 +26729,20 @@ async function runDeepBookAnalysis() {
         const chSystemPrompt = "You are an expert reading assistant. Summarize the provided chapter text. Extract the main events, characters/entities, core concepts, and key arguments. Keep it strictly factual, clear, and do not exceed 300 words. Respond in Traditional Chinese (or Simplified Chinese if the book is in simplified CJK).";
         const chQuery = `Chapter Title: "${ch.title}"\n\nChapter Content:\n${truncatedText}`;
         
-        const chSummary = await ai._chat(chSystemPrompt, chQuery, null);
+        const chSummary = await ai._chat(chSystemPrompt, chQuery, null, [], aiContext);
         chapterSummaries[i] = chSummary;
         
         // 增量寫入本地 IndexedDB
-        await library.saveChapterSummary(currentBook.id, i, chSummary);
+        await library.saveChapterSummary(aiContext.bookId, i, chSummary);
       } catch (err) {
+        if (err?.name === 'AbortError' || !aiContext.isCurrent()) throw err;
         console.warn(`Failed to summarize chapter ${i} (${ch.title}):`, err);
         chapterSummaries[i] = `[章節摘要分析失敗: ${err.message}]`;
       }
     }
     
     // 更新內存中的章節摘要映射
-    currentBook.chapterSummaries = chapterSummaries;
+    if (aiContext.isCurrent()) currentBook.chapterSummaries = chapterSummaries;
     
     // 彙總所有章節的摘要內容
     let compiledChapterSummaries = '';
@@ -26970,8 +26761,8 @@ async function runDeepBookAnalysis() {
     `;
     contentEl.scrollTop = contentEl.scrollHeight;
     
-    const bookTitle = currentBook?.title || document.getElementById('reader-book-title')?.textContent?.trim() || epubBookData?.title || 'Unknown';
-    const bookAuthor = currentBook?.author || epubBookData?.author || 'Unknown';
+    const bookTitle = sourceBook.title || 'Unknown';
+    const bookAuthor = sourceBook.author || 'Unknown';
     
     const systemPrompt = "You are an expert research assistant and professional book critic. You excel at analyzing both fiction (novels, literature) and non-fiction (history, social science, philosophy, science, business, technology). Your task is to write a highly professional, comprehensive book analysis report based on the book metadata, table of contents, and a client-side entity co-occurrence association network.";
     const query = `Book Title: "${bookTitle}"
@@ -27001,26 +26792,30 @@ Format your output nicely with markdown. Make sure it is highly professional, in
     
     let reportText = '';
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
+      if (!aiContext.isCurrent()) return;
       reportText = chunk;
       renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
       contentEl.scrollTop = contentEl.scrollHeight;
-    });
+    }, [], aiContext);
     
-    await library.saveBookSummary(currentBook.id, finalReply);
-    currentBook.bookSummary = finalReply;
+    await library.saveBookSummary(aiContext.bookId, finalReply);
+    if (aiContext.isCurrent()) currentBook.bookSummary = finalReply;
     
     const newChat = {
       chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       query: getMsg('ai_deep_analysis_trigger') || '一鍵全書深度分析',
       reply: finalReply
     };
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
+    await persistOwnedAIChat(aiContext, newChat);
     
-    renderMermaidBlocks();
+    if (aiContext.isCurrent()) renderMermaidBlocks();
   } catch (err) {
-    assistantBubble.style.color = 'red';
-    renderErrorMessage(assistantBubble, '分析失敗', err);
+    if (aiContext.isCurrent() && err?.name !== 'AbortError') {
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, '分析失敗', err);
+    }
+  } finally {
+    releaseReaderAIContext(aiContext);
   }
 }
 
@@ -27029,6 +26824,9 @@ async function sendCustomAIQuery() {
   const inputEl = document.getElementById('ai-input');
   const query = inputEl.value.trim();
   if (!query) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const sourceBook = currentBook;
 
   inputEl.value = '';
   inputEl.style.height = '38px'; // 恢復默認高度
@@ -27067,12 +26865,13 @@ async function sendCustomAIQuery() {
   contentEl.scrollTop = contentEl.scrollHeight;
 
   // --- 本地快取查找 (0 Token 阻斷重複網絡調用) ---
-  const allChats = (currentBook && currentBook.aiChats) ? currentBook.aiChats : [];
+  const allChats = sourceBook.aiChats || [];
   const cachedChat = allChats.find(c => c.query === query);
   if (cachedChat) {
     renderAiMarkdown(assistantBubble, cachedChat.reply, formatMarkdown, security);
     contentEl.scrollTop = contentEl.scrollHeight;
     renderMermaidBlocks();
+    releaseReaderAIContext(aiContext);
     return;
   }
 
@@ -27085,6 +26884,7 @@ async function sendCustomAIQuery() {
       let waitCount = 0;
       while (isIndexingBook && waitCount < 30) { // 最多等待 3 秒
         await new Promise(resolve => setTimeout(resolve, 100));
+        if (!aiContext.isCurrent()) return;
         waitCount++;
       }
     }
@@ -27092,6 +26892,7 @@ async function sendCustomAIQuery() {
     // 如果快取為空且未處於建立狀態，嘗試主動建立索引
     if (bookChunksCache.length === 0 && !isIndexingBook && epubBookData && epubBookData.chapters) {
       await buildBookSearchIndex();
+      if (!aiContext.isCurrent()) return;
     }
 
     let bookContext = '';
@@ -27171,7 +26972,7 @@ async function sendCustomAIQuery() {
 
     // --- 檢查是否存在本地已生成的章節摘要，如果存在且提問是全局性/大綱/思維導圖/總結類的，則將章節摘要作為背景信息提供給 AI ---
     let summaryContext = '';
-    const hasCachedSummaries = currentBook && currentBook.chapterSummaries && Object.keys(currentBook.chapterSummaries).length > 0;
+    const hasCachedSummaries = sourceBook.chapterSummaries && Object.keys(sourceBook.chapterSummaries).length > 0;
     const isSummarizationOrMapQuery = /思维导图|脑图|总结|大纲|提纲|结构|脉络|情节|人物关系|角色关系/.test(query) || isFullBookQuery;
     
     if (hasCachedSummaries && isSummarizationOrMapQuery) {
@@ -27180,8 +26981,8 @@ async function sendCustomAIQuery() {
       const isBuiltin = ai.provider === 'builtin';
       
       for (let i = 0; i < chapters.length; i++) {
-        if (currentBook.chapterSummaries[i]) {
-          let chSum = currentBook.chapterSummaries[i];
+        if (sourceBook.chapterSummaries[i]) {
+          let chSum = sourceBook.chapterSummaries[i];
           // 對於瀏覽器內置模型，限制單章摘要字數以防 context window 溢出
           if (isBuiltin && chSum.length > 80) {
             chSum = chSum.substring(0, 80) + '...';
@@ -27224,8 +27025,8 @@ async function sendCustomAIQuery() {
     }
 
     // 如果存在全書深度分析報告，將其作為宏觀全局知識注入
-    if (currentBook && currentBook.bookSummary) {
-      systemPrompt += `\n[Book Master Overview (Deep Analysis Report)]\n${currentBook.bookSummary}\n[End of Master Overview]\n\nThe above is the comprehensive deep analysis report of the entire book. Use it as the supreme factual foundation to answer macroscopic, thematic, or general questions about the book. Ensure your answer aligns with this structural and thematic overview.\n`;
+    if (sourceBook.bookSummary) {
+      systemPrompt += `\n[Book Master Overview (Deep Analysis Report)]\n${sourceBook.bookSummary}\n[End of Master Overview]\n\nThe above is the comprehensive deep analysis report of the entire book. Use it as the supreme factual foundation to answer macroscopic, thematic, or general questions about the book. Ensure your answer aligns with this structural and thematic overview.\n`;
     }
 
     // 發送後清除針對性選取上下文並隱藏提示欄
@@ -27233,11 +27034,12 @@ async function sendCustomAIQuery() {
     const badge = document.getElementById('ai-selection-context');
     if (badge) badge.style.display = 'none';
 
-    const history = (currentBook && currentBook.aiChats) ? currentBook.aiChats.slice(-10) : [];
+    const history = (sourceBook.aiChats || []).slice(-10);
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
+      if (!aiContext.isCurrent()) return;
       renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
       contentEl.scrollTop = contentEl.scrollHeight;
-    }, history);
+    }, history, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -27245,36 +27047,41 @@ async function sendCustomAIQuery() {
       query: query,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    assistantBubble.style.color = 'red';
-    renderErrorMessage(assistantBubble, getMsg('error_prefix') || 'Error', e);
+    if (aiContext.isCurrent() && e?.name !== 'AbortError') {
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, getMsg('error_prefix') || 'Error', e);
+    }
+  } finally {
+    releaseReaderAIContext(aiContext);
   }
 }
 
 // 觸發 AI 摘要
 async function triggerAISummary() {
   if (!selectedTextState) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const selectedText = selectedTextState;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_summary_label') || 'Summary';
-  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedText);
   
   try {
-    const finalReply = await ai.summarize(selectedTextState, (chunk) => {
-      if (assistantBubble) {
+    const finalReply = await ai.summarize(selectedText, (chunk) => {
+      if (assistantBubble && aiContext.isCurrent()) {
         renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
-    });
+    }, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -27282,42 +27089,44 @@ async function triggerAISummary() {
       query: queryText,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    if (assistantBubble) {
+    if (assistantBubble && aiContext.isCurrent() && e?.name !== 'AbortError') {
       assistantBubble.style.color = 'red';
       renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
-  }
+  } finally { releaseReaderAIContext(aiContext); }
 }
 
 // 觸發 AI 釋義
 async function triggerAIExplain() {
   if (!selectedTextState) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const selectedText = selectedTextState;
+  const selectedRange = selectedTextRange;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_explain_label') || 'Explain';
-  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedText);
 
   // 獲取選詞的上下文段落
-  const parentPara = selectedTextRange.startContainer.parentElement.closest('p, div, li');
-  const context = parentPara ? parentPara.textContent : selectedTextState;
+  const parentPara = selectedRange.startContainer.parentElement.closest('p, div, li');
+  const textContext = parentPara ? parentPara.textContent : selectedText;
 
   try {
-    const finalReply = await ai.explainWord(selectedTextState, context, (chunk) => {
-      if (assistantBubble) {
+    const finalReply = await ai.explainWord(selectedText, textContext, (chunk) => {
+      if (assistantBubble && aiContext.isCurrent()) {
         renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
-    });
+    }, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -27325,33 +27134,34 @@ async function triggerAIExplain() {
       query: queryText,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    if (assistantBubble) {
+    if (assistantBubble && aiContext.isCurrent() && e?.name !== 'AbortError') {
       assistantBubble.style.color = 'red';
       renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
-  }
+  } finally { releaseReaderAIContext(aiContext); }
 }
 
 // 觸發 AI 翻譯
 async function triggerAITranslate() {
   if (!selectedTextState) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const selectedText = selectedTextState;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_translate_label') || 'Translate';
-  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedText);
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文
-  const hasChinese = /[\u4e00-\u9fa5]/.test(selectedTextState);
+  const hasChinese = /[\u4e00-\u9fa5]/.test(selectedText);
   let targetLang = 'English';
   if (!hasChinese) {
     const localeTargetLang = getMsg('ai_target_lang');
@@ -27362,12 +27172,12 @@ async function triggerAITranslate() {
   }
 
   try {
-    const finalReply = await ai.translate(selectedTextState, targetLang, (chunk) => {
-      if (assistantBubble) {
+    const finalReply = await ai.translate(selectedText, targetLang, (chunk) => {
+      if (assistantBubble && aiContext.isCurrent()) {
         renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
-    });
+    }, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -27375,20 +27185,18 @@ async function triggerAITranslate() {
       query: queryText,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    if (assistantBubble) {
+    if (assistantBubble && aiContext.isCurrent() && e?.name !== 'AbortError') {
       assistantBubble.style.color = 'red';
       renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
-  }
+  } finally { releaseReaderAIContext(aiContext); }
 }
 
 // 觸發 AI 針對性提問
@@ -28253,7 +28061,7 @@ function handleImportBackup(e) {
             chapterSummaries: b.chapterSummaries || {}
           };
 
-          await library.importBook(book);
+          await library.importBook(book, { restoreFile: true, progressPreference: 'backup' });
         }
 
         // 合併並還原自定義資料夾列表
@@ -28344,7 +28152,7 @@ function handleImportBackup(e) {
             chapterSummaries: b.chapterSummaries || {}
           };
 
-          await library.importBook(book);
+          await library.importBook(book, { restoreFile: true, progressPreference: 'backup' });
         }
       }
 
