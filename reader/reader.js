@@ -158,6 +158,11 @@ function abortReaderAI(reason = 'reader operation superseded') {
   activeAIContexts.clear();
 }
 
+function invalidateReaderOperation() {
+  chapterScrollLock.reset();
+  readerOperations.invalidate();
+}
+
 function beginReaderOperation(bookId, stopTTS = false) {
   clearTTSClickTimer();
   clearSelectionChangeTimer();
@@ -3057,7 +3062,7 @@ async function openBook(id) {
   if (openingBookId === id || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
     return;
   }
-  readerOperations.invalidate();
+  invalidateReaderOperation();
   const operation = beginReaderOperation(id, true);
   openingBookId = id;
   const book = await library.getBook(id);
@@ -3252,7 +3257,7 @@ async function openBook(id) {
 async function closeCurrentBook(triggerBack = true) {
   const closingBookId = currentBook?.id;
   const closingTracker = readingTrackerLease.current();
-  readerOperations.invalidate();
+  invalidateReaderOperation();
   const operation = beginReaderOperation(closingBookId);
   openingBookId = null;
   // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動

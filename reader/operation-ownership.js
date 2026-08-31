@@ -74,6 +74,11 @@ export class OwnedValueLock {
     }
     return true;
   }
+
+  reset() {
+    this.holders.clear();
+    this.originalValue = null;
+  }
 }
 
 export function ownedCallback(isCurrent, callback) {

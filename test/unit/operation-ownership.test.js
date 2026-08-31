@@ -349,3 +349,34 @@ test('overlapping chapter locks restore original overflow only after every owner
   await operationB;
   assert.deepEqual(style, { html: 'auto', body: 'scroll' });
 });
+
+test('reset invalidates old chapter locks before a new owner acquires', () => {
+  const style = { html: 'auto', body: 'scroll' };
+  const writes = [];
+  const lock = new OwnedValueLock(
+    () => ({ ...style }),
+    value => {
+      writes.push({ ...value });
+      Object.assign(style, value);
+    },
+    { html: 'hidden', body: 'hidden' }
+  );
+  const tokenA = lock.acquire('chapter-a');
+
+  lock.reset();
+  Object.assign(style, { html: '', body: '' });
+  const tokenB = lock.acquire('chapter-b');
+
+  assert.deepEqual(writes.at(-1), { html: 'hidden', body: 'hidden' });
+  assert.equal(lock.release(tokenA), false);
+  assert.deepEqual(style, { html: 'hidden', body: 'hidden' });
+  assert.equal(lock.release(tokenB), true);
+  assert.deepEqual(style, { html: '', body: '' });
+});
+
+test('reader generation invalidation resets chapter scroll lock before close overflow reset', () => {
+  const source = fs.readFileSync(new URL('../../reader/reader.js', import.meta.url), 'utf8');
+
+  assert.match(source, /function invalidateReaderOperation\(\) \{\s*chapterScrollLock\.reset\(\);\s*readerOperations\.invalidate\(\);\s*\}/);
+  assert.match(source, /invalidateReaderOperation\(\);[\s\S]*document\.documentElement\.style\.overflow = '';\s*document\.body\.style\.overflow = '';/);
+});

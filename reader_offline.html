@@ -12433,6 +12433,11 @@ class OwnedValueLock {
     }
     return true;
   }
+
+  reset() {
+    this.holders.clear();
+    this.originalValue = null;
+  }
 }
 
 function ownedCallback(isCurrent, callback) {
@@ -17815,21 +17820,22 @@ class AIEngine {
       try { requestSession.destroy(); } catch(e) {}
     };
     let abort;
+    let iterator;
 
     try {
       this._assertCurrent(context);
+      const abortPromise = context?.controller?.signal ? new Promise((_, reject) => {
+        abort = () => {
+          destroySession();
+          try { Promise.resolve(iterator?.return?.()).catch(() => {}); } catch (e) {}
+          reject(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
+        };
+        context.controller.signal.addEventListener('abort', abort, { once: true });
+        if (context.controller.signal.aborted) abort();
+      }) : null;
       if (typeof requestSession.promptStreaming === 'function') {
         const stream = requestSession.promptStreaming(prompt);
-        const iterator = stream[Symbol.asyncIterator]();
-        const abortPromise = context?.controller?.signal ? new Promise((_, reject) => {
-          abort = () => {
-            destroySession();
-            try { Promise.resolve(iterator.return?.()).catch(() => {}); } catch (e) {}
-            reject(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
-          };
-          context.controller.signal.addEventListener('abort', abort, { once: true });
-          if (context.controller.signal.aborted) abort();
-        }) : null;
+        iterator = stream[Symbol.asyncIterator]();
         let fullResponse = '';
         while (true) {
           const result = abortPromise ? await Promise.race([iterator.next(), abortPromise]) : await iterator.next();
@@ -17840,7 +17846,8 @@ class AIEngine {
         }
         return fullResponse;
       } else {
-        const response = await requestSession.prompt(prompt);
+        const pendingPrompt = requestSession.prompt(prompt);
+        const response = abortPromise ? await Promise.race([pendingPrompt, abortPromise]) : await pendingPrompt;
         this._assertCurrent(context);
         if (onChunk) onChunk(response);
         return response;
@@ -18279,6 +18286,11 @@ function cleanupParserResult(result, parser = null) {
 function abortReaderAI(reason = 'reader operation superseded') {
   activeAIContexts.forEach(context => context.controller.abort(new DOMException(reason, 'AbortError')));
   activeAIContexts.clear();
+}
+
+function invalidateReaderOperation() {
+  chapterScrollLock.reset();
+  readerOperations.invalidate();
 }
 
 function beginReaderOperation(bookId, stopTTS = false) {
@@ -21180,7 +21192,7 @@ async function openBook(id) {
   if (openingBookId === id || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
     return;
   }
-  readerOperations.invalidate();
+  invalidateReaderOperation();
   const operation = beginReaderOperation(id, true);
   openingBookId = id;
   const book = await library.getBook(id);
@@ -21375,7 +21387,7 @@ async function openBook(id) {
 async function closeCurrentBook(triggerBack = true) {
   const closingBookId = currentBook?.id;
   const closingTracker = readingTrackerLease.current();
-  readerOperations.invalidate();
+  invalidateReaderOperation();
   const operation = beginReaderOperation(closingBookId);
   openingBookId = null;
   // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動

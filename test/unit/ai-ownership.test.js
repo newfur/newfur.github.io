@@ -185,3 +185,19 @@ test('aborting a never-yielding built-in stream destroys its session and settles
   await assert.rejects(request, error => error?.name === 'AbortError');
   assert.equal(session.destroyCalls, 1);
 });
+
+test('aborting a never-settling built-in prompt destroys its session and settles promptly', async () => {
+  const engine = new AIEngine();
+  const owned = context();
+  const session = {
+    destroyCalls: 0,
+    prompt: () => new Promise(() => {}),
+    destroy() { this.destroyCalls += 1; }
+  };
+
+  const request = engine._streamPrompt('prompt', () => {}, owned.value, session);
+  owned.invalidate();
+
+  await assert.rejects(request, error => error?.name === 'AbortError');
+  assert.equal(session.destroyCalls, 1);
+});

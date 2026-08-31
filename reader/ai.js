@@ -172,21 +172,22 @@ export class AIEngine {
       try { requestSession.destroy(); } catch(e) {}
     };
     let abort;
+    let iterator;
 
     try {
       this._assertCurrent(context);
+      const abortPromise = context?.controller?.signal ? new Promise((_, reject) => {
+        abort = () => {
+          destroySession();
+          try { Promise.resolve(iterator?.return?.()).catch(() => {}); } catch (e) {}
+          reject(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
+        };
+        context.controller.signal.addEventListener('abort', abort, { once: true });
+        if (context.controller.signal.aborted) abort();
+      }) : null;
       if (typeof requestSession.promptStreaming === 'function') {
         const stream = requestSession.promptStreaming(prompt);
-        const iterator = stream[Symbol.asyncIterator]();
-        const abortPromise = context?.controller?.signal ? new Promise((_, reject) => {
-          abort = () => {
-            destroySession();
-            try { Promise.resolve(iterator.return?.()).catch(() => {}); } catch (e) {}
-            reject(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
-          };
-          context.controller.signal.addEventListener('abort', abort, { once: true });
-          if (context.controller.signal.aborted) abort();
-        }) : null;
+        iterator = stream[Symbol.asyncIterator]();
         let fullResponse = '';
         while (true) {
           const result = abortPromise ? await Promise.race([iterator.next(), abortPromise]) : await iterator.next();
@@ -197,7 +198,8 @@ export class AIEngine {
         }
         return fullResponse;
       } else {
-        const response = await requestSession.prompt(prompt);
+        const pendingPrompt = requestSession.prompt(prompt);
+        const response = abortPromise ? await Promise.race([pendingPrompt, abortPromise]) : await pendingPrompt;
         this._assertCurrent(context);
         if (onChunk) onChunk(response);
         return response;
