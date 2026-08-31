@@ -487,16 +487,6 @@ function initUIEventBindings() {
     statsBackdrop.addEventListener('click', closeStatsModal);
   }
 
-  // 檢查更新按鈕：點擊後打開關於對話框並觸發版本檢查
-  const checkUpdateBtn = document.getElementById('check-update-btn');
-  if (checkUpdateBtn) {
-    checkUpdateBtn.addEventListener('click', () => {
-      const aboutBtn = document.getElementById('about-btn');
-      if (aboutBtn) aboutBtn.click();
-      checkForUpdates();
-    });
-  }
-
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
