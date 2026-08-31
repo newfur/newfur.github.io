@@ -487,29 +487,14 @@ function initUIEventBindings() {
     statsBackdrop.addEventListener('click', closeStatsModal);
   }
 
-  // 下载离线版单文件
-  const downloadOfflineBtn = document.getElementById('download-offline-btn');
-  if (downloadOfflineBtn) {
-    const isNativeApp = typeof window !== 'undefined' && (
-      window.Capacitor ||
-      window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'app:' ||
-      window.location.protocol === 'file:'
-    );
-    if (isNativeApp) {
-      downloadOfflineBtn.style.display = 'none';
-    } else {
-      downloadOfflineBtn.addEventListener('click', () => {
-        const version = window.__APP_VERSION__ || '';
-        if (version) {
-          // 指向 GitHub Release 中對應版本的離線單文件
-          const releaseUrl = `https://github.com/newfur/newfur.github.io/releases/download/v${version}/Raconteur-Offline-${version}.html`;
-          window.open(releaseUrl, '_blank');
-        } else {
-          alert(getMsg('already_offline') || '您目前已經處於離線版或本地執行環境中！');
-        }
-      });
-    }
+  // 檢查更新按鈕：點擊後打開關於對話框並觸發版本檢查
+  const checkUpdateBtn = document.getElementById('check-update-btn');
+  if (checkUpdateBtn) {
+    checkUpdateBtn.addEventListener('click', () => {
+      const aboutBtn = document.getElementById('about-btn');
+      if (aboutBtn) aboutBtn.click();
+      checkForUpdates();
+    });
   }
 
   // 書庫行為
@@ -1808,6 +1793,7 @@ function initUIEventBindings() {
         }
       }
       aboutDialog.showModal();
+      checkForUpdates();
     });
   }
   if (aboutCloseBtn && aboutDialog) {
@@ -6035,6 +6021,81 @@ function updateHeaderActiveStates() {
       // 因為有 350ms 的 CSS transition，在動畫結束後再次調用以確保完美對齊
       setTimeout(applyLayoutDimensions, 350);
     }
+  }
+}
+
+
+// ==================== 5.5 版本檢查與下載區 ==================== */
+
+const GITHUB_REPO = 'newfur/newfur.github.io';
+
+function compareVersions(a, b) {
+  const pa = (a || '').split('.').map(Number);
+  const pb = (b || '').split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+async function checkForUpdates() {
+  const statusEl = document.getElementById('about-update-status');
+  const downloadSection = document.getElementById('about-download-section');
+  if (!statusEl) return;
+
+  statusEl.textContent = getMsg('checking_update') || 'Checking...';
+  statusEl.style.color = 'var(--text-muted)';
+
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const release = await resp.json();
+    const latestTag = (release.tag_name || '').replace(/^v/, '');
+    const currentVersion = window.__APP_VERSION__ || '';
+
+    const isNativeApp = typeof window !== 'undefined' && (
+      window.Capacitor ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'app:' ||
+      window.location.protocol === 'file:'
+    );
+    const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest;
+
+    if (latestTag && compareVersions(latestTag, currentVersion) > 0) {
+      statusEl.innerHTML = `<span style="color: var(--primary-color); font-weight: 500;">${getMsg('update_available') || 'New version'} v${latestTag}</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color: #34c759;">${getMsg('up_to_date') || 'Up to date'}</span>`;
+    }
+
+    // 設置下載連結並顯示下載區
+    if (downloadSection) {
+      const apkBtn = document.getElementById('download-apk-btn');
+      const offlineBtn = document.getElementById('download-offline-link');
+      const chromeBtn = document.getElementById('download-chrome-btn');
+      const v = latestTag || currentVersion;
+
+      if (apkBtn) {
+        apkBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-${v}.apk`;
+        apkBtn.style.display = isExtension ? 'none' : '';
+      }
+      if (offlineBtn) {
+        offlineBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Offline-${v}.html`;
+        offlineBtn.style.display = isExtension ? 'none' : '';
+      }
+      if (chromeBtn) {
+        chromeBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Chrome-${v}.zip`;
+        chromeBtn.style.display = isNativeApp ? 'none' : '';
+      }
+      downloadSection.style.display = 'block';
+    }
+  } catch (e) {
+    console.warn('[Update Check] Failed:', e);
+    statusEl.textContent = getMsg('update_check_failed') || 'Check failed';
+    statusEl.style.color = 'var(--text-muted)';
   }
 }
 

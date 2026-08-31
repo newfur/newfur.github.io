@@ -66,11 +66,35 @@
   "more_actions": {
     "message": "更多"
   },
-  "download_offline": {
-    "message": "下載離線版"
+  "check_update": {
+    "message": "檢查更新"
   },
-  "download_offline_tooltip": {
-    "message": "下載獨立的單檔案 HTML 版（可在手機本地運行，直接支持微軟 Edge 在線語音）"
+  "check_update_tooltip": {
+    "message": "檢查新版本並下載更新"
+  },
+  "checking_update": {
+    "message": "正在檢查..."
+  },
+  "update_available": {
+    "message": "發現新版本"
+  },
+  "up_to_date": {
+    "message": "已是最新"
+  },
+  "update_check_failed": {
+    "message": "檢查失敗"
+  },
+  "download_latest": {
+    "message": "下載最新版本"
+  },
+  "download_apk": {
+    "message": "Android APK"
+  },
+  "download_offline_html": {
+    "message": "離線網頁版"
+  },
+  "download_chrome": {
+    "message": "Chrome 插件"
   },
   "already_offline": {
     "message": "您目前已經處於離線版或本地執行環境中！"

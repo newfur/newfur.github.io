@@ -66,11 +66,35 @@
   "more_actions": {
     "message": "更多"
   },
-  "download_offline": {
-    "message": "下载离线版"
+  "check_update": {
+    "message": "检查更新"
   },
-  "download_offline_tooltip": {
-    "message": "下载独立的单文件 HTML 版（可在手机本地运行，直接支持微软 Edge 在线语音）"
+  "check_update_tooltip": {
+    "message": "检查新版本并下载更新"
+  },
+  "checking_update": {
+    "message": "正在检查..."
+  },
+  "update_available": {
+    "message": "发现新版本"
+  },
+  "up_to_date": {
+    "message": "已是最新"
+  },
+  "update_check_failed": {
+    "message": "检查失败"
+  },
+  "download_latest": {
+    "message": "下载最新版本"
+  },
+  "download_apk": {
+    "message": "Android APK"
+  },
+  "download_offline_html": {
+    "message": "离线网页版"
+  },
+  "download_chrome": {
+    "message": "Chrome 插件"
   },
   "already_offline": {
     "message": "您当前已经处于离线版或本地运行环境中！"

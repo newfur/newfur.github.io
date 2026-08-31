@@ -66,11 +66,35 @@
   "more_actions": {
     "message": "More"
   },
-  "download_offline": {
-    "message": "Download Offline"
+  "check_update": {
+    "message": "Check for Updates"
   },
-  "download_offline_tooltip": {
-    "message": "Download standalone single-file HTML version (runs locally, fully supports Edge TTS)"
+  "check_update_tooltip": {
+    "message": "Check for new version and download updates"
+  },
+  "checking_update": {
+    "message": "Checking..."
+  },
+  "update_available": {
+    "message": "New version"
+  },
+  "up_to_date": {
+    "message": "Up to date"
+  },
+  "update_check_failed": {
+    "message": "Check failed"
+  },
+  "download_latest": {
+    "message": "Download Latest Version"
+  },
+  "download_apk": {
+    "message": "Android APK"
+  },
+  "download_offline_html": {
+    "message": "Offline HTML"
+  },
+  "download_chrome": {
+    "message": "Chrome Extension"
   },
   "already_offline": {
     "message": "You are already running in the offline/local environment!"
