@@ -24047,10 +24047,7 @@ function getTTSVoiceGroups(voices, lang, edgeOnly = false) {
     if (aNatural !== bNatural) return aNatural ? -1 : 1;
     return (a.name || '').localeCompare(b.name || '');
   });
-  const matchedNames = new Set(matchedVoices.map(voice => voice.name));
-  const otherVoices = availableVoices.filter(voice => !matchedNames.has(voice.name));
-
-  return { matchedVoices, otherVoices, availableVoices };
+  return { matchedVoices, availableVoices };
 }
 
 // 初始化播放面板語音下拉選單
@@ -24075,18 +24072,7 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
   select.innerHTML = '';
 
   const voiceGroups = getTTSVoiceGroups(tts.voices, lang, ttsOnlyEdge);
-  const { matchedVoices, otherVoices } = voiceGroups;
-
-  const getLangDisplayName = (code) => {
-    if (code.startsWith('zh')) return getMsg('tts_lang_zh_cn') || '中文';
-    if (code.startsWith('en')) return getMsg('tts_lang_en') || 'English';
-    if (code.startsWith('ja')) return getMsg('tts_lang_ja') || '日本語';
-    if (code.startsWith('ko')) return getMsg('tts_lang_ko') || '한국어';
-    if (code.startsWith('fr')) return 'Français';
-    if (code.startsWith('de')) return 'Deutsch';
-    if (code.startsWith('es')) return 'Español';
-    return code.toUpperCase();
-  };
+  const { matchedVoices } = voiceGroups;
 
   const createOption = (voice) => {
     const opt = document.createElement('option');
@@ -24098,26 +24084,12 @@ function initTTSPanelVoices(filename, isBookOpening = false) {
 
   let hasDefaultVoice = false;
 
-  // 1. 添加推薦語音群組（置頂）
+  // 1. 添加推薦語音（僅顯示與書籍語言匹配的語音）
   if (matchedVoices.length > 0) {
-    const groupRec = document.createElement('optgroup');
-    groupRec.label = `🌟 ${getMsg('recommended') || 'Recommended'} (${getLangDisplayName(lang)})`;
     matchedVoices.forEach(voice => {
-      groupRec.appendChild(createOption(voice));
+      select.appendChild(createOption(voice));
       if (voice.name === ttsDefaultVoice) hasDefaultVoice = true;
     });
-    select.appendChild(groupRec);
-  }
-
-  // 2. 添加其他語言語音群組
-  if (otherVoices.length > 0) {
-    const groupOther = document.createElement('optgroup');
-    groupOther.label = `🌐 ${getMsg('other_voices') || 'All Other Voices'}`;
-    otherVoices.forEach(voice => {
-      groupOther.appendChild(createOption(voice));
-      if (voice.name === ttsDefaultVoice) hasDefaultVoice = true;
-    });
-    select.appendChild(groupOther);
   }
 
   // Inject default/custom voice for OpenAI/Local providers if not present

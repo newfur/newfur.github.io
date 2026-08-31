@@ -32,29 +32,32 @@ const voices = [
   { name: 'Chinese Edge', lang: 'zh-CN', isEdge: true }
 ];
 
-assert.deepStrictEqual(
-  getTTSVoiceGroups(voices, 'pt', false),
-  {
-    matchedVoices: [],
-    otherVoices: voices,
-    availableVoices: voices
-  },
-  'unmatched languages should use one non-recommended fallback group'
-);
+// Unmatched language: matchedVoices should be empty, all voices in availableVoices
+{
+  const result = getTTSVoiceGroups(voices, 'pt', false);
+  assert.deepStrictEqual(result.matchedVoices, [], 'unmatched language should have empty matchedVoices');
+  assert.deepStrictEqual(result.availableVoices, voices, 'all voices should remain available');
+}
 
-assert.deepStrictEqual(
-  getTTSVoiceGroups(voices, 'pt', true),
-  {
-    matchedVoices: [],
-    otherVoices: [voices[0], voices[2]],
-    availableVoices: [voices[0], voices[2]]
-  },
-  'Edge-only mode should remove every non-Edge voice'
-);
+// Edge-only mode filters non-Edge voices
+{
+  const result = getTTSVoiceGroups(voices, 'pt', true);
+  assert.deepStrictEqual(result.matchedVoices, [], 'unmatched + Edge-only: no matched voices');
+  assert.deepStrictEqual(result.availableVoices, [voices[0], voices[2]], 'Edge-only should keep only Edge voices');
+}
 
+// Matched language returns only matching voices
+{
+  const result = getTTSVoiceGroups(voices, 'en', false);
+  assert.strictEqual(result.matchedVoices.length, 2, 'en should match 2 English voices');
+  assert.ok(result.matchedVoices.every(v => v.lang.startsWith('en')), 'all matched should be English');
+}
+
+// shouldAppendChapterTitles
 assert.strictEqual(shouldAppendChapterTitles('body text', 'chapter title'), false);
 assert.strictEqual(shouldAppendChapterTitles('', 'chapter title'), true);
 
+// Exact locale and high-quality ordering
 const localeVoices = [
   { name: 'Simplified Chinese', lang: 'zh-CN', isEdge: true },
   { name: 'Traditional Chinese', lang: 'zh-TW', isEdge: true },
@@ -67,10 +70,18 @@ assert.deepStrictEqual(
   'exact locale and high-quality voices should be preferred within a language group'
 );
 
+// Custom provider voices must not bypass Edge-only mode
 assert.match(
   source,
   /ttsDefaultVoice && !hasDefaultVoice && !ttsOnlyEdge/,
   'custom provider voices must not bypass Edge-only mode'
+);
+
+// Global language setting should be a fallback, not override
+assert.doesNotMatch(
+  source.split('function detectBookLanguage')[1].split('\n').slice(0, 5).join('\n'),
+  /currentTTSLanguage/,
+  'detectBookLanguage must not use global language as first priority'
 );
 
 console.log('TTS review regression tests passed');
