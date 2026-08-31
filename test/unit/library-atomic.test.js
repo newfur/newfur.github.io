@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { File } from 'node:buffer';
 import FDBFactory from 'fake-indexeddb/lib/FDBFactory';
 import FDBKeyRange from 'fake-indexeddb/lib/FDBKeyRange';
 import { BookLibrary, applyCommittedBookToList } from '../../reader/library.js';
@@ -163,20 +164,43 @@ test('typed Blob content survives storage cleaning and IndexedDB round trip', as
   assert.equal('name' in stored.file, false);
 });
 
-test('clearAllStats abort preserves every book when any write fails', async () => {
+test('native File input normalizes to the Blob representation persisted by the app', async () => {
+  installIndexedDB();
+  Object.defineProperty(globalThis, 'File', { configurable: true, value: File });
+  const library = new BookLibrary();
+  const file = new File(['native file bytes'], 'reader.txt', { type: 'text/plain;charset=utf-8' });
+  const clean = library._cleanBookForStorage({ id: 'book-1', file });
+  assert.ok(clean.file instanceof Blob);
+  assert.equal(clean.file instanceof File, false);
+  assert.equal(clean.file.type, 'text/plain;charset=utf-8');
+  assert.equal(await clean.file.text(), 'native file bytes');
+  assert.equal('name' in clean.file, false);
+
+  await library.addBook({ ...book(), file });
+  const stored = await library.getBook('book-1');
+  assert.ok(stored.file instanceof Blob);
+  assert.equal(stored.file instanceof File, false);
+  assert.equal(stored.file.type, 'text/plain;charset=utf-8');
+  assert.equal(await stored.file.text(), 'native file bytes');
+  assert.equal('name' in stored.file, false);
+});
+
+test('clearAllStats rolls back every book on a real IndexedDB constraint failure', async () => {
   installIndexedDB();
   const library = new BookLibrary();
   await library.addBook(book('book-1'));
   await library.addBook(book('book-2'));
   await library.updateBook('book-1', value => { value.stats = { totalTime: 10, readingDays: { day: 10 }, hourlyDist: {} }; });
   await library.updateBook('book-2', value => { value.stats = { totalTime: 20, readingDays: { day: 20 }, hourlyDist: {} }; });
-  const clean = library._cleanBookForStorage.bind(library);
-  library._cleanBookForStorage = value => {
-    if (value.id === 'book-2' && value.stats.totalTime === 0) throw new Error('clean failed');
-    return clean(value);
-  };
+  library.db.close();
+  library.db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('EdgeReaderDB', 2);
+    request.onupgradeneeded = () => request.transaction.objectStore('books').createIndex('uniqueStatsTotal', 'stats.totalTime', { unique: true });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 
-  await assert.rejects(() => library.clearAllStats(), /clean failed/);
+  await assert.rejects(() => library.clearAllStats(), error => error?.name === 'ConstraintError');
   assert.deepEqual((await library.getBook('book-1')).stats.readingDays, { day: 10 });
   assert.deepEqual((await library.getBook('book-2')).stats.readingDays, { day: 20 });
 });

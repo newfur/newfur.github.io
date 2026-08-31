@@ -177,7 +177,8 @@ export class BookLibrary {
       try {
         for (const book of request.result) {
           book.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} };
-          store.put(this._cleanBookForStorage(book));
+          const putRequest = store.put(this._cleanBookForStorage(book));
+          putRequest.onerror = () => { operationError = putRequest.error; };
         }
       } catch (error) {
         operationError = error;
