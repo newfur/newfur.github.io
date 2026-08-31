@@ -44,7 +44,7 @@ import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
 import { OperationOwner, OwnedDebouncer, OwnedLease, OwnedValueLock, buildOwnedSearchIndex, completeOwnedTransition, ownedCallback } from './operation-ownership.js';
-import { BoundedResourceCache, OwnedResourceSlot, ResourceOwnership } from './resource-ownership.js';
+import { BoundedResourceCache, OwnedResourceSlot, ResourceOwnership, cleanupOwnedResourceLists } from './resource-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -154,11 +154,7 @@ function createResourceOwner(type, operation = readerOperations.currentToken(), 
 }
 
 function cleanupParserResult(result, parser = null, owner = null) {
-  if (owner) resourceOwnership.revokeOwner(owner);
-  const urls = new Set([...(result?.resourceUrls || []), ...(parser?.resourceUrls || [])]);
-  urls.forEach(url => resourceOwnership.revoke(url));
-  if (result?.resourceUrls) result.resourceUrls = [];
-  if (parser?.resourceUrls) parser.resourceUrls = [];
+  cleanupOwnedResourceLists(resourceOwnership, owner, result?.resourceUrls, parser?.resourceUrls);
 }
 
 function abortReaderAI(reason = 'reader operation superseded') {

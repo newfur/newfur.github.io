@@ -5,6 +5,7 @@ import {
   BoundedResourceCache,
   OwnedResourceSlot,
   ResourceOwnership,
+  cleanupOwnedResourceLists,
 } from '../../reader/resource-ownership.js';
 import { TTSEngine } from '../../reader/tts.js';
 import { ComicParser } from '../../reader/parsers/comic-parser.js';
@@ -59,8 +60,8 @@ test('owner registry releases each blob URL exactly once', () => {
   resources.register('chapter', url);
   assert.equal(resources.has('chapter', url), true);
 
-  assert.equal(resources.revoke(url), true);
-  assert.equal(resources.revoke(url), false);
+  assert.equal(resources.release('chapter', url), true);
+  assert.equal(resources.release('chapter', url), false);
   resources.revokeOwner('chapter');
   assert.deepEqual(urlApi.revoked, [url]);
 });
@@ -70,16 +71,39 @@ test('shared URL remains alive until its final owner is released', () => {
   const resources = new ResourceOwnership(urlApi);
   const url = urlApi.createObjectURL(new Blob(['shared']));
 
-  resources.register('tts-group', url);
-  resources.register('tts-index-11', url);
-  resources.register('tts-index-12', url);
-  resources.revokeOwner('tts-index-11');
-  resources.revokeOwner('tts-index-12');
+  resources.register('owner-a', url);
+  resources.register('owner-b', url);
+  resources.release('owner-a', url);
   assert.deepEqual(urlApi.revoked, []);
 
-  resources.revokeOwner('tts-group');
-  resources.revokeOwner('tts-group');
+  resources.release('owner-b', url);
+  resources.release('owner-b', url);
   assert.deepEqual(urlApi.revoked, [url]);
+});
+
+test('owner-scoped parser cleanup cannot revoke another owner shared URL', () => {
+  const urlApi = createFakeUrlApi();
+  const finalized = [];
+  const resources = new ResourceOwnership(urlApi, url => finalized.push(url));
+  const url = urlApi.createObjectURL(new Blob(['shared parser resource']));
+  const parserOwner = { type: 'parser' };
+  const mountedOwner = { type: 'chapter' };
+
+  resources.register(parserOwner, url);
+  resources.register(mountedOwner, url);
+  const parserResult = { resourceUrls: [url] };
+  const parser = { resourceUrls: [url] };
+  cleanupOwnedResourceLists(resources, parserOwner, parserResult.resourceUrls, parser.resourceUrls);
+
+  assert.equal(resources.has(mountedOwner, url), true);
+  assert.deepEqual(parserResult.resourceUrls, []);
+  assert.deepEqual(parser.resourceUrls, []);
+  assert.deepEqual(urlApi.revoked, []);
+  assert.deepEqual(finalized, []);
+
+  resources.release(mountedOwner, url);
+  assert.deepEqual(urlApi.revoked, [url]);
+  assert.deepEqual(finalized, [url]);
 });
 
 test('duplicate finalizers run once and non-blob URLs are ignored', () => {
@@ -204,6 +228,28 @@ test('TTS group references release their shared object URL once', () => {
   engine._deleteAudioCacheEntry(12);
 
   assert.deepEqual(urlApi.revoked, [url]);
+});
+
+test('TTS group replacement releases the old root without leaking or overwriting newer sessions', () => {
+  const urlApi = createFakeUrlApi();
+  const resources = new ResourceOwnership(urlApi);
+  const engine = createBareTts(resources);
+  const oldUrl = urlApi.createObjectURL(new Blob(['old group']));
+  const replacementUrl = urlApi.createObjectURL(new Blob(['replacement group']));
+  const staleUrl = urlApi.createObjectURL(new Blob(['stale group']));
+
+  engine._storeGroupCache(10, [{ text: 'old a' }, { text: 'old b' }], oldUrl, 1, 'book-a');
+  engine._storeGroupCache(10, [{ text: 'new a' }], replacementUrl, 1, 'book-a');
+
+  assert.deepEqual(urlApi.revoked, [oldUrl]);
+  assert.equal(engine.audioCache.get(10).blobUrl, replacementUrl);
+  assert.equal(engine.audioCache.has(11), false);
+
+  engine._storeGroupCache(10, [{ text: 'stale' }], staleUrl, 0, 'book-a');
+  assert.equal(engine.audioCache.get(10).blobUrl, replacementUrl);
+  assert.deepEqual(urlApi.revoked, [oldUrl, staleUrl]);
+  engine._deleteAudioCacheEntry(10);
+  assert.deepEqual(urlApi.revoked, [oldUrl, staleUrl, replacementUrl]);
 });
 
 test('stale TTS group completion cannot revoke the active session URL at the same index', () => {

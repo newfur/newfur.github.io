@@ -230,8 +230,15 @@ export class TTSEngine {
     this.audioCache.set(index, { blobUrl, isReady: true, isGroup: false, owner });
   }
 
-  _storeGroupCache(groupStartIndex, groupSentences, blobUrl) {
-    const owner = this._audioOwner(groupStartIndex);
+  _storeGroupCache(groupStartIndex, groupSentences, blobUrl, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    if (!this._isCurrentSession(sessionId, bookId)) {
+      const staleOwner = this._audioOwner(groupStartIndex, sessionId, bookId);
+      this._resources().register(staleOwner, blobUrl);
+      this._resources().release(staleOwner, blobUrl);
+      return false;
+    }
+    this._deleteAudioCacheEntry(groupStartIndex);
+    const owner = this._audioOwner(groupStartIndex, sessionId, bookId);
     this._resources().register(owner, blobUrl);
     this.audioCache.set(groupStartIndex, {
       blobUrl,
@@ -244,6 +251,7 @@ export class TTSEngine {
     for (let i = 1; i < groupSentences.length; i++) {
       this.audioCache.set(groupStartIndex + i, { isReady: true, isGroupRef: true, groupStartIndex, owner });
     }
+    return true;
   }
 
   _deleteAudioCacheEntry(index) {
@@ -1650,7 +1658,7 @@ export class TTSEngine {
         this._resources().revokeOwner(staleOwner);
         return;
       }
-      this._storeGroupCache(groupStartIndex, groupSentences, blobUrl);
+      this._storeGroupCache(groupStartIndex, groupSentences, blobUrl, sessionId, bookId);
       
       releaseMarker();
       this._onAudioCacheReady(groupStartIndex);

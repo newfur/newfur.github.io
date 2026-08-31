@@ -43,12 +43,10 @@ export class ResourceOwnership {
     return true;
   }
 
-  revoke(url) {
-    if (typeof url !== 'string' || !url.startsWith('blob:') || this.#revoked.has(url)) return false;
-    const owners = this.#urls.get(url);
-    if (!owners) return false;
-    [...owners].forEach(owner => this.#detach(owner, url));
-    this.#release(url);
+  release(owner, url) {
+    if (!this.#owners.get(owner)?.has(url)) return false;
+    this.#detach(owner, url);
+    if (!this.#urls.has(url)) this.#release(url);
     return true;
   }
 
@@ -94,6 +92,14 @@ export class ResourceOwnership {
       this.urlApi?.revokeObjectURL?.(url);
     }
   }
+}
+
+export function cleanupOwnedResourceLists(resources, owner, ...lists) {
+  const urls = new Set(lists.flatMap(list => Array.isArray(list) ? list : []));
+  urls.forEach(url => resources.release(owner, url));
+  lists.forEach(list => {
+    if (Array.isArray(list)) list.splice(0);
+  });
 }
 
 export class OwnedResourceSlot {

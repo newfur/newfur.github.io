@@ -12588,12 +12588,10 @@ class ResourceOwnership {
     return true;
   }
 
-  revoke(url) {
-    if (typeof url !== 'string' || !url.startsWith('blob:') || this.#revoked.has(url)) return false;
-    const owners = this.#urls.get(url);
-    if (!owners) return false;
-    [...owners].forEach(owner => this.#detach(owner, url));
-    this.#release(url);
+  release(owner, url) {
+    if (!this.#owners.get(owner)?.has(url)) return false;
+    this.#detach(owner, url);
+    if (!this.#urls.has(url)) this.#release(url);
     return true;
   }
 
@@ -12639,6 +12637,14 @@ class ResourceOwnership {
       this.urlApi?.revokeObjectURL?.(url);
     }
   }
+}
+
+function cleanupOwnedResourceLists(resources, owner, ...lists) {
+  const urls = new Set(lists.flatMap(list => Array.isArray(list) ? list : []));
+  urls.forEach(url => resources.release(owner, url));
+  lists.forEach(list => {
+    if (Array.isArray(list)) list.splice(0);
+  });
 }
 
 class OwnedResourceSlot {
@@ -15227,8 +15233,15 @@ class TTSEngine {
     this.audioCache.set(index, { blobUrl, isReady: true, isGroup: false, owner });
   }
 
-  _storeGroupCache(groupStartIndex, groupSentences, blobUrl) {
-    const owner = this._audioOwner(groupStartIndex);
+  _storeGroupCache(groupStartIndex, groupSentences, blobUrl, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    if (!this._isCurrentSession(sessionId, bookId)) {
+      const staleOwner = this._audioOwner(groupStartIndex, sessionId, bookId);
+      this._resources().register(staleOwner, blobUrl);
+      this._resources().release(staleOwner, blobUrl);
+      return false;
+    }
+    this._deleteAudioCacheEntry(groupStartIndex);
+    const owner = this._audioOwner(groupStartIndex, sessionId, bookId);
     this._resources().register(owner, blobUrl);
     this.audioCache.set(groupStartIndex, {
       blobUrl,
@@ -15241,6 +15254,7 @@ class TTSEngine {
     for (let i = 1; i < groupSentences.length; i++) {
       this.audioCache.set(groupStartIndex + i, { isReady: true, isGroupRef: true, groupStartIndex, owner });
     }
+    return true;
   }
 
   _deleteAudioCacheEntry(index) {
@@ -16647,7 +16661,7 @@ class TTSEngine {
         this._resources().revokeOwner(staleOwner);
         return;
       }
-      this._storeGroupCache(groupStartIndex, groupSentences, blobUrl);
+      this._storeGroupCache(groupStartIndex, groupSentences, blobUrl, sessionId, bookId);
       
       releaseMarker();
       this._onAudioCacheReady(groupStartIndex);
@@ -18457,11 +18471,7 @@ function createResourceOwner(type, operation = readerOperations.currentToken(), 
 }
 
 function cleanupParserResult(result, parser = null, owner = null) {
-  if (owner) resourceOwnership.revokeOwner(owner);
-  const urls = new Set([...(result?.resourceUrls || []), ...(parser?.resourceUrls || [])]);
-  urls.forEach(url => resourceOwnership.revoke(url));
-  if (result?.resourceUrls) result.resourceUrls = [];
-  if (parser?.resourceUrls) parser.resourceUrls = [];
+  cleanupOwnedResourceLists(resourceOwnership, owner, result?.resourceUrls, parser?.resourceUrls);
 }
 
 function abortReaderAI(reason = 'reader operation superseded') {
