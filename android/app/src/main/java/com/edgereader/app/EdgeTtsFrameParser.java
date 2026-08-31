@@ -109,6 +109,8 @@ final class EdgeTtsFrameParser {
         JsonCursor cursor = new JsonCursor(body);
         cursor.skipWhitespace();
         if (!cursor.consume('{')) throw new ProtocolException();
+        cursor.skipWhitespace();
+        if (cursor.consume('}')) throw new ProtocolException();
         cursor.parseObjectContents();
         cursor.skipWhitespace();
         if (!cursor.atEnd()) throw new ProtocolException();

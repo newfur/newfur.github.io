@@ -87,6 +87,7 @@ public class EdgeTtsFrameParserTest {
 
     @Test public void validatesBoundedJsonObjectControlBodies() throws Exception {
         EdgeTtsFrameParser.parseText(control("turn.start", " { \"nested\" : [1, true, null, {\"x\":\"y\"}] } "), REQUEST_ID);
+        assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "{}"), REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "[]"), REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "{\"broken\":}"), REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "{\"x\":1} trailing"), REQUEST_ID));
