@@ -164,3 +164,24 @@ test('creating another built-in request does not destroy an active request sessi
     globalThis.window = originalWindow;
   }
 });
+
+test('aborting a never-yielding built-in stream destroys its session and settles promptly', async () => {
+  const engine = new AIEngine();
+  const owned = context();
+  const pendingRead = deferred();
+  const session = {
+    destroyCalls: 0,
+    promptStreaming: () => ({
+      [Symbol.asyncIterator]() { return this; },
+      next: () => pendingRead.promise,
+      return: () => Promise.resolve({ done: true })
+    }),
+    destroy() { this.destroyCalls += 1; }
+  };
+
+  const request = engine._streamPrompt('prompt', () => {}, owned.value, session);
+  owned.invalidate();
+
+  await assert.rejects(request, error => error?.name === 'AbortError');
+  assert.equal(session.destroyCalls, 1);
+});

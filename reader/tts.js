@@ -91,7 +91,7 @@ export class TTSEngine {
     
     // HTML5 Audio 播放隊列與快取
     this.audioCache = new Map(); // index -> { blobUrl, isReady }
-    this.fetchingIndices = new Set();
+    this.fetchingIndices = new Map();
     
     // 建立雙播放器以進行無縫交替播放，消除播放間隙，防止 iOS 後台掛起
     this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
@@ -863,13 +863,7 @@ export class TTSEngine {
 
     // DOM 映射完成後，等瀏覽器完成佈局渲染後高亮並平移至當前正在播放的句子
     if (this.isPlaying) {
-      setTimeout(() => {
-        if (!this.isPlaying) return;
-        const currentSent = this.sentences[this.currentIndex];
-        if (currentSent && currentSent.element) {
-          this._highlightSentence(currentSent);
-        }
-      }, 100);
+      this._scheduleOwnedHighlight(setTimeout, this.playbackGeneration, this.ownerBookId);
     }
   }
 
@@ -902,6 +896,14 @@ export class TTSEngine {
   setSentences(sentences) {
     this.sentences = sentences;
     this.currentIndex = 0;
+  }
+
+  _scheduleOwnedHighlight(schedule = setTimeout, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    schedule(() => {
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
+      const currentSent = this.sentences[this.currentIndex];
+      if (currentSent?.element) this._highlightSentence(currentSent);
+    }, 100);
   }
 
   // 3. Edge 語音下載輔助方法
@@ -1407,7 +1409,11 @@ export class TTSEngine {
 
     if (index >= this.sentences.length) return Promise.resolve();
     if (this.audioCache.has(index)) return Promise.resolve();
-    if (retryCount === 0 && this.fetchingIndices.has(index)) return Promise.resolve();
+    const existingMarker = this.fetchingIndices.get(index);
+    if (retryCount === 0 && existingMarker?.sessionId === sessionId && existingMarker.bookId === bookId) return Promise.resolve();
+    const releaseMarker = (targetIndex, marker) => {
+      if (this.fetchingIndices.get(targetIndex) === marker) this.fetchingIndices.delete(targetIndex);
+    };
 
     // 判斷是否進入“分組（10句）發送”階段：
     // 每當開始播放（即 playbackStartSessionIndex 已設定），前10句（index < session + 10）單句獲取以保證極速啟動，
@@ -1417,15 +1423,19 @@ export class TTSEngine {
 
     if (!isGroupPhase) {
       // 1. 單句獲取階段
-      this.fetchingIndices.add(index);
+      const marker = { sessionId, bookId };
+      this.fetchingIndices.set(index, marker);
       const sentence = this.sentences[index];
       
       return this._downloadSentenceAudio(sentence, sessionId, bookId).then(blob => {
-        if (!this._isCurrentSession(sessionId, bookId)) return;
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          releaseMarker(index, marker);
+          return;
+        }
         this.consecutiveWsFailures = 0;
-        this._saveToCache(index, blob, sessionId, bookId);
+        this._saveToCache(index, blob, sessionId, bookId, marker);
       }).catch(err => {
-        this.fetchingIndices.delete(index);
+        releaseMarker(index, marker);
         if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
         console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         
@@ -1494,12 +1504,14 @@ export class TTSEngine {
       const groupSentences = groupInfo.sentences;
       
       if (this.audioCache.has(groupStartIndex)) return;
-      if (retryCount === 0 && this.fetchingIndices.has(groupStartIndex)) return;
+      const existingGroupMarker = this.fetchingIndices.get(groupStartIndex);
+      if (retryCount === 0 && existingGroupMarker?.sessionId === sessionId && existingGroupMarker.bookId === bookId) return;
       
-      this.fetchingIndices.add(groupStartIndex);
+      const marker = { sessionId, bookId };
+      this.fetchingIndices.set(groupStartIndex, marker);
       
       if (groupSentences.length === 0) {
-        this.fetchingIndices.delete(groupStartIndex);
+        releaseMarker(groupStartIndex, marker);
         return;
       }
       
@@ -1528,11 +1540,14 @@ export class TTSEngine {
       };
       
       return this._downloadSentenceAudio(virtualSentence, sessionId, bookId).then(blob => {
-        if (!this._isCurrentSession(sessionId, bookId)) return;
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          releaseMarker(groupStartIndex, marker);
+          return;
+        }
         this.consecutiveWsFailures = 0;
-        this._saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId, bookId);
+        this._saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId, bookId, marker);
       }).catch(err => {
-        this.fetchingIndices.delete(groupStartIndex);
+        releaseMarker(groupStartIndex, marker);
         if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
         console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         
@@ -1547,16 +1562,19 @@ export class TTSEngine {
     }
   }
 
-  _saveToCache(index, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+  _saveToCache(index, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId, marker = this.fetchingIndices.get(index)) {
+    const releaseMarker = () => {
+      if (this.fetchingIndices.get(index) === marker) this.fetchingIndices.delete(index);
+    };
     if (!this._isCurrentSession(sessionId, bookId)) {
-      this.fetchingIndices.delete(index);
+      releaseMarker();
       return;
     }
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
       reader.onloadend = () => {
         if (!this._isCurrentSession(sessionId, bookId)) {
-          this.fetchingIndices.delete(index);
+          releaseMarker();
           return;
         }
         this.audioCache.set(index, {
@@ -1564,7 +1582,7 @@ export class TTSEngine {
           isReady: true,
           isGroup: false
         });
-        this.fetchingIndices.delete(index);
+        releaseMarker();
         this._onAudioCacheReady(index);
       };
       reader.readAsDataURL(blob);
@@ -1575,15 +1593,18 @@ export class TTSEngine {
         isReady: true,
         isGroup: false
       });
-      this.fetchingIndices.delete(index);
+      releaseMarker();
       this._onAudioCacheReady(index);
     }
   }
 
-  _saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+  _saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId, marker = this.fetchingIndices.get(groupStartIndex)) {
+    const releaseMarker = () => {
+      if (this.fetchingIndices.get(groupStartIndex) === marker) this.fetchingIndices.delete(groupStartIndex);
+    };
     const onUrlReady = (blobUrl) => {
       if (!this._isCurrentSession(sessionId, bookId)) {
-        this.fetchingIndices.delete(groupStartIndex);
+        releaseMarker();
         if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
         return;
       }
@@ -1606,7 +1627,7 @@ export class TTSEngine {
         });
       }
       
-      this.fetchingIndices.delete(groupStartIndex);
+      releaseMarker();
       this._onAudioCacheReady(groupStartIndex);
     };
 

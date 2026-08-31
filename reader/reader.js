@@ -43,7 +43,7 @@ if (typeof mermaid !== 'undefined') {
 import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
-import { OperationOwner, OwnedDebouncer, OwnedLease, buildOwnedSearchIndex, completeOwnedTransition, finishTrackedResource, ownedCallback } from './operation-ownership.js';
+import { OperationOwner, OwnedDebouncer, OwnedLease, OwnedValueLock, buildOwnedSearchIndex, completeOwnedTransition, finishTrackedResource, ownedCallback } from './operation-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -110,6 +110,14 @@ let isChangingChapter = false;
 let lastChapterChangeTime = 0;
 let openingBookId = null;
 const readingTrackerLease = new OwnedLease();
+const chapterScrollLock = new OwnedValueLock(
+  () => ({ html: document.documentElement.style.overflow, body: document.body.style.overflow }),
+  value => {
+    document.documentElement.style.overflow = value.html;
+    document.body.style.overflow = value.body;
+  },
+  { html: 'hidden', body: 'hidden' }
+);
 
 function clearTTSClickTimer() {
   if (!ttsClickTimeout) return;
@@ -3803,13 +3811,11 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   const ownedBookData = epubBookData;
   const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && epubBookData === ownedBookData;
   const isPaginated = document.body.classList.contains('layout-paginated');
-  const origHtmlOverflow = document.documentElement.style.overflow;
-  const origBodyOverflow = document.body.style.overflow;
+  let scrollLockToken = null;
   let activeHashElem = null;
 
   if (!isPaginated) {
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
+    scrollLockToken = chapterScrollLock.acquire(operation);
   }
   
   isChangingChapter = true;
@@ -4218,20 +4224,21 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       }
     }
   } finally {
-    if (!isCurrent()) return;
-    isChangingChapter = false;
-    lastChapterChangeTime = Date.now();
-    if (!isPaginated) {
-      setTimeout(ownedCallback(isCurrent, () => {
-        document.documentElement.style.overflow = origHtmlOverflow;
-        document.body.style.overflow = origBodyOverflow;
+    if (isCurrent()) {
+      isChangingChapter = false;
+      lastChapterChangeTime = Date.now();
+    }
+    if (scrollLockToken) {
+      setTimeout(() => {
+        chapterScrollLock.release(scrollLockToken);
+        if (!isCurrent()) return;
         // 確保在溢出屬性恢復後，滾動目標被正確應用
         if (goToLastPage) {
           window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
         } else if (!restoreProgress && !targetKindleOffset && !targetHash && !activeHashElem && targetElementIndex === null && targetSentenceIndex === null && targetPageIndex === null) {
           window.scrollTo(0, 0);
         }
-      }), 150);
+      }, 150);
     }
   }
 }

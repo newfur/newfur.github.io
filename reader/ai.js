@@ -165,17 +165,35 @@ export class AIEngine {
   // 流式 Prompt 處理封裝 (內置 AI)
   async _streamPrompt(prompt, onChunk, context = null, requestSession = this.session) {
     if (!requestSession) throw new Error('AI session is not initialized');
+    let destroyed = false;
+    const destroySession = () => {
+      if (destroyed) return;
+      destroyed = true;
+      try { requestSession.destroy(); } catch(e) {}
+    };
+    let abort;
 
     try {
       this._assertCurrent(context);
       if (typeof requestSession.promptStreaming === 'function') {
         const stream = requestSession.promptStreaming(prompt);
+        const iterator = stream[Symbol.asyncIterator]();
+        const abortPromise = context?.controller?.signal ? new Promise((_, reject) => {
+          abort = () => {
+            destroySession();
+            try { Promise.resolve(iterator.return?.()).catch(() => {}); } catch (e) {}
+            reject(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
+          };
+          context.controller.signal.addEventListener('abort', abort, { once: true });
+          if (context.controller.signal.aborted) abort();
+        }) : null;
         let fullResponse = '';
-        
-        for await (const chunk of stream) {
+        while (true) {
+          const result = abortPromise ? await Promise.race([iterator.next(), abortPromise]) : await iterator.next();
+          if (result.done) break;
           this._assertCurrent(context);
-          fullResponse = chunk;
-          if (onChunk) onChunk(chunk);
+          fullResponse = result.value;
+          if (onChunk) onChunk(result.value);
         }
         return fullResponse;
       } else {
@@ -188,7 +206,8 @@ export class AIEngine {
       if (e?.name !== 'AbortError') console.error('AI prompt error:', e);
       throw e;
     } finally {
-      try { requestSession.destroy(); } catch(e) {}
+      if (abort) context?.controller?.signal.removeEventListener('abort', abort);
+      destroySession();
       if (this.session === requestSession) this.session = null;
     }
   }

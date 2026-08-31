@@ -17,7 +17,7 @@ function bareEngine() {
     activeRequests: new Set(),
     retryTimers: new Set(),
     audioCache: new Map(),
-    fetchingIndices: new Set(),
+    fetchingIndices: new Map(),
     sentences: [{ text: 'hello', chapterIndex: 0 }],
     selectedVoice: { name: 'voice', type: 'openai' },
     voices: [{ name: 'voice', type: 'openai' }, { name: 'other', type: 'openai' }],
@@ -296,4 +296,49 @@ test('timeout during token generation prevents late native or WebSocket startup'
     globalThis.window = originalWindow;
     globalThis.WebSocket = originalWebSocket;
   }
+});
+
+test('same-index fetch in a newer session is not blocked or cleared by old completion', async () => {
+  const engine = bareEngine();
+  engine.isPlaying = false;
+  const first = deferred();
+  const second = deferred();
+  let calls = 0;
+  engine._downloadSentenceAudio = () => (++calls === 1 ? first.promise : second.promise);
+  const originalWindow = globalThis.window;
+  globalThis.window = { location: { protocol: 'https:' } };
+
+  try {
+    const sessionA = engine._beginSession('book-a');
+    const fetchA = engine._fetchSentence(0, 0, sessionA, 'book-a');
+    const sessionB = engine._beginSession('book-a');
+    const fetchB = engine._fetchSentence(0, 0, sessionB, 'book-a');
+    assert.equal(calls, 2);
+
+    first.resolve(new Blob(['old']));
+    await fetchA;
+    assert.equal(engine.fetchingIndices.get(0)?.sessionId, sessionB);
+
+    second.resolve(new Blob(['new']));
+    await fetchB;
+    assert.equal(engine.fetchingIndices.has(0), false);
+    assert.equal(engine.audioCache.has(0), true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('delayed DOM sync highlight ignores an obsolete playback session', () => {
+  const engine = bareEngine();
+  engine.sentences[0].element = {};
+  const timers = [];
+  const highlights = [];
+  engine._highlightSentence = sentence => highlights.push(sentence.text);
+  const sessionA = engine._beginSession('book-a');
+  engine._scheduleOwnedHighlight(callback => timers.push(callback), sessionA, 'book-a');
+  const callback = timers.pop();
+  engine._beginSession('book-b');
+  callback();
+
+  assert.deepEqual(highlights, []);
 });

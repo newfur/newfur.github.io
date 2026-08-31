@@ -6,6 +6,7 @@ import {
   OperationOwner,
   OwnedDebouncer,
   OwnedLease,
+  OwnedValueLock,
   buildOwnedSearchIndex,
   finishTrackedResource,
   ownedCallback,
@@ -74,7 +75,8 @@ test('reader async flows use captured owners and explicit persistence ids', () =
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId, closingTracker\)/);
   assert.match(source, /pending: library\.updateProgress\(operation\.bookId, progressUpdate\)/);
   assert.doesNotMatch(source, /loadChapter ignored because a chapter change is already in progress/);
-  assert.match(source, /finally \{\s*if \(!isCurrent\(\)\) return;\s*isChangingChapter = false;/);
+  assert.match(source, /finally \{\s*if \(isCurrent\(\)\) \{\s*isChangingChapter = false;/);
+  assert.match(source, /chapterScrollLock\.release\(scrollLockToken\)/);
 });
 
 test('offline artifacts define operation ownership before reader startup', () => {
@@ -190,7 +192,7 @@ test('reader delayed chapter integrations all use the captured owner guard', () 
   assert.match(source, /pendingGoToLastPageTimeout = setTimeout\(ownedCallback\(isCurrent/);
   assert.match(source, /return waitForStylesheets\(contentEl\)\.then\(\(\) => \{\s*if \(!isCurrent\(\)\) return;/);
   assert.match(source, /document\.fonts\.ready\.then\(\(\) => \{\s*if \(!isCurrent\(\)\) return;/);
-  assert.match(source, /setTimeout\(ownedCallback\(isCurrent, \(\) => \{\s*document\.documentElement\.style\.overflow/);
+  assert.match(source, /setTimeout\(\(\) => \{\s*chapterScrollLock\.release\(scrollLockToken\);\s*if \(!isCurrent\(\)\) return;/);
 });
 
 test('debounced progress reports persistence failures without applying memory state', async () => {
@@ -323,4 +325,27 @@ test('reader cross-book shared state is guarded by captured ownership', () => {
   assert.match(source, /saveReadingTime\(closingBookId, closingTracker\)/);
   assert.match(source, /function clearSelectionChangeTimer\(\)/);
   assert.match(source, /const selectionOperation = readerOperations\.currentToken\(\)/);
+});
+
+test('overlapping chapter locks restore original overflow only after every owner releases', async () => {
+  const style = { html: 'auto', body: 'scroll' };
+  const lock = new OwnedValueLock(
+    () => ({ ...style }),
+    value => Object.assign(style, value),
+    { html: 'hidden', body: 'hidden' }
+  );
+  const releaseA = deferred();
+  const releaseB = deferred();
+  const tokenA = lock.acquire('chapter-a');
+  const operationA = releaseA.promise.then(() => lock.release(tokenA));
+  const tokenB = lock.acquire('chapter-b');
+  const operationB = releaseB.promise.then(() => lock.release(tokenB));
+
+  releaseA.resolve();
+  await operationA;
+  assert.deepEqual(style, { html: 'hidden', body: 'hidden' });
+
+  releaseB.resolve();
+  await operationB;
+  assert.deepEqual(style, { html: 'auto', body: 'scroll' });
 });

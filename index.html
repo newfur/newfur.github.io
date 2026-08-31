@@ -12406,6 +12406,35 @@ class OwnedLease {
   }
 }
 
+class OwnedValueLock {
+  constructor(readValue, writeValue, lockedValue) {
+    this.readValue = readValue;
+    this.writeValue = writeValue;
+    this.lockedValue = lockedValue;
+    this.holders = new Set();
+    this.originalValue = null;
+  }
+
+  acquire(ownerId) {
+    if (this.holders.size === 0) {
+      this.originalValue = this.readValue();
+      this.writeValue(this.lockedValue);
+    }
+    const token = Object.freeze({ ownerId, lockId: Symbol(ownerId) });
+    this.holders.add(token);
+    return token;
+  }
+
+  release(token) {
+    if (!this.holders.delete(token)) return false;
+    if (this.holders.size === 0) {
+      this.writeValue(this.originalValue);
+      this.originalValue = null;
+    }
+    return true;
+  }
+}
+
 function ownedCallback(isCurrent, callback) {
   return (...args) => {
     if (isCurrent()) return callback(...args);
@@ -14880,7 +14909,7 @@ class TTSEngine {
     
     // HTML5 Audio 播放隊列與快取
     this.audioCache = new Map(); // index -> { blobUrl, isReady }
-    this.fetchingIndices = new Set();
+    this.fetchingIndices = new Map();
     
     // 建立雙播放器以進行無縫交替播放，消除播放間隙，防止 iOS 後台掛起
     this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
@@ -15652,13 +15681,7 @@ class TTSEngine {
 
     // DOM 映射完成後，等瀏覽器完成佈局渲染後高亮並平移至當前正在播放的句子
     if (this.isPlaying) {
-      setTimeout(() => {
-        if (!this.isPlaying) return;
-        const currentSent = this.sentences[this.currentIndex];
-        if (currentSent && currentSent.element) {
-          this._highlightSentence(currentSent);
-        }
-      }, 100);
+      this._scheduleOwnedHighlight(setTimeout, this.playbackGeneration, this.ownerBookId);
     }
   }
 
@@ -15691,6 +15714,14 @@ class TTSEngine {
   setSentences(sentences) {
     this.sentences = sentences;
     this.currentIndex = 0;
+  }
+
+  _scheduleOwnedHighlight(schedule = setTimeout, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+    schedule(() => {
+      if (!this.isPlaying || !this._isCurrentSession(sessionId, bookId)) return;
+      const currentSent = this.sentences[this.currentIndex];
+      if (currentSent?.element) this._highlightSentence(currentSent);
+    }, 100);
   }
 
   // 3. Edge 語音下載輔助方法
@@ -16196,7 +16227,11 @@ class TTSEngine {
 
     if (index >= this.sentences.length) return Promise.resolve();
     if (this.audioCache.has(index)) return Promise.resolve();
-    if (retryCount === 0 && this.fetchingIndices.has(index)) return Promise.resolve();
+    const existingMarker = this.fetchingIndices.get(index);
+    if (retryCount === 0 && existingMarker?.sessionId === sessionId && existingMarker.bookId === bookId) return Promise.resolve();
+    const releaseMarker = (targetIndex, marker) => {
+      if (this.fetchingIndices.get(targetIndex) === marker) this.fetchingIndices.delete(targetIndex);
+    };
 
     // 判斷是否進入“分組（10句）發送”階段：
     // 每當開始播放（即 playbackStartSessionIndex 已設定），前10句（index < session + 10）單句獲取以保證極速啟動，
@@ -16206,15 +16241,19 @@ class TTSEngine {
 
     if (!isGroupPhase) {
       // 1. 單句獲取階段
-      this.fetchingIndices.add(index);
+      const marker = { sessionId, bookId };
+      this.fetchingIndices.set(index, marker);
       const sentence = this.sentences[index];
       
       return this._downloadSentenceAudio(sentence, sessionId, bookId).then(blob => {
-        if (!this._isCurrentSession(sessionId, bookId)) return;
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          releaseMarker(index, marker);
+          return;
+        }
         this.consecutiveWsFailures = 0;
-        this._saveToCache(index, blob, sessionId, bookId);
+        this._saveToCache(index, blob, sessionId, bookId, marker);
       }).catch(err => {
-        this.fetchingIndices.delete(index);
+        releaseMarker(index, marker);
         if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
         console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         
@@ -16283,12 +16322,14 @@ class TTSEngine {
       const groupSentences = groupInfo.sentences;
       
       if (this.audioCache.has(groupStartIndex)) return;
-      if (retryCount === 0 && this.fetchingIndices.has(groupStartIndex)) return;
+      const existingGroupMarker = this.fetchingIndices.get(groupStartIndex);
+      if (retryCount === 0 && existingGroupMarker?.sessionId === sessionId && existingGroupMarker.bookId === bookId) return;
       
-      this.fetchingIndices.add(groupStartIndex);
+      const marker = { sessionId, bookId };
+      this.fetchingIndices.set(groupStartIndex, marker);
       
       if (groupSentences.length === 0) {
-        this.fetchingIndices.delete(groupStartIndex);
+        releaseMarker(groupStartIndex, marker);
         return;
       }
       
@@ -16317,11 +16358,14 @@ class TTSEngine {
       };
       
       return this._downloadSentenceAudio(virtualSentence, sessionId, bookId).then(blob => {
-        if (!this._isCurrentSession(sessionId, bookId)) return;
+        if (!this._isCurrentSession(sessionId, bookId)) {
+          releaseMarker(groupStartIndex, marker);
+          return;
+        }
         this.consecutiveWsFailures = 0;
-        this._saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId, bookId);
+        this._saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId, bookId, marker);
       }).catch(err => {
-        this.fetchingIndices.delete(groupStartIndex);
+        releaseMarker(groupStartIndex, marker);
         if (!this._isCurrentSession(sessionId, bookId) || err?.name === 'AbortError') return;
         console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         
@@ -16336,16 +16380,19 @@ class TTSEngine {
     }
   }
 
-  _saveToCache(index, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+  _saveToCache(index, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId, marker = this.fetchingIndices.get(index)) {
+    const releaseMarker = () => {
+      if (this.fetchingIndices.get(index) === marker) this.fetchingIndices.delete(index);
+    };
     if (!this._isCurrentSession(sessionId, bookId)) {
-      this.fetchingIndices.delete(index);
+      releaseMarker();
       return;
     }
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
       reader.onloadend = () => {
         if (!this._isCurrentSession(sessionId, bookId)) {
-          this.fetchingIndices.delete(index);
+          releaseMarker();
           return;
         }
         this.audioCache.set(index, {
@@ -16353,7 +16400,7 @@ class TTSEngine {
           isReady: true,
           isGroup: false
         });
-        this.fetchingIndices.delete(index);
+        releaseMarker();
         this._onAudioCacheReady(index);
       };
       reader.readAsDataURL(blob);
@@ -16364,15 +16411,18 @@ class TTSEngine {
         isReady: true,
         isGroup: false
       });
-      this.fetchingIndices.delete(index);
+      releaseMarker();
       this._onAudioCacheReady(index);
     }
   }
 
-  _saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId) {
+  _saveGroupToCache(groupStartIndex, groupSentences, blob, sessionId = this.playbackGeneration, bookId = this.ownerBookId, marker = this.fetchingIndices.get(groupStartIndex)) {
+    const releaseMarker = () => {
+      if (this.fetchingIndices.get(groupStartIndex) === marker) this.fetchingIndices.delete(groupStartIndex);
+    };
     const onUrlReady = (blobUrl) => {
       if (!this._isCurrentSession(sessionId, bookId)) {
-        this.fetchingIndices.delete(groupStartIndex);
+        releaseMarker();
         if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
         return;
       }
@@ -16395,7 +16445,7 @@ class TTSEngine {
         });
       }
       
-      this.fetchingIndices.delete(groupStartIndex);
+      releaseMarker();
       this._onAudioCacheReady(groupStartIndex);
     };
 
@@ -17758,17 +17808,35 @@ class AIEngine {
   // 流式 Prompt 處理封裝 (內置 AI)
   async _streamPrompt(prompt, onChunk, context = null, requestSession = this.session) {
     if (!requestSession) throw new Error('AI session is not initialized');
+    let destroyed = false;
+    const destroySession = () => {
+      if (destroyed) return;
+      destroyed = true;
+      try { requestSession.destroy(); } catch(e) {}
+    };
+    let abort;
 
     try {
       this._assertCurrent(context);
       if (typeof requestSession.promptStreaming === 'function') {
         const stream = requestSession.promptStreaming(prompt);
+        const iterator = stream[Symbol.asyncIterator]();
+        const abortPromise = context?.controller?.signal ? new Promise((_, reject) => {
+          abort = () => {
+            destroySession();
+            try { Promise.resolve(iterator.return?.()).catch(() => {}); } catch (e) {}
+            reject(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
+          };
+          context.controller.signal.addEventListener('abort', abort, { once: true });
+          if (context.controller.signal.aborted) abort();
+        }) : null;
         let fullResponse = '';
-        
-        for await (const chunk of stream) {
+        while (true) {
+          const result = abortPromise ? await Promise.race([iterator.next(), abortPromise]) : await iterator.next();
+          if (result.done) break;
           this._assertCurrent(context);
-          fullResponse = chunk;
-          if (onChunk) onChunk(chunk);
+          fullResponse = result.value;
+          if (onChunk) onChunk(result.value);
         }
         return fullResponse;
       } else {
@@ -17781,7 +17849,8 @@ class AIEngine {
       if (e?.name !== 'AbortError') console.error('AI prompt error:', e);
       throw e;
     } finally {
-      try { requestSession.destroy(); } catch(e) {}
+      if (abort) context?.controller?.signal.removeEventListener('abort', abort);
+      destroySession();
       if (this.session === requestSession) this.session = null;
     }
   }
@@ -18164,6 +18233,14 @@ let isChangingChapter = false;
 let lastChapterChangeTime = 0;
 let openingBookId = null;
 const readingTrackerLease = new OwnedLease();
+const chapterScrollLock = new OwnedValueLock(
+  () => ({ html: document.documentElement.style.overflow, body: document.body.style.overflow }),
+  value => {
+    document.documentElement.style.overflow = value.html;
+    document.body.style.overflow = value.body;
+  },
+  { html: 'hidden', body: 'hidden' }
+);
 
 function clearTTSClickTimer() {
   if (!ttsClickTimeout) return;
@@ -21857,13 +21934,11 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   const ownedBookData = epubBookData;
   const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && epubBookData === ownedBookData;
   const isPaginated = document.body.classList.contains('layout-paginated');
-  const origHtmlOverflow = document.documentElement.style.overflow;
-  const origBodyOverflow = document.body.style.overflow;
+  let scrollLockToken = null;
   let activeHashElem = null;
 
   if (!isPaginated) {
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
+    scrollLockToken = chapterScrollLock.acquire(operation);
   }
   
   isChangingChapter = true;
@@ -22272,20 +22347,21 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       }
     }
   } finally {
-    if (!isCurrent()) return;
-    isChangingChapter = false;
-    lastChapterChangeTime = Date.now();
-    if (!isPaginated) {
-      setTimeout(ownedCallback(isCurrent, () => {
-        document.documentElement.style.overflow = origHtmlOverflow;
-        document.body.style.overflow = origBodyOverflow;
+    if (isCurrent()) {
+      isChangingChapter = false;
+      lastChapterChangeTime = Date.now();
+    }
+    if (scrollLockToken) {
+      setTimeout(() => {
+        chapterScrollLock.release(scrollLockToken);
+        if (!isCurrent()) return;
         // 確保在溢出屬性恢復後，滾動目標被正確應用
         if (goToLastPage) {
           window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
         } else if (!restoreProgress && !targetKindleOffset && !targetHash && !activeHashElem && targetElementIndex === null && targetSentenceIndex === null && targetPageIndex === null) {
           window.scrollTo(0, 0);
         }
-      }), 150);
+      }, 150);
     }
   }
 }

@@ -47,6 +47,35 @@ export class OwnedLease {
   }
 }
 
+export class OwnedValueLock {
+  constructor(readValue, writeValue, lockedValue) {
+    this.readValue = readValue;
+    this.writeValue = writeValue;
+    this.lockedValue = lockedValue;
+    this.holders = new Set();
+    this.originalValue = null;
+  }
+
+  acquire(ownerId) {
+    if (this.holders.size === 0) {
+      this.originalValue = this.readValue();
+      this.writeValue(this.lockedValue);
+    }
+    const token = Object.freeze({ ownerId, lockId: Symbol(ownerId) });
+    this.holders.add(token);
+    return token;
+  }
+
+  release(token) {
+    if (!this.holders.delete(token)) return false;
+    if (this.holders.size === 0) {
+      this.writeValue(this.originalValue);
+      this.originalValue = null;
+    }
+    return true;
+  }
+}
+
 export function ownedCallback(isCurrent, callback) {
   return (...args) => {
     if (isCurrent()) return callback(...args);
