@@ -28,7 +28,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -212,23 +211,31 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
                         + validated.date + "Z\r\nPath:ssml\r\n\r\n" + validated.ssml);
             }
             @Override public void onMessage(WebSocket ws, String message) {
-                if (message.contains("Path:turn.end")) ws.close(1000, "Finished");
+                try {
+                    EdgeTtsFrameParser.Frame frame = EdgeTtsFrameParser.parseText(message, validated.connectionId);
+                    if (frame.kind == EdgeTtsFrameParser.Kind.TURN_END) ws.close(1000, "Finished");
+                } catch (EdgeTtsFrameParser.ProtocolException error) {
+                    ttsRequests.remove(validated.connectionId, operation);
+                    operation.fail(error.getCode(), error.getMessage());
+                    ws.cancel();
+                }
             }
             @Override public void onMessage(WebSocket ws, ByteString bytes) {
-                byte[] data = bytes.toByteArray();
-                if (data.length < 2) return;
-                int headerLength = ((data[0] & 0xff) << 8) | (data[1] & 0xff);
-                if (headerLength + 2 > data.length) return;
-                String headers = new String(data, 2, headerLength, StandardCharsets.UTF_8);
-                int length = data.length - headerLength - 2;
-                if (!headers.contains("Path:audio")) return;
-                if (audio.size() > MAX_AUDIO_BYTES - length) {
+                try {
+                    EdgeTtsFrameParser.Frame frame = EdgeTtsFrameParser.parseBinary(bytes.toByteArray(), validated.connectionId);
+                    int length = frame.payload.length;
+                    if (audio.size() > MAX_AUDIO_BYTES - length) {
+                        ttsRequests.remove(validated.connectionId, operation);
+                        operation.fail("AUDIO_TOO_LARGE", "Audio response is too large");
+                        ws.cancel();
+                        return;
+                    }
+                    audio.write(frame.payload, 0, length);
+                } catch (EdgeTtsFrameParser.ProtocolException error) {
                     ttsRequests.remove(validated.connectionId, operation);
-                    operation.fail("AUDIO_TOO_LARGE", "Audio response is too large");
+                    operation.fail(error.getCode(), error.getMessage());
                     ws.cancel();
-                    return;
                 }
-                audio.write(data, headerLength + 2, length);
             }
             @Override public void onClosed(WebSocket ws, int code, String reason) {
                 ttsRequests.remove(validated.connectionId, operation);

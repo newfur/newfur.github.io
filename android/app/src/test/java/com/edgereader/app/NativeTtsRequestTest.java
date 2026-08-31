@@ -35,6 +35,19 @@ public class NativeTtsRequestTest {
     }
 
     @Test
+    public void protocolFailureRejectsExactlyOnceWithStableError() {
+        RecordingSink sink = new RecordingSink();
+        NativeTtsRequest request = new NativeTtsRequest(sink);
+
+        assertTrue(request.fail(NativeError.PROTOCOL_ERROR.name(), NativeError.PROTOCOL_ERROR.message()));
+        assertFalse(request.fail(NativeError.PROTOCOL_ERROR.name(), NativeError.PROTOCOL_ERROR.message()));
+        assertFalse(request.succeed("audio"));
+        assertEquals(1, sink.calls);
+        assertEquals("PROTOCOL_ERROR", sink.code);
+        assertEquals("TTS protocol error", sink.message);
+    }
+
+    @Test
     public void cancelActionAttachedAfterCancellationRunsImmediately() {
         RecordingSink sink = new RecordingSink();
         NativeTtsRequest request = new NativeTtsRequest(sink);
@@ -58,7 +71,12 @@ public class NativeTtsRequestTest {
     private static final class RecordingSink implements NativeTtsRequest.Sink {
         int calls;
         String code;
+        String message;
         @Override public void resolve(String audio) { calls++; }
-        @Override public void reject(String errorCode, String message) { calls++; code = errorCode; }
+        @Override public void reject(String errorCode, String errorMessage) {
+            calls++;
+            code = errorCode;
+            message = errorMessage;
+        }
     }
 }

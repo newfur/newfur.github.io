@@ -16,6 +16,7 @@ enum NativeError {
     INVALID_RATE("TTS rate is invalid"),
     INVALID_VOLUME("TTS volume is invalid"),
     INVALID_SSML("TTS request is too large"),
+    PROTOCOL_ERROR("TTS protocol error"),
     CANCELLED("TTS request was cancelled"),
     NOTIFICATION_PERMISSION_DENIED("Notification permission is denied");
 
