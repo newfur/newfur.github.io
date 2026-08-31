@@ -9,7 +9,8 @@ import java.util.Locale;
 import java.util.Map;
 
 final class EdgeTtsFrameParser {
-    enum Kind { AUDIO, NONTERMINAL, TURN_END }
+    static final int MAX_CONTROL_BODY_BYTES = 16 * 1024;
+    enum Kind { AUDIO, TURN_START, RESPONSE, TURN_END }
 
     static final class Frame {
         final Kind kind;
@@ -51,10 +52,11 @@ final class EdgeTtsFrameParser {
         String path = headers.get("path");
         Kind kind;
         if ("turn.end".equals(path)) kind = Kind.TURN_END;
-        else if ("turn.start".equals(path) || "response".equals(path)) kind = Kind.NONTERMINAL;
+        else if ("turn.start".equals(path)) kind = Kind.TURN_START;
+        else if ("response".equals(path)) kind = Kind.RESPONSE;
         else throw new ProtocolException();
         String body = message.substring(separator + 4);
-        if (!"{}".equals(body)) throw new ProtocolException();
+        validateJsonObject(body);
         return new Frame(kind, new byte[0]);
     }
 
@@ -100,5 +102,130 @@ final class EdgeTtsFrameParser {
             if (Character.isISOControl(value.charAt(i))) return true;
         }
         return false;
+    }
+
+    private static void validateJsonObject(String body) throws ProtocolException {
+        if (body.getBytes(StandardCharsets.UTF_8).length > MAX_CONTROL_BODY_BYTES) throw new ProtocolException();
+        JsonCursor cursor = new JsonCursor(body);
+        cursor.skipWhitespace();
+        if (!cursor.consume('{')) throw new ProtocolException();
+        cursor.parseObjectContents();
+        cursor.skipWhitespace();
+        if (!cursor.atEnd()) throw new ProtocolException();
+    }
+
+    private static final class JsonCursor {
+        private final String value;
+        private int offset;
+
+        JsonCursor(String value) { this.value = value; }
+
+        boolean atEnd() { return offset == value.length(); }
+
+        void skipWhitespace() {
+            while (!atEnd()) {
+                char c = value.charAt(offset);
+                if (c != ' ' && c != '\t' && c != '\r' && c != '\n') return;
+                offset++;
+            }
+        }
+
+        boolean consume(char expected) {
+            if (atEnd() || value.charAt(offset) != expected) return false;
+            offset++;
+            return true;
+        }
+
+        void require(char expected) throws ProtocolException {
+            if (!consume(expected)) throw new ProtocolException();
+        }
+
+        void parseObjectContents() throws ProtocolException {
+            skipWhitespace();
+            if (consume('}')) return;
+            while (true) {
+                parseString();
+                skipWhitespace();
+                require(':');
+                parseValue();
+                skipWhitespace();
+                if (consume('}')) return;
+                require(',');
+                skipWhitespace();
+            }
+        }
+
+        void parseArrayContents() throws ProtocolException {
+            skipWhitespace();
+            if (consume(']')) return;
+            while (true) {
+                parseValue();
+                skipWhitespace();
+                if (consume(']')) return;
+                require(',');
+                skipWhitespace();
+            }
+        }
+
+        void parseValue() throws ProtocolException {
+            skipWhitespace();
+            if (atEnd()) throw new ProtocolException();
+            char c = value.charAt(offset);
+            if (c == '"') parseString();
+            else if (consume('{')) parseObjectContents();
+            else if (consume('[')) parseArrayContents();
+            else if (c == 't') parseLiteral("true");
+            else if (c == 'f') parseLiteral("false");
+            else if (c == 'n') parseLiteral("null");
+            else parseNumber();
+        }
+
+        void parseString() throws ProtocolException {
+            require('"');
+            while (!atEnd()) {
+                char c = value.charAt(offset++);
+                if (c == '"') return;
+                if (c < 0x20) throw new ProtocolException();
+                if (c != '\\') continue;
+                if (atEnd()) throw new ProtocolException();
+                char escaped = value.charAt(offset++);
+                if (escaped == 'u') {
+                    if (offset + 4 > value.length()) throw new ProtocolException();
+                    for (int i = 0; i < 4; i++) if (Character.digit(value.charAt(offset++), 16) < 0) throw new ProtocolException();
+                } else if ("\"\\/bfnrt".indexOf(escaped) < 0) {
+                    throw new ProtocolException();
+                }
+            }
+            throw new ProtocolException();
+        }
+
+        void parseLiteral(String literal) throws ProtocolException {
+            if (!value.regionMatches(offset, literal, 0, literal.length())) throw new ProtocolException();
+            offset += literal.length();
+        }
+
+        void parseNumber() throws ProtocolException {
+            int start = offset;
+            consume('-');
+            if (consume('0')) {
+                if (!atEnd() && Character.isDigit(value.charAt(offset))) throw new ProtocolException();
+            } else {
+                if (atEnd() || value.charAt(offset) < '1' || value.charAt(offset) > '9') throw new ProtocolException();
+                while (!atEnd() && Character.isDigit(value.charAt(offset))) offset++;
+            }
+            if (consume('.')) {
+                int fraction = offset;
+                while (!atEnd() && Character.isDigit(value.charAt(offset))) offset++;
+                if (fraction == offset) throw new ProtocolException();
+            }
+            if (!atEnd() && (value.charAt(offset) == 'e' || value.charAt(offset) == 'E')) {
+                offset++;
+                if (!atEnd() && (value.charAt(offset) == '+' || value.charAt(offset) == '-')) offset++;
+                int exponent = offset;
+                while (!atEnd() && Character.isDigit(value.charAt(offset))) offset++;
+                if (exponent == offset) throw new ProtocolException();
+            }
+            if (start == offset) throw new ProtocolException();
+        }
     }
 }

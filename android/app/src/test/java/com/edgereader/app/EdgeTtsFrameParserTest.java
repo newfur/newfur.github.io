@@ -20,33 +20,35 @@ public class EdgeTtsFrameParserTest {
 
     @Test public void parsesExactTurnEnd() throws Exception {
         EdgeTtsFrameParser.Frame frame = EdgeTtsFrameParser.parseText(
-                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n{}",
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n{\"offset\":42}",
                 REQUEST_ID);
         assertEquals(EdgeTtsFrameParser.Kind.TURN_END, frame.kind);
     }
 
     @Test public void acceptsValidatedNonterminalTextFrames() throws Exception {
         EdgeTtsFrameParser.Frame start = EdgeTtsFrameParser.parseText(
-                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}",
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{\"context\":{\"serviceTag\":\"edge\"}}",
                 REQUEST_ID);
         EdgeTtsFrameParser.Frame response = EdgeTtsFrameParser.parseText(
-                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:response\r\n\r\n{}",
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:response\r\n\r\n{\"status\":200,\"ok\":true}",
                 REQUEST_ID);
-        assertEquals(EdgeTtsFrameParser.Kind.NONTERMINAL, start.kind);
-        assertEquals(EdgeTtsFrameParser.Kind.NONTERMINAL, response.kind);
+        assertEquals(EdgeTtsFrameParser.Kind.TURN_START, start.kind);
+        assertEquals(EdgeTtsFrameParser.Kind.RESPONSE, response.kind);
     }
 
     @Test public void validSessionRequiresStartAudioAndTurnEnd() throws Exception {
         EdgeTtsProtocolState state = new EdgeTtsProtocolState(REQUEST_ID);
-        state.acceptText("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}");
+        state.acceptText(control("turn.start", "{\"request\":{\"locale\":\"en-US\"}}"));
+        state.acceptText(control("response", "{\"status\":200}"));
         state.acceptBinary(binary("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n", new byte[] { 4, 5 }));
-        state.acceptText("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n{}");
+        state.acceptText(control("turn.end", "{\"offset\":2}"));
         assertArrayEquals(new byte[] { 4, 5 }, state.complete());
     }
 
     @Test public void closeWithPartialAudioRejectsIncompleteAudio() throws Exception {
         EdgeTtsProtocolState state = new EdgeTtsProtocolState(REQUEST_ID);
-        state.acceptText("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}");
+        state.acceptText(control("turn.start", "{\"request\":1}"));
+        state.acceptText(control("response", "{\"status\":200}"));
         state.acceptBinary(binary("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n", new byte[] { 4, 5 }));
         try {
             state.complete();
@@ -54,6 +56,42 @@ public class EdgeTtsFrameParserTest {
         } catch (NativeBoundaryException error) {
             assertEquals("INCOMPLETE_AUDIO", error.getCode());
         }
+    }
+
+    @Test public void rejectsEveryOutOfOrderOrDuplicateControlSequence() throws Exception {
+        assertStateProtocol(state -> state.acceptText(control("response", "{\"status\":200}")));
+        assertStateProtocol(state -> state.acceptText(control("turn.end", "{\"done\":true}")));
+        assertStateProtocol(state -> state.acceptBinary(binary(
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n", new byte[] { 1 })));
+
+        assertStateProtocol(state -> {
+            state.acceptText(control("turn.start", "{\"request\":1}"));
+            state.acceptText(control("turn.start", "{\"request\":2}"));
+        });
+        assertStateProtocol(state -> {
+            state.acceptText(control("turn.start", "{\"request\":1}"));
+            state.acceptBinary(binary("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n", new byte[] { 1 }));
+        });
+        assertStateProtocol(state -> {
+            state.acceptText(control("turn.start", "{\"request\":1}"));
+            state.acceptText(control("response", "{\"status\":200}"));
+            state.acceptText(control("response", "{\"status\":201}"));
+        });
+        assertStateProtocol(state -> {
+            state.acceptText(control("turn.start", "{\"request\":1}"));
+            state.acceptText(control("response", "{\"status\":200}"));
+            state.acceptText(control("turn.end", "{\"done\":true}"));
+            state.acceptText(control("turn.end", "{\"done\":true}"));
+        });
+    }
+
+    @Test public void validatesBoundedJsonObjectControlBodies() throws Exception {
+        EdgeTtsFrameParser.parseText(control("turn.start", " { \"nested\" : [1, true, null, {\"x\":\"y\"}] } "), REQUEST_ID);
+        assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "[]"), REQUEST_ID));
+        assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "{\"broken\":}"), REQUEST_ID));
+        assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "{\"x\":1} trailing"), REQUEST_ID));
+        assertProtocol(() -> EdgeTtsFrameParser.parseText(control("turn.start", "{\"x\":\"" +
+                "a".repeat(EdgeTtsFrameParser.MAX_CONTROL_BODY_BYTES) + "\"}"), REQUEST_ID));
     }
 
     @Test public void rejectsMalformedBinarySizes() {
@@ -95,8 +133,6 @@ public class EdgeTtsFrameParserTest {
         assertProtocol(() -> EdgeTtsFrameParser.parseText(
                 "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:unknown\r\n\r\n{}", REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(
-                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n { } ", REQUEST_ID));
-        assertProtocol(() -> EdgeTtsFrameParser.parseText(
                 "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n", REQUEST_ID));
     }
 
@@ -110,6 +146,17 @@ public class EdgeTtsFrameParserTest {
         return frame;
     }
 
+    private static String control(String path, String body) {
+        return "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:"
+                + path + "\r\n\r\n" + body;
+    }
+
+    private static void assertStateProtocol(StateAction action) {
+        try { action.run(new EdgeTtsProtocolState(REQUEST_ID)); fail("Expected protocol error"); }
+        catch (EdgeTtsFrameParser.ProtocolException expected) { assertEquals("PROTOCOL_ERROR", expected.getCode()); }
+        catch (Exception wrong) { throw new AssertionError(wrong); }
+    }
+
     private static void assertProtocol(ThrowingRunnable action) {
         try { action.run(); fail("Expected protocol error"); }
         catch (EdgeTtsFrameParser.ProtocolException expected) {
@@ -120,4 +167,5 @@ public class EdgeTtsFrameParserTest {
     }
 
     private interface ThrowingRunnable { void run() throws Exception; }
+    private interface StateAction { void run(EdgeTtsProtocolState state) throws Exception; }
 }
