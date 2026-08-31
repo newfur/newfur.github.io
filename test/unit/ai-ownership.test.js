@@ -16,6 +16,28 @@ function context(bookId = 'book-a') {
   return { value, invalidate: () => { current = false; value.controller.abort(); } };
 }
 
+function trackedContext(bookId = 'book-a') {
+  const listeners = new Set();
+  const signal = {
+    aborted: false,
+    reason: undefined,
+    addCalls: 0,
+    removeCalls: 0,
+    addEventListener(_type, listener) { this.addCalls += 1; listeners.add(listener); },
+    removeEventListener(_type, listener) { this.removeCalls += 1; listeners.delete(listener); }
+  };
+  const controller = {
+    signal,
+    abort(reason = new DOMException('aborted', 'AbortError')) {
+      if (signal.aborted) return;
+      signal.aborted = true;
+      signal.reason = reason;
+      [...listeners].forEach(listener => listener());
+    }
+  };
+  return { bookId, generation: 1, controller, isCurrent: () => !signal.aborted };
+}
+
 test('direct streaming passes the owner abort signal to fetch', async () => {
   const engine = new AIEngine();
   const owned = context();
@@ -200,4 +222,87 @@ test('aborting a never-settling built-in prompt destroys its session and settles
 
   await assert.rejects(request, error => error?.name === 'AbortError');
   assert.equal(session.destroyCalls, 1);
+});
+
+test('already-aborted context never invokes a built-in prompt and destroys once', async () => {
+  const engine = new AIEngine();
+  const owned = trackedContext();
+  owned.controller.abort();
+  let promptCalls = 0;
+  const session = {
+    prompt: () => { promptCalls += 1; return Promise.resolve('late'); },
+    destroyCalls: 0,
+    destroy() { this.destroyCalls += 1; }
+  };
+
+  await assert.rejects(engine._streamPrompt('prompt', () => {}, owned, session), error => error?.name === 'AbortError');
+
+  assert.equal(promptCalls, 0);
+  assert.equal(session.destroyCalls, 1);
+  assert.equal(owned.controller.signal.addCalls, 0);
+  assert.equal(owned.controller.signal.removeCalls, 0);
+});
+
+test('synchronous abort during prompt call settles and removes its listener once', async () => {
+  const engine = new AIEngine();
+  const owned = trackedContext();
+  const pending = deferred();
+  const session = {
+    destroyCalls: 0,
+    prompt: () => { owned.controller.abort(); return pending.promise; },
+    destroy() { this.destroyCalls += 1; }
+  };
+
+  const request = engine._streamPrompt('prompt', () => {}, owned, session);
+  await assert.rejects(request, error => error?.name === 'AbortError');
+  pending.resolve('late');
+  await Promise.resolve();
+
+  assert.equal(session.destroyCalls, 1);
+  assert.equal(owned.controller.signal.addCalls, 1);
+  assert.equal(owned.controller.signal.removeCalls, 1);
+});
+
+test('late iterator resolution after abort cannot emit and cleanup is exactly once', async () => {
+  const engine = new AIEngine();
+  const owned = trackedContext();
+  const pending = deferred();
+  const chunks = [];
+  let returnCalls = 0;
+  const session = {
+    destroyCalls: 0,
+    promptStreaming: () => ({
+      [Symbol.asyncIterator]() { return this; },
+      next: () => pending.promise,
+      return: () => { returnCalls += 1; return Promise.resolve({ done: true }); }
+    }),
+    destroy() { this.destroyCalls += 1; }
+  };
+
+  const request = engine._streamPrompt('prompt', chunk => chunks.push(chunk), owned, session);
+  owned.controller.abort();
+  await assert.rejects(request, error => error?.name === 'AbortError');
+  pending.resolve({ done: false, value: 'late' });
+  await Promise.resolve();
+
+  assert.deepEqual(chunks, []);
+  assert.equal(returnCalls, 1);
+  assert.equal(session.destroyCalls, 1);
+  assert.equal(owned.controller.signal.addCalls, 1);
+  assert.equal(owned.controller.signal.removeCalls, 1);
+});
+
+test('normal built-in prompt removes abort listener and destroys exactly once', async () => {
+  const engine = new AIEngine();
+  const owned = trackedContext();
+  const session = {
+    destroyCalls: 0,
+    prompt: async () => 'result',
+    destroy() { this.destroyCalls += 1; }
+  };
+
+  assert.equal(await engine._streamPrompt('prompt', null, owned, session), 'result');
+  assert.equal(session.destroyCalls, 1);
+  assert.equal(owned.controller.signal.addCalls, 1);
+  assert.equal(owned.controller.signal.removeCalls, 1);
 });

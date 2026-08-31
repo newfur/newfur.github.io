@@ -76,6 +76,9 @@ export class OwnedValueLock {
   }
 
   reset() {
+    if (this.holders.size > 0 && this.originalValue !== null) {
+      this.writeValue(this.originalValue);
+    }
     this.holders.clear();
     this.originalValue = null;
   }

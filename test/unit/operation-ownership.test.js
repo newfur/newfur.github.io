@@ -350,7 +350,7 @@ test('overlapping chapter locks restore original overflow only after every owner
   assert.deepEqual(style, { html: 'auto', body: 'scroll' });
 });
 
-test('reset invalidates old chapter locks before a new owner acquires', () => {
+test('reset restores overflow before invalidating old locks and supports a reopened owner', () => {
   const style = { html: 'auto', body: 'scroll' };
   const writes = [];
   const lock = new OwnedValueLock(
@@ -364,14 +364,22 @@ test('reset invalidates old chapter locks before a new owner acquires', () => {
   const tokenA = lock.acquire('chapter-a');
 
   lock.reset();
-  Object.assign(style, { html: '', body: '' });
+  assert.deepEqual(style, { html: 'auto', body: 'scroll' });
   const tokenB = lock.acquire('chapter-b');
 
-  assert.deepEqual(writes.at(-1), { html: 'hidden', body: 'hidden' });
+  assert.deepEqual(style, { html: 'hidden', body: 'hidden' });
   assert.equal(lock.release(tokenA), false);
   assert.deepEqual(style, { html: 'hidden', body: 'hidden' });
   assert.equal(lock.release(tokenB), true);
-  assert.deepEqual(style, { html: '', body: '' });
+  assert.deepEqual(style, { html: 'auto', body: 'scroll' });
+  lock.reset();
+  assert.deepEqual(style, { html: 'auto', body: 'scroll' });
+  assert.deepEqual(writes, [
+    { html: 'hidden', body: 'hidden' },
+    { html: 'auto', body: 'scroll' },
+    { html: 'hidden', body: 'hidden' },
+    { html: 'auto', body: 'scroll' }
+  ]);
 });
 
 test('reader generation invalidation resets chapter scroll lock before close overflow reset', () => {
