@@ -27,6 +27,13 @@ export function ownedCallback(isCurrent, callback) {
   };
 }
 
+export async function completeOwnedTransition({ pending, isCurrent, complete }) {
+  await pending;
+  if (!isCurrent()) return false;
+  complete();
+  return true;
+}
+
 export class OwnedDebouncer {
   constructor(schedule = setTimeout, cancel = clearTimeout) {
     this.scheduleTimer = schedule;

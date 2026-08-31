@@ -43,7 +43,7 @@ if (typeof mermaid !== 'undefined') {
 import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
-import { OperationOwner, OwnedDebouncer, buildOwnedSearchIndex, finishTrackedResource, ownedCallback } from './operation-ownership.js';
+import { OperationOwner, OwnedDebouncer, buildOwnedSearchIndex, completeOwnedTransition, finishTrackedResource, ownedCallback } from './operation-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -109,6 +109,12 @@ let isChangingChapter = false;
 let lastChapterChangeTime = 0;
 let openingBookId = null;
 
+function clearTTSClickTimer() {
+  if (!ttsClickTimeout) return;
+  clearTimeout(ttsClickTimeout);
+  ttsClickTimeout = null;
+}
+
 function isReaderOperationCurrent(token) {
   return readerOperations.isCurrent(token, token?.bookId) && currentBook?.id === token.bookId;
 }
@@ -126,6 +132,7 @@ function abortReaderAI(reason = 'reader operation superseded') {
 }
 
 function beginReaderOperation(bookId) {
+  clearTTSClickTimer();
   abortReaderAI();
   return readerOperations.begin(bookId);
 }
@@ -1737,14 +1744,21 @@ function initUIEventBindings() {
     if (!targetSpan) return;
 
     e.stopPropagation();
-    if (ttsClickTimeout) clearTimeout(ttsClickTimeout);
-    ttsClickTimeout = setTimeout(() => {
+    clearTTSClickTimer();
+    const clickOperation = readerOperations.currentToken();
+    const clickBookId = clickOperation?.bookId;
+    const clickBook = currentBook;
+    if (!clickOperation || !clickBookId || clickBook?.id !== clickBookId) return;
+    ttsClickTimeout = setTimeout(ownedCallback(
+      () => readerOperations.isCurrent(clickOperation, clickBookId) && currentBook === clickBook,
+      () => {
+      ttsClickTimeout = null;
       const selection = window.getSelection().toString().trim();
       if (selection.length === 0) {
         const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        tts.play(sentenceIdx, true, currentBook?.id);
+        tts.play(sentenceIdx, true, clickBookId);
       }
-    }, 150);
+    }), 150);
   });
 
   // 劃線高亮按鈕事件
@@ -2138,25 +2152,39 @@ function initUIEventBindings() {
   });
 
   tts.onPlaybackEnd = async () => {
+    const playbackOperation = readerOperations.currentToken();
+    const playbackBook = currentBook;
+    const playbackBookId = playbackOperation?.bookId;
+    const playbackBookData = epubBookData;
+    const ttsSessionId = tts.playbackGeneration;
+    const ttsOwnerBookId = tts.ownerBookId;
+    const isPlaybackOwnerCurrent = () =>
+      readerOperations.isCurrent(playbackOperation, playbackBookId) &&
+      currentBook === playbackBook &&
+      epubBookData === playbackBookData &&
+      tts._isCurrentSession(ttsSessionId, ttsOwnerBookId);
     updatePlayPauseButtonIcon();
     // 自動播放下一章節/頁面
-    if (currentBook) {
-      if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
+    if (playbackBook && playbackBookId && isPlaybackOwnerCurrent()) {
+      if (playbackBookData && currentChapterIndex < playbackBookData.chapters.length - 1) {
         const nextIdx = currentChapterIndex + 1;
-        const currentChapter = epubBookData.chapters[currentChapterIndex];
-        const nextChapter = epubBookData.chapters[nextIdx];
+        const currentChapter = playbackBookData.chapters[currentChapterIndex];
+        const nextChapter = playbackBookData.chapters[nextIdx];
         // 如果下一章與當前章節共享相同 cleanHref（子章節），僅更新章節索引而不重載
         if (currentChapter && nextChapter && currentChapter.cleanHref === nextChapter.cleanHref) {
           currentChapterIndex = nextIdx;
           tts.currentChapterIndex = nextIdx;
           syncTOCActiveState(nextIdx);
           updateReaderTitle();
-          tts.play(0, false, currentBook?.id);
+          if (isPlaybackOwnerCurrent()) tts.play(0, false, playbackBookId);
         } else {
-          await loadChapter(nextIdx);
-          tts.play(0, false, currentBook?.id);
+          await completeOwnedTransition({
+            pending: loadChapter(nextIdx, false, false, true, true, null, null, null, null, null, false, playbackOperation),
+            isCurrent: isPlaybackOwnerCurrent,
+            complete: () => tts.play(0, false, playbackBookId)
+          });
         }
-        updatePlayPauseButtonIcon();
+        if (isPlaybackOwnerCurrent()) updatePlayPauseButtonIcon();
       }
     }
   };

@@ -158,3 +158,142 @@ test('a chapter transition from an obsolete session cannot highlight', async () 
 
   assert.equal(highlights, 0);
 });
+
+test('stalled HTTP download times out, aborts, and unregisters exactly once', async () => {
+  const engine = bareEngine();
+  engine.requestTimeoutMs = 100;
+  const timers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalFetch = globalThis.fetch;
+  let aborts = 0;
+  globalThis.setTimeout = callback => { timers.push(callback); return timers.length; };
+  globalThis.clearTimeout = () => {};
+  globalThis.fetch = (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => { aborts += 1; reject(options.signal.reason); }, { once: true });
+  });
+
+  try {
+    const session = engine._beginSession('book-a');
+    const request = engine._downloadSentenceAudio(engine.sentences[0], session, 'book-a');
+    timers[0]();
+    timers[0]();
+    await assert.rejects(request, /timed out/i);
+    assert.equal(aborts, 1);
+    assert.equal(engine.activeRequests.size, 0);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('stalled native download times out, cancels best effort, and unregisters exactly once', async () => {
+  const engine = bareEngine();
+  engine.ttsProvider = 'edge';
+  engine.requestTimeoutMs = 100;
+  engine._generateSecMsGecToken = async () => 'token';
+  const download = deferred();
+  const timers = [];
+  let cancellations = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+  globalThis.setTimeout = callback => { timers.push(callback); return timers.length; };
+  globalThis.clearTimeout = () => {};
+  globalThis.window = {
+    location: { protocol: 'capacitor:', host: '' },
+    Capacitor: { Plugins: { NativeTTS: {
+      downloadTTS: () => download.promise,
+      cancelTTS: async () => { cancellations += 1; }
+    } } }
+  };
+  globalThis.WebSocket = class { constructor() { throw new Error('stale native request opened WebSocket'); } };
+
+  try {
+    const session = engine._beginSession('book-a');
+    const request = engine._downloadSentenceAudio(engine.sentences[0], session, 'book-a');
+    await Promise.resolve();
+    timers[0]();
+    timers[0]();
+    await assert.rejects(request, /timed out/i);
+    assert.equal(cancellations, 1);
+    assert.equal(engine.activeRequests.size, 0);
+    download.resolve({ audioBase64: '' });
+    await Promise.resolve();
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    globalThis.window = originalWindow;
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test('WebSocket cancellation settles as abort before synchronous close callbacks', async () => {
+  const engine = bareEngine();
+  engine.ttsProvider = 'edge';
+  engine._generateSecMsGecToken = async () => 'token';
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+  globalThis.window = { location: { protocol: 'https:', host: 'reader.test' } };
+  let socket;
+  class FakeWebSocket {
+    static CLOSING = 2;
+    constructor() { this.readyState = 0; this.closeCalls = 0; socket = this; }
+    close() { this.closeCalls += 1; this.readyState = 3; this.onclose?.(); }
+    send() {}
+  }
+  globalThis.WebSocket = FakeWebSocket;
+
+  try {
+    const session = engine._beginSession('book-a');
+    const request = engine._downloadSentenceAudio(engine.sentences[0], session, 'book-a');
+    await Promise.resolve();
+    engine.stop();
+    await assert.rejects(request, error => error?.name === 'AbortError');
+    assert.equal(socket.closeCalls, 1);
+    assert.equal(engine.activeRequests.size, 0);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test('timeout during token generation prevents late native or WebSocket startup', async () => {
+  const engine = bareEngine();
+  engine.ttsProvider = 'edge';
+  const token = deferred();
+  engine._generateSecMsGecToken = () => token.promise;
+  const timers = [];
+  let nativeStarts = 0;
+  let socketStarts = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+  globalThis.setTimeout = callback => { timers.push(callback); return timers.length; };
+  globalThis.clearTimeout = () => {};
+  globalThis.window = {
+    location: { protocol: 'capacitor:', host: '' },
+    Capacitor: { Plugins: { NativeTTS: { downloadTTS: () => { nativeStarts += 1; } } } }
+  };
+  globalThis.WebSocket = class { constructor() { socketStarts += 1; } };
+
+  try {
+    const session = engine._beginSession('book-a');
+    const request = engine._downloadSentenceAudio(engine.sentences[0], session, 'book-a');
+    timers[0]();
+    await assert.rejects(request, /timed out/i);
+    token.resolve('late-token');
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(nativeStarts, 0);
+    assert.equal(socketStarts, 0);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    globalThis.window = originalWindow;
+    globalThis.WebSocket = originalWebSocket;
+  }
+});

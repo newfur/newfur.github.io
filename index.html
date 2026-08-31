@@ -12386,6 +12386,13 @@ function ownedCallback(isCurrent, callback) {
   };
 }
 
+async function completeOwnedTransition({ pending, isCurrent, complete }) {
+  await pending;
+  if (!isCurrent()) return false;
+  complete();
+  return true;
+}
+
 class OwnedDebouncer {
   constructor(schedule = setTimeout, cancel = clearTimeout) {
     this.scheduleTimer = schedule;
@@ -15842,14 +15849,19 @@ class TTSEngine {
       let ws = null;
       let timeoutId = null;
       let controller = null;
+      let nativeRequestStarted = false;
+      const cancelNative = () => {
+        if (!nativeRequestStarted) return;
+        const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
+        if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
+      };
       const request = {
         cancelled: false,
         cancel: (reason) => {
+          const error = new DOMException(reason, 'AbortError');
           controller?.abort(new DOMException(reason, 'AbortError'));
-          if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
-          const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
-          if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
-          finish(new DOMException(reason, 'AbortError'));
+          cancelNative();
+          finish(error);
         }
       };
       const finish = (error, value) => {
@@ -15861,6 +15873,13 @@ class TTSEngine {
         error ? reject(error) : resolve(value);
       };
       this.activeRequests.add(request);
+      timeoutId = setTimeout(() => {
+        if (settled) return;
+        const error = new Error('TTS request timed out');
+        controller?.abort(error);
+        cancelNative();
+        finish(error);
+      }, this.requestTimeoutMs);
       try {
         if (!this._isCurrentSession(sessionId, bookId)) {
           finish(new DOMException('stale TTS session', 'AbortError'));
@@ -15923,6 +15942,7 @@ class TTSEngine {
         }
 
         const secMsGec = await this._generateSecMsGecToken();
+        if (settled) return;
         if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
@@ -15937,6 +15957,7 @@ class TTSEngine {
         // Native Plugin delegation
         if (isNativeApp && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
           try {
+            nativeRequestStarted = true;
             const result = await window.Capacitor.Plugins.NativeTTS.downloadTTS({
               text: sentence.text,
               voice: voiceShortName,
@@ -15944,6 +15965,7 @@ class TTSEngine {
               secMsGec: secMsGec,
               dateStr: this._dateToString()
             });
+            if (settled) return;
             const base64ToBlob = (base64, mimeType) => {
               const byteCharacters = atob(base64);
               const byteNumbers = new Array(byteCharacters.length);
@@ -15958,6 +15980,7 @@ class TTSEngine {
             finish(null, blob);
             return;
           } catch (nativeErr) {
+            if (settled) return;
             if (!this._isCurrentSession(sessionId, bookId)) throw nativeErr;
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
           }
@@ -15980,7 +16003,6 @@ class TTSEngine {
                     
         ws = new WebSocket(url);
         const audioChunks = [];
-        timeoutId = setTimeout(() => finish(new Error('TTS request timed out')), this.requestTimeoutMs);
         
         ws.binaryType = 'arraybuffer';
         
@@ -18115,6 +18137,12 @@ let isChangingChapter = false;
 let lastChapterChangeTime = 0;
 let openingBookId = null;
 
+function clearTTSClickTimer() {
+  if (!ttsClickTimeout) return;
+  clearTimeout(ttsClickTimeout);
+  ttsClickTimeout = null;
+}
+
 function isReaderOperationCurrent(token) {
   return readerOperations.isCurrent(token, token?.bookId) && currentBook?.id === token.bookId;
 }
@@ -18132,6 +18160,7 @@ function abortReaderAI(reason = 'reader operation superseded') {
 }
 
 function beginReaderOperation(bookId) {
+  clearTTSClickTimer();
   abortReaderAI();
   return readerOperations.begin(bookId);
 }
@@ -19743,14 +19772,21 @@ function initUIEventBindings() {
     if (!targetSpan) return;
 
     e.stopPropagation();
-    if (ttsClickTimeout) clearTimeout(ttsClickTimeout);
-    ttsClickTimeout = setTimeout(() => {
+    clearTTSClickTimer();
+    const clickOperation = readerOperations.currentToken();
+    const clickBookId = clickOperation?.bookId;
+    const clickBook = currentBook;
+    if (!clickOperation || !clickBookId || clickBook?.id !== clickBookId) return;
+    ttsClickTimeout = setTimeout(ownedCallback(
+      () => readerOperations.isCurrent(clickOperation, clickBookId) && currentBook === clickBook,
+      () => {
+      ttsClickTimeout = null;
       const selection = window.getSelection().toString().trim();
       if (selection.length === 0) {
         const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        tts.play(sentenceIdx, true, currentBook?.id);
+        tts.play(sentenceIdx, true, clickBookId);
       }
-    }, 150);
+    }), 150);
   });
 
   // 劃線高亮按鈕事件
@@ -20144,25 +20180,39 @@ function initUIEventBindings() {
   });
 
   tts.onPlaybackEnd = async () => {
+    const playbackOperation = readerOperations.currentToken();
+    const playbackBook = currentBook;
+    const playbackBookId = playbackOperation?.bookId;
+    const playbackBookData = epubBookData;
+    const ttsSessionId = tts.playbackGeneration;
+    const ttsOwnerBookId = tts.ownerBookId;
+    const isPlaybackOwnerCurrent = () =>
+      readerOperations.isCurrent(playbackOperation, playbackBookId) &&
+      currentBook === playbackBook &&
+      epubBookData === playbackBookData &&
+      tts._isCurrentSession(ttsSessionId, ttsOwnerBookId);
     updatePlayPauseButtonIcon();
     // 自動播放下一章節/頁面
-    if (currentBook) {
-      if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
+    if (playbackBook && playbackBookId && isPlaybackOwnerCurrent()) {
+      if (playbackBookData && currentChapterIndex < playbackBookData.chapters.length - 1) {
         const nextIdx = currentChapterIndex + 1;
-        const currentChapter = epubBookData.chapters[currentChapterIndex];
-        const nextChapter = epubBookData.chapters[nextIdx];
+        const currentChapter = playbackBookData.chapters[currentChapterIndex];
+        const nextChapter = playbackBookData.chapters[nextIdx];
         // 如果下一章與當前章節共享相同 cleanHref（子章節），僅更新章節索引而不重載
         if (currentChapter && nextChapter && currentChapter.cleanHref === nextChapter.cleanHref) {
           currentChapterIndex = nextIdx;
           tts.currentChapterIndex = nextIdx;
           syncTOCActiveState(nextIdx);
           updateReaderTitle();
-          tts.play(0, false, currentBook?.id);
+          if (isPlaybackOwnerCurrent()) tts.play(0, false, playbackBookId);
         } else {
-          await loadChapter(nextIdx);
-          tts.play(0, false, currentBook?.id);
+          await completeOwnedTransition({
+            pending: loadChapter(nextIdx, false, false, true, true, null, null, null, null, null, false, playbackOperation),
+            isCurrent: isPlaybackOwnerCurrent,
+            complete: () => tts.play(0, false, playbackBookId)
+          });
         }
-        updatePlayPauseButtonIcon();
+        if (isPlaybackOwnerCurrent()) updatePlayPauseButtonIcon();
       }
     }
   };

@@ -1086,14 +1086,19 @@ export class TTSEngine {
       let ws = null;
       let timeoutId = null;
       let controller = null;
+      let nativeRequestStarted = false;
+      const cancelNative = () => {
+        if (!nativeRequestStarted) return;
+        const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
+        if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
+      };
       const request = {
         cancelled: false,
         cancel: (reason) => {
+          const error = new DOMException(reason, 'AbortError');
           controller?.abort(new DOMException(reason, 'AbortError'));
-          if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
-          const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
-          if (typeof native?.cancelTTS === 'function') native.cancelTTS().catch(() => {});
-          finish(new DOMException(reason, 'AbortError'));
+          cancelNative();
+          finish(error);
         }
       };
       const finish = (error, value) => {
@@ -1105,6 +1110,13 @@ export class TTSEngine {
         error ? reject(error) : resolve(value);
       };
       this.activeRequests.add(request);
+      timeoutId = setTimeout(() => {
+        if (settled) return;
+        const error = new Error('TTS request timed out');
+        controller?.abort(error);
+        cancelNative();
+        finish(error);
+      }, this.requestTimeoutMs);
       try {
         if (!this._isCurrentSession(sessionId, bookId)) {
           finish(new DOMException('stale TTS session', 'AbortError'));
@@ -1167,6 +1179,7 @@ export class TTSEngine {
         }
 
         const secMsGec = await this._generateSecMsGecToken();
+        if (settled) return;
         if (!this._isCurrentSession(sessionId, bookId)) throw new DOMException('stale TTS session', 'AbortError');
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
@@ -1181,6 +1194,7 @@ export class TTSEngine {
         // Native Plugin delegation
         if (isNativeApp && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
           try {
+            nativeRequestStarted = true;
             const result = await window.Capacitor.Plugins.NativeTTS.downloadTTS({
               text: sentence.text,
               voice: voiceShortName,
@@ -1188,6 +1202,7 @@ export class TTSEngine {
               secMsGec: secMsGec,
               dateStr: this._dateToString()
             });
+            if (settled) return;
             const base64ToBlob = (base64, mimeType) => {
               const byteCharacters = atob(base64);
               const byteNumbers = new Array(byteCharacters.length);
@@ -1202,6 +1217,7 @@ export class TTSEngine {
             finish(null, blob);
             return;
           } catch (nativeErr) {
+            if (settled) return;
             if (!this._isCurrentSession(sessionId, bookId)) throw nativeErr;
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
           }
@@ -1224,7 +1240,6 @@ export class TTSEngine {
                     
         ws = new WebSocket(url);
         const audioChunks = [];
-        timeoutId = setTimeout(() => finish(new Error('TTS request timed out')), this.requestTimeoutMs);
         
         ws.binaryType = 'arraybuffer';
         

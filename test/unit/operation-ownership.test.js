@@ -8,6 +8,7 @@ import {
   buildOwnedSearchIndex,
   finishTrackedResource,
   ownedCallback,
+  completeOwnedTransition,
 } from '../../reader/operation-ownership.js';
 
 function deferred() {
@@ -208,4 +209,50 @@ test('debounced progress reports persistence failures without applying memory st
   await callbacks[0]();
 
   assert.deepEqual(errors, ['storage failed']);
+});
+
+test('delayed TTS click cannot start playback for a superseded reader owner', () => {
+  const owner = new OperationOwner();
+  const tokenA = owner.begin('book-a');
+  const plays = [];
+  const click = ownedCallback(
+    () => owner.isCurrent(tokenA, 'book-a'),
+    () => plays.push('book-a')
+  );
+
+  owner.begin('book-b');
+  click();
+
+  assert.deepEqual(plays, []);
+});
+
+test('playback end cannot restart TTS after chapter loading becomes stale', async () => {
+  const owner = new OperationOwner();
+  const tokenA = owner.begin('book-a');
+  const chapterLoad = deferred();
+  let session = 7;
+  const plays = [];
+  const completion = completeOwnedTransition({
+    pending: chapterLoad.promise,
+    isCurrent: () => owner.isCurrent(tokenA, 'book-a') && session === 7,
+    complete: () => plays.push('book-a')
+  });
+
+  owner.begin('book-b');
+  session = 8;
+  chapterLoad.resolve();
+
+  assert.equal(await completion, false);
+  assert.deepEqual(plays, []);
+});
+
+test('reader TTS timers and playback completion use captured ownership', () => {
+  const source = fs.readFileSync(new URL('../../reader/reader.js', import.meta.url), 'utf8');
+
+  assert.match(source, /const clickOperation = readerOperations\.currentToken\(\)/);
+  assert.match(source, /tts\.play\(sentenceIdx, true, clickBookId\)/);
+  assert.match(source, /function clearTTSClickTimer\(\)/);
+  assert.match(source, /completeOwnedTransition\(\{/);
+  assert.match(source, /tts\._isCurrentSession\(ttsSessionId, ttsOwnerBookId\)/);
+  assert.match(source, /tts\.play\(0, false, playbackBookId\)/);
 });
