@@ -1,151 +1,201 @@
-name: Build & Deploy
+# Gated CI: validate -> android-build -> pages-deploy -> release-prerelease
+# Every publication gate depends on full validation passing first.
+name: Build & Release Mobile
 
 on:
   push:
-    branches:
-      - web-version
+    branches: [main]
     paths:
+      - 'package.json'
+      - 'package-lock.json'
       - 'manifest.json'
+      - 'manifest.webmanifest'
+      - 'capacitor.config.json'
       - 'reader/**'
       - '_locales/**'
+      - 'icons/**'
       - 'scratch/**'
+      - 'test/**'
       - 'android/**'
       - 'index.html'
-      - 'package.json'
+      - 'reader_offline.html'
+      - 'sw.js'
+      - 'server.js'
+      - 'service-worker.js'
+      - 'vercel.json'
       - '.github/workflows/**'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+# Top-level: restrict to minimum. Jobs declare their own needs.
+permissions: {}
 
 jobs:
-  build-and-deploy:
-    name: Build APK, Offline Reader & Deploy Web
+  # ─── Gate 1: Full validation ───────────────────────────────────────
+  validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
+      - name: Checkout
+        uses: actions/checkout@11d5960  # v4.4.0
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@48b55a0  # v6.4.0
         with:
-          node-version: 18
-
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Get Version
-        id: version
-        run: |
-          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('./manifest.json','utf8')).version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Building version: ${VERSION}"
-          # 同步版本號到 package.json
-          node -e "const f='./package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8'));p.version='${VERSION}';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
-
-      # ===== Offline Single-File Build =====
-      - name: Build Offline Single-File Reader
-        run: |
-          npm run build:offline
-          cp reader_offline.html "Raconteur-Offline-${{ steps.version.outputs.version }}.html"
-
-      # ===== Commit Compiled Files Back to Repo =====
-      - name: Commit Compiled Files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html reader_offline.html package.json
-          if ! git diff --staged --quiet; then
-            git commit -m "chore(auto): build single-file offline reader v${{ steps.version.outputs.version }} [skip ci]"
-            git push origin web-version
-          fi
-
-      # ===== Android APK Build =====
-      - name: Setup Java JDK 17
-        uses: actions/setup-java@v5
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Build Web App and Sync
+          node-version: 22
+          cache: npm
+      - name: Install dependencies (locked)
+        run: npm ci
+      - name: Check version consistency
+        run: npm run check:versions
+      - name: Run unit + security tests
+        run: npm test
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+      - name: Build offline artifact
+        run: npm run build:offline
+      - name: Build mobile artifact
         run: npm run build:mobile
+      - name: Test built artifacts
+        run: npm run test:artifacts
+      - name: Verify no uncommitted generated files
+        run: git diff --exit-code
 
-      - name: Build Android Debug APK
-        run: |
-          cd android
-          chmod +x ./gradlew
-          ./gradlew assembleDebug
-
+  # ─── Gate 2: Android build ─────────────────────────────────────────
+  android-build:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960  # v4.4.0
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a0  # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies (locked)
+        run: npm ci
+      - name: Build mobile artifact
+        run: npm run build:mobile
+      - name: Setup JDK
+        uses: actions/setup-java@dded088  # v5.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Sync Capacitor Android
+        run: npm run sync:android
+      - name: Run Gradle tests
+        working-directory: android
+        run: ./gradlew test
+      - name: Run Gradle lint
+        working-directory: android
+        run: ./gradlew lint
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Read version from package.json
+        id: version
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
       - name: Rename APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Raconteur-${{ steps.version.outputs.version }}.apk
-
-      - name: Upload Artifacts
-        continue-on-error: true
-        uses: actions/upload-artifact@v5
+          apk_src=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -1)
+          cp "$apk_src" "Raconteur-${{ steps.version.outputs.version }}-debug-test.apk"
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@043fb46  # v7.0.1
         with:
-          name: release-artifacts
-          path: |
-            android/app/build/outputs/apk/debug/Raconteur-${{ steps.version.outputs.version }}.apk
-            Raconteur-Offline-${{ steps.version.outputs.version }}.html
-          if-no-files-found: error
-          retention-days: 7
+          name: android-debug-apk
+          path: 'Raconteur-${{ steps.version.outputs.version }}-debug-test.apk'
+          retention-days: 14
 
-      # ===== Create Tag & Release =====
-      - name: Create Tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}" --force
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # ─── Gate 3: GitHub Pages deploy ───────────────────────────────────
+  pages-deploy:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960  # v4.4.0
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a0  # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies (locked)
+        run: npm ci
+      - name: Build offline artifact
+        run: npm run build:offline
+      - name: Configure Pages
+        uses: actions/configure-pages@983d773  # v5.0.0
+      - name: Upload Pages artifact
+        uses: actions/upload-artifact@043fb46  # v7.0.1
+        with:
+          name: github-pages
+          path: .
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@d6db901  # v4.0.5
 
-      - name: Delete Existing Release
+  # ─── Gate 4: Immutable prerelease ──────────────────────────────────
+  release-prerelease:
+    needs: [validate, android-build, pages-deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960  # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Read version from package.json
+        id: version
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+      - name: Fail if tag already exists
         run: |
-          gh release delete "v${{ steps.version.outputs.version }}" --yes --cleanup-tag || true
-          git tag -f "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}" --force
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ steps.version.outputs.version }} already exists. Bump the version before releasing."
+            exit 1
+          fi
+      - name: Fail if release already exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Release v${{ steps.version.outputs.version }} already exists. Bump the version before releasing."
+            exit 1
+          fi
+      - name: Create immutable tag
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+      - name: Download APK artifact
+        uses: actions/download-artifact@3e5f45b  # v8.0.1
+        with:
+          name: android-debug-apk
+      - name: Create prerelease
+        uses: softprops/action-gh-release@3bb1273  # v2.6.2
         with:
           tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }} (debug test build)
+          prerelease: true
+          body: |
+            ## Debug / Test Build
+
+            **This is an automated pre-release for testing purposes only.**
+            It is NOT a production release.
+
+            - APK: `Raconteur-${{ steps.version.outputs.version }}-debug-test.apk`
+            - Build type: debug
+            - Signed with: debug keystore (not suitable for distribution)
+
+            ### What's included
+            - Offline PWA artifact
+            - Android debug APK (test-only)
+            - All validation gates passed before publication
           files: |
-            android/app/build/outputs/apk/debug/Raconteur-${{ steps.version.outputs.version }}.apk
-            Raconteur-Offline-${{ steps.version.outputs.version }}.html
-          name: v${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ===== Deploy Web to GitHub Pages =====
-      - name: Prepare Web Deploy
-        run: |
-          mkdir -p deploy
-          cp -r reader deploy/
-          cp -r icons deploy/
-          cp -r _locales deploy/
-          cp index.html deploy/
-          cp reader_offline.html deploy/
-          cp manifest.webmanifest deploy/
-          cp sw.js deploy/
-          cp service-worker.js deploy/
-          cp manifest.json deploy/
-
-      - name: Deploy to GitHub Pages Branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./deploy
-          force_orphan: true
-
+            Raconteur-${{ steps.version.outputs.version }}-debug-test.apk

@@ -1,174 +1,53 @@
-name: Clean Artifacts & Releases
+# Retain only: prune old workflow artifacts and runs.
+# No release deletion. No tag deletion. No force operations.
+name: Clean Old Artifacts
 
 on:
   schedule:
-    - cron: '0 2 * * *' # Run daily at 2:00 AM UTC
+    - cron: '0 4 * * 0'  # Weekly on Sunday at 04:00 UTC
   workflow_dispatch:
-    inputs:
-      clean_artifacts:
-        description: 'Clean old Artifacts'
-        required: false
-        default: true
-        type: boolean
-      clean_releases:
-        description: 'Clean old Releases (keeps latest N)'
-        required: false
-        default: true
-        type: boolean
-      clean_runs:
-        description: 'Clean old Workflow Runs'
-        required: false
-        default: true
-        type: boolean
-      max_age_days:
-        description: 'Artifacts & Runs: delete older than N days'
-        required: false
-        default: '7'
-        type: string
-      keep_releases:
-        description: 'Releases: keep latest N releases'
-        required: false
-        default: '3'
-        type: string
-      keep_runs:
-        description: 'Runs: keep latest N runs per workflow'
-        required: false
-        default: '2'
-        type: string
 
 permissions:
-  contents: write
   actions: write
+  contents: read
 
 jobs:
-  cleanup:
-    name: Cleanup
+  prune-artifacts:
     runs-on: ubuntu-latest
     steps:
-      - name: Clean Old Artifacts
-        if: ${{ github.event_name == 'schedule' || inputs.clean_artifacts == 'true' || inputs.clean_artifacts == true }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const maxAgeDays = parseInt('${{ inputs.max_age_days }}') || 7;
-            const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-            let deleted = 0;
-            let freedBytes = 0;
+      - name: Delete old workflow artifacts (>30 days)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          cutoff=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                || date -u -v-30d +%Y-%m-%dT%H:%M:%SZ)
+          echo "Pruning artifacts older than $cutoff"
+          page=1
+          while true; do
+            artifacts=$(gh api "repos/$REPO/actions/artifacts?per_page=100&page=$page" --jq '.artifacts[]')
+            [ -z "$artifacts" ] && break
+            echo "$artifacts" | jq -r --arg cutoff "$cutoff" \
+              'select(.created_at < $cutoff) | .id' | while read -r id; do
+              echo "Deleting artifact $id"
+              gh api -X DELETE "repos/$REPO/actions/artifacts/$id" || true
+            done
+            page=$((page + 1))
+          done
 
-            const artifacts = await github.paginate(
-              github.rest.actions.listArtifactsForRepo,
-              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
-            );
-
-            for (const artifact of artifacts) {
-              const createdAt = new Date(artifact.created_at).getTime();
-              if (createdAt < cutoff) {
-                console.log(`Deleting: ${artifact.name} (${(artifact.size_in_bytes / 1024 / 1024).toFixed(1)} MB, created ${artifact.created_at})`);
-                await github.rest.actions.deleteArtifact({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  artifact_id: artifact.id
-                });
-                freedBytes += artifact.size_in_bytes;
-                deleted++;
-              }
-            }
-
-            console.log(`\n✅ Artifacts: deleted ${deleted}, freed ~${(freedBytes / 1024 / 1024).toFixed(1)} MB`);
-
-      - name: Clean Old Releases
-        if: ${{ github.event_name == 'schedule' || inputs.clean_releases == 'true' || inputs.clean_releases == true }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const keepCount = parseInt('${{ inputs.keep_releases }}') || 3;
-
-            const releases = await github.paginate(
-              github.rest.repos.listReleases,
-              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
-            );
-
-            releases.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-            const toDelete = releases.slice(keepCount);
-            let deleted = 0;
-
-            for (const release of toDelete) {
-              console.log(`Deleting release: ${release.name || release.tag_name} (created ${release.created_at})`);
-
-              await github.rest.repos.deleteRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.id
-              });
-
-              try {
-                await github.rest.git.deleteRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: `tags/${release.tag_name}`
-                });
-                console.log(`  └─ Deleted tag: ${release.tag_name}`);
-              } catch (e) {
-                console.log(`  └─ Tag ${release.tag_name} already deleted or not found`);
-              }
-
-              deleted++;
-            }
-
-            console.log(`\n✅ Releases: kept latest ${keepCount}, deleted ${deleted} old releases`);
-
-      - name: Clean Old Workflow Runs
-        if: ${{ github.event_name == 'schedule' || inputs.clean_runs == 'true' || inputs.clean_runs == true }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const maxAgeDays = parseInt('${{ inputs.max_age_days }}') || 7;
-            const keepRuns = parseInt('${{ inputs.keep_runs }}') || 5;
-            const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-
-            // Get all workflows in the repo
-            const workflows = await github.paginate(
-              github.rest.actions.listRepoWorkflows,
-              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
-            );
-
-            let totalDeleted = 0;
-
-            for (const workflow of workflows) {
-              console.log(`\n📋 Processing workflow: ${workflow.name} (id: ${workflow.id})`);
-
-              const runs = await github.paginate(
-                github.rest.actions.listWorkflowRuns,
-                { owner: context.repo.owner, repo: context.repo.repo, workflow_id: workflow.id, per_page: 100 }
-              );
-
-              // Sort newest first
-              runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-              let kept = 0;
-              for (const run of runs) {
-                // Always keep the latest N runs regardless of age
-                if (kept < keepRuns) {
-                  kept++;
-                  continue;
-                }
-
-                const createdAt = new Date(run.created_at).getTime();
-                if (createdAt < cutoff) {
-                  console.log(`  Deleting run #${run.run_number} (${run.status}, created ${run.created_at})`);
-                  try {
-                    await github.rest.actions.deleteWorkflowRun({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      run_id: run.id
-                    });
-                    totalDeleted++;
-                  } catch (e) {
-                    console.log(`  ⚠️ Failed to delete run #${run.run_number}: ${e.message}`);
-                  }
-                }
-              }
-            }
-
-            console.log(`\n✅ Workflow Runs: deleted ${totalDeleted} old runs (kept latest ${keepRuns} per workflow)`);
+  prune-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs (>60 days, not latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          cutoff=$(date -u -d '60 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                || date -u -v-60d +%Y-%m-%dT%H:%M:%SZ)
+          echo "Pruning workflow runs older than $cutoff"
+          gh api "repos/$REPO/actions/runs?per_page=100&status=completed" --paginate --jq \
+            ".workflow_runs[] | select(.created_at < \"$cutoff\") | .id" | while read -r id; do
+            echo "Deleting run $id"
+            gh api -X DELETE "repos/$REPO/actions/runs/$id" || true
+          done
