@@ -21,6 +21,43 @@ export class OperationOwner {
   }
 }
 
+export function ownedCallback(isCurrent, callback) {
+  return (...args) => {
+    if (isCurrent()) return callback(...args);
+  };
+}
+
+export class OwnedDebouncer {
+  constructor(schedule = setTimeout, cancel = clearTimeout) {
+    this.scheduleTimer = schedule;
+    this.cancelTimer = cancel;
+    this.pending = null;
+  }
+
+  schedule({ token, bookId, update, isCurrent, persist, apply, onError = null, delay = 1000 }) {
+    if (this.pending) this.cancelTimer(this.pending.timer);
+    const request = { token, bookId, update: { ...update }, isCurrent, persist, apply, timer: null };
+    request.timer = this.scheduleTimer(async () => {
+      if (this.pending !== request) return;
+      this.pending = null;
+      if (!isCurrent(token, bookId)) return;
+      try {
+        await persist(bookId, request.update);
+        if (isCurrent(token, bookId)) apply(request.update);
+      } catch (error) {
+        onError?.(error);
+      }
+    }, delay);
+    this.pending = request;
+  }
+
+  cancel() {
+    if (!this.pending) return;
+    this.cancelTimer(this.pending.timer);
+    this.pending = null;
+  }
+}
+
 export async function finishTrackedResource({ url, activeResources, pending, isCurrent, revoke = value => URL.revokeObjectURL(value) }) {
   let cleaned = false;
   const cleanup = () => {

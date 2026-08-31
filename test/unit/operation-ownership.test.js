@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { OperationOwner, buildOwnedSearchIndex, finishTrackedResource } from '../../reader/operation-ownership.js';
+import {
+  OperationOwner,
+  OwnedDebouncer,
+  buildOwnedSearchIndex,
+  finishTrackedResource,
+  ownedCallback,
+} from '../../reader/operation-ownership.js';
 
 function deferred() {
   let resolve;
@@ -122,4 +128,84 @@ test('stale delayed search index cannot replace the current book caches', async 
 
   assert.equal(result, null);
   assert.deepEqual(caches, { chunks: [{ text: 'book-b' }], chapters: [{ text: 'book-b' }] });
+});
+
+test('debounced progress is coalesced per owner and never redirected to a newer book', async () => {
+  const owner = new OperationOwner();
+  const timers = [];
+  const debouncer = new OwnedDebouncer(
+    callback => { timers.push(callback); return timers.length - 1; },
+    timer => { timers[timer] = null; }
+  );
+  const writes = [];
+  const applied = [];
+  const tokenA = owner.begin('book-a');
+  debouncer.schedule({
+    token: tokenA,
+    bookId: 'book-a',
+    update: { chapterIndex: 1 },
+    isCurrent: (token, bookId) => owner.isCurrent(token, bookId),
+    persist: async (bookId, update) => writes.push([bookId, update]),
+    apply: update => applied.push(['book-a', update])
+  });
+
+  const tokenB = owner.begin('book-b');
+  debouncer.schedule({
+    token: tokenB,
+    bookId: 'book-b',
+    update: { chapterIndex: 2 },
+    isCurrent: (token, bookId) => owner.isCurrent(token, bookId),
+    persist: async (bookId, update) => writes.push([bookId, update]),
+    apply: update => applied.push(['book-b', update])
+  });
+  await Promise.all(timers.filter(Boolean).map(callback => callback()));
+
+  assert.deepEqual(writes, [['book-b', { chapterIndex: 2 }]]);
+  assert.deepEqual(applied, [['book-b', { chapterIndex: 2 }]]);
+});
+
+test('delayed chapter callback cannot mutate or scroll after its owner becomes stale', () => {
+  const owner = new OperationOwner();
+  const tokenA = owner.begin('book-a');
+  const effects = [];
+  const delayedScroll = ownedCallback(
+    () => owner.isCurrent(tokenA, 'book-a'),
+    () => effects.push('scroll')
+  );
+
+  owner.begin('book-b');
+  delayedScroll();
+
+  assert.deepEqual(effects, []);
+});
+
+test('reader delayed chapter integrations all use the captured owner guard', () => {
+  const source = fs.readFileSync(new URL('../../reader/reader.js', import.meta.url), 'utf8');
+
+  assert.match(source, /import \{[^}]*OwnedDebouncer[^}]*ownedCallback[^}]*\} from '.\/operation-ownership\.js'/s);
+  assert.match(source, /const scrollToBottom = ownedCallback\(isCurrent/);
+  assert.match(source, /img\.addEventListener\('load', scrollToBottom/);
+  assert.match(source, /pendingGoToLastPageTimeout = setTimeout\(ownedCallback\(isCurrent/);
+  assert.match(source, /return waitForStylesheets\(contentEl\)\.then\(\(\) => \{\s*if \(!isCurrent\(\)\) return;/);
+  assert.match(source, /document\.fonts\.ready\.then\(\(\) => \{\s*if \(!isCurrent\(\)\) return;/);
+  assert.match(source, /setTimeout\(ownedCallback\(isCurrent, \(\) => \{\s*document\.documentElement\.style\.overflow/);
+});
+
+test('debounced progress reports persistence failures without applying memory state', async () => {
+  const callbacks = [];
+  const errors = [];
+  const debouncer = new OwnedDebouncer(callback => { callbacks.push(callback); return 1; }, () => {});
+  debouncer.schedule({
+    token: { generation: 1, bookId: 'book-a' },
+    bookId: 'book-a',
+    update: { chapterIndex: 3 },
+    isCurrent: () => true,
+    persist: async () => { throw new Error('storage failed'); },
+    apply: () => assert.fail('failed persistence must not update memory'),
+    onError: error => errors.push(error.message)
+  });
+
+  await callbacks[0]();
+
+  assert.deepEqual(errors, ['storage failed']);
 });

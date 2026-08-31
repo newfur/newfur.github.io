@@ -43,7 +43,7 @@ if (typeof mermaid !== 'undefined') {
 import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
-import { OperationOwner, buildOwnedSearchIndex, finishTrackedResource } from './operation-ownership.js';
+import { OperationOwner, OwnedDebouncer, buildOwnedSearchIndex, finishTrackedResource, ownedCallback } from './operation-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -4033,15 +4033,15 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       if (document.body.classList.contains('layout-paginated')) {
         pendingGoToLastPage = true;
         currentPageIndex = getLastPageIndex();
-        pendingGoToLastPageTimeout = setTimeout(() => {
+        pendingGoToLastPageTimeout = setTimeout(ownedCallback(isCurrent, () => {
           pendingGoToLastPage = false;
           pendingGoToLastPageTimeout = null;
-        }, 1000);
+        }), 1000);
         updatePageTranslate(false);
       } else {
-        const scrollToBottom = () => {
+        const scrollToBottom = ownedCallback(isCurrent, () => {
           window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
-        };
+        });
         scrollToBottom();
         setTimeout(scrollToBottom, 30);
         setTimeout(scrollToBottom, 100);
@@ -4146,8 +4146,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     isChangingChapter = false;
     lastChapterChangeTime = Date.now();
     if (!isPaginated) {
-      setTimeout(() => {
-        if (!isCurrent()) return;
+      setTimeout(ownedCallback(isCurrent, () => {
         document.documentElement.style.overflow = origHtmlOverflow;
         document.body.style.overflow = origBodyOverflow;
         // 確保在溢出屬性恢復後，滾動目標被正確應用
@@ -4156,7 +4155,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
         } else if (!restoreProgress && !targetKindleOffset && !targetHash && !activeHashElem && targetElementIndex === null && targetSentenceIndex === null && targetPageIndex === null) {
           window.scrollTo(0, 0);
         }
-      }, 150);
+      }), 150);
     }
   }
 }
@@ -4844,20 +4843,20 @@ function navigatePage(direction) {
 }
 
 // 防抖保存進度
-let saveTimeout = null;
+const progressDebouncer = new OwnedDebouncer();
 function saveProgressDebounced(update) {
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(async () => {
-    try {
-      if (currentBook) {
-        await library.updateProgress(currentBook.id, update);
-        // 更新內存狀態
-        currentBook.progress = { ...currentBook.progress, ...update };
-      }
-    } catch (e) {
-      console.warn('[Progress] Debounced save failed:', e);
-    }
-  }, 1000);
+  const operation = readerOperations.currentToken();
+  const book = currentBook;
+  if (!operation || !book || operation.bookId !== book.id) return;
+  progressDebouncer.schedule({
+    token: operation,
+    bookId: book.id,
+    update,
+    isCurrent: (token, bookId) => readerOperations.isCurrent(token, bookId) && currentBook === book,
+    persist: (bookId, progress) => library.updateProgress(bookId, progress),
+    apply: progress => { book.progress = { ...book.progress, ...progress }; },
+    onError: error => console.warn('[Progress] Debounced save failed:', error)
+  });
 }
 
 // 立即保存 TTS 進度（無防抖，安全過渡校驗）
@@ -4900,7 +4899,7 @@ async function forceSaveCurrentProgress(bookId = currentBook?.id) {
   const book = currentBook?.id === bookId ? currentBook : null;
   if (book && !isSavingProgress) {
     // 取消待執行的防抖保存，防止之後觸發時用舊數據覆蓋本次強制保存
-    if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+    progressDebouncer.cancel();
     
     isSavingProgress = true;
     const update = {};
