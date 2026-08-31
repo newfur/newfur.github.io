@@ -360,3 +360,11 @@ test('native cancellation is scoped to its connection id', () => {
   const source = fs.readFileSync(path.join(projectRoot, 'reader', 'tts.js'), 'utf8');
   assert.match(source, /cancelTTS\(\{ connectionId \}\)/);
 });
+
+test('native foreground result records degraded notification controls without prompting', () => {
+  const source = fs.readFileSync(path.join(projectRoot, 'reader', 'tts.js'), 'utf8');
+  assert.match(source, /nativeNotificationPermission = result\.notificationPermission/);
+  assert.match(source, /nativeControlsAvailable = result\.controlsAvailable === true/);
+  assert.doesNotMatch(source, /startForegroundService[\s\S]{0,500}requestNotificationPermission/);
+  assert.match(source, /requestNativeNotificationPermission\(\)[\s\S]{0,300}requestNotificationPermission\(\)/);
+});

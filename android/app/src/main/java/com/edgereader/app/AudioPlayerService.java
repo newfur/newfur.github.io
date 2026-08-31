@@ -161,17 +161,24 @@ public class AudioPlayerService extends Service {
     }
 
     private void applyStart(Intent intent) {
-        currentTitle = safe(intent.getStringExtra(EXTRA_TITLE));
-        currentArtist = safe(intent.getStringExtra(EXTRA_ARTIST));
-        currentText = safe(intent.getStringExtra(EXTRA_TEXT));
-        String coverBase64 = intent.getStringExtra(EXTRA_COVER);
-        isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false);
-        recycleCover();
-        coverBitmap = decodeBase64ToBitmap(coverBase64);
-        startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
-        foregroundStarted = true;
-        updatePlaybackState(isPlaying);
-        updateMetadata(currentTitle, currentArtist, currentText);
+        ForegroundStartSequence.run(
+                () -> {
+                    startForegroundMinimal();
+                    foregroundStarted = true;
+                },
+                () -> {
+                    isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false);
+                    recycleCover();
+                    coverBitmap = decodeBase64ToBitmap(intent.getStringExtra(EXTRA_COVER));
+                },
+                () -> {
+                    currentTitle = safe(intent.getStringExtra(EXTRA_TITLE));
+                    currentArtist = safe(intent.getStringExtra(EXTRA_ARTIST));
+                    currentText = safe(intent.getStringExtra(EXTRA_TEXT));
+                    updatePlaybackState(isPlaying);
+                    updateMetadata(currentTitle, currentArtist, currentText);
+                    updateNotification(currentTitle, currentArtist, currentText, isPlaying);
+                });
     }
 
     private void applyUpdate(Intent intent) {
@@ -195,6 +202,18 @@ public class AudioPlayerService extends Service {
 
     private void startForegroundServiceWithNotification(String title, String artist, String text, boolean isPlaying) {
         Notification notification = createNotification(title, artist, text, isPlaying);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+    }
+
+    private void startForegroundMinimal() {
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        Notification notification = builder.setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle("Reading...").setOngoing(true).build();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         } else {

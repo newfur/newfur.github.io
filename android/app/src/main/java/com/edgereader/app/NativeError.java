@@ -7,7 +7,17 @@ enum NativeError {
     INVALID_FILENAME("Filename is invalid"),
     DESTINATION_UNAVAILABLE("Destination is unavailable"),
     COPY_FAILED("Copy failed"),
-    USER_CANCELLED("User cancelled");
+    USER_CANCELLED("User cancelled"),
+    INVALID_TEXT("TTS text is invalid"),
+    INVALID_VOICE("TTS voice is invalid"),
+    INVALID_CONNECTION_ID("TTS connection ID is invalid"),
+    INVALID_TOKEN("TTS token is invalid"),
+    INVALID_DATE("TTS timestamp is invalid"),
+    INVALID_RATE("TTS rate is invalid"),
+    INVALID_VOLUME("TTS volume is invalid"),
+    INVALID_SSML("TTS request is too large"),
+    CANCELLED("TTS request was cancelled"),
+    NOTIFICATION_PERMISSION_DENIED("Notification permission is denied");
 
     private final String message;
 

@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import androidx.annotation.RequiresApi;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
@@ -27,12 +28,11 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -49,7 +49,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
     private static final OkHttpClient HTTP_CLIENT = new OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build();
 
-    private final ConcurrentHashMap<String, WebSocket> webSockets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, NativeTtsRequest> ttsRequests = new ConcurrentHashMap<>();
     private final AtomicBoolean pickerBusy = new AtomicBoolean();
     private volatile String playbackSessionId;
 
@@ -83,7 +83,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(intent);
             else getContext().startService(intent);
-            JSObject result = notificationStatus();
+            JSObject result = notificationStatus(true);
             call.resolve(result);
         } catch (RuntimeException error) {
             PLAYBACK_REGISTRY.unregister(sessionId);
@@ -140,56 +140,76 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
     }
 
     @PluginMethod
-    public void getNotificationStatus(PluginCall call) { call.resolve(notificationStatus()); }
+    public void getNotificationStatus(PluginCall call) { call.resolve(notificationStatus(false)); }
 
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED) {
-            call.resolve(notificationStatus());
+            call.resolve(notificationStatus(false));
         } else {
             requestPermissionForAlias("notifications", call, "notificationPermissionResult");
         }
     }
 
     @PermissionCallback
-    private void notificationPermissionResult(PluginCall call) { call.resolve(notificationStatus()); }
+    private void notificationPermissionResult(PluginCall call) { call.resolve(notificationStatus(false)); }
 
-    private JSObject notificationStatus() {
+    private JSObject notificationStatus(boolean serviceStarted) {
         PermissionState state = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
                 ? PermissionState.GRANTED : getPermissionState("notifications");
-        boolean granted = state == PermissionState.GRANTED;
+        NativeNotificationStatus status = NativeNotificationStatus.forPermission(state.toString(), serviceStarted);
         JSObject result = new JSObject();
-        result.put("display", state.toString());
-        result.put("controlsAvailable", granted);
+        result.put("notificationPermission", status.permission);
+        result.put("controlsAvailable", status.controlsAvailable);
+        result.put("serviceStarted", status.serviceStarted);
         return result;
     }
 
     @PluginMethod
     public void downloadTTS(PluginCall call) {
-        String text = call.getString("text");
-        String voice = call.getString("voice");
-        String connectionId = call.getString("connectionId");
-        String secMsGec = call.getString("secMsGec");
-        String dateStr = call.getString("dateStr");
-        if (text == null || voice == null || connectionId == null || secMsGec == null || dateStr == null) {
-            call.reject("Missing required parameters", "INVALID_ARGUMENT");
+        final TtsRequestValidator.Request validated;
+        try {
+            validated = TtsRequestValidator.validate(
+                    call.getString("text"), call.getString("voice"), call.getString("connectionId"),
+                    call.getString("secMsGec"), call.getString("dateStr"),
+                    call.getString("rate", "+0%"), call.getString("volume", "+0%"));
+        } catch (NativeBoundaryException error) {
+            reject(call, error);
             return;
         }
         String url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
-                + "?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=" + connectionId
-                + "&Sec-MS-GEC=" + secMsGec + "&Sec-MS-GEC-Version=1-143.0.3650.75";
+                + "?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=" + validated.connectionId
+                + "&Sec-MS-GEC=" + validated.token + "&Sec-MS-GEC-Version=1-143.0.3650.75";
         Request request = new Request.Builder().url(url)
                 .addHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
                 .addHeader("User-Agent", "Mozilla/5.0 Edg/143.0.0.0").build();
         ByteArrayOutputStream audio = new ByteArrayOutputStream();
-        AtomicBoolean settled = new AtomicBoolean();
-        WebSocket socket = HTTP_CLIENT.newWebSocket(request, new WebSocketListener() {
+        NativeTtsRequest operation = new NativeTtsRequest(new NativeTtsRequest.Sink() {
+            @Override public void resolve(String encodedAudio) {
+                JSObject result = new JSObject();
+                result.put("audioBase64", encodedAudio);
+                call.resolve(result);
+            }
+            @Override public void reject(String code, String message) { call.reject(message, code); }
+        });
+        if (ttsRequests.putIfAbsent(validated.connectionId, operation) != null) {
+            call.reject("TTS connection ID is already active", NativeError.INVALID_CONNECTION_ID.name());
+            return;
+        }
+        AtomicReference<WebSocket> socketReference = new AtomicReference<>();
+        operation.setCancelAction(() -> {
+            WebSocket active = socketReference.get();
+            if (active != null) active.cancel();
+            ttsRequests.remove(validated.connectionId, operation);
+        });
+        WebSocket socket;
+        try {
+            socket = HTTP_CLIENT.newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket ws, Response response) {
-                webSockets.put(connectionId, ws);
-                ws.send("X-Timestamp:" + dateStr + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n"
+                ws.send("X-Timestamp:" + validated.date + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n"
                         + "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}");
-                ws.send("X-RequestId:" + connectionId + "\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:"
-                        + dateStr + "Z\r\nPath:ssml\r\n\r\n" + SsmlBuilder.build(text, voice, call.getString("rate", "+0%"), call.getString("volume", "+0%")));
+                ws.send("X-RequestId:" + validated.connectionId + "\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:"
+                        + validated.date + "Z\r\nPath:ssml\r\n\r\n" + validated.ssml);
             }
             @Override public void onMessage(WebSocket ws, String message) {
                 if (message.contains("Path:turn.end")) ws.close(1000, "Finished");
@@ -203,35 +223,36 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
                 int length = data.length - headerLength - 2;
                 if (!headers.contains("Path:audio")) return;
                 if (audio.size() > MAX_AUDIO_BYTES - length) {
-                    if (settled.compareAndSet(false, true)) call.reject("Audio response is too large", "AUDIO_TOO_LARGE");
+                    ttsRequests.remove(validated.connectionId, operation);
+                    operation.fail("AUDIO_TOO_LARGE", "Audio response is too large");
                     ws.cancel();
                     return;
                 }
                 audio.write(data, headerLength + 2, length);
             }
             @Override public void onClosed(WebSocket ws, int code, String reason) {
-                webSockets.remove(connectionId, ws);
-                if (!settled.compareAndSet(false, true)) return;
-                if (audio.size() == 0) call.reject("No audio data received", "EMPTY_AUDIO");
-                else {
-                    JSObject result = new JSObject();
-                    result.put("audioBase64", Base64.encodeToString(audio.toByteArray(), Base64.NO_WRAP));
-                    call.resolve(result);
-                }
+                ttsRequests.remove(validated.connectionId, operation);
+                if (audio.size() == 0) operation.fail("EMPTY_AUDIO", "No audio data received");
+                else operation.succeed(Base64.encodeToString(audio.toByteArray(), Base64.NO_WRAP));
             }
             @Override public void onFailure(WebSocket ws, Throwable error, Response response) {
-                webSockets.remove(connectionId, ws);
-                if (settled.compareAndSet(false, true)) call.reject("TTS connection failed", "NETWORK_FAILURE");
+                ttsRequests.remove(validated.connectionId, operation);
+                operation.fail("NETWORK_FAILURE", "TTS connection failed");
             }
-        });
-        webSockets.put(connectionId, socket);
+            });
+            socketReference.set(socket);
+            if (operation.isCancelled()) socket.cancel();
+        } catch (RuntimeException error) {
+            ttsRequests.remove(validated.connectionId, operation);
+            operation.fail("NETWORK_FAILURE", "TTS connection failed");
+        }
     }
 
     @PluginMethod
     public void cancelTTS(PluginCall call) {
         String connectionId = call.getString("connectionId");
-        WebSocket socket = connectionId == null ? null : webSockets.remove(connectionId);
-        if (socket != null) socket.cancel();
+        NativeTtsRequest operation = connectionId == null ? null : ttsRequests.remove(connectionId);
+        if (operation != null) operation.cancel();
         call.resolve();
     }
 
@@ -241,25 +262,38 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
             launchSavePicker(call);
             return;
         }
+        copyFileToMediaStore(call);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private void copyFileToMediaStore(PluginCall call) {
         try (InputStream input = openApprovedSource(call.getString("fileUri"))) {
             String filename = requireFilename(call.getString("filename"));
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
-            values.put(MediaStore.MediaColumns.MIME_TYPE, "application/zip");
-            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-            values.put(MediaStore.MediaColumns.IS_PENDING, 1);
-            Uri destination = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-            if (destination == null) throw new NativeBoundaryException(NativeError.DESTINATION_UNAVAILABLE);
-            try (OutputStream output = getContext().getContentResolver().openOutputStream(destination)) {
-                if (output == null) throw new NativeBoundaryException(NativeError.DESTINATION_UNAVAILABLE);
-                copy(input, output);
-            } catch (Exception error) {
-                getContext().getContentResolver().delete(destination, null, null);
-                throw error;
-            }
-            ContentValues published = new ContentValues();
-            published.put(MediaStore.MediaColumns.IS_PENDING, 0);
-            getContext().getContentResolver().update(destination, published, null, null);
+            AtomicReference<Uri> destination = new AtomicReference<>();
+            PendingMediaStoreWrite.execute(new PendingMediaStoreWrite.Store() {
+                @Override public void insertPending() throws IOException {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+                    values.put(MediaStore.MediaColumns.MIME_TYPE, "application/zip");
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                    Uri inserted = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (inserted == null) throw new IOException("insert failed");
+                    destination.set(inserted);
+                }
+                @Override public void write() throws IOException {
+                    try (OutputStream output = getContext().getContentResolver().openOutputStream(destination.get())) {
+                        if (output == null) throw new IOException("destination unavailable");
+                        copy(input, output);
+                    }
+                }
+                @Override public boolean publish() {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                    return getContext().getContentResolver().update(destination.get(), values, null, null) == 1;
+                }
+                @Override public void delete() { getContext().getContentResolver().delete(destination.get(), null, null); }
+            });
             JSObject result = new JSObject();
             result.put("path", Environment.DIRECTORY_DOWNLOADS + "/" + filename);
             call.resolve(result);
@@ -293,19 +327,11 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
     private void saveFileToSystemResult(PluginCall call, ActivityResult activityResult) {
         pickerBusy.set(false);
         if (call == null) return;
-        if (activityResult.getResultCode() != Activity.RESULT_OK) {
-            call.reject(NativeError.USER_CANCELLED.message(), NativeError.USER_CANCELLED.name());
-            return;
-        }
-        Uri destination = activityResult.getData() == null ? null : activityResult.getData().getData();
-        if (destination == null) {
-            call.reject(NativeError.DESTINATION_UNAVAILABLE.message(), NativeError.DESTINATION_UNAVAILABLE.name());
-            return;
-        }
-        try (InputStream input = openApprovedSource(call.getString("fileUri"));
-             OutputStream output = getContext().getContentResolver().openOutputStream(destination)) {
-            if (output == null) throw new NativeBoundaryException(NativeError.DESTINATION_UNAVAILABLE);
-            copy(input, output);
+        try {
+            Uri destination = SafExportContract.requireDestination(activityResult);
+            try (InputStream input = openApprovedSource(call.getString("fileUri"))) {
+            SafExportContract.write(getContext().getContentResolver(), destination, input);
+            }
             JSObject result = new JSObject();
             result.put("path", destination.toString());
             call.resolve(result);
@@ -365,26 +391,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
     }
 
     private InputStream openApprovedSource(String rawUri) throws NativeBoundaryException {
-        if (rawUri == null || rawUri.isEmpty()) throw new NativeBoundaryException(NativeError.INVALID_SOURCE_URI);
-        try {
-            URI uri = new URI(rawUri);
-            NativeFileBoundary.SourceKind kind = NativeFileBoundary.classifySource(
-                    getContext().getCacheDir(), getContext().getFilesDir(), uri);
-            InputStream input;
-            if (kind == NativeFileBoundary.SourceKind.CONTENT) input = getContext().getContentResolver().openInputStream(Uri.parse(rawUri));
-            else if (kind == NativeFileBoundary.SourceKind.APP_FILE) input = new FileInputStream(new File(uri));
-            else throw new NativeBoundaryException(NativeError.SOURCE_NOT_ALLOWED);
-            if (input == null) throw new NativeBoundaryException(NativeError.SOURCE_NOT_FOUND);
-            return input;
-        } catch (NativeBoundaryException error) {
-            throw error;
-        } catch (URISyntaxException error) {
-            throw new NativeBoundaryException(NativeError.INVALID_SOURCE_URI, error);
-        } catch (FileNotFoundException error) {
-            throw new NativeBoundaryException(NativeError.SOURCE_NOT_FOUND, error);
-        } catch (IOException | SecurityException error) {
-            throw new NativeBoundaryException(NativeError.SOURCE_NOT_ALLOWED, error);
-        }
+        return NativeContentSource.open(getContext(), rawUri);
     }
 
     private static String requireFilename(String filename) throws NativeBoundaryException {
@@ -413,8 +420,8 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
         playbackSessionId = null;
         PLAYBACK_REGISTRY.unregister(sessionId);
         pickerBusy.set(false);
-        for (WebSocket socket : webSockets.values()) socket.cancel();
-        webSockets.clear();
+        for (NativeTtsRequest request : ttsRequests.values()) request.cancel();
+        ttsRequests.clear();
         super.handleOnDestroy();
     }
 }

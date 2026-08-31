@@ -144,6 +144,8 @@ export class TTSEngine {
     this.requestTimeoutMs = 15000;
     this.nativeMediaSessionId = null;
     this.nativeMediaListener = null;
+    this.nativeNotificationPermission = 'unknown';
+    this.nativeControlsAvailable = false;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -215,6 +217,15 @@ export class TTSEngine {
     const listener = this.nativeMediaListener;
     this.nativeMediaListener = null;
     if (listener && typeof listener.remove === 'function') listener.remove().catch(() => {});
+  }
+
+  async requestNativeNotificationPermission() {
+    const native = typeof window !== 'undefined' && window.Capacitor?.Plugins?.NativeTTS;
+    if (!native || typeof native.requestNotificationPermission !== 'function') return null;
+    const result = await native.requestNotificationPermission();
+    this.nativeNotificationPermission = result.notificationPermission;
+    this.nativeControlsAvailable = result.controlsAvailable === true;
+    return result;
   }
 
   _beginSession(bookId = this.ownerBookId) {
@@ -2341,6 +2352,10 @@ export class TTSEngine {
         text: sentence ? sentence.text : '',
         cover: '',
         isPlaying: true
+      }).then(result => {
+        if (!this._isCurrentSession(sessionId, bookId)) return;
+        this.nativeNotificationPermission = result.notificationPermission;
+        this.nativeControlsAvailable = result.controlsAvailable === true;
       }).catch(e => console.error("Error starting native foreground service:", e));
     }
 
