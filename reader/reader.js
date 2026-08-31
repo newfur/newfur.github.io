@@ -43,7 +43,7 @@ if (typeof mermaid !== 'undefined') {
 import { BookLibrary, applyCommittedBookToList } from './library.js';
 import { TTSEngine } from './tts.js';
 import { AIEngine } from './ai.js';
-import { OperationOwner } from './operation-ownership.js';
+import { OperationOwner, buildOwnedSearchIndex, finishTrackedResource } from './operation-ownership.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 import { security } from './security/sanitize.js';
 import {
@@ -202,8 +202,7 @@ function clearCoverUrls() {
 }
 
 function clearResourceUrls() {
-  activeResourceUrls.forEach(url => URL.revokeObjectURL(url));
-  activeResourceUrls = [];
+  activeResourceUrls.splice(0).forEach(url => URL.revokeObjectURL(url));
   if (epubBookData && epubBookData.resourceUrls) {
     epubBookData.resourceUrls.forEach(url => URL.revokeObjectURL(url));
     epubBookData.resourceUrls = [];
@@ -4196,8 +4195,13 @@ async function loadComicPage(index, existingOperation = null) {
   // 保存進度
   const percent = ((index + 1) / ownedParser.pages.length) * 100;
   const progressUpdate = { comicImageIndex: index, percent };
-  await library.updateProgress(operation.bookId, progressUpdate);
-  if (!isCurrent()) return;
+  const progressSavedForCurrentOwner = await finishTrackedResource({
+    url,
+    activeResources: activeResourceUrls,
+    pending: library.updateProgress(operation.bookId, progressUpdate),
+    isCurrent
+  });
+  if (!progressSavedForCurrentOwner) return;
   ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
 
   window.scrollTo(0, 0);
@@ -9335,77 +9339,55 @@ function chunkText(text, size = 800, overlap = 150) {
 }
 
 // 建立整本書籍內容的輕量級全文檢索倒排/詞頻索引
-async function buildBookSearchIndex() {
-  if (!epubBookData || !epubBookData.chapters) {
-    bookChunksCache = [];
-    chapterTextsCache = [];
+async function buildBookSearchIndex(existingOperation = readerOperations.currentToken()) {
+  const operation = existingOperation;
+  const ownedBookData = epubBookData;
+  const isCurrent = () => readerOperations.isCurrent(operation, operation?.bookId) && currentBook?.id === operation?.bookId && epubBookData === ownedBookData;
+  if (!ownedBookData || !ownedBookData.chapters || !isCurrent()) {
+    if (isCurrent()) {
+      bookChunksCache = [];
+      chapterTextsCache = [];
+    }
     return;
   }
-  
-  isIndexingBook = true;
-  bookChunksCache = [];
-  chapterTextsCache = [];
-  console.log('Building client-side RAG search index for the entire book...');
-  
-  try {
-    const chapters = epubBookData.chapters;
-    const tempParser = new DOMParser();
-    
-    for (let i = 0; i < chapters.length; i++) {
-      const ch = chapters[i];
-      if (typeof ch.getContent !== 'function') continue;
-      
-      try {
-        const html = await ch.getContent();
-        const doc = tempParser.parseFromString(html, 'text/html');
-        // 清理無效標籤
-        doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
 
-        // 為了精確搜尋提取包含正確空格的文本
-        function extractText(node) {
-          if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const isBlock = /^(P|DIV|BR|H[1-6]|LI|BLOCKQUOTE|TR|TD|TH|SECTION|ARTICLE|ASIDE|NAV)$/i.test(node.tagName);
-            let text = isBlock ? ' ' : '';
-            for (const child of node.childNodes) {
-              text += extractText(child);
-            }
-            return text + (isBlock ? ' ' : '');
-          }
-          return '';
+  isIndexingBook = true;
+  console.log('Building client-side RAG search index for the entire book...');
+
+  try {
+    const tempParser = new DOMParser();
+    const extractChapterText = html => {
+      const doc = tempParser.parseFromString(html, 'text/html');
+      doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+      function extractText(node) {
+        if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const isBlock = /^(P|DIV|BR|H[1-6]|LI|BLOCKQUOTE|TR|TD|TH|SECTION|ARTICLE|ASIDE|NAV)$/i.test(node.tagName);
+          let text = isBlock ? ' ' : '';
+          for (const child of node.childNodes) text += extractText(child);
+          return text + (isBlock ? ' ' : '');
         }
-        
-        const rawText = extractText(doc.body);
-        const chapterPlainText = rawText.replace(/\s+/g, ' ').trim();
-        
-        chapterTextsCache.push({
-          chapterTitle: ch.title,
-          chapterIndex: i,
-          text: chapterPlainText
-        });
-        
-        const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
-        
-        if (plainText.length > 50) {
-          const chunkTexts = chunkText(plainText, 800, 150);
-          for (let j = 0; j < chunkTexts.length; j++) {
-            bookChunksCache.push({
-              chapterTitle: ch.title,
-              chapterIndex: i,
-              chunkIndex: j,
-              text: chunkTexts[j]
-            });
-          }
-        }
-      } catch (err) {
-        console.warn(`Failed to index chapter ${i} (${ch.title}):`, err);
+        return '';
       }
-    }
+      return {
+        chapterText: extractText(doc.body).replace(/\s+/g, ' ').trim(),
+        plainText: (doc.body.textContent || '').trim().replace(/\s+/g, ' ')
+      };
+    };
+    const result = await buildOwnedSearchIndex(
+      ownedBookData.chapters,
+      extractChapterText,
+      isCurrent,
+      (err, chapter, index) => console.warn(`Failed to index chapter ${index} (${chapter.title}):`, err)
+    );
+    if (!result || !isCurrent()) return;
+    bookChunksCache = result.chunks;
+    chapterTextsCache = result.chapters;
     console.log(`Index built successfully! Total chunks: ${bookChunksCache.length}`);
   } catch (err) {
-    console.error('Failed to build book search index:', err);
+    if (isCurrent()) console.error('Failed to build book search index:', err);
   } finally {
-    isIndexingBook = false;
+    if (isCurrent()) isIndexingBook = false;
   }
 }
 

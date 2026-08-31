@@ -4,6 +4,12 @@ import fs from 'node:fs';
 
 import { AIEngine } from '../../reader/ai.js';
 
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
 function context(bookId = 'book-a') {
   let current = true;
   const value = { bookId, generation: 1, controller: new AbortController(), isCurrent: () => current };
@@ -113,4 +119,48 @@ test('reader AI persistence is bound to the captured source book', () => {
   assert.match(source, /await library\.saveBookSummary\(aiContext\.bookId, finalReply\)/);
   assert.match(source, /await library\.saveChapterSummary\(aiContext\.bookId, i, chSummary\)/);
   assert.doesNotMatch(source, /library\.saveAIChat\(currentBook\.id/);
+});
+
+test('concurrent built-in creation cannot let the older session overwrite the newer one', async () => {
+  const engine = new AIEngine();
+  engine.isSupported = true;
+  const first = deferred();
+  const second = deferred();
+  const oldSession = { destroyCalls: 0, destroy() { this.destroyCalls += 1; } };
+  const newSession = { destroyCalls: 0, destroy() { this.destroyCalls += 1; } };
+  let createCount = 0;
+  const originalWindow = globalThis.window;
+  globalThis.window = { ai: { languageModel: { create: () => (++createCount === 1 ? first.promise : second.promise) } } };
+
+  try {
+    const oldCreation = engine._createSession('old', context().value);
+    const newCreation = engine._createSession('new', context().value);
+    second.resolve(newSession);
+    assert.equal(await newCreation, newSession);
+    first.resolve(oldSession);
+    await assert.rejects(oldCreation, /superseded/i);
+
+    assert.equal(engine.session, newSession);
+    assert.equal(oldSession.destroyCalls, 1);
+    assert.equal(newSession.destroyCalls, 0);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('creating another built-in request does not destroy an active request session', async () => {
+  const engine = new AIEngine();
+  engine.isSupported = true;
+  const activeSession = { destroyCalls: 0, destroy() { this.destroyCalls += 1; } };
+  const nextSession = { destroy() {} };
+  engine.session = activeSession;
+  const originalWindow = globalThis.window;
+  globalThis.window = { ai: { languageModel: { create: async () => nextSession } } };
+
+  try {
+    assert.equal(await engine._createSession('next', context().value), nextSession);
+    assert.equal(activeSession.destroyCalls, 0);
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });

@@ -6,6 +6,7 @@ import { getMsg } from './i18n.js';
 export class AIEngine {
   constructor() {
     this.session = null;
+    this.sessionCreationGeneration = 0;
     this.isSupported = false; // 僅針對瀏覽器內置 AI 狀態
     
     // 自定義服務商配置
@@ -75,12 +76,7 @@ export class AIEngine {
       throw new Error(errMsg);
     }
     
-    // 如果已有會話，先關閉釋放內存
-    if (this.session) {
-      try { this.session.destroy(); } catch(e) {}
-      this.session = null;
-    }
-
+    const creationGeneration = ++this.sessionCreationGeneration;
     try {
       const options = systemPrompt ? { systemPrompt } : {};
       let session;
@@ -91,6 +87,10 @@ export class AIEngine {
       } else {
         session = await window.ai.create(options);
       }
+      if (creationGeneration !== this.sessionCreationGeneration) {
+        try { session.destroy(); } catch (e) {}
+        throw new DOMException('AI session creation superseded', 'AbortError');
+      }
       try {
         this._assertCurrent(context);
       } catch (error) {
@@ -100,7 +100,7 @@ export class AIEngine {
       this.session = session;
       return session;
     } catch (e) {
-      console.error('Failed to create AI session:', e);
+      if (e?.name !== 'AbortError') console.error('Failed to create AI session:', e);
       throw e;
     }
   }

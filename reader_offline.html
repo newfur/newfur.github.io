@@ -12380,6 +12380,58 @@ class OperationOwner {
   }
 }
 
+async function finishTrackedResource({ url, activeResources, pending, isCurrent, revoke = value => URL.revokeObjectURL(value) }) {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    const index = activeResources.indexOf(url);
+    if (index < 0) return;
+    activeResources.splice(index, 1);
+    if (url?.startsWith('blob:')) revoke(url);
+  };
+
+  try {
+    await pending;
+  } finally {
+    if (!isCurrent()) cleanup();
+  }
+  return isCurrent();
+}
+
+async function buildOwnedSearchIndex(chapters, extractChapterText, isCurrent, onChapterError = null) {
+  const chunks = [];
+  const chapterTexts = [];
+
+  for (let i = 0; i < chapters.length; i++) {
+    const chapter = chapters[i];
+    if (typeof chapter.getContent !== 'function') continue;
+    try {
+      const html = await chapter.getContent();
+      if (!isCurrent()) return null;
+      const { chapterText, plainText } = extractChapterText(html);
+      chapterTexts.push({ chapterTitle: chapter.title, chapterIndex: i, text: chapterText });
+      if (plainText.length <= 50) continue;
+      const chunkTexts = [];
+      let start = 0;
+      while (start < plainText.length) {
+        const end = Math.min(start + 800, plainText.length);
+        chunkTexts.push(plainText.substring(start, end));
+        if (end === plainText.length) break;
+        start = end - 150;
+      }
+      chunkTexts.forEach((text, chunkIndex) => {
+        chunks.push({ chapterTitle: chapter.title, chapterIndex: i, chunkIndex, text });
+      });
+    } catch (error) {
+      if (!isCurrent()) return null;
+      onChapterError?.(error, chapter, i);
+    }
+  }
+
+  return isCurrent() ? { chunks, chapters: chapterTexts } : null;
+}
+
 
 // ==========================================
 // Module: reader/parsers/epub-parser.js
@@ -17462,6 +17514,7 @@ async function getBookCoverBase64() {
 class AIEngine {
   constructor() {
     this.session = null;
+    this.sessionCreationGeneration = 0;
     this.isSupported = false; // 僅針對瀏覽器內置 AI 狀態
     
     // 自定義服務商配置
@@ -17531,12 +17584,7 @@ class AIEngine {
       throw new Error(errMsg);
     }
     
-    // 如果已有會話，先關閉釋放內存
-    if (this.session) {
-      try { this.session.destroy(); } catch(e) {}
-      this.session = null;
-    }
-
+    const creationGeneration = ++this.sessionCreationGeneration;
     try {
       const options = systemPrompt ? { systemPrompt } : {};
       let session;
@@ -17547,6 +17595,10 @@ class AIEngine {
       } else {
         session = await window.ai.create(options);
       }
+      if (creationGeneration !== this.sessionCreationGeneration) {
+        try { session.destroy(); } catch (e) {}
+        throw new DOMException('AI session creation superseded', 'AbortError');
+      }
       try {
         this._assertCurrent(context);
       } catch (error) {
@@ -17556,7 +17608,7 @@ class AIEngine {
       this.session = session;
       return session;
     } catch (e) {
-      console.error('Failed to create AI session:', e);
+      if (e?.name !== 'AbortError') console.error('Failed to create AI session:', e);
       throw e;
     }
   }
@@ -18119,8 +18171,7 @@ function clearCoverUrls() {
 }
 
 function clearResourceUrls() {
-  activeResourceUrls.forEach(url => URL.revokeObjectURL(url));
-  activeResourceUrls = [];
+  activeResourceUrls.splice(0).forEach(url => URL.revokeObjectURL(url));
   if (epubBookData && epubBookData.resourceUrls) {
     epubBookData.resourceUrls.forEach(url => URL.revokeObjectURL(url));
     epubBookData.resourceUrls = [];
@@ -22113,8 +22164,13 @@ async function loadComicPage(index, existingOperation = null) {
   // 保存進度
   const percent = ((index + 1) / ownedParser.pages.length) * 100;
   const progressUpdate = { comicImageIndex: index, percent };
-  await library.updateProgress(operation.bookId, progressUpdate);
-  if (!isCurrent()) return;
+  const progressSavedForCurrentOwner = await finishTrackedResource({
+    url,
+    activeResources: activeResourceUrls,
+    pending: library.updateProgress(operation.bookId, progressUpdate),
+    isCurrent
+  });
+  if (!progressSavedForCurrentOwner) return;
   ownedBook.progress = { ...ownedBook.progress, ...progressUpdate };
 
   window.scrollTo(0, 0);
@@ -27252,77 +27308,55 @@ function chunkText(text, size = 800, overlap = 150) {
 }
 
 // 建立整本書籍內容的輕量級全文檢索倒排/詞頻索引
-async function buildBookSearchIndex() {
-  if (!epubBookData || !epubBookData.chapters) {
-    bookChunksCache = [];
-    chapterTextsCache = [];
+async function buildBookSearchIndex(existingOperation = readerOperations.currentToken()) {
+  const operation = existingOperation;
+  const ownedBookData = epubBookData;
+  const isCurrent = () => readerOperations.isCurrent(operation, operation?.bookId) && currentBook?.id === operation?.bookId && epubBookData === ownedBookData;
+  if (!ownedBookData || !ownedBookData.chapters || !isCurrent()) {
+    if (isCurrent()) {
+      bookChunksCache = [];
+      chapterTextsCache = [];
+    }
     return;
   }
-  
-  isIndexingBook = true;
-  bookChunksCache = [];
-  chapterTextsCache = [];
-  console.log('Building client-side RAG search index for the entire book...');
-  
-  try {
-    const chapters = epubBookData.chapters;
-    const tempParser = new DOMParser();
-    
-    for (let i = 0; i < chapters.length; i++) {
-      const ch = chapters[i];
-      if (typeof ch.getContent !== 'function') continue;
-      
-      try {
-        const html = await ch.getContent();
-        const doc = tempParser.parseFromString(html, 'text/html');
-        // 清理無效標籤
-        doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
 
-        // 為了精確搜尋提取包含正確空格的文本
-        function extractText(node) {
-          if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const isBlock = /^(P|DIV|BR|H[1-6]|LI|BLOCKQUOTE|TR|TD|TH|SECTION|ARTICLE|ASIDE|NAV)$/i.test(node.tagName);
-            let text = isBlock ? ' ' : '';
-            for (const child of node.childNodes) {
-              text += extractText(child);
-            }
-            return text + (isBlock ? ' ' : '');
-          }
-          return '';
+  isIndexingBook = true;
+  console.log('Building client-side RAG search index for the entire book...');
+
+  try {
+    const tempParser = new DOMParser();
+    const extractChapterText = html => {
+      const doc = tempParser.parseFromString(html, 'text/html');
+      doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+      function extractText(node) {
+        if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const isBlock = /^(P|DIV|BR|H[1-6]|LI|BLOCKQUOTE|TR|TD|TH|SECTION|ARTICLE|ASIDE|NAV)$/i.test(node.tagName);
+          let text = isBlock ? ' ' : '';
+          for (const child of node.childNodes) text += extractText(child);
+          return text + (isBlock ? ' ' : '');
         }
-        
-        const rawText = extractText(doc.body);
-        const chapterPlainText = rawText.replace(/\s+/g, ' ').trim();
-        
-        chapterTextsCache.push({
-          chapterTitle: ch.title,
-          chapterIndex: i,
-          text: chapterPlainText
-        });
-        
-        const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
-        
-        if (plainText.length > 50) {
-          const chunkTexts = chunkText(plainText, 800, 150);
-          for (let j = 0; j < chunkTexts.length; j++) {
-            bookChunksCache.push({
-              chapterTitle: ch.title,
-              chapterIndex: i,
-              chunkIndex: j,
-              text: chunkTexts[j]
-            });
-          }
-        }
-      } catch (err) {
-        console.warn(`Failed to index chapter ${i} (${ch.title}):`, err);
+        return '';
       }
-    }
+      return {
+        chapterText: extractText(doc.body).replace(/\s+/g, ' ').trim(),
+        plainText: (doc.body.textContent || '').trim().replace(/\s+/g, ' ')
+      };
+    };
+    const result = await buildOwnedSearchIndex(
+      ownedBookData.chapters,
+      extractChapterText,
+      isCurrent,
+      (err, chapter, index) => console.warn(`Failed to index chapter ${index} (${chapter.title}):`, err)
+    );
+    if (!result || !isCurrent()) return;
+    bookChunksCache = result.chunks;
+    chapterTextsCache = result.chapters;
     console.log(`Index built successfully! Total chunks: ${bookChunksCache.length}`);
   } catch (err) {
-    console.error('Failed to build book search index:', err);
+    if (isCurrent()) console.error('Failed to build book search index:', err);
   } finally {
-    isIndexingBook = false;
+    if (isCurrent()) isIndexingBook = false;
   }
 }
 

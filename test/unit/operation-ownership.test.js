@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { OperationOwner } from '../../reader/operation-ownership.js';
+import { OperationOwner, buildOwnedSearchIndex, finishTrackedResource } from '../../reader/operation-ownership.js';
 
 function deferred() {
   let resolve;
@@ -64,7 +64,7 @@ test('reader async flows use captured owners and explicit persistence ids', () =
   assert.match(source, /if \(!isCurrent\(\)\) \{\s*if \(url\?\.startsWith\('blob:'\)\) URL\.revokeObjectURL\(url\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId\)/);
-  assert.match(source, /await library\.updateProgress\(operation\.bookId, progressUpdate\);\s*if \(!isCurrent\(\)\) return;/);
+  assert.match(source, /pending: library\.updateProgress\(operation\.bookId, progressUpdate\)/);
   assert.doesNotMatch(source, /loadChapter ignored because a chapter change is already in progress/);
   assert.match(source, /finally \{\s*if \(!isCurrent\(\)\) return;\s*isChangingChapter = false;/);
 });
@@ -77,4 +77,49 @@ test('offline artifacts define operation ownership before reader startup', () =>
     assert.ok(definition >= 0, `${output} includes OperationOwner`);
     assert.ok(definition < reader, `${output} defines OperationOwner before use`);
   }
+});
+
+test('comic URL is untracked and revoked once when progress save becomes stale', async () => {
+  const owner = new OperationOwner();
+  const token = owner.begin('book-a');
+  const save = deferred();
+  const activeResources = ['blob:comic-page'];
+  const revoked = [];
+
+  const completion = finishTrackedResource({
+    url: 'blob:comic-page',
+    activeResources,
+    pending: save.promise,
+    isCurrent: () => owner.isCurrent(token, 'book-a'),
+    revoke: url => revoked.push(url)
+  });
+  owner.begin('book-b');
+  save.resolve();
+
+  assert.equal(await completion, false);
+  assert.deepEqual(activeResources, []);
+  assert.deepEqual(revoked, ['blob:comic-page']);
+});
+
+test('stale delayed search index cannot replace the current book caches', async () => {
+  const owner = new OperationOwner();
+  const tokenA = owner.begin('book-a');
+  const delayed = deferred();
+  const caches = { chunks: [{ text: 'book-b' }], chapters: [{ text: 'book-b' }] };
+  const building = buildOwnedSearchIndex(
+    [{ title: 'A', getContent: () => delayed.promise }],
+    html => ({ chapterText: html, plainText: html }),
+    () => owner.isCurrent(tokenA, 'book-a')
+  );
+
+  owner.begin('book-b');
+  delayed.resolve('book-a stale content that is deliberately longer than fifty characters');
+  const result = await building;
+  if (result) {
+    caches.chunks = result.chunks;
+    caches.chapters = result.chapters;
+  }
+
+  assert.equal(result, null);
+  assert.deepEqual(caches, { chunks: [{ text: 'book-b' }], chapters: [{ text: 'book-b' }] });
 });
