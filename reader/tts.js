@@ -234,6 +234,7 @@ export class TTSEngine {
       this.ttsModel = model;
     }
     if (voiceChanged) {
+      this._beginSession(this.ownerBookId);
       this._initVoices();
     }
   }
@@ -1201,6 +1202,7 @@ export class TTSEngine {
             finish(null, blob);
             return;
           } catch (nativeErr) {
+            if (!this._isCurrentSession(sessionId, bookId)) throw nativeErr;
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
           }
         }
