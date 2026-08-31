@@ -15,6 +15,19 @@ export class AIEngine {
     this.model = '';
   }
 
+  _assertCurrent(context) {
+    if (context?.controller?.signal.aborted || (context?.isCurrent && !context.isCurrent())) {
+      throw context?.controller?.signal.reason || new DOMException('stale AI operation', 'AbortError');
+    }
+  }
+
+  _ownedChunk(context, onChunk) {
+    return chunk => {
+      this._assertCurrent(context);
+      onChunk?.(chunk);
+    };
+  }
+
   // 設置配置項
   configure({ provider, apiKey, endpoint, model }) {
     if (provider) this.provider = provider;
@@ -56,7 +69,7 @@ export class AIEngine {
   }
 
   // 建立內置 AI 會話
-  async _createSession(systemPrompt = '') {
+  async _createSession(systemPrompt = '', context = null) {
     if (!this.isSupported) {
       const errMsg = getMsg('ai_builtin_not_supported') || 'Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog.';
       throw new Error(errMsg);
@@ -70,15 +83,22 @@ export class AIEngine {
 
     try {
       const options = systemPrompt ? { systemPrompt } : {};
-      
+      let session;
       if (window.ai.languageModel) {
-        this.session = await window.ai.languageModel.create(options);
+        session = await window.ai.languageModel.create(options);
       } else if (window.ai.assistant) {
-        this.session = await window.ai.assistant.create(options);
+        session = await window.ai.assistant.create(options);
       } else {
-        this.session = await window.ai.create(options);
+        session = await window.ai.create(options);
       }
-      return this.session;
+      try {
+        this._assertCurrent(context);
+      } catch (error) {
+        try { session.destroy(); } catch (e) {}
+        throw error;
+      }
+      this.session = session;
+      return session;
     } catch (e) {
       console.error('Failed to create AI session:', e);
       throw e;
@@ -86,9 +106,10 @@ export class AIEngine {
   }
 
   // 核心對話入口 (流式輸出)
-  async _chat(systemPrompt, prompt, onChunk, history = []) {
+  async _chat(systemPrompt, prompt, onChunk, history = [], context = null) {
+    this._assertCurrent(context);
     if (this.provider === 'builtin') {
-      await this._createSession(systemPrompt);
+      const session = await this._createSession(systemPrompt, context);
       let fullPrompt = "";
       if (history && history.length > 0) {
         for (const turn of history) {
@@ -96,7 +117,7 @@ export class AIEngine {
         }
       }
       fullPrompt += `User: ${prompt}\nAssistant:`;
-      return this._streamPrompt(fullPrompt, onChunk);
+      return this._streamPrompt(fullPrompt, onChunk, context, session);
     }
 
     const messages = [
@@ -114,85 +135,106 @@ export class AIEngine {
 
     const useExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connect;
     if (useExtension) {
-      return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+      return this._streamExtension(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk, context);
     } else {
-      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk);
+      return this._streamDirect(this.provider, this.endpoint, this.apiKey, this.model, messages, onChunk, context);
     }
   }
 
   // 1. 章節/選段摘要 (流式輸出)
-  async summarize(text, onChunk) {
+  async summarize(text, onChunk, context = null) {
     const systemPrompt = getMsg('ai_system_prompt_summarize') || 'You are a helpful reading assistant. Summarize the following text concisely. Respond in the language of the text input.';
     const prompt = `Please summarize this text: \n\n${text.substring(0, 4000)}`;
-    return this._chat(systemPrompt, prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk, [], context);
   }
 
   // 2. 生詞釋義 (流式輸出)
-  async explainWord(word, context, onChunk) {
+  async explainWord(word, textContext, onChunk, operationContext = null) {
     const systemPrompt = getMsg('ai_system_prompt_explain') || 'You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise.';
-    const prompt = `Selected Word: "${word}"\nContext: "...${context.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
-    return this._chat(systemPrompt, prompt, onChunk);
+    const prompt = `Selected Word: "${word}"\nContext: "...${textContext.substring(0, 500)}..."\n\nPlease explain the word's meaning in this context.`;
+    return this._chat(systemPrompt, prompt, onChunk, [], operationContext);
   }
 
   // 3. 離線翻譯 (流式輸出)
-  async translate(text, targetLangName, onChunk) {
+  async translate(text, targetLangName, onChunk, context = null) {
     const systemPrompt = (getMsg('ai_system_prompt_translate') || 'You are a professional translator. Translate the text into {target}. Output only the translation, no explanation.').replace('$target$', targetLangName).replace('{target}', targetLangName);
     const prompt = `Translate this text:\n\n${text.substring(0, 1500)}`;
-    return this._chat(systemPrompt, prompt, onChunk);
+    return this._chat(systemPrompt, prompt, onChunk, [], context);
   }
 
   // 流式 Prompt 處理封裝 (內置 AI)
-  async _streamPrompt(prompt, onChunk) {
-    if (!this.session) throw new Error('AI session is not initialized');
+  async _streamPrompt(prompt, onChunk, context = null, requestSession = this.session) {
+    if (!requestSession) throw new Error('AI session is not initialized');
 
     try {
-      if (typeof this.session.promptStreaming === 'function') {
-        const stream = this.session.promptStreaming(prompt);
+      this._assertCurrent(context);
+      if (typeof requestSession.promptStreaming === 'function') {
+        const stream = requestSession.promptStreaming(prompt);
         let fullResponse = '';
         
         for await (const chunk of stream) {
+          this._assertCurrent(context);
           fullResponse = chunk;
           if (onChunk) onChunk(chunk);
         }
         return fullResponse;
       } else {
-        const response = await this.session.prompt(prompt);
+        const response = await requestSession.prompt(prompt);
+        this._assertCurrent(context);
         if (onChunk) onChunk(response);
         return response;
       }
     } catch (e) {
-      console.error('AI prompt error:', e);
+      if (e?.name !== 'AbortError') console.error('AI prompt error:', e);
       throw e;
     } finally {
-      if (this.session) {
-        try { this.session.destroy(); } catch(e) {}
-        this.session = null;
-      }
+      try { requestSession.destroy(); } catch(e) {}
+      if (this.session === requestSession) this.session = null;
     }
   }
 
   // 透過 Extension 背景 Service Worker 流式訪問 (無跨域 CORS 問題)
-  async _streamExtension(provider, url, apiKey, model, messages, onChunk) {
+  async _streamExtension(provider, url, apiKey, model, messages, onChunk, context = null) {
     return new Promise((resolve, reject) => {
       const port = chrome.runtime.connect({ name: 'ai-stream' });
       let fullResponse = '';
+      let settled = false;
+      let disconnected = false;
+      const disconnect = () => {
+        if (disconnected) return;
+        disconnected = true;
+        try { port.disconnect(); } catch (e) {}
+      };
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        context?.controller?.signal.removeEventListener('abort', abort);
+        disconnect();
+        error ? reject(error) : resolve(value);
+      };
+      const abort = () => finish(context.controller.signal.reason || new DOMException('AI operation aborted', 'AbortError'));
+      context?.controller?.signal.addEventListener('abort', abort, { once: true });
 
       port.onMessage.addListener((msg) => {
+        if (settled) return;
         if (msg.type === 'chunk') {
-          fullResponse += msg.text;
-          if (onChunk) onChunk(fullResponse);
+          try {
+            this._assertCurrent(context);
+            fullResponse += msg.text;
+            if (onChunk) onChunk(fullResponse);
+          } catch (error) { finish(error); }
         } else if (msg.type === 'done') {
-          port.disconnect();
-          resolve(fullResponse);
+          finish(null, fullResponse);
         } else if (msg.type === 'error') {
-          port.disconnect();
-          reject(new Error(msg.message));
+          finish(new Error(msg.message));
         }
       });
 
       port.onDisconnect.addListener(() => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+          finish(new Error(chrome.runtime.lastError.message));
+        } else if (!settled) {
+          finish(new Error('AI extension port disconnected'));
         }
       });
 
@@ -204,11 +246,13 @@ export class AIEngine {
         model,
         messages
       });
+      try { this._assertCurrent(context); } catch (error) { finish(error); }
     });
   }
 
   // 獨立離線 HTML 環境下直接 Fetch 流式訪問
-  async _streamDirect(provider, url, apiKey, model, messages, onChunk) {
+  async _streamDirect(provider, url, apiKey, model, messages, onChunk, context = null) {
+    this._assertCurrent(context);
     let fetchUrl = (url ? url.trim() : "");
     if (!fetchUrl) {
       fetchUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434';
@@ -246,8 +290,10 @@ export class AIEngine {
     const response = await fetch(fetchUrl, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: context?.controller?.signal
     });
+    this._assertCurrent(context);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -261,6 +307,7 @@ export class AIEngine {
 
     while (true) {
       const { done, value } = await reader.read();
+      this._assertCurrent(context);
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -281,7 +328,7 @@ export class AIEngine {
               const text = json.choices?.[0]?.delta?.content || '';
               if (text) {
                 fullResponse += text;
-                if (onChunk) onChunk(fullResponse);
+                this._ownedChunk(context, onChunk)(fullResponse);
               }
             } catch (e) {
               console.warn('Parse error:', cleanedLine, e);
@@ -293,7 +340,7 @@ export class AIEngine {
             const text = json.message?.content || '';
             if (text) {
               fullResponse += text;
-              if (onChunk) onChunk(fullResponse);
+              this._ownedChunk(context, onChunk)(fullResponse);
             }
           } catch (e) {
             console.warn('Parse error:', cleanedLine, e);
@@ -310,7 +357,7 @@ export class AIEngine {
           const text = json.choices?.[0]?.delta?.content || '';
           if (text) {
             fullResponse += text;
-            if (onChunk) onChunk(fullResponse);
+            this._ownedChunk(context, onChunk)(fullResponse);
           }
         } catch (e) {}
       } else if (provider === 'ollama') {
@@ -319,7 +366,7 @@ export class AIEngine {
           const text = json.message?.content || '';
           if (text) {
             fullResponse += text;
-            if (onChunk) onChunk(fullResponse);
+            this._ownedChunk(context, onChunk)(fullResponse);
           }
         } catch (e) {}
       }

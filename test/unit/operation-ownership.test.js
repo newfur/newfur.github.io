@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import { OperationOwner } from '../../reader/operation-ownership.js';
 
@@ -53,4 +54,15 @@ test('tokens are immutable snapshots with monotonically increasing generations',
   assert.equal(Object.isFrozen(first), true);
   assert.ok(second.generation > first.generation);
   assert.deepEqual(owner.currentToken(), second);
+});
+
+test('reader async flows use captured owners and explicit persistence ids', () => {
+  const source = fs.readFileSync(new URL('../../reader/reader.js', import.meta.url), 'utf8');
+
+  assert.match(source, /cleanupParserResult\(parsed, parser\)/);
+  assert.match(source, /prefetchedChapterCache = \{ index: nextIndex, html, generation: operation\.generation, bookId: operation\.bookId \}/);
+  assert.match(source, /if \(!isCurrent\(\)\) \{\s*if \(url\?\.startsWith\('blob:'\)\) URL\.revokeObjectURL\(url\)/);
+  assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)/);
+  assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId\)/);
+  assert.match(source, /await library\.updateProgress\(operation\.bookId, progressUpdate\);\s*if \(!isCurrent\(\)\) return;/);
 });

@@ -73,6 +73,7 @@ const library = new BookLibrary();
 const tts = new TTSEngine();
 const ai = new AIEngine();
 const readerOperations = new OperationOwner();
+const activeAIContexts = new Set();
 
 // 狀態追蹤
 let currentBook = null;
@@ -117,6 +118,40 @@ function cleanupParserResult(result, parser = null) {
   urls.forEach(url => URL.revokeObjectURL(url));
   if (result?.resourceUrls) result.resourceUrls = [];
   if (parser?.resourceUrls) parser.resourceUrls = [];
+}
+
+function abortReaderAI(reason = 'reader operation superseded') {
+  activeAIContexts.forEach(context => context.controller.abort(new DOMException(reason, 'AbortError')));
+  activeAIContexts.clear();
+}
+
+function beginReaderOperation(bookId) {
+  abortReaderAI();
+  return readerOperations.begin(bookId);
+}
+
+function createReaderAIContext() {
+  if (!currentBook) return null;
+  const owner = readerOperations.currentToken();
+  const context = {
+    bookId: currentBook.id,
+    generation: owner?.generation,
+    owner,
+    controller: new AbortController(),
+    isCurrent: () => readerOperations.isCurrent(owner, context.bookId) && currentBook?.id === context.bookId
+  };
+  activeAIContexts.add(context);
+  return context;
+}
+
+function releaseReaderAIContext(context) {
+  activeAIContexts.delete(context);
+}
+
+async function persistOwnedAIChat(context, chat) {
+  const updatedChats = await library.saveAIChat(context.bookId, chat);
+  if (context.isCurrent()) currentBook.aiChats = updatedChats;
+  return updatedChats;
 }
 
 // AI 服务商配置管理全局状态
@@ -1459,7 +1494,7 @@ function initUIEventBindings() {
           savedIndex = getFirstVisibleSentenceIndex();
         }
       }
-      tts.play(savedIndex);
+      tts.play(savedIndex, false, currentBook?.id);
       updatePlayPauseButtonIcon();
     }
   });
@@ -1708,7 +1743,7 @@ function initUIEventBindings() {
       const selection = window.getSelection().toString().trim();
       if (selection.length === 0) {
         const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        tts.play(sentenceIdx, true);
+        tts.play(sentenceIdx, true, currentBook?.id);
       }
     }, 150);
   });
@@ -2117,10 +2152,10 @@ function initUIEventBindings() {
           tts.currentChapterIndex = nextIdx;
           syncTOCActiveState(nextIdx);
           updateReaderTitle();
-          tts.play(0);
+          tts.play(0, false, currentBook?.id);
         } else {
           await loadChapter(nextIdx);
-          tts.play(0);
+          tts.play(0, false, currentBook?.id);
         }
         updatePlayPauseButtonIcon();
       }
@@ -2937,11 +2972,11 @@ function isReadingTimeActive(now = Date.now()) {
 // 打開書籍
 async function openBook(id) {
   const readerView = document.getElementById('reader-view');
-  if (openingBookId || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
+  if (openingBookId === id || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
     return;
   }
   readerOperations.invalidate();
-  const operation = readerOperations.begin(id);
+  const operation = beginReaderOperation(id);
   openingBookId = id;
   const book = await library.getBook(id);
   if (!book || !readerOperations.isCurrent(operation, id)) {
@@ -3135,7 +3170,7 @@ async function openBook(id) {
 async function closeCurrentBook(triggerBack = true) {
   const closingBookId = currentBook?.id;
   readerOperations.invalidate();
-  const operation = readerOperations.begin(closingBookId);
+  const operation = beginReaderOperation(closingBookId);
   openingBookId = null;
   // 重置章節切換狀態與滾動锁定，防止關閉書本時因異常殘留導致書架或下次打開時無法滾動
   isChangingChapter = false;
@@ -3145,12 +3180,13 @@ async function closeCurrentBook(triggerBack = true) {
   // 1. 停止 TTS 播放
   tts.stop();
 
-  // 2. 停止閱讀計時並立即保存最後剩餘的時長
+  // 2. 在任何 await 前捕獲並保存關閉中的書籍進度
+  await forceSaveCurrentProgress(closingBookId);
+  if (!readerOperations.isCurrent(operation, closingBookId)) return;
+
+  // 3. 停止閱讀計時並立即保存最後剩餘的時長
   await saveReadingTime(closingBookId);
   stopReadingTracker();
-
-  // 3. 強制保存進度
-  await forceSaveCurrentProgress(closingBookId);
   if (!readerOperations.isCurrent(operation, closingBookId)) return;
 
   // 清理舊的資源 Object URL
@@ -3692,7 +3728,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     return;
   }
 
-  const operation = existingOperation || readerOperations.begin(currentBook?.id);
+  const operation = existingOperation || beginReaderOperation(currentBook?.id);
   const ownedBook = currentBook;
   const ownedBookData = epubBookData;
   const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && epubBookData === ownedBookData;
@@ -4135,7 +4171,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
 // 載入漫畫指定頁面
 async function loadComicPage(index, existingOperation = null) {
   if (!comicParserInstance || index < 0 || index >= comicParserInstance.chapters.length) return;
-  const operation = existingOperation || readerOperations.begin(currentBook?.id);
+  const operation = existingOperation || beginReaderOperation(currentBook?.id);
   const ownedBook = currentBook;
   const ownedParser = comicParserInstance;
   const isCurrent = () => readerOperations.isCurrent(operation, ownedBook?.id) && currentBook === ownedBook && comicParserInstance === ownedParser;
@@ -8688,9 +8724,15 @@ function displayBookSummary(summary) {
 
 // 執行全書深度分析報告
 async function runDeepBookAnalysis() {
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const sourceBook = currentBook;
   const panel = document.getElementById('ai-panel');
   const contentEl = document.getElementById('ai-content');
-  if (!panel || !contentEl) return;
+  if (!panel || !contentEl) {
+    releaseReaderAIContext(aiContext);
+    return;
+  }
   
   panel.style.display = 'flex';
   updateHeaderActiveStates();
@@ -8724,6 +8766,7 @@ async function runDeepBookAnalysis() {
     
     if (bookChunksCache.length === 0) {
       await buildBookSearchIndex();
+      if (!aiContext.isCurrent()) return;
     }
     
     const entitySummary = extractEntitiesAndCooccurrence(bookChunksCache);
@@ -8732,7 +8775,7 @@ async function runDeepBookAnalysis() {
     
     // ===== 階段一：Map 階段（逐章進行增量內容分析與摘要） =====
     const tempParser = new DOMParser();
-    const chapterSummaries = currentBook.chapterSummaries || {};
+    const chapterSummaries = { ...(sourceBook.chapterSummaries || {}) };
     
     for (let i = 0; i < chapters.length; i++) {
       const ch = chapters[i];
@@ -8756,13 +8799,14 @@ async function runDeepBookAnalysis() {
       
       try {
         const html = await ch.getContent();
+        if (!aiContext.isCurrent()) return;
         const doc = tempParser.parseFromString(html, 'text/html');
         doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
         const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
         
         if (plainText.length < 50) {
           chapterSummaries[i] = `本章節無實質內容或字數過少。`;
-          await library.saveChapterSummary(currentBook.id, i, chapterSummaries[i]);
+          await library.saveChapterSummary(aiContext.bookId, i, chapterSummaries[i]);
           continue;
         }
         
@@ -8772,19 +8816,20 @@ async function runDeepBookAnalysis() {
         const chSystemPrompt = "You are an expert reading assistant. Summarize the provided chapter text. Extract the main events, characters/entities, core concepts, and key arguments. Keep it strictly factual, clear, and do not exceed 300 words. Respond in Traditional Chinese (or Simplified Chinese if the book is in simplified CJK).";
         const chQuery = `Chapter Title: "${ch.title}"\n\nChapter Content:\n${truncatedText}`;
         
-        const chSummary = await ai._chat(chSystemPrompt, chQuery, null);
+        const chSummary = await ai._chat(chSystemPrompt, chQuery, null, [], aiContext);
         chapterSummaries[i] = chSummary;
         
         // 增量寫入本地 IndexedDB
-        await library.saveChapterSummary(currentBook.id, i, chSummary);
+        await library.saveChapterSummary(aiContext.bookId, i, chSummary);
       } catch (err) {
+        if (err?.name === 'AbortError' || !aiContext.isCurrent()) throw err;
         console.warn(`Failed to summarize chapter ${i} (${ch.title}):`, err);
         chapterSummaries[i] = `[章節摘要分析失敗: ${err.message}]`;
       }
     }
     
     // 更新內存中的章節摘要映射
-    currentBook.chapterSummaries = chapterSummaries;
+    if (aiContext.isCurrent()) currentBook.chapterSummaries = chapterSummaries;
     
     // 彙總所有章節的摘要內容
     let compiledChapterSummaries = '';
@@ -8803,8 +8848,8 @@ async function runDeepBookAnalysis() {
     `;
     contentEl.scrollTop = contentEl.scrollHeight;
     
-    const bookTitle = currentBook?.title || document.getElementById('reader-book-title')?.textContent?.trim() || epubBookData?.title || 'Unknown';
-    const bookAuthor = currentBook?.author || epubBookData?.author || 'Unknown';
+    const bookTitle = sourceBook.title || 'Unknown';
+    const bookAuthor = sourceBook.author || 'Unknown';
     
     const systemPrompt = "You are an expert research assistant and professional book critic. You excel at analyzing both fiction (novels, literature) and non-fiction (history, social science, philosophy, science, business, technology). Your task is to write a highly professional, comprehensive book analysis report based on the book metadata, table of contents, and a client-side entity co-occurrence association network.";
     const query = `Book Title: "${bookTitle}"
@@ -8834,26 +8879,30 @@ Format your output nicely with markdown. Make sure it is highly professional, in
     
     let reportText = '';
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
+      if (!aiContext.isCurrent()) return;
       reportText = chunk;
       renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
       contentEl.scrollTop = contentEl.scrollHeight;
-    });
+    }, [], aiContext);
     
-    await library.saveBookSummary(currentBook.id, finalReply);
-    currentBook.bookSummary = finalReply;
+    await library.saveBookSummary(aiContext.bookId, finalReply);
+    if (aiContext.isCurrent()) currentBook.bookSummary = finalReply;
     
     const newChat = {
       chatId: 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       query: getMsg('ai_deep_analysis_trigger') || '一鍵全書深度分析',
       reply: finalReply
     };
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
+    await persistOwnedAIChat(aiContext, newChat);
     
-    renderMermaidBlocks();
+    if (aiContext.isCurrent()) renderMermaidBlocks();
   } catch (err) {
-    assistantBubble.style.color = 'red';
-    renderErrorMessage(assistantBubble, '分析失敗', err);
+    if (aiContext.isCurrent() && err?.name !== 'AbortError') {
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, '分析失敗', err);
+    }
+  } finally {
+    releaseReaderAIContext(aiContext);
   }
 }
 
@@ -8862,6 +8911,9 @@ async function sendCustomAIQuery() {
   const inputEl = document.getElementById('ai-input');
   const query = inputEl.value.trim();
   if (!query) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const sourceBook = currentBook;
 
   inputEl.value = '';
   inputEl.style.height = '38px'; // 恢復默認高度
@@ -8900,12 +8952,13 @@ async function sendCustomAIQuery() {
   contentEl.scrollTop = contentEl.scrollHeight;
 
   // --- 本地快取查找 (0 Token 阻斷重複網絡調用) ---
-  const allChats = (currentBook && currentBook.aiChats) ? currentBook.aiChats : [];
+  const allChats = sourceBook.aiChats || [];
   const cachedChat = allChats.find(c => c.query === query);
   if (cachedChat) {
     renderAiMarkdown(assistantBubble, cachedChat.reply, formatMarkdown, security);
     contentEl.scrollTop = contentEl.scrollHeight;
     renderMermaidBlocks();
+    releaseReaderAIContext(aiContext);
     return;
   }
 
@@ -8918,6 +8971,7 @@ async function sendCustomAIQuery() {
       let waitCount = 0;
       while (isIndexingBook && waitCount < 30) { // 最多等待 3 秒
         await new Promise(resolve => setTimeout(resolve, 100));
+        if (!aiContext.isCurrent()) return;
         waitCount++;
       }
     }
@@ -8925,6 +8979,7 @@ async function sendCustomAIQuery() {
     // 如果快取為空且未處於建立狀態，嘗試主動建立索引
     if (bookChunksCache.length === 0 && !isIndexingBook && epubBookData && epubBookData.chapters) {
       await buildBookSearchIndex();
+      if (!aiContext.isCurrent()) return;
     }
 
     let bookContext = '';
@@ -9004,7 +9059,7 @@ async function sendCustomAIQuery() {
 
     // --- 檢查是否存在本地已生成的章節摘要，如果存在且提問是全局性/大綱/思維導圖/總結類的，則將章節摘要作為背景信息提供給 AI ---
     let summaryContext = '';
-    const hasCachedSummaries = currentBook && currentBook.chapterSummaries && Object.keys(currentBook.chapterSummaries).length > 0;
+    const hasCachedSummaries = sourceBook.chapterSummaries && Object.keys(sourceBook.chapterSummaries).length > 0;
     const isSummarizationOrMapQuery = /思维导图|脑图|总结|大纲|提纲|结构|脉络|情节|人物关系|角色关系/.test(query) || isFullBookQuery;
     
     if (hasCachedSummaries && isSummarizationOrMapQuery) {
@@ -9013,8 +9068,8 @@ async function sendCustomAIQuery() {
       const isBuiltin = ai.provider === 'builtin';
       
       for (let i = 0; i < chapters.length; i++) {
-        if (currentBook.chapterSummaries[i]) {
-          let chSum = currentBook.chapterSummaries[i];
+        if (sourceBook.chapterSummaries[i]) {
+          let chSum = sourceBook.chapterSummaries[i];
           // 對於瀏覽器內置模型，限制單章摘要字數以防 context window 溢出
           if (isBuiltin && chSum.length > 80) {
             chSum = chSum.substring(0, 80) + '...';
@@ -9057,8 +9112,8 @@ async function sendCustomAIQuery() {
     }
 
     // 如果存在全書深度分析報告，將其作為宏觀全局知識注入
-    if (currentBook && currentBook.bookSummary) {
-      systemPrompt += `\n[Book Master Overview (Deep Analysis Report)]\n${currentBook.bookSummary}\n[End of Master Overview]\n\nThe above is the comprehensive deep analysis report of the entire book. Use it as the supreme factual foundation to answer macroscopic, thematic, or general questions about the book. Ensure your answer aligns with this structural and thematic overview.\n`;
+    if (sourceBook.bookSummary) {
+      systemPrompt += `\n[Book Master Overview (Deep Analysis Report)]\n${sourceBook.bookSummary}\n[End of Master Overview]\n\nThe above is the comprehensive deep analysis report of the entire book. Use it as the supreme factual foundation to answer macroscopic, thematic, or general questions about the book. Ensure your answer aligns with this structural and thematic overview.\n`;
     }
 
     // 發送後清除針對性選取上下文並隱藏提示欄
@@ -9066,11 +9121,12 @@ async function sendCustomAIQuery() {
     const badge = document.getElementById('ai-selection-context');
     if (badge) badge.style.display = 'none';
 
-    const history = (currentBook && currentBook.aiChats) ? currentBook.aiChats.slice(-10) : [];
+    const history = (sourceBook.aiChats || []).slice(-10);
     const finalReply = await ai._chat(systemPrompt, query, (chunk) => {
+      if (!aiContext.isCurrent()) return;
       renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
       contentEl.scrollTop = contentEl.scrollHeight;
-    }, history);
+    }, history, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -9078,36 +9134,41 @@ async function sendCustomAIQuery() {
       query: query,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    assistantBubble.style.color = 'red';
-    renderErrorMessage(assistantBubble, getMsg('error_prefix') || 'Error', e);
+    if (aiContext.isCurrent() && e?.name !== 'AbortError') {
+      assistantBubble.style.color = 'red';
+      renderErrorMessage(assistantBubble, getMsg('error_prefix') || 'Error', e);
+    }
+  } finally {
+    releaseReaderAIContext(aiContext);
   }
 }
 
 // 觸發 AI 摘要
 async function triggerAISummary() {
   if (!selectedTextState) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const selectedText = selectedTextState;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_summary_label') || 'Summary';
-  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedText);
   
   try {
-    const finalReply = await ai.summarize(selectedTextState, (chunk) => {
-      if (assistantBubble) {
+    const finalReply = await ai.summarize(selectedText, (chunk) => {
+      if (assistantBubble && aiContext.isCurrent()) {
         renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
-    });
+    }, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -9115,42 +9176,44 @@ async function triggerAISummary() {
       query: queryText,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    if (assistantBubble) {
+    if (assistantBubble && aiContext.isCurrent() && e?.name !== 'AbortError') {
       assistantBubble.style.color = 'red';
       renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
-  }
+  } finally { releaseReaderAIContext(aiContext); }
 }
 
 // 觸發 AI 釋義
 async function triggerAIExplain() {
   if (!selectedTextState) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const selectedText = selectedTextState;
+  const selectedRange = selectedTextRange;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_explain_label') || 'Explain';
-  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedText);
 
   // 獲取選詞的上下文段落
-  const parentPara = selectedTextRange.startContainer.parentElement.closest('p, div, li');
-  const context = parentPara ? parentPara.textContent : selectedTextState;
+  const parentPara = selectedRange.startContainer.parentElement.closest('p, div, li');
+  const textContext = parentPara ? parentPara.textContent : selectedText;
 
   try {
-    const finalReply = await ai.explainWord(selectedTextState, context, (chunk) => {
-      if (assistantBubble) {
+    const finalReply = await ai.explainWord(selectedText, textContext, (chunk) => {
+      if (assistantBubble && aiContext.isCurrent()) {
         renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
-    });
+    }, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -9158,33 +9221,34 @@ async function triggerAIExplain() {
       query: queryText,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    if (assistantBubble) {
+    if (assistantBubble && aiContext.isCurrent() && e?.name !== 'AbortError') {
       assistantBubble.style.color = 'red';
       renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
-  }
+  } finally { releaseReaderAIContext(aiContext); }
 }
 
 // 觸發 AI 翻譯
 async function triggerAITranslate() {
   if (!selectedTextState) return;
+  const aiContext = createReaderAIContext();
+  if (!aiContext) return;
+  const selectedText = selectedTextState;
   document.getElementById('selection-menu').style.display = 'none';
   window.getSelection().removeAllRanges();
   
   const typeLabel = getMsg('ai_translate_label') || 'Translate';
-  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedTextState);
+  const { groupEl, queryText, assistantBubble } = showAILoading(typeLabel, selectedText);
 
   // 檢測目標語言：如果是英文則翻譯成中文，否則翻譯成英文
-  const hasChinese = /[\u4e00-\u9fa5]/.test(selectedTextState);
+  const hasChinese = /[\u4e00-\u9fa5]/.test(selectedText);
   let targetLang = 'English';
   if (!hasChinese) {
     const localeTargetLang = getMsg('ai_target_lang');
@@ -9195,12 +9259,12 @@ async function triggerAITranslate() {
   }
 
   try {
-    const finalReply = await ai.translate(selectedTextState, targetLang, (chunk) => {
-      if (assistantBubble) {
+    const finalReply = await ai.translate(selectedText, targetLang, (chunk) => {
+      if (assistantBubble && aiContext.isCurrent()) {
         renderAiMarkdown(assistantBubble, chunk, formatMarkdown, security);
         document.getElementById('ai-content').scrollTop = document.getElementById('ai-content').scrollHeight;
       }
-    });
+    }, aiContext);
 
     // 保存到資料庫
     const newChat = {
@@ -9208,20 +9272,18 @@ async function triggerAITranslate() {
       query: queryText,
       reply: finalReply
     };
-    groupEl.setAttribute('data-chat-id', newChat.chatId);
-    
-    // 添加刪除按鈕
-    addDeleteButtonToGroup(groupEl, newChat);
-
-    const updatedChats = await library.saveAIChat(currentBook.id, newChat);
-    currentBook.aiChats = updatedChats;
-    renderMermaidBlocks();
+    await persistOwnedAIChat(aiContext, newChat);
+    if (aiContext.isCurrent()) {
+      groupEl.setAttribute('data-chat-id', newChat.chatId);
+      addDeleteButtonToGroup(groupEl, newChat);
+      renderMermaidBlocks();
+    }
   } catch (e) {
-    if (assistantBubble) {
+    if (assistantBubble && aiContext.isCurrent() && e?.name !== 'AbortError') {
       assistantBubble.style.color = 'red';
       renderErrorMessage(assistantBubble, getMsg('error_prefix'), e);
     }
-  }
+  } finally { releaseReaderAIContext(aiContext); }
 }
 
 // 觸發 AI 針對性提問
