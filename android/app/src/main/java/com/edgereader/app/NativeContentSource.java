@@ -21,12 +21,13 @@ final class NativeContentSource {
             InputStream input;
             if (kind == NativeFileBoundary.SourceKind.CONTENT) input = context.getContentResolver().openInputStream(Uri.parse(rawUri));
             else if (kind == NativeFileBoundary.SourceKind.APP_FILE) input = new FileInputStream(new File(uri));
+            else if (kind == NativeFileBoundary.SourceKind.INVALID) throw new NativeBoundaryException(NativeError.INVALID_SOURCE_URI);
             else throw new NativeBoundaryException(NativeError.SOURCE_NOT_ALLOWED);
             if (input == null) throw new NativeBoundaryException(NativeError.SOURCE_NOT_FOUND);
             return input;
         } catch (NativeBoundaryException error) {
             throw error;
-        } catch (URISyntaxException error) {
+        } catch (URISyntaxException | IllegalArgumentException error) {
             throw new NativeBoundaryException(NativeError.INVALID_SOURCE_URI, error);
         } catch (FileNotFoundException error) {
             throw new NativeBoundaryException(NativeError.SOURCE_NOT_FOUND, error);

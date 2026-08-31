@@ -101,6 +101,16 @@ public class NativeFileBoundaryTest {
     }
 
     @Test
+    public void malformedFileAuthoritiesAndUnsupportedSchemesHaveStableClassification() throws Exception {
+        File cache = temporaryFolder.newFolder("cache");
+        File files = temporaryFolder.newFolder("files");
+        assertEquals(NativeFileBoundary.SourceKind.INVALID,
+                NativeFileBoundary.classifySource(cache, files, new URI("file://evil.example/cache/backup.zip")));
+        assertEquals(NativeFileBoundary.SourceKind.REJECTED,
+                NativeFileBoundary.classifySource(cache, files, new URI("https://example.test/backup.zip")));
+    }
+
+    @Test
     public void filenameMustBeASafeBasename() {
         assertTrue(NativeFileBoundary.isSafeFilename("Edge Reader backup 1.zip"));
         assertFalse(NativeFileBoundary.isSafeFilename(null));

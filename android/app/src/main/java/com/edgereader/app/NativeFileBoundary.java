@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.net.URI;
 
 final class NativeFileBoundary {
-    enum SourceKind { CONTENT, APP_FILE, REJECTED }
+    enum SourceKind { CONTENT, APP_FILE, INVALID, REJECTED }
 
     private NativeFileBoundary() {}
 
@@ -44,7 +44,12 @@ final class NativeFileBoundary {
         if (uri == null || uri.getScheme() == null) return SourceKind.REJECTED;
         if ("content".equalsIgnoreCase(uri.getScheme())) return SourceKind.CONTENT;
         if (!"file".equalsIgnoreCase(uri.getScheme())) return SourceKind.REJECTED;
-        return isApprovedFile(cacheRoot, filesRoot, new File(uri)) ? SourceKind.APP_FILE : SourceKind.REJECTED;
+        if (uri.getRawAuthority() != null && !uri.getRawAuthority().isEmpty()) return SourceKind.INVALID;
+        try {
+            return isApprovedFile(cacheRoot, filesRoot, new File(uri)) ? SourceKind.APP_FILE : SourceKind.REJECTED;
+        } catch (IllegalArgumentException error) {
+            return SourceKind.INVALID;
+        }
     }
 
     static boolean isSafeFilename(String value) {

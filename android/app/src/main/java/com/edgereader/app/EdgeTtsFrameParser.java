@@ -9,7 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 
 final class EdgeTtsFrameParser {
-    enum Kind { AUDIO, TURN_END }
+    enum Kind { AUDIO, NONTERMINAL, TURN_END }
 
     static final class Frame {
         final Kind kind;
@@ -45,13 +45,17 @@ final class EdgeTtsFrameParser {
         int separator = message.indexOf("\r\n\r\n");
         if (separator <= 0 || message.indexOf("\r\n\r\n", separator + 4) >= 0) throw new ProtocolException();
         Map<String, String> headers = parseHeaders(message.substring(0, separator + 2));
-        require(headers, "path", "turn.end");
         require(headers, "x-requestid", expectedRequestId);
         String contentType = headers.get("content-type");
         if (!"application/json; charset=utf-8".equals(contentType)) throw new ProtocolException();
+        String path = headers.get("path");
+        Kind kind;
+        if ("turn.end".equals(path)) kind = Kind.TURN_END;
+        else if ("turn.start".equals(path) || "response".equals(path)) kind = Kind.NONTERMINAL;
+        else throw new ProtocolException();
         String body = message.substring(separator + 4);
         if (!"{}".equals(body)) throw new ProtocolException();
-        return new Frame(Kind.TURN_END, new byte[0]);
+        return new Frame(kind, new byte[0]);
     }
 
     private static Map<String, String> parseHeaders(String block) throws ProtocolException {

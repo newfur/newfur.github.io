@@ -17,6 +17,8 @@ enum NativeError {
     INVALID_VOLUME("TTS volume is invalid"),
     INVALID_SSML("TTS request is too large"),
     PROTOCOL_ERROR("TTS protocol error"),
+    INCOMPLETE_AUDIO("TTS audio response is incomplete"),
+    EMPTY_AUDIO("No audio data received"),
     CANCELLED("TTS request was cancelled"),
     NOTIFICATION_PERMISSION_DENIED("Notification permission is denied");
 

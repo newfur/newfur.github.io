@@ -184,6 +184,12 @@ public class AppSecurityInstrumentedTest {
         assertFalse(controller.hasPendingSaf());
         controller.beginSaf(source.toString(), "after-clear.zip");
         controller.clear();
+
+        controller.beginSaf(source.toString(), "launch-failed.zip");
+        controller.launchFailed();
+        assertFalse(controller.hasPendingSaf());
+        controller.beginSaf(source.toString(), "after-launch-failure.zip");
+        controller.clear();
     }
 
     @Test
@@ -201,6 +207,25 @@ public class AppSecurityInstrumentedTest {
         } finally {
             external.delete();
         }
+    }
+
+    @Test
+    public void exportControllerMapsMalformedAndUnsupportedSourceUris() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        NativeExportController controller = new NativeExportController(context);
+        try {
+            controller.beginSaf("file://evil.example/cache/backup.zip", "backup.zip");
+            fail("Expected malformed file URI rejection");
+        } catch (NativeBoundaryException error) {
+            assertEquals("INVALID_SOURCE_URI", error.getCode());
+        }
+        try {
+            controller.beginSaf("https://example.test/backup.zip", "backup.zip");
+            fail("Expected unsupported scheme rejection");
+        } catch (NativeBoundaryException error) {
+            assertEquals("SOURCE_NOT_ALLOWED", error.getCode());
+        }
+        assertFalse(controller.hasPendingSaf());
     }
 
     @Test

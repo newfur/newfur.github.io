@@ -111,6 +111,8 @@ final class NativeExportController {
 
     boolean hasPendingSaf() { return pickerBusy.get(); }
 
+    void launchFailed() { clear(); }
+
     void clear() {
         pendingSource = null;
         pendingFilename = null;

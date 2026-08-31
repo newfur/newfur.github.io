@@ -16,7 +16,6 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -176,7 +175,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
         Request request = new Request.Builder().url(url)
                 .addHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
                 .addHeader("User-Agent", "Mozilla/5.0 Edg/143.0.0.0").build();
-        ByteArrayOutputStream audio = new ByteArrayOutputStream();
+        EdgeTtsProtocolState protocol = new EdgeTtsProtocolState(validated.connectionId);
         NativeTtsRequest operation = new NativeTtsRequest(new NativeTtsRequest.Sink() {
             @Override public void resolve(String encodedAudio) {
                 JSObject result = new JSObject();
@@ -206,7 +205,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
             }
             @Override public void onMessage(WebSocket ws, String message) {
                 try {
-                    EdgeTtsFrameParser.Frame frame = EdgeTtsFrameParser.parseText(message, validated.connectionId);
+                    EdgeTtsFrameParser.Frame frame = protocol.acceptText(message);
                     if (frame.kind == EdgeTtsFrameParser.Kind.TURN_END) ws.close(1000, "Finished");
                 } catch (EdgeTtsFrameParser.ProtocolException error) {
                     ttsRequests.remove(validated.connectionId, operation);
@@ -216,15 +215,13 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
             }
             @Override public void onMessage(WebSocket ws, ByteString bytes) {
                 try {
-                    EdgeTtsFrameParser.Frame frame = EdgeTtsFrameParser.parseBinary(bytes.toByteArray(), validated.connectionId);
-                    int length = frame.payload.length;
-                    if (audio.size() > MAX_AUDIO_BYTES - length) {
+                    int length = protocol.acceptBinary(bytes.toByteArray());
+                    if (protocol.audioSize() > MAX_AUDIO_BYTES) {
                         ttsRequests.remove(validated.connectionId, operation);
                         operation.fail("AUDIO_TOO_LARGE", "Audio response is too large");
                         ws.cancel();
                         return;
                     }
-                    audio.write(frame.payload, 0, length);
                 } catch (EdgeTtsFrameParser.ProtocolException error) {
                     ttsRequests.remove(validated.connectionId, operation);
                     operation.fail(error.getCode(), error.getMessage());
@@ -233,8 +230,11 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
             }
             @Override public void onClosed(WebSocket ws, int code, String reason) {
                 ttsRequests.remove(validated.connectionId, operation);
-                if (audio.size() == 0) operation.fail("EMPTY_AUDIO", "No audio data received");
-                else operation.succeed(Base64.encodeToString(audio.toByteArray(), Base64.NO_WRAP));
+                try {
+                    operation.succeed(Base64.encodeToString(protocol.complete(), Base64.NO_WRAP));
+                } catch (NativeBoundaryException error) {
+                    operation.fail(error.getCode(), error.getMessage());
+                }
             }
             @Override public void onFailure(WebSocket ws, Throwable error, Response response) {
                 ttsRequests.remove(validated.connectionId, operation);
@@ -280,11 +280,15 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
     public void saveFileToSystem(PluginCall call) { launchSavePicker(call); }
 
     private void launchSavePicker(PluginCall call) {
+        NativeExportController controller = exportController();
         try {
-            Intent intent = exportController().beginSaf(call.getString("fileUri"), call.getString("filename"));
+            Intent intent = controller.beginSaf(call.getString("fileUri"), call.getString("filename"));
             startActivityForResult(call, intent, "saveFileToSystemResult");
         } catch (NativeBoundaryException error) {
             reject(call, error);
+        } catch (RuntimeException error) {
+            controller.launchFailed();
+            reject(call, new NativeBoundaryException(NativeError.DESTINATION_UNAVAILABLE, error));
         }
     }
 

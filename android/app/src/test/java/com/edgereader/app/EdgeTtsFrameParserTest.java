@@ -25,6 +25,37 @@ public class EdgeTtsFrameParserTest {
         assertEquals(EdgeTtsFrameParser.Kind.TURN_END, frame.kind);
     }
 
+    @Test public void acceptsValidatedNonterminalTextFrames() throws Exception {
+        EdgeTtsFrameParser.Frame start = EdgeTtsFrameParser.parseText(
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}",
+                REQUEST_ID);
+        EdgeTtsFrameParser.Frame response = EdgeTtsFrameParser.parseText(
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:response\r\n\r\n{}",
+                REQUEST_ID);
+        assertEquals(EdgeTtsFrameParser.Kind.NONTERMINAL, start.kind);
+        assertEquals(EdgeTtsFrameParser.Kind.NONTERMINAL, response.kind);
+    }
+
+    @Test public void validSessionRequiresStartAudioAndTurnEnd() throws Exception {
+        EdgeTtsProtocolState state = new EdgeTtsProtocolState(REQUEST_ID);
+        state.acceptText("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}");
+        state.acceptBinary(binary("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n", new byte[] { 4, 5 }));
+        state.acceptText("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n{}");
+        assertArrayEquals(new byte[] { 4, 5 }, state.complete());
+    }
+
+    @Test public void closeWithPartialAudioRejectsIncompleteAudio() throws Exception {
+        EdgeTtsProtocolState state = new EdgeTtsProtocolState(REQUEST_ID);
+        state.acceptText("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}");
+        state.acceptBinary(binary("X-RequestId:" + REQUEST_ID + "\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n", new byte[] { 4, 5 }));
+        try {
+            state.complete();
+            fail("Expected incomplete audio");
+        } catch (NativeBoundaryException error) {
+            assertEquals("INCOMPLETE_AUDIO", error.getCode());
+        }
+    }
+
     @Test public void rejectsMalformedBinarySizes() {
         assertProtocol(() -> EdgeTtsFrameParser.parseBinary(new byte[] { 0 }, REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseBinary(new byte[] { 0, 20, 1, 2 }, REQUEST_ID));
@@ -62,7 +93,7 @@ public class EdgeTtsFrameParserTest {
         assertProtocol(() -> EdgeTtsFrameParser.parseText(
                 "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\nPath:turn.end\r\n\r\n{}", REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(
-                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.start\r\n\r\n{}", REQUEST_ID));
+                "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:unknown\r\n\r\n{}", REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(
                 "X-RequestId:" + REQUEST_ID + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:turn.end\r\n\r\n { } ", REQUEST_ID));
         assertProtocol(() -> EdgeTtsFrameParser.parseText(
