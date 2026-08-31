@@ -1,15 +1,10 @@
 package com.edgereader.app;
 
 import android.Manifest;
-import android.app.Activity;
-import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Environment;
-import android.provider.MediaStore;
 import android.util.Base64;
-import androidx.annotation.RequiresApi;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
@@ -27,7 +22,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,7 +43,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build();
 
     private final ConcurrentHashMap<String, NativeTtsRequest> ttsRequests = new ConcurrentHashMap<>();
-    private final AtomicBoolean pickerBusy = new AtomicBoolean();
+    private NativeExportController exportController;
     private volatile String playbackSessionId;
 
     @Override
@@ -265,44 +259,15 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
 
     @PluginMethod
     public void copyFileToDownloads(PluginCall call) {
+        NativeExportController controller = exportController();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             launchSavePicker(call);
             return;
         }
-        copyFileToMediaStore(call);
-    }
-
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private void copyFileToMediaStore(PluginCall call) {
-        try (InputStream input = openApprovedSource(call.getString("fileUri"))) {
-            String filename = requireFilename(call.getString("filename"));
-            AtomicReference<Uri> destination = new AtomicReference<>();
-            PendingMediaStoreWrite.execute(new PendingMediaStoreWrite.Store() {
-                @Override public void insertPending() throws IOException {
-                    ContentValues values = new ContentValues();
-                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
-                    values.put(MediaStore.MediaColumns.MIME_TYPE, "application/zip");
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 1);
-                    Uri inserted = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                    if (inserted == null) throw new IOException("insert failed");
-                    destination.set(inserted);
-                }
-                @Override public void write() throws IOException {
-                    try (OutputStream output = getContext().getContentResolver().openOutputStream(destination.get())) {
-                        if (output == null) throw new IOException("destination unavailable");
-                        copy(input, output);
-                    }
-                }
-                @Override public boolean publish() {
-                    ContentValues values = new ContentValues();
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0);
-                    return getContext().getContentResolver().update(destination.get(), values, null, null) == 1;
-                }
-                @Override public void delete() { getContext().getContentResolver().delete(destination.get(), null, null); }
-            });
+        try {
+            String path = controller.copyToDownloads(call.getString("fileUri"), call.getString("filename"));
             JSObject result = new JSObject();
-            result.put("path", Environment.DIRECTORY_DOWNLOADS + "/" + filename);
+            result.put("path", path);
             call.resolve(result);
         } catch (NativeBoundaryException error) {
             reject(call, error);
@@ -316,14 +281,7 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
 
     private void launchSavePicker(PluginCall call) {
         try {
-            requireFilename(call.getString("filename"));
-            validateSource(call.getString("fileUri"));
-            if (!pickerBusy.compareAndSet(false, true)) {
-                call.reject("Another save operation is active", "DESTINATION_UNAVAILABLE");
-                return;
-            }
-            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip");
-            intent.putExtra(Intent.EXTRA_TITLE, call.getString("filename"));
+            Intent intent = exportController().beginSaf(call.getString("fileUri"), call.getString("filename"));
             startActivityForResult(call, intent, "saveFileToSystemResult");
         } catch (NativeBoundaryException error) {
             reject(call, error);
@@ -332,15 +290,14 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
 
     @ActivityCallback
     private void saveFileToSystemResult(PluginCall call, ActivityResult activityResult) {
-        pickerBusy.set(false);
-        if (call == null) return;
+        if (call == null) {
+            exportController().clear();
+            return;
+        }
         try {
-            Uri destination = SafExportContract.requireDestination(activityResult);
-            try (InputStream input = openApprovedSource(call.getString("fileUri"))) {
-            SafExportContract.write(getContext().getContentResolver(), destination, input);
-            }
+            String path = exportController().completeSaf(activityResult);
             JSObject result = new JSObject();
-            result.put("path", destination.toString());
+            result.put("path", path);
             call.resolve(result);
         } catch (NativeBoundaryException error) {
             reject(call, error);
@@ -358,7 +315,8 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
             return;
         }
         try {
-            String filename = requireFilename(outputName);
+            if (!NativeFileBoundary.isSafeFilename(outputName)) throw new NativeBoundaryException(NativeError.INVALID_FILENAME);
+            String filename = outputName;
             File source = new File(getContext().getCacheDir(), "backup_temp");
             File output = new File(getContext().getCacheDir(), filename);
             if (!source.isDirectory()) throw new NativeBoundaryException(NativeError.SOURCE_NOT_FOUND);
@@ -387,31 +345,6 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
         call.resolve(result);
     }
 
-    private void validateSource(String rawUri) throws NativeBoundaryException {
-        try (InputStream ignored = openApprovedSource(rawUri)) {
-            // Opening verifies both canonical file ownership and content grant access.
-        } catch (NativeBoundaryException error) {
-            throw error;
-        } catch (IOException error) {
-            throw new NativeBoundaryException(NativeError.SOURCE_NOT_FOUND, error);
-        }
-    }
-
-    private InputStream openApprovedSource(String rawUri) throws NativeBoundaryException {
-        return NativeContentSource.open(getContext(), rawUri);
-    }
-
-    private static String requireFilename(String filename) throws NativeBoundaryException {
-        if (!NativeFileBoundary.isSafeFilename(filename)) throw new NativeBoundaryException(NativeError.INVALID_FILENAME);
-        return filename;
-    }
-
-    private static void copy(InputStream input, OutputStream output) throws IOException {
-        byte[] buffer = new byte[64 * 1024];
-        int count;
-        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-    }
-
     private static String bounded(String value, int maxLength) {
         if (value == null) return "";
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
@@ -426,9 +359,14 @@ public class NativeTTS extends Plugin implements PlaybackSessionRegistry.Receive
         String sessionId = playbackSessionId;
         playbackSessionId = null;
         PLAYBACK_REGISTRY.unregister(sessionId);
-        pickerBusy.set(false);
+        if (exportController != null) exportController.clear();
         for (NativeTtsRequest request : ttsRequests.values()) request.cancel();
         ttsRequests.clear();
         super.handleOnDestroy();
+    }
+
+    private NativeExportController exportController() {
+        if (exportController == null) exportController = new NativeExportController(getContext());
+        return exportController;
     }
 }

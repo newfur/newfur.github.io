@@ -2,6 +2,7 @@ package com.edgereader.app;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -143,6 +144,100 @@ public class AppSecurityInstrumentedTest {
             assertEquals(1, NativeTestProvider.deletes);
         } finally {
             NativeTestProvider.failPublish = false;
+        }
+    }
+
+    @Test
+    public void exportControllerUsesProductionSourceAndSafOrchestration() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        NativeExportController controller = new NativeExportController(context);
+        Uri source = Uri.parse("content://com.edgereader.app.native-test-provider/controller-source");
+        Uri destination = Uri.parse("content://com.edgereader.app.native-test-provider/controller-destination");
+        grantProviderUri(context, source);
+        grantProviderUri(context, destination);
+
+        Intent picker = controller.beginSaf(source.toString(), "backup.zip");
+        assertEquals(Intent.ACTION_CREATE_DOCUMENT, picker.getAction());
+        assertEquals("backup.zip", picker.getStringExtra(Intent.EXTRA_TITLE));
+        try {
+            controller.beginSaf(source.toString(), "second.zip");
+            fail("Expected serialized request rejection");
+        } catch (NativeBoundaryException error) {
+            assertEquals("DESTINATION_UNAVAILABLE", error.getCode());
+        }
+        String saved = controller.completeSaf(new ActivityResult(Activity.RESULT_OK, new Intent().setData(destination)));
+        assertEquals(destination.toString(), saved);
+        try (InputStream input = context.getContentResolver().openInputStream(destination)) {
+            assertEquals(1, input.read());
+        }
+
+        controller.beginSaf(source.toString(), "cancel.zip");
+        try {
+            controller.completeSaf(new ActivityResult(Activity.RESULT_CANCELED, null));
+            fail("Expected cancellation");
+        } catch (NativeBoundaryException error) {
+            assertEquals("USER_CANCELLED", error.getCode());
+        }
+
+        controller.beginSaf(source.toString(), "after-cancel.zip");
+        controller.clear();
+        assertFalse(controller.hasPendingSaf());
+        controller.beginSaf(source.toString(), "after-clear.zip");
+        controller.clear();
+    }
+
+    @Test
+    public void exportControllerRejectsUnapprovedFilesWithStableMapping() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        NativeExportController controller = new NativeExportController(context);
+        File external = new File(context.getExternalCacheDir(), "private.zip");
+        assertTrue(external.createNewFile() || external.isFile());
+        try {
+            controller.beginSaf(external.toURI().toString(), "backup.zip");
+            fail("Expected source rejection");
+        } catch (NativeBoundaryException error) {
+            assertEquals("SOURCE_NOT_ALLOWED", error.getCode());
+            assertEquals("Source is not allowed", error.getMessage());
+        } finally {
+            external.delete();
+        }
+    }
+
+    @Test
+    public void exportControllerPublishesMediaStoreDestination() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        Uri collection = Uri.parse("content://com.edgereader.app.native-test-provider/downloads-success");
+        Uri source = Uri.parse("content://com.edgereader.app.native-test-provider/media-source");
+        grantProviderUri(context, collection);
+        grantProviderUri(context, source);
+        NativeTestProvider.reset();
+
+        NativeExportController controller = new NativeExportController(context, collection);
+        assertEquals("Download/backup.zip", controller.copyToDownloads(source.toString(), "backup.zip"));
+        assertEquals(1, NativeTestProvider.inserts);
+        assertEquals(1, NativeTestProvider.updates);
+        assertEquals(0, NativeTestProvider.deletes);
+    }
+
+    @Test
+    public void exportControllerDeletesPendingMediaStoreRowAndMapsCopyFailure() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        Uri collection = Uri.parse("content://com.edgereader.app.native-test-provider/downloads-failure");
+        Uri source = Uri.parse("content://com.edgereader.app.native-test-provider/media-failure-source");
+        grantProviderUri(context, collection);
+        grantProviderUri(context, source);
+        NativeTestProvider.reset();
+        NativeTestProvider.failPublish = true;
+        try {
+            new NativeExportController(context, collection).copyToDownloads(source.toString(), "backup.zip");
+            fail("Expected copy failure");
+        } catch (NativeBoundaryException error) {
+            assertEquals("COPY_FAILED", error.getCode());
+            assertEquals("Copy failed", error.getMessage());
+            assertEquals(1, NativeTestProvider.updates);
+            assertEquals(1, NativeTestProvider.deletes);
+        } finally {
+            NativeTestProvider.reset();
         }
     }
 
