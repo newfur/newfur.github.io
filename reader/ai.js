@@ -331,6 +331,7 @@ export class AIEngine {
                 this._ownedChunk(context, onChunk)(fullResponse);
               }
             } catch (e) {
+              if (e?.name === 'AbortError') throw e;
               console.warn('Parse error:', cleanedLine, e);
             }
           }
@@ -343,6 +344,7 @@ export class AIEngine {
               this._ownedChunk(context, onChunk)(fullResponse);
             }
           } catch (e) {
+            if (e?.name === 'AbortError') throw e;
             console.warn('Parse error:', cleanedLine, e);
           }
         }
@@ -359,7 +361,7 @@ export class AIEngine {
             fullResponse += text;
             this._ownedChunk(context, onChunk)(fullResponse);
           }
-        } catch (e) {}
+        } catch (e) { if (e?.name === 'AbortError') throw e; }
       } else if (provider === 'ollama') {
         try {
           const json = JSON.parse(cleanedLine);
@@ -368,7 +370,7 @@ export class AIEngine {
             fullResponse += text;
             this._ownedChunk(context, onChunk)(fullResponse);
           }
-        } catch (e) {}
+        } catch (e) { if (e?.name === 'AbortError') throw e; }
       }
     }
 

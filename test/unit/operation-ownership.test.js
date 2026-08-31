@@ -65,4 +65,6 @@ test('reader async flows use captured owners and explicit persistence ids', () =
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)/);
   assert.match(source, /await forceSaveCurrentProgress\(closingBookId\)[\s\S]*await saveReadingTime\(closingBookId\)/);
   assert.match(source, /await library\.updateProgress\(operation\.bookId, progressUpdate\);\s*if \(!isCurrent\(\)\) return;/);
+  assert.doesNotMatch(source, /loadChapter ignored because a chapter change is already in progress/);
+  assert.match(source, /finally \{\s*if \(!isCurrent\(\)\) return;\s*isChangingChapter = false;/);
 });

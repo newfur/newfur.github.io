@@ -3723,11 +3723,6 @@ function updateActiveSubChapterOnPage() {
 // 載入指定章節 (流式文本)
 async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false, existingOperation = null) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
-  if (isChangingChapter) {
-    console.warn("loadChapter ignored because a chapter change is already in progress.");
-    return;
-  }
-
   const operation = existingOperation || beginReaderOperation(currentBook?.id);
   const ownedBook = currentBook;
   const ownedBookData = epubBookData;
@@ -4148,6 +4143,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       }
     }
   } finally {
+    if (!isCurrent()) return;
     isChangingChapter = false;
     lastChapterChangeTime = Date.now();
     if (!isPaginated) {
