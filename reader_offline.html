@@ -23870,10 +23870,6 @@ function updateHeaderActiveStates() {
 
 // 自動檢測書籍語言引擎 (多層精準判定：正文/標題統計分析 -> 內嵌元數據 -> 瀏覽器兜底)
 function detectBookLanguage(filename = '') {
-  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
-    return currentTTSLanguage;
-  }
-
   // 1. 第一優先級：提取實際正文樣本與標題進行統計字符頻率分析（以實際文字為最高真理依據，防範元數據標籤錯誤）
   let contentSample = '';
   if (tts && tts.sentences && tts.sentences.length > 0) {
@@ -23992,7 +23988,12 @@ function detectBookLanguage(filename = '') {
     if (/^[a-z]{2}(-[a-z]{2,4})?$/i.test(clean)) return clean;
   }
 
-  // 3. 第三優先級：無任何書籍內容與元數據時，默認使用瀏覽器/系統語言
+  // 3. 第三優先級：使用用戶全局設定的 TTS 語言（僅當正文與元數據均無法判斷時）
+  if (currentTTSLanguage && currentTTSLanguage !== 'auto') {
+    return currentTTSLanguage;
+  }
+
+  // 4. 最終兜底：默認使用瀏覽器/系統語言
   if (navigator.language && navigator.language.startsWith('zh')) {
     return (navigator.language.includes('TW') || navigator.language.includes('HK')) ? 'zh-TW' : 'zh-CN';
   } else if (navigator.language && navigator.language.startsWith('ja')) {
