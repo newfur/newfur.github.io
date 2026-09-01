@@ -6038,82 +6038,89 @@ async function checkForUpdates() {
   statusEl.textContent = getMsg('checking_update') || 'Checking...';
   statusEl.style.color = 'var(--text-muted)';
 
+  const currentVersion = window.__APP_VERSION__ || '';
+  const isNativeApp = typeof window !== 'undefined' && (
+    window.Capacitor ||
+    window.location.protocol === 'capacitor:' ||
+    window.location.protocol === 'app:' ||
+    window.location.protocol === 'file:'
+  );
+  const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest;
+
   try {
-    const resp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
-      headers: { 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const release = await resp.json();
-    const latestTag = (release.tag_name || '').replace(/^v/, '');
-    const currentVersion = window.__APP_VERSION__ || '';
-
-    const isNativeApp = typeof window !== 'undefined' && (
-      window.Capacitor ||
-      window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'app:' ||
-      window.location.protocol === 'file:'
-    );
-    const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest;
-
-    if (latestTag && compareVersions(latestTag, currentVersion) > 0) {
-      statusEl.innerHTML = `<span style="color: var(--primary-color); font-weight: 500;">${getMsg('update_available') || 'New version'} v${latestTag}</span>`;
-    } else {
-      statusEl.innerHTML = `<span style="color: #34c759;">${getMsg('up_to_date') || 'Up to date'}</span>`;
+    // 1. 從倉庫 manifest.json 讀取最新版本號（每次 push 即更新，不依賴 CI 是否完成構建）
+    let latestVersion = '';
+    try {
+      const manifestResp = await fetch(`https://raw.githubusercontent.com/${GITHUB_REPO}/web-version/manifest.json?_t=${Date.now()}`);
+      if (manifestResp.ok) {
+        const manifestData = await manifestResp.json();
+        latestVersion = manifestData.version || '';
+      }
+    } catch (e) {
+      console.warn('[Update Check] Failed to fetch manifest from repo:', e);
     }
 
-    // 設置下載連結並顯示下載區
+    // 2. 查詢最新 Release 以獲取可下載的版本號（CI 構建產物）
+    let releaseVersion = '';
+    try {
+      const releaseResp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (releaseResp.ok) {
+        const release = await releaseResp.json();
+        releaseVersion = (release.tag_name || '').replace(/^v/, '');
+      }
+    } catch (e) {
+      console.warn('[Update Check] Failed to fetch latest release:', e);
+    }
+
+    // 3. 顯示版本狀態：以倉庫 manifest 為準判斷是否有新版本
+    const checkVersion = latestVersion || releaseVersion;
+    if (checkVersion && compareVersions(checkVersion, currentVersion) > 0) {
+      statusEl.innerHTML = `<span style="color: var(--primary-color); font-weight: 500;">${getMsg('update_available') || 'New version'} v${checkVersion}</span>`;
+    } else if (checkVersion) {
+      statusEl.innerHTML = `<span style="color: #34c759;">${getMsg('up_to_date') || 'Up to date'}</span>`;
+    } else {
+      throw new Error('No version info available');
+    }
+
+    // 4. 設置下載區：下載連結指向已構建的 Release 版本；若 Release 尚未就緒則指向 Release 頁面
     if (downloadSection) {
       const apkBtn = document.getElementById('download-apk-btn');
       const offlineBtn = document.getElementById('download-offline-link');
       const chromeBtn = document.getElementById('download-chrome-btn');
-      const v = latestTag || currentVersion;
+      const releasesUrl = `https://github.com/${GITHUB_REPO}/releases`;
 
-      if (apkBtn) {
-        apkBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-${v}.apk`;
-        apkBtn.style.display = isExtension ? 'none' : '';
+      if (releaseVersion) {
+        const v = releaseVersion;
+        if (apkBtn) apkBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-${v}.apk`;
+        if (offlineBtn) offlineBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Offline-${v}.html`;
+        if (chromeBtn) chromeBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Chrome-${v}.zip`;
+      } else {
+        // Release 尚未構建，全部指向 Release 頁面
+        if (apkBtn) apkBtn.href = releasesUrl;
+        if (offlineBtn) offlineBtn.href = releasesUrl;
+        if (chromeBtn) chromeBtn.href = releasesUrl;
       }
-      if (offlineBtn) {
-        offlineBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Offline-${v}.html`;
-        offlineBtn.style.display = isExtension ? 'none' : '';
-      }
-      if (chromeBtn) {
-        chromeBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Chrome-${v}.zip`;
-        chromeBtn.style.display = isNativeApp ? 'none' : '';
-      }
+      if (apkBtn) apkBtn.style.display = isExtension ? 'none' : '';
+      if (offlineBtn) offlineBtn.style.display = isExtension ? 'none' : '';
+      if (chromeBtn) chromeBtn.style.display = isNativeApp ? 'none' : '';
       downloadSection.style.display = 'block';
     }
   } catch (e) {
     console.warn('[Update Check] Failed:', e);
-    // file:// 或離線環境下 fetch 會被 CORS 攔截，提供 Release 頁面直連作為 fallback
     const releasesUrl = `https://github.com/${GITHUB_REPO}/releases`;
     statusEl.innerHTML = `<a href="${releasesUrl}" target="_blank" style="color: var(--primary-color); text-decoration: underline; font-size: 12px;">${getMsg('view_releases') || 'View releases on GitHub'}</a>`;
 
-    // 即使版本檢查失敗，也用當前版本號填充下載區讓用戶可以手動下載
     if (downloadSection) {
-      const v = window.__APP_VERSION__ || '';
+      const v = currentVersion;
       if (v) {
-        const isNativeApp = typeof window !== 'undefined' && (
-          window.Capacitor ||
-          window.location.protocol === 'capacitor:' ||
-          window.location.protocol === 'app:' ||
-          window.location.protocol === 'file:'
-        );
-        const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest;
         const apkBtn = document.getElementById('download-apk-btn');
         const offlineBtn = document.getElementById('download-offline-link');
         const chromeBtn = document.getElementById('download-chrome-btn');
-        if (apkBtn) {
-          apkBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-${v}.apk`;
-          apkBtn.style.display = isExtension ? 'none' : '';
-        }
-        if (offlineBtn) {
-          offlineBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Offline-${v}.html`;
-          offlineBtn.style.display = isExtension ? 'none' : '';
-        }
-        if (chromeBtn) {
-          chromeBtn.href = `https://github.com/${GITHUB_REPO}/releases/download/v${v}/Raconteur-Chrome-${v}.zip`;
-          chromeBtn.style.display = isNativeApp ? 'none' : '';
-        }
+        if (apkBtn) { apkBtn.href = `${releasesUrl}`; apkBtn.style.display = isExtension ? 'none' : ''; }
+        if (offlineBtn) { offlineBtn.href = `${releasesUrl}`; offlineBtn.style.display = isExtension ? 'none' : ''; }
+        if (chromeBtn) { chromeBtn.href = `${releasesUrl}`; chromeBtn.style.display = isNativeApp ? 'none' : ''; }
         downloadSection.style.display = 'block';
       }
     }
