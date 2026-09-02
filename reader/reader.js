@@ -1928,16 +1928,6 @@ function initUIEventBindings() {
   });
 
   if (backupDialog) {
-    backupDialog.addEventListener('click', (event) => {
-      // 打包進行中嚴禁誤觸背景關閉
-      const progressView = document.getElementById('backup-progress-view');
-      if (progressView && progressView.style.display !== 'none') {
-        return;
-      }
-      if (event.target === backupDialog) {
-        backupDialog.close();
-      }
-    });
     backupDialog.addEventListener('close', () => {
       if (currentBackupUrl) {
         try { URL.revokeObjectURL(currentBackupUrl); } catch (e) {}
@@ -10370,13 +10360,6 @@ async function handleExportBackup(backupMode = 'full') {
         try {
           if (!backupDialogEl.open) backupDialogEl.showModal();
         } catch (e) {}
-
-        // 自動嘗試點擊下載鏈接（在支援自動下載的瀏覽器中直接呼起保存視窗）
-        try {
-          backupDownloadLink.click();
-        } catch (autoClickErr) {
-          console.log('[Backup] Auto click download prevented by browser');
-        }
       } else {
         // 沒有 backupDialogEl 時的降級處理（延遲釋放 Object URL 防止 iOS Safari 提前中止下載）
         const a = document.createElement('a');
