@@ -1958,19 +1958,16 @@ function initUIEventBindings() {
       if (!currentBackupBlob || !currentBackupFilename) return;
       try {
         const backupFile = new File([currentBackupBlob], currentBackupFilename, { type: 'application/zip' });
-        if (navigator.canShare && !navigator.canShare({ files: [backupFile] })) {
-          alert(getMsg('backup_save_fallback_share') || 'Sharing files is not supported on this browser.');
-          return;
-        }
         await navigator.share({
-          title: getMsg('backup_share_title'),
-          text: getMsg('backup_share_text'),
+          title: getMsg('backup_share_title') || 'Edge Reader Backup',
+          text: getMsg('backup_share_text') || 'Edge Reader Backup',
           files: [backupFile]
         });
       } catch (err) {
         if (err.name !== 'AbortError') {
-          console.warn('Backup share failed:', err);
-          alert((getMsg('backup_failed') || 'Backup failed') + ': ' + err.message);
+          console.warn('Backup share failed, falling back to download:', err);
+          const dlLink = document.getElementById('backup-direct-download-link');
+          if (dlLink) dlLink.click();
         }
       }
     });
@@ -9805,19 +9802,6 @@ function dataURLtoBlob(dataurl) {
   }
 }
 
-async function shareBackupBlobDirectly(backupBlob, filename) {
-  if (typeof File === 'undefined' || !navigator.share) return false;
-  const backupFile = new File([backupBlob], filename, { type: 'application/zip' });
-  if (navigator.canShare && !navigator.canShare({ files: [backupFile] })) return false;
-
-  await navigator.share({
-    title: getMsg('backup_share_title'),
-    text: getMsg('backup_share_text'),
-    files: [backupFile]
-  });
-  return true;
-}
-
 // 打開備份對話框
 function openBackupDialog() {
   const backupDialog = document.getElementById('backup-dialog');
@@ -10338,16 +10322,10 @@ async function handleExportBackup(backupMode = 'full') {
           backupDownloadLink.download = filename;
         }
 
-        // 檢測是否支援 Web Share API (檔案分享)
-        let canShareFiles = false;
-        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File !== 'undefined') {
-          try {
-            const testFile = new File([backupBlob], filename, { type: 'application/zip' });
-            canShareFiles = Boolean(navigator.canShare && navigator.canShare({ files: [testFile] }));
-          } catch (e) {
-            canShareFiles = false;
-          }
-        }
+        // 僅在支援 navigator.share 且檔案小於 30MB 時展示分享按鈕，杜絕調用 navigator.canShare 引起 iOS WebKit IPC 崩潰
+        const isShareSupported = typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File !== 'undefined';
+        const isSmallEnoughForShare = backupBlob.size < 30 * 1024 * 1024;
+        const canShareFiles = isShareSupported && isSmallEnoughForShare;
 
         if (backupShareBtn) {
           backupShareBtn.style.display = canShareFiles ? 'flex' : 'none';
