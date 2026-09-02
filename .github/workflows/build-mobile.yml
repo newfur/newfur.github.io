@@ -10,6 +10,7 @@ on:
       - '_locales/**'
       - 'scratch/**'
       - 'android/**'
+      - 'ios/**'
       - 'package.json'
       - '.github/workflows/**'
   workflow_dispatch:
@@ -148,3 +149,54 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./deploy
           force_orphan: true
+
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    needs: build-and-deploy
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('./manifest.json','utf8')).version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building iOS IPA version: ${VERSION}"
+
+      # ===== iOS IPA Build =====
+      - name: Build iOS IPA
+        run: npm run build:ipa
+
+      - name: Prepare Versioned IPA
+        run: |
+          cp EdgeReader-iOS.ipa "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa"
+
+      - name: Upload iOS Artifacts
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: ios-release-artifacts
+          path: |
+            EdgeReader-iOS.ipa
+            EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      # ===== Upload IPA to Existing Release =====
+      - name: Upload IPA to Release
+        run: |
+          gh release upload "v${{ steps.version.outputs.version }}" EdgeReader-iOS.ipa "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
