@@ -3078,7 +3078,9 @@ async function openBook(id) {
     return;
   }
   if (book && book.cover) {
-    bookCoverCache.set(book.id, book.cover);
+    if (typeof bookCoverCache.get(book.id) !== 'string' || typeof book.cover === 'string') {
+      bookCoverCache.set(book.id, book.cover);
+    }
   }
 
   // Push state to prevent back gesture from leaving the reader app
@@ -3326,7 +3328,9 @@ async function closeCurrentBook(triggerBack = true) {
   // 重置變量與樣式類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
   if (currentBook && currentBook.cover) {
-    bookCoverCache.set(currentBook.id, currentBook.cover);
+    if (typeof bookCoverCache.get(currentBook.id) !== 'string' || typeof currentBook.cover === 'string') {
+      bookCoverCache.set(currentBook.id, currentBook.cover);
+    }
   }
   currentBook = null;
   epubBookData = null;
