@@ -9,6 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -25,6 +28,9 @@ public class AudioPlayerService extends Service {
     private static final int NOTIFICATION_ID = 9527;
 
     private MediaSession mediaSession;
+    private AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest;
+    private boolean wasPlayingBeforeFocusLoss = false;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     
@@ -89,6 +95,88 @@ public class AudioPlayerService extends Service {
         });
         
         mediaSession.setActive(true);
+
+        // Initialize AudioManager for Audio Focus handling
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+    }
+
+    private final AudioManager.OnAudioFocusChangeListener audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
+        @Override
+        public void onAudioFocusChange(int focusChange) {
+            Log.d(TAG, "onAudioFocusChange: " + focusChange);
+            switch (focusChange) {
+                case AudioManager.AUDIOFOCUS_LOSS:
+                    // 永久失去音频焦点（其他应用开始持续播放音乐/视频）
+                    Log.d(TAG, "AUDIOFOCUS_LOSS");
+                    wasPlayingBeforeFocusLoss = false;
+                    notifyJS("pause");
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    // 短暂失去音频焦点（来电、语音消息、导航播报等）
+                    Log.d(TAG, "AUDIOFOCUS_LOSS_TRANSIENT (wasPlaying=" + isPlaying + ")");
+                    if (isPlaying) {
+                        wasPlayingBeforeFocusLoss = true;
+                        notifyJS("pause");
+                    }
+                    break;
+                case AudioManager.AUDIOFOCUS_GAIN:
+                    // 重新获取音频焦点（电话挂断、语音播完、导航播报结束）
+                    Log.d(TAG, "AUDIOFOCUS_GAIN (wasPlayingBefore=" + wasPlayingBeforeFocusLoss + ")");
+                    if (wasPlayingBeforeFocusLoss) {
+                        wasPlayingBeforeFocusLoss = false;
+                        notifyJS("play");
+                    }
+                    break;
+            }
+        }
+    };
+
+    private boolean requestAudioFocus() {
+        if (audioManager == null) {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        }
+        if (audioManager == null) return false;
+
+        int result;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (audioFocusRequest == null) {
+                AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build();
+                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(playbackAttributes)
+                        .setAcceptsDelayedFocusGain(true)
+                        .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                        .build();
+            }
+            result = audioManager.requestAudioFocus(audioFocusRequest);
+        } else {
+            result = audioManager.requestAudioFocus(
+                    audioFocusChangeListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+            );
+        }
+        Log.d(TAG, "requestAudioFocus result: " + result);
+        return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+    }
+
+    private void abandonAudioFocus() {
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (audioFocusRequest != null) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                }
+            } else {
+                audioManager.abandonAudioFocus(audioFocusChangeListener);
+            }
+            Log.d(TAG, "abandonAudioFocus called");
+        } catch (Exception e) {
+            Log.w(TAG, "Error abandoning audio focus: " + e.getMessage());
+        }
     }
 
     @Override
@@ -108,6 +196,8 @@ public class AudioPlayerService extends Service {
                         notifyJS("previous");
                         break;
                     case "ACTION_STOP":
+                        abandonAudioFocus();
+                        wasPlayingBeforeFocusLoss = false;
                         notifyJS("stop");
                         break;
                     case "ACTION_START":
@@ -247,6 +337,7 @@ public class AudioPlayerService extends Service {
         mediaSession.setPlaybackState(stateBuilder.build());
 
         if (isPlaying) {
+            requestAudioFocus();
             acquireLocks();
         } else {
             releaseLocks();
@@ -343,6 +434,8 @@ public class AudioPlayerService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
+        abandonAudioFocus();
+        wasPlayingBeforeFocusLoss = false;
         releaseLocks();
         if (coverBitmap != null) {
             coverBitmap.recycle();
