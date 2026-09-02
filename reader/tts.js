@@ -137,6 +137,11 @@ export class TTSEngine {
     this.voiceSessionId = 0;
     this._lastSentCoverBookId = null;
 
+    // 全局書籍與封面資訊 (壓縮版 DataURL)，供鎖屏與通知欄即時調用
+    this.currentBookTitle = 'TTS Reading';
+    this.currentBookAuthor = 'E-Book Reader';
+    this.currentBookCover = '';
+
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
     this.ttsApiKey = '';
@@ -868,6 +873,18 @@ export class TTSEngine {
   setSentences(sentences) {
     this.sentences = sentences;
     this.currentIndex = 0;
+  }
+
+  // 設置當前書籍信息與壓縮版封面
+  setBookInfo(title, author, cover = '') {
+    if (title) this.currentBookTitle = title;
+    if (author) this.currentBookAuthor = author;
+    if (cover) this.currentBookCover = cover;
+  }
+
+  // 設置全局壓縮版封面
+  setCover(cover) {
+    if (cover) this.currentBookCover = cover;
   }
 
   // 3. Edge 語音下載輔助方法
@@ -2058,11 +2075,13 @@ export class TTSEngine {
   }
 
   async _updateMediaSession(sentence) {
-    const text = sentence ? sentence.text : 'TTS Reading';
-    const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
-    const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
-    const coverBase64 = await getBookCoverBase64();
-    const currentBookId = typeof currentBook !== 'undefined' && currentBook ? currentBook.id : null;
+    const text = sentence ? sentence.text : (this.currentBookTitle || 'TTS Reading');
+    const title = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
+    const artist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
+    const coverBase64 = this.currentBookCover || await getBookCoverBase64();
+    if (coverBase64 && !this.currentBookCover) {
+      this.currentBookCover = coverBase64;
+    }
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -2072,10 +2091,9 @@ export class TTSEngine {
         text: text
       };
       
-      // 僅在書籍變更時發送封面，避免頻繁通過橋接發送數 MB 的 Base64 字串導致系統卡頓或忽略更新
-      if (coverBase64 && this._lastSentCoverBookId !== currentBookId) {
+      // 發送壓縮後的輕量封面 (約 20KB~40KB)，保證原生端能始終保持或更新封面
+      if (coverBase64) {
         nativePayload.cover = coverBase64;
-        this._lastSentCoverBookId = currentBookId;
       }
       
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
@@ -2192,10 +2210,13 @@ export class TTSEngine {
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
       (async () => {
-        const bookTitle = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
-        const bookArtist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
+        const bookTitle = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
+        const bookArtist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
         const sentence = this.sentences[this.currentIndex];
-        const coverBase64 = await getBookCoverBase64();
+        const coverBase64 = this.currentBookCover || await getBookCoverBase64();
+        if (coverBase64 && !this.currentBookCover) {
+          this.currentBookCover = coverBase64;
+        }
         window.Capacitor.Plugins.NativeTTS.startForegroundService({
           title: bookTitle,
           artist: bookArtist,
@@ -2694,39 +2715,109 @@ export class TTSEngine {
   }
 }
 
+// 壓縮書籍封面圖片為適合鎖屏與控制中心通知欄的小體積 JPEG (最大寬高 512px，約 20KB~40KB)
+export async function compressCoverImage(coverBlobOrUrl, maxDimension = 512, quality = 0.8) {
+  if (!coverBlobOrUrl) return '';
+  if (typeof window === 'undefined' || typeof document === 'undefined') return '';
+  
+  return new Promise((resolve) => {
+    let url = '';
+    let needsRevoke = false;
+    
+    if (typeof coverBlobOrUrl === 'string') {
+      url = coverBlobOrUrl;
+    } else if (typeof Blob !== 'undefined' && coverBlobOrUrl instanceof Blob) {
+      try {
+        url = URL.createObjectURL(coverBlobOrUrl);
+        needsRevoke = true;
+      } catch (e) {
+        return resolve('');
+      }
+    } else {
+      return resolve('');
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    const cleanup = () => {
+      if (needsRevoke && url) {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }
+    };
+
+    img.onload = () => {
+      try {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        if (!width || !height) {
+          cleanup();
+          return resolve('');
+        }
+
+        // 等比縮放，確保寬高均不超過 maxDimension
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          cleanup();
+          return resolve('');
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        cleanup();
+        resolve(dataUrl);
+      } catch (err) {
+        cleanup();
+        resolve('');
+      }
+    };
+
+    img.onerror = () => {
+      cleanup();
+      resolve('');
+    };
+
+    img.src = url;
+  });
+}
+
 let _cachedCoverBookId = null;
 let _cachedCoverBase64 = '';
 
 async function getBookCoverBase64() {
-  if (typeof currentBook === 'undefined' || !currentBook || !currentBook.cover) {
+  const book = (typeof currentBook !== 'undefined' && currentBook) ? currentBook : (typeof window !== 'undefined' ? window.currentBook : null);
+  if (!book || !book.cover) {
     return '';
   }
-  if (_cachedCoverBookId === currentBook.id && _cachedCoverBase64) {
+  if (book.compressedCover) {
+    return book.compressedCover;
+  }
+  if (_cachedCoverBookId === book.id && _cachedCoverBase64) {
     return _cachedCoverBase64;
   }
   try {
-    if (typeof currentBook.cover === 'string') {
-      if (currentBook.cover.startsWith('data:')) {
-        _cachedCoverBookId = currentBook.id;
-        _cachedCoverBase64 = currentBook.cover;
-        return currentBook.cover;
-      }
-      return '';
-    }
-    if (currentBook.cover instanceof Blob) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          _cachedCoverBookId = currentBook.id;
-          _cachedCoverBase64 = reader.result;
-          resolve(reader.result);
-        };
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(currentBook.cover);
-      });
+    const compressed = await compressCoverImage(book.cover);
+    if (compressed) {
+      _cachedCoverBookId = book.id;
+      _cachedCoverBase64 = compressed;
+      book.compressedCover = compressed;
+      return compressed;
     }
   } catch (e) {
-    console.warn("Failed to get book cover base64:", e);
+    console.warn("Failed to compress book cover:", e);
   }
   return '';
 }

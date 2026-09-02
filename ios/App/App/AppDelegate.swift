@@ -112,6 +112,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var activeWebSocketTask: URLSessionWebSocketTask?
+    private var currentArtwork: MPMediaItemArtwork?
 
     @objc func setStatusBarStyle(_ call: CAPPluginCall) {
         let style = call.getString("style") ?? "dark"
@@ -277,9 +278,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     @objc func startForegroundService(_ call: CAPPluginCall) {
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
+        let text = call.getString("text")
         let isPlaying = call.getBool("isPlaying") ?? true
         let coverBase64 = call.getString("cover")
-        updateNowPlaying(title: title, artist: artist, isPlaying: isPlaying, coverBase64: coverBase64)
+        updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
         call.resolve()
     }
 
@@ -287,7 +289,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         let isPlaying = call.getBool("isPlaying") ?? false
         if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
             info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+            if let artwork = self.currentArtwork {
+                info[MPMediaItemPropertyArtwork] = artwork
+            }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
+        if #available(iOS 13.0, *) {
+            MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
         }
         call.resolve()
     }
@@ -295,23 +303,19 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     @objc func updateMetadata(_ call: CAPPluginCall) {
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
+        let text = call.getString("text")
         let coverBase64 = call.getString("cover")
-        
-        if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-            info[MPMediaItemPropertyTitle] = title
-            info[MPMediaItemPropertyArtist] = artist
-            if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData) {
-                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
-            }
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        } else {
-            updateNowPlaying(title: title, artist: artist, isPlaying: true, coverBase64: coverBase64)
-        }
+        let isPlaying = call.getBool("isPlaying") ?? true
+        updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
         call.resolve()
     }
 
     @objc func stopForegroundService(_ call: CAPPluginCall) {
+        self.currentArtwork = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        if #available(iOS 13.0, *) {
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+        }
         call.resolve()
     }
 
@@ -366,17 +370,30 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         return Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters)
     }
 
-    private func updateNowPlaying(title: String, artist: String, isPlaying: Bool, coverBase64: String? = nil) {
-        var nowPlayingInfo = [String: Any]()
-        nowPlayingInfo[MPMediaItemPropertyTitle] = title
-        nowPlayingInfo[MPMediaItemPropertyArtist] = artist
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        
+    private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil) {
         if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData) {
-            nowPlayingInfo[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+            self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+        }
+        
+        var nowPlayingInfo = [String: Any]()
+        let displayTitle = (text != nil && !text!.isEmpty) ? text! : (title.isEmpty ? "TTS Reading" : title)
+        nowPlayingInfo[MPMediaItemPropertyTitle] = displayTitle
+        if !title.isEmpty && displayTitle != title {
+            nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = title
+        }
+        nowPlayingInfo[MPMediaItemPropertyArtist] = artist.isEmpty ? "E-Book Reader" : artist
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+        nowPlayingInfo[MPNowPlayingInfoPropertyIsLiveStream] = 1
+        
+        if let artwork = self.currentArtwork {
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
         }
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+        if #available(iOS 13.0, *) {
+            MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        }
     }
 
     private func setupRemoteCommands() {

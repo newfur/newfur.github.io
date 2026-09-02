@@ -49,7 +49,7 @@ if (typeof mermaid !== 'undefined') {
 }
 
 import { BookLibrary } from './library.js';
-import { TTSEngine } from './tts.js';
+import { TTSEngine, compressCoverImage } from './tts.js';
 import { AIEngine } from './ai.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 
@@ -3098,6 +3098,28 @@ async function openBook(id) {
   }
 
   currentBook = book;
+  window.currentBook = book;
+
+  // 設置 TTS 書籍基本資訊
+  const bookTitle = book.title || 'TTS Reading';
+  const bookAuthor = book.author || 'E-Book Reader';
+  tts.setBookInfo(bookTitle, bookAuthor);
+
+  // 檢查快取中是否已有壓縮版 Base64 封面
+  const cachedCover = bookCoverCache.get(book.id);
+  if (typeof cachedCover === 'string' && cachedCover.startsWith('data:')) {
+    book.compressedCover = cachedCover;
+    tts.setCover(cachedCover);
+  } else if (book && book.cover) {
+    compressCoverImage(book.cover).then(compressed => {
+      if (compressed && currentBook && currentBook.id === book.id) {
+        book.compressedCover = compressed;
+        bookCoverCache.set(book.id, compressed);
+        tts.setCover(compressed);
+      }
+    });
+  }
+
   // 優先使用 TTS 朗讀章節位置（如果比視覺進度更新），確保重新打開書籍時定位到最近朗讀的位置
   const visualChapter = book.progress?.chapterIndex || 0;
   const ttsChapter = book.progress?.ttsChapterIndex;
@@ -3333,6 +3355,8 @@ async function closeCurrentBook(triggerBack = true) {
     }
   }
   currentBook = null;
+  window.currentBook = null;
+  tts.setBookInfo('TTS Reading', 'E-Book Reader', '');
   epubBookData = null;
   comicParserInstance = null;
   prefetchedChapterCache = null;
