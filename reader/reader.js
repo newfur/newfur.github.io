@@ -10068,6 +10068,9 @@ async function handleExportBackup(backupMode = 'full') {
     // 優勢：傳遞 Blob 引用由 JSZip 內部流式讀取，不把所有檔案全量加載至 JS Heap 內存，防止 iOS Jetsam OOM
     // =====================================================================
 
+    // iOS Safari 檢測
+    const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
     // 3. 在支援的瀏覽器中，優先使用 File System Access API 直接彈出保存至文件系統對話框
     let fileHandle = null;
     let useSaveFilePicker = !isCapacitor && typeof window.showSaveFilePicker === 'function';
@@ -10117,6 +10120,30 @@ async function handleExportBackup(backupMode = 'full') {
       }
     }
 
+    // iOS Safari 預飛檢查：估算書庫總體積，超過安全閾值時強制切換為輕量備份
+    if (isIOSSafari && !isLightweight) {
+      let estimatedSize = 0;
+      for (const book of books) {
+        if (book.file instanceof Blob) estimatedSize += book.file.size;
+      }
+      const IOS_SAFE_LIMIT = 150 * 1024 * 1024; // 150MB — iOS Jetsam 安全閾值
+      if (estimatedSize > IOS_SAFE_LIMIT) {
+        console.warn(`[Backup] iOS Safari: estimated ${(estimatedSize / 1024 / 1024).toFixed(0)}MB exceeds safe limit, forcing lightweight mode`);
+        const forceConfirm = confirm(
+          `您的书库约 ${(estimatedSize / 1024 / 1024).toFixed(0)}MB，在 iOS 网页端执行完整备份可能导致内存不足闪退。\n\n` +
+          `建议切换为【轻量数据备份】（保留全部进度、笔记、书签，仅不含电子书源文件）。\n\n` +
+          `点击「确定」切换为轻量备份，点击「取消」强制尝试完整备份（可能闪退）。`
+        );
+        if (forceConfirm) {
+          if (backupDialogEl && backupDialogEl.open) backupDialogEl.close();
+          backupBtn.disabled = false;
+          backupBtn.innerHTML = originalHtml;
+          return handleExportBackup('lightweight');
+        }
+        localStorage.setItem('backup_debug', 'force_full_backup_ios');
+      }
+    }
+
     // 進入載入狀態
     backupBtn.disabled = true;
     backupBtn.innerHTML = `
@@ -10130,7 +10157,7 @@ async function handleExportBackup(backupMode = 'full') {
     if (typeof window.JSZip === 'undefined') {
       throw new Error('JSZip 庫未載入，無法進行備份！');
     }
-    const zip = new window.JSZip();
+    let zip = new window.JSZip();
     const serializedBooks = [];
 
     for (let i = 0; i < books.length; i++) {
@@ -10151,9 +10178,7 @@ async function handleExportBackup(backupMode = 'full') {
 
       if (!isLightweight && book.file instanceof Blob) {
         try {
-          // 輕量檢查 Blob 是否可訪問（僅讀取 1 字節，避免將整個數十 MB 的文件加載進 JS Heap 內存）
           await book.file.slice(0, 1).arrayBuffer();
-          // 直接傳入 Blob 引用由 JSZip 內部流式讀取，杜絕一次性加載數百 MB 數據引發的 iOS Jetsam OOM 崩潰
           zip.file(`books/${book.id}.bin`, book.file);
           meta.hasFile = true;
         } catch (fErr) {
@@ -10189,7 +10214,7 @@ async function handleExportBackup(backupMode = 'full') {
     };
     zip.file('metadata.json', JSON.stringify(backupPayload));
     
-    // 5. 優先使用流式寫入 showSaveFilePicker（記憶體佔用降到 O(chunk) 級別）
+    // 5. 優先使用流式寫入 showSaveFilePicker
     if (useSaveFilePicker && fileHandle) {
       try {
         const writable = await fileHandle.createWritable();
@@ -10212,7 +10237,11 @@ async function handleExportBackup(backupMode = 'full') {
       }
     }
     
-    // 6. 降級路徑：生成完整 Blob（支援進度更新反饋）
+    // 6. 降級路徑：生成完整 Blob
+    if (backupProgressText) {
+      backupProgressText.textContent = `${getMsg('backing_up')} — ${getMsg('backup_packing_hint') || '正在生成压缩包...'}`;
+    }
+
     const backupBlob = await zip.generateAsync(
       { type: 'blob', compression: 'STORE', streamFiles: true },
       (metadata) => {
@@ -10221,6 +10250,10 @@ async function handleExportBackup(backupMode = 'full') {
         }
       }
     );
+    
+    // ★★★ 關鍵：立即釋放 JSZip 內部全部緩衝區，消滅雙倍內存佔用 ★★★
+    zip = null;
+    await new Promise(r => setTimeout(r, 50));
     
     // 7. Capacitor 非 Android 路徑（iOS 等）
     if (isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
@@ -10285,11 +10318,9 @@ async function handleExportBackup(backupMode = 'full') {
             });
           }
         } else {
-          // iOS
           alert(getMsg('backup_saved_to_app_directory', [filename]));
         }
       } else {
-        // Share action
         await Share.share({
           title: getMsg('backup_share_title'), text: getMsg('backup_share_text'),
           url: fileUri, dialogTitle: getMsg('backup_share_dialog_title')
@@ -10297,10 +10328,9 @@ async function handleExportBackup(backupMode = 'full') {
         try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
       }
     } else {
-      // 瀏覽器版本 / 離線單文件版 (iOS Safari, Android Chrome, PWA 等)
+      await new Promise(r => setTimeout(r, 0));
       const downloadUrl = URL.createObjectURL(backupBlob);
       
-      // 釋放先前備份的 Object URL
       if (currentBackupUrl) {
         try { URL.revokeObjectURL(currentBackupUrl); } catch (e) {}
       }
@@ -10322,7 +10352,6 @@ async function handleExportBackup(backupMode = 'full') {
           backupDownloadLink.download = filename;
         }
 
-        // 僅在支援 navigator.share 且檔案小於 30MB 時展示分享按鈕，杜絕調用 navigator.canShare 引起 iOS WebKit IPC 崩潰
         const isShareSupported = typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File !== 'undefined';
         const isSmallEnoughForShare = backupBlob.size < 30 * 1024 * 1024;
         const canShareFiles = isShareSupported && isSmallEnoughForShare;
