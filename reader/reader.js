@@ -1208,8 +1208,7 @@ function initUIEventBindings() {
   const closeAiPanelBtn = document.getElementById('close-ai-panel');
   if (closeAiPanelBtn) {
     closeAiPanelBtn.addEventListener('click', () => {
-      document.getElementById('ai-panel').style.display = 'none';
-      updateHeaderActiveStates();
+      toggleAIPanel(false);
     });
   }
 
@@ -1261,31 +1260,57 @@ function initUIEventBindings() {
   }
 
   // 頂欄 AI 助手切換按鈕監聽
+  let readingSavedScrollY = 0;
+
+  function toggleAIPanel(forceState) {
+    const aiPanel = document.getElementById('ai-panel');
+    if (!aiPanel) return;
+
+    const isCurrentlyOpen = aiPanel.style.display === 'flex' || aiPanel.style.display === 'block';
+    const shouldOpen = typeof forceState === 'boolean' ? forceState : !isCurrentlyOpen;
+
+    if (shouldOpen) {
+      // 記錄當前閱讀滾動位置，以便關閉時無損恢復，防止 iOS 視口位移
+      readingSavedScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      aiPanel.style.display = 'flex';
+
+      // 如果是空的，初始化歡迎詞
+      const contentEl = document.getElementById('ai-content');
+      if (contentEl && contentEl.querySelectorAll('.ai-chat-group').length === 0 && !contentEl.querySelector('.ai-chat-bubble')) {
+        contentEl.innerHTML = `
+          <div class="ai-chat-bubble assistant-bubble">
+            ${getMsg('ai_welcome_msg') || 'Hi! I am your AI Reading Assistant. How can I help you today?'}
+          </div>
+        `;
+      }
+
+      // 關閉其他側邊欄和下拉面板
+      document.getElementById('reader-sidebar')?.classList.remove('active');
+      document.getElementById('settings-panel')?.classList.remove('dropdown-active');
+      document.getElementById('tts-panel')?.classList.remove('dropdown-active');
+
+      // 僅在桌面端自動聚焦輸入框；在 iOS / 移動端嚴禁自動聚焦，防止虛擬鍵盤彈出並引發視口向上滾動遮擋靈動島
+      if (window.innerWidth > 768) {
+        document.getElementById('ai-input')?.focus();
+      }
+    } else {
+      document.getElementById('ai-input')?.blur();
+      aiPanel.style.display = 'none';
+
+      // 移動端關閉 AI 面板後，強制重置滾動位置，防止鍵盤可能產生的頂部偏移
+      if (window.innerWidth <= 768) {
+        window.scrollTo(0, readingSavedScrollY);
+      }
+    }
+
+    updateHeaderActiveStates();
+  }
+  window.toggleAIPanel = toggleAIPanel;
+
   const aiToggleBtn = document.getElementById('ai-toggle');
   if (aiToggleBtn) {
     aiToggleBtn.addEventListener('click', () => {
-      const aiPanel = document.getElementById('ai-panel');
-      if (aiPanel.style.display === 'flex' || aiPanel.style.display === 'block') {
-        aiPanel.style.display = 'none';
-      } else {
-        aiPanel.style.display = 'flex';
-        // 如果是空的，初始化歡迎詞
-        const contentEl = document.getElementById('ai-content');
-        if (contentEl.querySelectorAll('.ai-chat-group').length === 0 && !contentEl.querySelector('.ai-chat-bubble')) {
-          contentEl.innerHTML = `
-            <div class="ai-chat-bubble assistant-bubble">
-              ${getMsg('ai_welcome_msg') || 'Hi! I am your AI Reading Assistant. How can I help you today?'}
-            </div>
-          `;
-        }
-        document.getElementById('ai-input').focus();
-        
-        // 關閉其他側邊欄和下拉面板
-        document.getElementById('reader-sidebar').classList.remove('active');
-        document.getElementById('settings-panel').classList.remove('dropdown-active');
-        document.getElementById('tts-panel').classList.remove('dropdown-active');
-      }
-      updateHeaderActiveStates();
+      toggleAIPanel();
     });
   }
 
@@ -1310,6 +1335,12 @@ function initUIEventBindings() {
     aiInput.addEventListener('input', (e) => {
       e.target.style.height = 'auto';
       e.target.style.height = `${Math.min(e.target.scrollHeight, 80)}px`;
+    });
+    // 移動端失焦時重置視窗滾動，避免 iOS 鍵盤彈出後留下殘留滾動偏移
+    aiInput.addEventListener('blur', () => {
+      if (window.innerWidth <= 768) {
+        window.scrollTo(0, 0);
+      }
     });
   }
 
@@ -1727,10 +1758,9 @@ function initUIEventBindings() {
   });
   document.getElementById('note-save-btn').addEventListener('click', handleSaveNote);
 
-  // AI 面板
-  document.getElementById('close-ai-panel').addEventListener('click', () => {
-    document.getElementById('ai-panel').style.display = 'none';
-    updateHeaderActiveStates();
+  // AI 面板關閉
+  document.getElementById('close-ai-panel')?.addEventListener('click', () => {
+    toggleAIPanel(false);
   });
   const maxBtn = document.getElementById('maximize-ai-panel');
   if (maxBtn) {
@@ -1855,6 +1885,11 @@ function initUIEventBindings() {
   }
   if (backupDialog) {
     backupDialog.addEventListener('click', (event) => {
+      // 打包進行中嚴禁誤觸背景關閉
+      const progressView = document.getElementById('backup-progress-view');
+      if (progressView && progressView.style.display !== 'none') {
+        return;
+      }
       if (event.target === backupDialog) {
         backupDialog.close();
       }
@@ -1866,6 +1901,12 @@ function initUIEventBindings() {
       }
       currentBackupBlob = null;
       currentBackupFilename = null;
+    });
+  }
+  const backupRetryBtn = document.getElementById('backup-retry-btn');
+  if (backupRetryBtn) {
+    backupRetryBtn.addEventListener('click', () => {
+      handleExportBackup();
     });
   }
   if (backupShareBtn) {
@@ -9385,22 +9426,10 @@ function triggerAIAsk() {
     badge.style.display = 'flex';
   }
 
-  // 打開 AI 面板並聚焦輸入框
-  const aiPanel = document.getElementById('ai-panel');
-  if (aiPanel) {
-    aiPanel.style.display = 'flex';
-    const contentEl = document.getElementById('ai-content');
-    if (contentEl && contentEl.querySelectorAll('.ai-chat-group').length === 0) {
-      contentEl.innerHTML = '';
-    }
-    // 關閉其他側邊欄和下拉面板
-    document.getElementById('reader-sidebar').classList.remove('active');
-    document.getElementById('settings-panel').classList.remove('dropdown-active');
-    document.getElementById('tts-panel').classList.remove('dropdown-active');
-    updateHeaderActiveStates();
-  }
+  // 打開 AI 面板
+  toggleAIPanel(true);
   const inputEl = document.getElementById('ai-input');
-  if (inputEl) {
+  if (inputEl && window.innerWidth > 768) {
     inputEl.focus();
   }
 }
@@ -9970,6 +9999,8 @@ async function handleExportBackup() {
     const backupDialogEl = document.getElementById('backup-dialog');
     const backupProgressView = document.getElementById('backup-progress-view');
     const backupCompleteView = document.getElementById('backup-complete-view');
+    const backupErrorView = document.getElementById('backup-error-view');
+    const backupErrorText = document.getElementById('backup-error-text');
     const backupProgressText = document.getElementById('backup-progress-text');
     const backupFileMeta = document.getElementById('backup-file-meta');
     const backupShareBtn = document.getElementById('backup-share-btn');
@@ -9978,8 +10009,9 @@ async function handleExportBackup() {
     if (backupDialogEl && !useSaveFilePicker && !isCapacitor) {
       if (backupProgressView) backupProgressView.style.display = 'flex';
       if (backupCompleteView) backupCompleteView.style.display = 'none';
+      if (backupErrorView) backupErrorView.style.display = 'none';
       if (backupProgressText) {
-        backupProgressText.textContent = `${getMsg('backing_up')} (${books.length})`;
+        backupProgressText.textContent = `${getMsg('backing_up')} (0/${books.length})`;
       }
       try {
         if (!backupDialogEl.open) backupDialogEl.showModal();
@@ -10004,7 +10036,12 @@ async function handleExportBackup() {
     const zip = new window.JSZip();
     const serializedBooks = [];
 
-    for (const book of books) {
+    for (let i = 0; i < books.length; i++) {
+      const book = books[i];
+      if (backupProgressText) {
+        backupProgressText.textContent = `${getMsg('backing_up')} (${i + 1}/${books.length})`;
+      }
+
       const meta = {
         id: book.id, title: book.title, author: book.author,
         format: book.format, size: book.size, addedAt: book.addedAt,
@@ -10016,13 +10053,31 @@ async function handleExportBackup() {
       };
 
       if (book.file instanceof Blob) {
-        meta.hasFile = true;
-        zip.file(`books/${book.id}.bin`, book.file);
+        try {
+          const fileBuf = await book.file.arrayBuffer();
+          if (fileBuf && fileBuf.byteLength > 0) {
+            zip.file(`books/${book.id}.bin`, fileBuf);
+            meta.hasFile = true;
+          }
+        } catch (fErr) {
+          console.warn(`[Backup] Failed to read file for book ${book.id} (${book.title}):`, fErr);
+        }
       }
 
       if (book.cover instanceof Blob) {
-        meta.coverType = 'blob';
-        zip.file(`covers/${book.id}.bin`, book.cover);
+        try {
+          const coverBuf = await book.cover.arrayBuffer();
+          if (coverBuf && coverBuf.byteLength > 0) {
+            zip.file(`covers/${book.id}.bin`, coverBuf);
+            meta.coverType = 'blob';
+          }
+        } catch (cErr) {
+          const cached = bookCoverCache.get(book.id);
+          if (typeof cached === 'string') {
+            meta.coverType = 'string';
+            meta.coverValue = cached;
+          }
+        }
       } else if (typeof book.cover === 'string') {
         meta.coverType = 'string';
         meta.coverValue = book.cover;
@@ -10060,8 +10115,15 @@ async function handleExportBackup() {
       }
     }
     
-    // 6. 降級路徑：生成完整 Blob
-    const backupBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true });
+    // 6. 降級路徑：生成完整 Blob（支援進度更新反饋）
+    const backupBlob = await zip.generateAsync(
+      { type: 'blob', compression: 'STORE', streamFiles: true },
+      (metadata) => {
+        if (backupProgressText) {
+          backupProgressText.textContent = `${getMsg('backing_up')} ${metadata.percent.toFixed(0)}%`;
+        }
+      }
+    );
     
     // 7. Capacitor 非 Android 路徑（iOS 等）
     if (isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
@@ -10178,11 +10240,19 @@ async function handleExportBackup() {
         }
 
         if (backupProgressView) backupProgressView.style.display = 'none';
+        if (backupErrorView) backupErrorView.style.display = 'none';
         if (backupCompleteView) backupCompleteView.style.display = 'flex';
         
         try {
           if (!backupDialogEl.open) backupDialogEl.showModal();
         } catch (e) {}
+
+        // 自動嘗試點擊下載鏈接（在支援自動下載的瀏覽器中直接呼起保存視窗）
+        try {
+          backupDownloadLink.click();
+        } catch (autoClickErr) {
+          console.log('[Backup] Auto click download prevented by browser');
+        }
       } else {
         // 沒有 backupDialogEl 時的降級處理（延遲釋放 Object URL 防止 iOS Safari 提前中止下載）
         const a = document.createElement('a');
@@ -10200,10 +10270,19 @@ async function handleExportBackup() {
   } catch (err) {
     console.error('Backup failed:', err);
     const backupDialogEl = document.getElementById('backup-dialog');
-    if (backupDialogEl && backupDialogEl.open) {
-      backupDialogEl.close();
+    const backupProgressView = document.getElementById('backup-progress-view');
+    const backupCompleteView = document.getElementById('backup-complete-view');
+    const backupErrorView = document.getElementById('backup-error-view');
+    const backupErrorText = document.getElementById('backup-error-text');
+
+    if (backupProgressView) backupProgressView.style.display = 'none';
+    if (backupCompleteView) backupCompleteView.style.display = 'none';
+    if (backupErrorView) backupErrorView.style.display = 'flex';
+    if (backupErrorText) backupErrorText.textContent = err.message || String(err);
+
+    if (backupDialogEl && !backupDialogEl.open) {
+      try { backupDialogEl.showModal(); } catch (e) {}
     }
-    alert(`${getMsg('backup_failed')}: ${err.message}`);
   } finally {
     backupBtn.disabled = false;
     backupBtn.innerHTML = originalHtml;
@@ -11201,16 +11280,10 @@ window.__testRunner = {
     }
   },
   async openAI() {
-    const panel = document.getElementById('ai-panel');
-    if (!panel || panel.style.display !== 'flex') {
-      toggleAIPanel();
-    }
+    toggleAIPanel(true);
   },
   async closeAI() {
-    const panel = document.getElementById('ai-panel');
-    if (panel && panel.style.display === 'flex') {
-      toggleAIPanel();
-    }
+    toggleAIPanel(false);
   },
   async openStats() {
     document.getElementById('stats-btn')?.click();

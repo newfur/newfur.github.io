@@ -1908,17 +1908,34 @@ input[type="range"]::-webkit-slider-thumb:hover {
     max-height: 100dvh !important;
     border-radius: 0 !important;
     margin: 0 !important;
+    background: var(--bg-color) !important;
+    border: none !important;
+    box-shadow: none !important;
     animation: slideUpFullScreen 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    z-index: 500 !important;
+  }
+  .ai-panel-header {
+    height: calc(60px + var(--sat, env(safe-area-inset-top, 0px))) !important;
+    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: 0 !important;
+    padding-left: max(16px, var(--sal, env(safe-area-inset-left, 0px))) !important;
+    padding-right: max(16px, var(--sar, env(safe-area-inset-right, 0px))) !important;
+    box-sizing: border-box !important;
+    background: var(--surface-color) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    border-bottom: 1px solid var(--border-color) !important;
+  }
+  #maximize-ai-panel {
+    display: none !important;
   }
   .ai-panel-footer {
     padding-bottom: calc(10px + var(--sab, env(safe-area-inset-bottom, 0px))) !important;
+    background: var(--surface-color) !important;
   }
-  .ai-panel-header {
-    height: calc(64px + var(--sat, env(safe-area-inset-top, 0px))) !important;
-    padding-top: var(--sat, env(safe-area-inset-top, 0px)) !important;
-    padding-left: 20px !important;
-    padding-right: 20px !important;
-    box-sizing: border-box !important;
+  .ai-panel-footer textarea {
+    font-size: 16px !important; /* 避免 iOS Safari 聚焦時自動縮放與視口位移 */
   }
 
   /* Prompt suggestions toggle state is now handled globally */
@@ -4758,8 +4775,13 @@ html.transition-none .page-texture-slide {
   }
 }
 
-/* 行動端開啟側邊欄或 AI 面板時防止背景滾動與穿透 */
+/* 行動端開啟側邊欄或 AI 面板時防止背景滾動與穿透，並隱藏被全螢幕覆蓋的閱讀器頂部導航欄 */
 @media (max-width: 768px) {
+  body.ai-active .reader-header {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
   body.ai-active,
   body.sidebar-active {
     overflow: hidden !important;

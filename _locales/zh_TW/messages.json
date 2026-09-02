@@ -998,5 +998,8 @@
   },
   "sample_book_author": {
     "message": "安托萬·德·聖-埃克蘇佩里"
+  },
+  "btn_retry": {
+    "message": "重試"
   }
 }

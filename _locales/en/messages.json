@@ -1001,5 +1001,8 @@
   },
   "sample_book_author": {
     "message": "Antoine de Saint-Exupéry"
+  },
+  "btn_retry": {
+    "message": "Retry"
   }
 }
