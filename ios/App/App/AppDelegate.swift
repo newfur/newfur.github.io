@@ -128,6 +128,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     public override func load() {
         super.load()
         setupRemoteCommands()
+        setupAudioSessionObserver()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     @objc func downloadTTS(_ call: CAPPluginCall) {
@@ -396,6 +401,79 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func setupAudioSessionObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption(notification:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAudioSessionInterruption(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            print("[NativeTTS] Audio session interruption began (other app playing sound)")
+            DispatchQueue.main.async { [weak self] in
+                self?.notifyListeners("mediaAction", data: ["action": "pause"])
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .paused
+                }
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+            }
+
+        case .ended:
+            print("[NativeTTS] Audio session interruption ended (other app stopped)")
+            var shouldResume = false
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                shouldResume = options.contains(.shouldResume)
+            }
+
+            // 重新激活音频会话，重新夺回媒体所有权
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                try session.setActive(true)
+            } catch {
+                print("[NativeTTS] Failed to reactivate AVAudioSession: \(error)")
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+
+                // 重新激活锁屏控制中心（NowPlaying），确保控制栏重新出现并显示「播放/继续」按钮
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = shouldResume ? 1.0 : 0.0
+                    if let artwork = self.currentArtwork {
+                        info[MPMediaItemPropertyArtwork] = artwork
+                    }
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = shouldResume ? .playing : .paused
+                }
+
+                // 如果系统指示可以自动恢复播放，向前端发送播放指令
+                if shouldResume {
+                    self.notifyListeners("mediaAction", data: ["action": "play"])
+                }
+            }
+
+        @unknown default:
+            break
+        }
+    }
+
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.playCommand.removeTarget(nil)
@@ -404,24 +482,30 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         commandCenter.nextTrackCommand.removeTarget(nil)
         commandCenter.previousTrackCommand.removeTarget(nil)
 
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.isEnabled = true
+
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "ACTION_PLAY"])
+            self?.notifyListeners("mediaAction", data: ["action": "play"])
             return .success
         }
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "ACTION_PAUSE"])
+            self?.notifyListeners("mediaAction", data: ["action": "pause"])
             return .success
         }
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "ACTION_TOGGLE_PLAY"])
+            self?.notifyListeners("mediaAction", data: ["action": "toggle"])
             return .success
         }
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "ACTION_NEXT"])
+            self?.notifyListeners("mediaAction", data: ["action": "next"])
             return .success
         }
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "ACTION_PREV"])
+            self?.notifyListeners("mediaAction", data: ["action": "previous"])
             return .success
         }
     }

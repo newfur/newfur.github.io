@@ -154,14 +154,19 @@ export class TTSEngine {
         window.Capacitor.Plugins.NativeTTS.addListener('mediaAction', (data) => {
           console.log("Received native media action:", data.action);
           if (!this.isPlaying) return;
-          switch (data.action) {
+          const action = (data.action || '').toLowerCase();
+          switch (action) {
             case 'play':
+            case 'action_play':
               if (this.isPaused) this.resume();
               break;
             case 'pause':
+            case 'action_pause':
               if (!this.isPaused) this.pause();
               break;
             case 'toggle':
+            case 'action_toggle_play':
+            case 'action_play_pause':
               if (this.isPaused) {
                 this.resume();
               } else {
@@ -169,12 +174,17 @@ export class TTSEngine {
               }
               break;
             case 'next':
+            case 'action_next':
               this.next();
               break;
             case 'previous':
+            case 'prev':
+            case 'action_prev':
+            case 'action_previous':
               this.previous();
               break;
             case 'stop':
+            case 'action_stop':
               this.stop();
               break;
           }
@@ -2448,7 +2458,12 @@ export class TTSEngine {
       } else if (this.currentAudio) {
         this.currentAudio.play().then(() => {
           this._startPolling();
-        }).catch(err => console.error("Resume error:", err));
+        }).catch(err => {
+          console.error("Resume error, replaying current sentence:", err);
+          this._playActiveSentence();
+        });
+      } else {
+        this._playActiveSentence();
       }
       if (this.onStateChange) this.onStateChange();
     }
