@@ -109,11 +109,6 @@ export class TTSEngine {
           this.pause();
         }
       });
-      audio.addEventListener('play', () => {
-        if (this.isPlaying && this.isPaused && audio === this.currentAudio) {
-          this.resume();
-        }
-      });
     });
 
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
@@ -2455,13 +2450,28 @@ export class TTSEngine {
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
         this.synth.resume();
-      } else if (this.currentAudio) {
-        this.currentAudio.play().then(() => {
-          this._startPolling();
-        }).catch(err => {
-          console.error("Resume error, replaying current sentence:", err);
+      } else if (this.currentAudio && this.currentAudio.src) {
+        const playPromise = this.currentAudio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            this._startPolling();
+            // 監控音訊是否真實推進：若 300ms 後仍處於暫停或 currentTime 停滯，說明音訊解碼管線已因系統中斷失效，重新激活播放
+            const savedTime = this.currentAudio.currentTime;
+            setTimeout(() => {
+              if (this.isPlaying && !this.isPaused && this.currentAudio) {
+                if (this.currentAudio.paused || (this.currentAudio.currentTime === savedTime && !this.currentAudio.ended)) {
+                  console.warn("Audio pipeline stalled after resume, restarting active sentence...");
+                  this._playActiveSentence();
+                }
+              }
+            }, 300);
+          }).catch(err => {
+            console.error("Resume error, replaying current sentence:", err);
+            this._playActiveSentence();
+          });
+        } else {
           this._playActiveSentence();
-        });
+        }
       } else {
         this._playActiveSentence();
       }

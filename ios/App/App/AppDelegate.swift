@@ -113,6 +113,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
 
     private var activeWebSocketTask: URLSessionWebSocketTask?
     private var currentArtwork: MPMediaItemArtwork?
+    private var wasPlayingBeforeInterruption: Bool = false
 
     @objc func setStatusBarStyle(_ call: CAPPluginCall) {
         let style = call.getString("style") ?? "dark"
@@ -292,6 +293,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
 
     @objc func updatePlaybackState(_ call: CAPPluginCall) {
         let isPlaying = call.getBool("isPlaying") ?? false
+        if !isPlaying {
+            self.wasPlayingBeforeInterruption = false
+        }
         if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
             info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
             if let artwork = self.currentArtwork {
@@ -316,6 +320,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func stopForegroundService(_ call: CAPPluginCall) {
+        self.wasPlayingBeforeInterruption = false
         self.currentArtwork = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         if #available(iOS 13.0, *) {
@@ -420,6 +425,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         switch type {
         case .began:
             print("[NativeTTS] Audio session interruption began (other app playing sound)")
+            self.wasPlayingBeforeInterruption = true
             DispatchQueue.main.async { [weak self] in
                 self?.notifyListeners("mediaAction", data: ["action": "pause"])
                 if #available(iOS 13.0, *) {
@@ -433,11 +439,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
 
         case .ended:
             print("[NativeTTS] Audio session interruption ended (other app stopped)")
-            var shouldResume = false
-            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
-                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-                shouldResume = options.contains(.shouldResume)
-            }
+            let shouldResume = self.wasPlayingBeforeInterruption
+            self.wasPlayingBeforeInterruption = false
 
             // 重新激活音频会话，重新夺回媒体所有权
             do {
@@ -451,21 +454,23 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
 
-                // 重新激活锁屏控制中心（NowPlaying），确保控制栏重新出现并显示「播放/继续」按钮
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = shouldResume ? 1.0 : 0.0
-                    if let artwork = self.currentArtwork {
-                        info[MPMediaItemPropertyArtwork] = artwork
-                    }
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = shouldResume ? .playing : .paused
-                }
-
-                // 如果系统指示可以自动恢复播放，向前端发送播放指令
                 if shouldResume {
-                    self.notifyListeners("mediaAction", data: ["action": "play"])
+                    // 延迟 120ms 发送 play 指令，确保 iOS 底层 CoreAudio 硬件音频路由切换完全生效
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                        self.notifyListeners("mediaAction", data: ["action": "play"])
+                    }
+                } else {
+                    // 确保未自动恢复时，锁屏状态明确为暂停状态，显示「播放」按钮
+                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                        info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                        if let artwork = self.currentArtwork {
+                            info[MPMediaItemPropertyArtwork] = artwork
+                        }
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                    }
+                    if #available(iOS 13.0, *) {
+                        MPNowPlayingInfoCenter.default().playbackState = .paused
+                    }
                 }
             }
 
