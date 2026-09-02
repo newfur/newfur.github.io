@@ -109,6 +109,9 @@ public class AudioPlayerService extends Service {
                     // 永久失去音频焦点（其他应用开始持续播放音乐/视频）
                     Log.d(TAG, "AUDIOFOCUS_LOSS");
                     wasPlayingBeforeFocusLoss = false;
+                    isPlaying = false;
+                    updatePlaybackState(false);
+                    updateNotification(currentTitle, currentArtist, currentText, false);
                     notifyJS("pause");
                     break;
                 case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
@@ -117,6 +120,9 @@ public class AudioPlayerService extends Service {
                     Log.d(TAG, "AUDIOFOCUS_LOSS_TRANSIENT (wasPlaying=" + isPlaying + ")");
                     if (isPlaying) {
                         wasPlayingBeforeFocusLoss = true;
+                        isPlaying = false;
+                        updatePlaybackState(false);
+                        updateNotification(currentTitle, currentArtist, currentText, false);
                         notifyJS("pause");
                     }
                     break;
@@ -125,7 +131,10 @@ public class AudioPlayerService extends Service {
                     Log.d(TAG, "AUDIOFOCUS_GAIN (wasPlayingBefore=" + wasPlayingBeforeFocusLoss + ")");
                     if (wasPlayingBeforeFocusLoss) {
                         wasPlayingBeforeFocusLoss = false;
-                        notifyJS("play");
+                        // 延迟 120ms 确保底层音频输出通道已完全交还
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            notifyJS("play");
+                        }, 120);
                     }
                     break;
             }
@@ -219,6 +228,9 @@ public class AudioPlayerService extends Service {
                         break;
                     case "ACTION_UPDATE_STATE":
                         isPlaying = intent.getBooleanExtra("isPlaying", false);
+                        if (!isPlaying) {
+                            wasPlayingBeforeFocusLoss = false;
+                        }
                         updatePlaybackState(isPlaying);
                         updateNotification(currentTitle, currentArtist, currentText, isPlaying);
                         break;
