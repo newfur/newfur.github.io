@@ -181,22 +181,20 @@ jobs:
 
       - name: Prepare Versioned IPA
         run: |
-          cp EdgeReader-iOS.ipa "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa"
+          mv EdgeReader-iOS.ipa "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa"
 
       - name: Upload iOS Artifacts
         continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: ios-release-artifacts
-          path: |
-            EdgeReader-iOS.ipa
-            EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa
+          path: EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa
           if-no-files-found: error
           retention-days: 7
 
       # ===== Upload IPA to Existing Release =====
       - name: Upload IPA to Release
         run: |
-          gh release upload "v${{ steps.version.outputs.version }}" EdgeReader-iOS.ipa "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa" --clobber
+          gh release upload "v${{ steps.version.outputs.version }}" "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
