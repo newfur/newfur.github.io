@@ -59,11 +59,11 @@ export class BookLibrary {
   _cleanBookForStorage(book) {
     if (!book) return book;
     const clean = { ...book };
-    if (clean.file instanceof File) {
+    if (clean.file && typeof File !== 'undefined' && clean.file instanceof File) {
       clean.file = new Blob([clean.file], { type: clean.file.type });
     }
-    if (clean.cover instanceof File) {
-      clean.cover = new Blob([clean.cover], { type: clean.cover.type });
+    if (clean.cover && typeof File !== 'undefined' && clean.cover instanceof File) {
+      clean.cover = new Blob([clean.cover], { type: clean.cover.type || 'image/jpeg' });
     }
     return clean;
   }
@@ -369,8 +369,9 @@ export class BookLibrary {
       const store = transaction.objectStore('books');
       const request = store.put(this._cleanBookForStorage(book));
 
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(book);
+      transaction.onerror = () => reject(transaction.error || request.error);
+      transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
     });
   }
 
@@ -542,8 +543,9 @@ export class BookLibrary {
       const store = transaction.objectStore('books');
       const request = store.put(this._cleanBookForStorage(book));
 
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(book);
+      transaction.onerror = () => reject(transaction.error || request.error);
+      transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
     });
   }
 

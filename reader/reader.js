@@ -87,6 +87,7 @@ let currentTTSLanguage = 'auto';
 let ttsDefaultVoice = '';
 let currentPaperTexture = 'texture-classic';
 let activeCoverUrls = [];
+const bookCoverCache = new Map(); // bookId -> string (DataURL) or Blob
 let activeResourceUrls = [];
 let ttsOnlyEdge = false;
 let currentBookDetectedLanguage = ''; // 緩存當前書籍檢測到的語言，防止異步語音加載事件重新觸發時因時序差異而誤判
@@ -136,6 +137,11 @@ const IDLE_TIMEOUT_MS = 60000; // 60秒無操作視為閒置
 let currentFolder = null;
 let isSelectMode = false;
 const selectedBookIds = new Set();
+
+// 書庫備份全局狀態
+let currentBackupBlob = null;
+let currentBackupFilename = null;
+let currentBackupUrl = null;
 
 
 function clearCoverUrls() {
@@ -245,6 +251,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 返回 true 表示已由前端處理，返回 false 表示需要退出 app
   function handleAndroidBack() {
     // 優先關閉浮動面板/對話框
+    const backupDialog = document.getElementById('backup-dialog');
+    if (backupDialog && backupDialog.open) { backupDialog.close(); return true; }
     const aboutDialog = document.getElementById('about-dialog');
     if (aboutDialog && aboutDialog.open) { aboutDialog.close(); return true; }
     const noteDialog = document.getElementById('note-dialog');
@@ -323,14 +331,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initAISettings();
   await initTTSSettings();
 
-  // 3.5 立即恢復主題設定（確保刷新頁面後主題不遺失）
+  // 3.5 立即恢復主題設定（支援 iOS 系統暗黑偏好自適應）
   chrome.storage.local.get(['theme'], (res) => {
-    if (res.theme) {
-      const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
-      classesToRemove.forEach(c => document.body.classList.remove(c));
-      document.body.classList.add(`theme-${res.theme}`);
+    let themeToApply = res.theme;
+    if (!themeToApply) {
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      themeToApply = prefersDark ? 'dark' : 'mint';
     }
+    const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
+    classesToRemove.forEach(c => document.body.classList.remove(c));
+    document.body.classList.add(`theme-${themeToApply}`);
+    updateNativeStatusBarStyle(themeToApply);
   });
+
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      chrome.storage.local.get(['theme'], (res) => {
+        if (!res.theme) {
+          const newTheme = e.matches ? 'dark' : 'mint';
+          const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
+          classesToRemove.forEach(c => document.body.classList.remove(c));
+          document.body.classList.add(`theme-${newTheme}`);
+          updateNativeStatusBarStyle(newTheme);
+        }
+      });
+    });
+  }
 
   // 4. 綁定按鈕事件
   initUIEventBindings();
@@ -504,6 +530,16 @@ function initUIEventBindings() {
 
   importBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', handleFileSelect);
+
+  const emptyImportBtn = document.getElementById('empty-import-btn');
+  if (emptyImportBtn) {
+    emptyImportBtn.addEventListener('click', () => fileInput.click());
+  }
+
+  const sampleBookBtn = document.getElementById('sample-book-btn');
+  if (sampleBookBtn) {
+    sampleBookBtn.addEventListener('click', () => loadSampleBook());
+  }
 
   // 備份與還原書庫
   const backupBtn = document.getElementById('backup-btn');
@@ -703,6 +739,15 @@ function initUIEventBindings() {
   document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
   document.getElementById('tts-toggle').addEventListener('click', toggleTTSPanel);
   document.getElementById('settings-toggle').addEventListener('click', toggleSettingsPanel);
+
+  const closeSettingsPanelBtn = document.getElementById('close-settings-panel');
+  if (closeSettingsPanelBtn) {
+    closeSettingsPanelBtn.addEventListener('click', toggleSettingsPanel);
+  }
+  const closeTTSPanelBtn = document.getElementById('close-tts-panel');
+  if (closeTTSPanelBtn) {
+    closeTTSPanelBtn.addEventListener('click', toggleTTSPanel);
+  }
 
   // 閱讀設定變化
   const settingsPanel = document.getElementById('settings-panel');
@@ -1799,6 +1844,53 @@ function initUIEventBindings() {
     });
   }
 
+  // 書庫備份對話框事件綁定 (特別針對 iOS Safari / PWA 導出優化)
+  const backupDialog = document.getElementById('backup-dialog');
+  const backupCloseBtn = document.getElementById('backup-dialog-close');
+  const backupShareBtn = document.getElementById('backup-share-btn');
+  if (backupCloseBtn && backupDialog) {
+    backupCloseBtn.addEventListener('click', () => {
+      backupDialog.close();
+    });
+  }
+  if (backupDialog) {
+    backupDialog.addEventListener('click', (event) => {
+      if (event.target === backupDialog) {
+        backupDialog.close();
+      }
+    });
+    backupDialog.addEventListener('close', () => {
+      if (currentBackupUrl) {
+        try { URL.revokeObjectURL(currentBackupUrl); } catch (e) {}
+        currentBackupUrl = null;
+      }
+      currentBackupBlob = null;
+      currentBackupFilename = null;
+    });
+  }
+  if (backupShareBtn) {
+    backupShareBtn.addEventListener('click', async () => {
+      if (!currentBackupBlob || !currentBackupFilename) return;
+      try {
+        const backupFile = new File([currentBackupBlob], currentBackupFilename, { type: 'application/zip' });
+        if (navigator.canShare && !navigator.canShare({ files: [backupFile] })) {
+          alert(getMsg('backup_save_fallback_share') || 'Sharing files is not supported on this browser.');
+          return;
+        }
+        await navigator.share({
+          title: getMsg('backup_share_title'),
+          text: getMsg('backup_share_text'),
+          files: [backupFile]
+        });
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn('Backup share failed:', err);
+          alert((getMsg('backup_failed') || 'Backup failed') + ': ' + err.message);
+        }
+      }
+    });
+  }
+
   // 點擊空白處關閉所有下拉面板與選取菜單
   document.addEventListener('click', (e) => {
     const target = e.target;
@@ -2543,16 +2635,38 @@ async function renderBookshelf(searchQuery = '') {
           if (i < topBooks.length) {
             const book = topBooks[i];
             let bookCoverUrl = '';
-            if (book.cover) {
-              if (isBlobLike(book.cover)) {
-                bookCoverUrl = URL.createObjectURL(book.cover);
-                activeCoverUrls.push(bookCoverUrl);
-              } else if (typeof book.cover === 'string') {
-                bookCoverUrl = book.cover;
+            const cachedCover = bookCoverCache.get(book.id);
+            const effectiveCover = book.cover || cachedCover;
+            if (effectiveCover) {
+              if (typeof effectiveCover === 'string' && effectiveCover.length > 0) {
+                bookCoverUrl = effectiveCover;
+                bookCoverCache.set(book.id, effectiveCover);
+              } else if (isBlobLike(effectiveCover)) {
+                if (typeof cachedCover === 'string' && cachedCover.startsWith('data:')) {
+                  bookCoverUrl = cachedCover;
+                } else {
+                  try {
+                    bookCoverUrl = URL.createObjectURL(effectiveCover);
+                    activeCoverUrls.push(bookCoverUrl);
+                  } catch (e) {
+                    console.warn('[Bookshelf] Failed to create object URL for folder cover:', e);
+                  }
+                  if (!bookCoverCache.has(book.id) || typeof bookCoverCache.get(book.id) !== 'string') {
+                    try {
+                      const fr = new FileReader();
+                      fr.onloadend = () => {
+                        if (typeof fr.result === 'string' && fr.result.startsWith('data:')) {
+                          bookCoverCache.set(book.id, fr.result);
+                        }
+                      };
+                      fr.readAsDataURL(effectiveCover);
+                    } catch (e) {}
+                  }
+                }
               }
             }
             if (bookCoverUrl) {
-              coverGridHtml += `<img class="folder-cover-item" src="${bookCoverUrl}" alt="${book.title}">`;
+              coverGridHtml += `<img class="folder-cover-item" src="${bookCoverUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none';">`;
             } else {
               coverGridHtml += `
                 <div class="folder-cover-placeholder">
@@ -2683,18 +2797,41 @@ async function renderBookshelf(searchQuery = '') {
       // 動態加載封面
       const coverContainer = card.querySelector('.book-cover-container');
       let coverUrl = '';
-      if (book.cover) {
-        if (isBlobLike(book.cover)) {
-          coverUrl = URL.createObjectURL(book.cover);
-          activeCoverUrls.push(coverUrl);
-        } else if (typeof book.cover === 'string') {
-          coverUrl = book.cover;
+      const cachedCover = bookCoverCache.get(book.id);
+      const effectiveCover = book.cover || cachedCover;
+
+      if (effectiveCover) {
+        if (typeof effectiveCover === 'string' && effectiveCover.length > 0) {
+          coverUrl = effectiveCover;
+          bookCoverCache.set(book.id, effectiveCover);
+        } else if (isBlobLike(effectiveCover)) {
+          if (typeof cachedCover === 'string' && cachedCover.startsWith('data:')) {
+            coverUrl = cachedCover;
+          } else {
+            try {
+              coverUrl = URL.createObjectURL(effectiveCover);
+              activeCoverUrls.push(coverUrl);
+            } catch (e) {
+              console.warn('[Bookshelf] Failed to create object URL for book cover:', e);
+            }
+            if (!bookCoverCache.has(book.id) || typeof bookCoverCache.get(book.id) !== 'string') {
+              try {
+                const fr = new FileReader();
+                fr.onloadend = () => {
+                  if (typeof fr.result === 'string' && fr.result.startsWith('data:')) {
+                    bookCoverCache.set(book.id, fr.result);
+                  }
+                };
+                fr.readAsDataURL(effectiveCover);
+              } catch (e) {}
+            }
+          }
         }
       }
 
       if (coverUrl) {
         coverContainer.innerHTML = `
-          <img class="book-cover" src="${coverUrl}" alt="${book.title}">
+          <img class="book-cover" src="${coverUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none';">
           <span class="book-format-badge">${book.format}</span>
         `;
       } else {
@@ -2857,6 +2994,9 @@ async function openBook(id) {
   if (!book || requestId !== openBookRequestId) {
     openingBookId = null;
     return;
+  }
+  if (book && book.cover) {
+    bookCoverCache.set(book.id, book.cover);
   }
 
   // Push state to prevent back gesture from leaving the reader app
@@ -3103,6 +3243,9 @@ async function closeCurrentBook(triggerBack = true) {
   
   // 重置變量與樣式類別
   document.body.classList.remove('format-epub', 'format-azw3', 'format-mobi', 'format-txt', 'format-cbz', 'layout-paginated');
+  if (currentBook && currentBook.cover) {
+    bookCoverCache.set(currentBook.id, currentBook.cover);
+  }
   currentBook = null;
   epubBookData = null;
   comicParserInstance = null;
@@ -5272,6 +5415,7 @@ function setTheme(theme, writeToStorage = true) {
   const classesToRemove = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
   classesToRemove.forEach(c => document.body.classList.remove(c));
   document.body.classList.add(`theme-${theme}`);
+  updateNativeStatusBarStyle(theme);
   
   // Update active mind-elixir mindmaps to match theme
   if (typeof activeMindElixirs !== 'undefined') {
@@ -9822,6 +9966,28 @@ async function handleExportBackup() {
       }
     }
 
+    // 若非 Capacitor 原生且無 showSaveFilePicker，立即呼起備份對話框提供進度反饋，避免用戶覺得「閃一下沒反應」
+    const backupDialogEl = document.getElementById('backup-dialog');
+    const backupProgressView = document.getElementById('backup-progress-view');
+    const backupCompleteView = document.getElementById('backup-complete-view');
+    const backupProgressText = document.getElementById('backup-progress-text');
+    const backupFileMeta = document.getElementById('backup-file-meta');
+    const backupShareBtn = document.getElementById('backup-share-btn');
+    const backupDownloadLink = document.getElementById('backup-direct-download-link');
+
+    if (backupDialogEl && !useSaveFilePicker && !isCapacitor) {
+      if (backupProgressView) backupProgressView.style.display = 'flex';
+      if (backupCompleteView) backupCompleteView.style.display = 'none';
+      if (backupProgressText) {
+        backupProgressText.textContent = `${getMsg('backing_up')} (${books.length})`;
+      }
+      try {
+        if (!backupDialogEl.open) backupDialogEl.showModal();
+      } catch (dialogErr) {
+        console.warn('Failed to open backup dialog:', dialogErr);
+      }
+    }
+
     // 進入載入狀態
     backupBtn.disabled = true;
     backupBtn.innerHTML = `
@@ -9972,20 +10138,71 @@ async function handleExportBackup() {
         try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
       }
     } else {
-      // 瀏覽器版本使用 standard A 標籤下載
+      // 瀏覽器版本 / 離線單文件版 (iOS Safari, Android Chrome, PWA 等)
       const downloadUrl = URL.createObjectURL(backupBlob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
       
-      alert(getMsg('backup_success'));
+      // 釋放先前備份的 Object URL
+      if (currentBackupUrl) {
+        try { URL.revokeObjectURL(currentBackupUrl); } catch (e) {}
+      }
+      currentBackupBlob = backupBlob;
+      currentBackupFilename = filename;
+      currentBackupUrl = downloadUrl;
+
+      const fileSizeStr = (backupBlob.size >= 1024 * 1024)
+        ? `${(backupBlob.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${(backupBlob.size / 1024).toFixed(0)} KB`;
+
+      if (backupDialogEl) {
+        if (backupFileMeta) {
+          backupFileMeta.textContent = `${filename} · ${fileSizeStr} · ${books.length} ${getMsg('books_count') || 'books'}`;
+        }
+        if (backupDownloadLink) {
+          backupDownloadLink.href = downloadUrl;
+          backupDownloadLink.download = filename;
+        }
+
+        // 檢測是否支援 Web Share API (檔案分享)
+        let canShareFiles = false;
+        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File !== 'undefined') {
+          try {
+            const testFile = new File([backupBlob], filename, { type: 'application/zip' });
+            canShareFiles = Boolean(navigator.canShare && navigator.canShare({ files: [testFile] }));
+          } catch (e) {
+            canShareFiles = false;
+          }
+        }
+
+        if (backupShareBtn) {
+          backupShareBtn.style.display = canShareFiles ? 'flex' : 'none';
+        }
+
+        if (backupProgressView) backupProgressView.style.display = 'none';
+        if (backupCompleteView) backupCompleteView.style.display = 'flex';
+        
+        try {
+          if (!backupDialogEl.open) backupDialogEl.showModal();
+        } catch (e) {}
+      } else {
+        // 沒有 backupDialogEl 時的降級處理（延遲釋放 Object URL 防止 iOS Safari 提前中止下載）
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => {
+          try { URL.revokeObjectURL(downloadUrl); } catch (e) {}
+        }, 60000);
+        alert(getMsg('backup_success'));
+      }
     }
   } catch (err) {
     console.error('Backup failed:', err);
+    const backupDialogEl = document.getElementById('backup-dialog');
+    if (backupDialogEl && backupDialogEl.open) {
+      backupDialogEl.close();
+    }
     alert(`${getMsg('backup_failed')}: ${err.message}`);
   } finally {
     backupBtn.disabled = false;
@@ -10847,3 +11064,174 @@ function clearSearchHighlights() {
     }
   });
 }
+
+// ==================== iOS 樣式與狀態列動態同步 ====================
+function updateNativeStatusBarStyle(theme) {
+  const isDark = ['dark', 'oled', 'slate'].includes(theme);
+  const style = isDark ? 'light' : 'dark';
+  if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS && window.Capacitor.Plugins.NativeTTS.setStatusBarStyle) {
+    window.Capacitor.Plugins.NativeTTS.setStatusBarStyle({ style }).catch(() => {});
+  }
+}
+
+// ==================== 快速體驗內置示例書 (Apple HIG 首啟空白引導) ====================
+async function loadSampleBook() {
+  try {
+    const sampleText = `前言 献给莱翁·维尔特
+
+请孩子们原谅我把这本书献给一个大人。
+我有一个很重要的理由：这个大人是我在世界上最好的朋友。
+我还有另一个理由：这个大人什么都懂，甚至连写给孩子看的书他也能看懂。
+我的第三个理由是：这个大人住在法国，他在那里又饥又渴，他需要得到安慰。
+如果所有这些理由还不够，那么我愿意把这本书献给这个大人从前当过的那个孩子。
+所有的成年人最初都是孩子。（可惜，记得这一点的并不多。）
+因此，我把这篇献词修改如下：
+献给童年时代的莱翁·维尔特。
+
+第一章 沙漠中的奇遇
+
+六年前，在撒哈拉沙漠上，我的飞机坏了。发动机里有什么东西裂了。
+因为我既没有机械师，也没有乘客，我只好尝试独自进行一项困难的修理工作。
+对我来说，这是个生死攸关的问题。我的饮用水只够维持八天。
+第一天晚上，我在远离人烟上千公里的沙漠上睡着了。我比大海中遇难漂浮在木筏上的人还要孤单。
+然而，黎明时分，当一个奇怪的微弱声音把我唤醒时，你可以想象我是多么惊讶！那个声音说：
+“请你……给我画一只绵羊好吗？”
+“什么？”
+“给我画一只绵羊……”
+我猛地跳了起来，就像被雷打中了一样。我使劲揉了揉眼睛，仔细看了看。
+我看到一个非常奇特的小人儿，正在严肃地端详着我。
+
+第二章 狐狸的秘密
+
+“你好。”狐狸说。
+“你好。”小王子很有礼貌地回答，转过身来，却什么也没看见。
+“我在这里，”那个声音说，“在苹果树下……”
+“你是谁？”小王子说，“你真漂亮……”
+“我是一只狐狸。”狐狸说。
+“来和我一起玩吧，”小王子提议道，“我正难过着呢……”
+“我不能和你一起玩，”狐狸说，“我还没有被驯服。”
+“啊！请原谅，”小王子说。但想了想之后，他又问：“‘驯服’是什么意思？”
+“这是人们早已遗忘的事，”狐狸说，“它的意思是‘建立联系’……”
+“建立联系？”
+“正是，”狐狸说，“对我来说，你现在只是一个小男孩，就像其他十万个小男孩一样。我不需要你，你也不需要我。但如果你驯服了我，我们就会彼此需要。对我来说，你就是世界上唯一的了；对你来说，我也是世界上唯一的了……”
+
+第三章 真正重要的东西
+
+“我的秘密很简短：只有用心才能看得清，真正重要的东西，用肉眼是看不见的。”
+“真正重要的东西，用肉眼是看不见的。”小王子重复道，以便记在心上。
+“正是因为你为你的玫瑰花费了时间，才使得你的玫瑰变得如此重要。”
+“正是我为我的玫瑰花费了时间……”小王子重复着。
+“人们已经忘记了这个真理，”狐狸说，“但你绝不能忘记。你必须对你驯服的一切永远负责。你要对你的玫瑰负责……”
+“我要对我的玫瑰负责……”小王子又重复了一遍。`;
+
+    const blob = new Blob([sampleText], { type: 'text/plain' });
+    const file = new File([blob], 'The_Little_Prince.txt', { type: 'text/plain' });
+
+    const title = getMsg('sample_book_title') || '小王子 (精选试读)';
+    const author = getMsg('sample_book_author') || '安托万·德·圣-埃克苏佩里';
+
+    const existingBooks = await library.getAllBooks();
+    let sampleBook = existingBooks.find(b => b.id === 'builtin_sample_book');
+
+    if (!sampleBook) {
+      sampleBook = await library.addBook({
+        id: 'builtin_sample_book',
+        title: title,
+        author: author,
+        format: 'txt',
+        file: file,
+        size: sampleText.length
+      });
+    }
+
+    await renderBookshelf();
+    await openBook(sampleBook.id);
+  } catch (err) {
+    console.error('Failed to load sample book:', err);
+    alert('加载示例书失败: ' + err.message);
+  }
+}
+window.loadSampleBook = loadSampleBook;
+
+// ==================== 模擬器與自動化測試控制器 (Simulator Test Runner) ====================
+window.__testRunner = {
+  async loadSample() {
+    await loadSampleBook();
+  },
+  async openSettings() {
+    const panel = document.getElementById('settings-panel');
+    if (!panel || !panel.classList.contains('active')) {
+      toggleSettingsPanel();
+    }
+  },
+  async closeSettings() {
+    const panel = document.getElementById('settings-panel');
+    if (panel && panel.classList.contains('active')) {
+      toggleSettingsPanel();
+    }
+  },
+  async setTheme(theme) {
+    setTheme(theme);
+  },
+  async openTTS() {
+    const panel = document.getElementById('tts-panel');
+    if (!panel || !panel.classList.contains('active')) {
+      toggleTTSPanel();
+    }
+  },
+  async closeTTS() {
+    const panel = document.getElementById('tts-panel');
+    if (panel && panel.classList.contains('active')) {
+      toggleTTSPanel();
+    }
+  },
+  async openSidebar(tab = 'toc') {
+    const sidebar = document.getElementById('reader-sidebar');
+    if (!sidebar || !sidebar.classList.contains('open')) {
+      toggleSidebar();
+    }
+    if (tab === 'toc') document.getElementById('tab-toc')?.click();
+    else if (tab === 'highlights') document.getElementById('tab-highlights')?.click();
+    else if (tab === 'search') document.getElementById('tab-search')?.click();
+  },
+  async closeSidebar() {
+    const sidebar = document.getElementById('reader-sidebar');
+    if (sidebar && sidebar.classList.contains('open')) {
+      toggleSidebar();
+    }
+  },
+  async openAI() {
+    const panel = document.getElementById('ai-panel');
+    if (!panel || panel.style.display !== 'flex') {
+      toggleAIPanel();
+    }
+  },
+  async closeAI() {
+    const panel = document.getElementById('ai-panel');
+    if (panel && panel.style.display === 'flex') {
+      toggleAIPanel();
+    }
+  },
+  async openStats() {
+    document.getElementById('stats-btn')?.click();
+  },
+  async closeStats() {
+    document.getElementById('close-stats-modal')?.click();
+  },
+  async openGlobalSettings() {
+    document.getElementById('global-settings-btn')?.click();
+  },
+  async closeGlobalSettings() {
+    document.getElementById('close-global-settings')?.click();
+  },
+  async closeReader() {
+    document.getElementById('close-reader-btn')?.click();
+  },
+  async openBackup() {
+    await handleExportBackup();
+  },
+  async closeBackup() {
+    const dialog = document.getElementById('backup-dialog');
+    if (dialog && dialog.open) dialog.close();
+  }
+};

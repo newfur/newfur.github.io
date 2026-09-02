@@ -129,6 +129,24 @@
   "backing_up": {
     "message": "Backing up..."
   },
+  "backup_dialog_title": {
+    "message": "Library Backup"
+  },
+  "backup_packing_hint": {
+    "message": "Packaging books, reading progress, and notes..."
+  },
+  "backup_ready_title": {
+    "message": "Backup Archive Ready!"
+  },
+  "backup_ios_instruction": {
+    "message": "iOS / mobile users please tap [Save to System / Share] below and choose 'Save to Files' to save onto your device or iCloud."
+  },
+  "backup_btn_save_share": {
+    "message": "Save to System / Share (.zip)"
+  },
+  "backup_btn_direct_download": {
+    "message": "Download Backup File"
+  },
   "backup_share_title": {
     "message": "Raconteur Library Backup"
   },
@@ -928,7 +946,7 @@
   "search_book": {
     "message": "Search"
   },
-  "search_placeholder": {
+  "search_in_book_placeholder": {
     "message": "Search in book..."
   },
   "searching": {
@@ -974,5 +992,14 @@
   },
   "duplicate_btn_skip": {
     "message": "Skip"
+  },
+  "load_sample_book": {
+    "message": "Try Sample Book"
+  },
+  "sample_book_title": {
+    "message": "The Little Prince (Selected)"
+  },
+  "sample_book_author": {
+    "message": "Antoine de Saint-Exupéry"
   }
 }

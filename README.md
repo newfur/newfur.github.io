@@ -2,10 +2,10 @@
 
 Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en.md)
 
-[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android-blue)](javascript:;)
+[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
 [![License](https://img.shields.io/badge/license-ISC-green)](javascript:;)
 
-一款专为网页和移动端设计的现代、美观、功能强大且高度定制化的电子书阅读器。项目集成了多格式解析器、高质量 Microsoft Edge 云端神经网络语音朗读（TTS）、本地/云端 AI 阅读助手以及精美的阅读统计分析。支持**浏览器插件**、**本地 Web 服务 (PWA)**、**单文件离线版**以及**安卓原生 App** 四种形态。
+一款专为网页和移动端设计的现代、美观、功能强大且高度定制化的电子书阅读器。项目集成了多格式解析器、高质量 Microsoft Edge 云端神经网络语音朗读（TTS）、本地/云端 AI 阅读助手以及精美的阅读统计分析。支持**浏览器插件**、**本地 Web 服务 (PWA)**、**单文件离线版**、**安卓原生 App** 以及 **iOS 原生 App (含 LiveContainer 免签侧载)** 五种形态。
 
 ---
 
@@ -108,6 +108,20 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
    npm run build:mobile
    ```
 3. 使用 Android Studio 打开 `android/` 目录进行编译部署，或直接通过 Gradle 构建。
+
+### 🍎 方法 E：构建 iOS 原生 App / LiveContainer IPA
+1. 确保在 macOS 环境且安装了 Xcode 及 CocoaPods。
+2. 运行一键构建脚本生成 `.ipa` 安装包：
+   ```bash
+   npm run build:ipa
+   ```
+3. 构建完成后，根目录下会生成 `EdgeReader-iOS-LiveContainer.ipa`。
+4. **导入 LiveContainer**：
+   - 将生成的 `.ipa` 通过 AirDrop 或文件传输工具发送到 iPhone / iPad。
+   - 打开 iOS 设备上的 **LiveContainer**，点击右上角 `+` 号选择导入该 `.ipa`。
+   - 无需付费开发者账号，亦不占用 3 个免签侧载名额，点击即可启动阅读。
+5. **Xcode 直装（可选）**：
+   - 也可以通过 `npx cap open ios` 打开 Xcode，连接手机直接点击 Run 调试安装。
 
 ---
 

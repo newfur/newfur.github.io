@@ -1,6 +1,6 @@
 {
   "name": "raconteur-reader",
-  "version": "3.3.6",
+  "version": "3.3.12",
   "description": "",
   "main": "service-worker.js",
   "scripts": {
@@ -8,6 +8,8 @@
     "start": "node server.js",
     "build:offline": "node scratch/compile_offline.js",
     "build:mobile": "node scratch/build_dist.js && npx cap sync android",
+    "build:ios": "node scratch/build_dist.js && npx cap sync ios",
+    "build:ipa": "node scratch/build_ios_ipa.js",
     "test": "node scratch/test_tts_review_fixes.js"
   },
   "keywords": [],
@@ -17,6 +19,7 @@
   "dependencies": {
     "@capacitor/core": "^6.0.0",
     "@capacitor/filesystem": "^6.0.4",
+    "@capacitor/ios": "^6.2.2",
     "@capacitor/share": "^6.0.4",
     "ws": "^8.21.0"
   },

@@ -1,0 +1,369 @@
+import UIKit
+import Capacitor
+import AVFoundation
+import MediaPlayer
+
+@UIApplicationMain
+class AppDelegate: UIResponder, UIApplicationDelegate {
+
+    var window: UIWindow?
+
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Configure audio session for background TTS playback
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to configure AVAudioSession: \(error)")
+        }
+        return true
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+    }
+
+    func applicationWillEnterForeground(_ application: UIApplication) {
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+    }
+
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        if url.scheme == "edgereader", url.host == "eval" {
+            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let queryItem = components.queryItems?.first(where: { $0.name == "cmd" }),
+               let cmd = queryItem.value {
+                DispatchQueue.main.async {
+                    if let vc = (self.window?.rootViewController as? ViewController) ?? (app.windows.first?.rootViewController as? ViewController) {
+                        vc.webView?.evaluateJavaScript(cmd, completionHandler: nil)
+                    }
+                }
+            }
+            return true
+        }
+        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+    }
+
+    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+
+}
+
+class ViewController: CAPBridgeViewController {
+    var currentStatusBarStyle: UIStatusBarStyle = .default
+    private var cmdTimer: Timer?
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return currentStatusBarStyle
+    }
+
+    override func capacitorDidLoad() {
+        super.capacitorDidLoad()
+        bridge?.registerPluginInstance(NativeTTS())
+
+        cmdTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let cmdFile = docs.appendingPathComponent("cmd.js")
+            if FileManager.default.fileExists(atPath: cmdFile.path) {
+                if let code = try? String(contentsOf: cmdFile, encoding: .utf8) {
+                    try? FileManager.default.removeItem(at: cmdFile)
+                    self.webView?.evaluateJavaScript(code) { res, err in
+                        let statusFile = docs.appendingPathComponent("cmd_status.json")
+                        let success = (err == nil)
+                        let status: [String: Any] = [
+                            "success": success,
+                            "error": err?.localizedDescription ?? "",
+                            "result": "\(res ?? "")"
+                        ]
+                        if let data = try? JSONSerialization.data(withJSONObject: status) {
+                            try? data.write(to: statusFile)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@objc(NativeTTS)
+public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativeTTS"
+    public let jsName = "NativeTTS"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "downloadTTS", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getSafeAreaInsets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setStatusBarStyle", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startForegroundService", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updatePlaybackState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateMetadata", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopForegroundService", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "createZipFromDirectory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveFileToSystem", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "copyFileToDownloads", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var activeWebSocketTask: URLSessionWebSocketTask?
+
+    @objc func setStatusBarStyle(_ call: CAPPluginCall) {
+        let style = call.getString("style") ?? "dark"
+        DispatchQueue.main.async {
+            if let vc = self.bridge?.viewController as? ViewController {
+                vc.currentStatusBarStyle = (style == "light") ? .lightContent : .darkContent
+                vc.setNeedsStatusBarAppearanceUpdate()
+            }
+            call.resolve()
+        }
+    }
+
+    public override func load() {
+        super.load()
+        setupRemoteCommands()
+    }
+
+    @objc func downloadTTS(_ call: CAPPluginCall) {
+        guard let text = call.getString("text"),
+              let voice = call.getString("voice"),
+              let connectionId = call.getString("connectionId"),
+              let secMsGec = call.getString("secMsGec"),
+              let dateStr = call.getString("dateStr") else {
+            call.reject("Missing required parameters")
+            return
+        }
+
+        let rate = call.getString("rate") ?? "+0%"
+        let volume = call.getString("volume") ?? "+0%"
+
+        let urlString = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
+            "?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4" +
+            "&ConnectionId=\(connectionId)" +
+            "&Sec-MS-GEC=\(secMsGec)" +
+            "&Sec-MS-GEC-Version=1-143.0.3650.75"
+
+        guard let url = URL(string: urlString) else {
+            call.reject("Invalid URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold", forHTTPHeaderField: "Origin")
+        request.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0", forHTTPHeaderField: "User-Agent")
+
+        let session = URLSession(configuration: .default)
+        let webSocketTask = session.webSocketTask(with: request)
+        self.activeWebSocketTask = webSocketTask
+
+        var audioData = Data()
+        var isCompleted = false
+
+        func finishWithSuccess() {
+            guard !isCompleted else { return }
+            isCompleted = true
+            webSocketTask.cancel(with: .normalClosure, reason: nil)
+            if !audioData.isEmpty {
+                let base64 = audioData.base64EncodedString()
+                call.resolve(["audioBase64": base64])
+            } else {
+                call.reject("No audio data received from Edge TTS")
+            }
+        }
+
+        func finishWithError(_ errorMsg: String) {
+            guard !isCompleted else { return }
+            isCompleted = true
+            webSocketTask.cancel(with: .goingAway, reason: nil)
+            call.reject(errorMsg)
+        }
+
+        func receiveNext() {
+            webSocketTask.receive { [weak webSocketTask] result in
+                guard !isCompleted else { return }
+                switch result {
+                case .failure(let error):
+                    finishWithError("WebSocket failure: \(error.localizedDescription)")
+                case .success(let message):
+                    switch message {
+                    case .string(let str):
+                        if str.contains("Path:turn.end") {
+                            finishWithSuccess()
+                            return
+                        }
+                    case .data(let data):
+                        if data.count >= 2 {
+                            let headerLength = Int(data[0]) << 8 | Int(data[1])
+                            if 2 + headerLength <= data.count {
+                                let headerData = data.subdata(in: 2..<(2 + headerLength))
+                                if let headerStr = String(data: headerData, encoding: .utf8), headerStr.contains("Path:audio") {
+                                    let chunk = data.subdata(in: (2 + headerLength)..<data.count)
+                                    audioData.append(chunk)
+                                }
+                            }
+                        }
+                    @unknown default:
+                        break
+                    }
+                    receiveNext()
+                }
+            }
+        }
+
+        webSocketTask.resume()
+
+        let configMsg = "X-Timestamp:\(dateStr)\r\n" +
+            "Content-Type:application/json; charset=utf-8\r\n" +
+            "Path:speech.config\r\n\r\n" +
+            "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}"
+
+        webSocketTask.send(.string(configMsg)) { error in
+            if let error = error {
+                finishWithError("Failed to send config: \(error.localizedDescription)")
+                return
+            }
+
+            let escapedText = self.escapeXml(text)
+            let ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>" +
+                "<voice name='\(voice)'>" +
+                "<prosody pitch='+0Hz' rate='\(rate)' volume='\(volume)'>" +
+                escapedText +
+                "</prosody>" +
+                "</voice>" +
+                "</speak>"
+
+            let ssmlMsg = "X-RequestId:\(connectionId)\r\n" +
+                "Content-Type:application/ssml+xml\r\n" +
+                "X-Timestamp:\(dateStr)Z\r\n" +
+                "Path:ssml\r\n\r\n" +
+                ssml
+
+            webSocketTask.send(.string(ssmlMsg)) { error in
+                if let error = error {
+                    finishWithError("Failed to send SSML: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        receiveNext()
+    }
+
+    @objc func getSafeAreaInsets(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            var top: CGFloat = 0
+            var bottom: CGFloat = 0
+            var left: CGFloat = 0
+            var right: CGFloat = 0
+            if let window = UIApplication.shared.windows.first {
+                top = window.safeAreaInsets.top
+                bottom = window.safeAreaInsets.bottom
+                left = window.safeAreaInsets.left
+                right = window.safeAreaInsets.right
+            }
+            call.resolve([
+                "top": top,
+                "bottom": bottom,
+                "left": left,
+                "right": right
+            ])
+        }
+    }
+
+    @objc func startForegroundService(_ call: CAPPluginCall) {
+        let title = call.getString("title") ?? ""
+        let artist = call.getString("artist") ?? ""
+        let isPlaying = call.getBool("isPlaying") ?? true
+        updateNowPlaying(title: title, artist: artist, isPlaying: isPlaying)
+        call.resolve()
+    }
+
+    @objc func updatePlaybackState(_ call: CAPPluginCall) {
+        let isPlaying = call.getBool("isPlaying") ?? false
+        if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
+        call.resolve()
+    }
+
+    @objc func updateMetadata(_ call: CAPPluginCall) {
+        let title = call.getString("title") ?? ""
+        let artist = call.getString("artist") ?? ""
+        if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+            info[MPMediaItemPropertyTitle] = title
+            info[MPMediaItemPropertyArtist] = artist
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        } else {
+            updateNowPlaying(title: title, artist: artist, isPlaying: true)
+        }
+        call.resolve()
+    }
+
+    @objc func stopForegroundService(_ call: CAPPluginCall) {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        call.resolve()
+    }
+
+    @objc func createZipFromDirectory(_ call: CAPPluginCall) {
+        call.reject("Not implemented on iOS (JSZip is used on iOS)")
+    }
+
+    @objc func saveFileToSystem(_ call: CAPPluginCall) {
+        call.resolve()
+    }
+
+    @objc func copyFileToDownloads(_ call: CAPPluginCall) {
+        call.resolve()
+    }
+
+    private func updateNowPlaying(title: String, artist: String, isPlaying: Bool) {
+        var nowPlayingInfo = [String: Any]()
+        nowPlayingInfo[MPMediaItemPropertyTitle] = title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = artist
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    }
+
+    private func setupRemoteCommands() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.removeTarget(nil)
+        commandCenter.pauseCommand.removeTarget(nil)
+        commandCenter.togglePlayPauseCommand.removeTarget(nil)
+        commandCenter.nextTrackCommand.removeTarget(nil)
+        commandCenter.previousTrackCommand.removeTarget(nil)
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.notifyListeners("mediaAction", data: ["action": "ACTION_PLAY"])
+            return .success
+        }
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.notifyListeners("mediaAction", data: ["action": "ACTION_PAUSE"])
+            return .success
+        }
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.notifyListeners("mediaAction", data: ["action": "ACTION_TOGGLE_PLAY"])
+            return .success
+        }
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.notifyListeners("mediaAction", data: ["action": "ACTION_NEXT"])
+            return .success
+        }
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.notifyListeners("mediaAction", data: ["action": "ACTION_PREV"])
+            return .success
+        }
+    }
+
+    private func escapeXml(_ unsafe: String) -> String {
+        return unsafe.replacingOccurrences(of: "&", with: "&amp;")
+                     .replacingOccurrences(of: "<", with: "&lt;")
+                     .replacingOccurrences(of: ">", with: "&gt;")
+                     .replacingOccurrences(of: "\"", with: "&quot;")
+                     .replacingOccurrences(of: "'", with: "&apos;")
+    }
+}

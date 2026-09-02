@@ -6,8 +6,15 @@ package-lock.json
 scratch/*
 !scratch/compile_offline.js
 !scratch/build_dist.js
+!scratch/build_ios_ipa.js
 !scratch/test_tts_review_fixes.js
 www/
+ios/build/
+ios/build_sim/
+ios/App/Pods/
+ios/App/App/public/
+ios/capacitor-cordova-ios-plugins/
+*.ipa
 inlined_google_fonts.css
 index.html
 reader_offline.html

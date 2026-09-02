@@ -139,9 +139,24 @@
   padding: 0;
 }
 
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+button, a, input, select, textarea, [role="button"] {
+  touch-action: manipulation;
+}
+
+.app-header, .reader-header, .nav-arrow-btn, .btn, .btn-icon-only, .theme-dot, .cover-size-control, .sidebar-header, .dropdown-menu, .color-dot {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 body {
@@ -150,6 +165,7 @@ body {
   color: var(--text-color);
   transition: background-color var(--transition-speed), color var(--transition-speed);
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* 按鈕與常用控制項樣式 */
@@ -710,14 +726,14 @@ button, select, input {
   top: 0;
   left: 0;
   right: 0;
-  height: calc(64px + var(--sat, env(safe-area-inset-top, 0px)));
+  height: calc(60px + var(--sat, env(safe-area-inset-top, 0px)));
   padding-top: var(--sat, env(safe-area-inset-top, 0px));
-  padding-left: 20px;
-  padding-right: 20px;
+  padding-left: max(16px, var(--sal, env(safe-area-inset-left, 0px)));
+  padding-right: max(16px, var(--sar, env(safe-area-inset-right, 0px)));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  z-index: 200;
+  z-index: 260;
   border-top: none;
   border-left: none;
   border-right: none;
@@ -1223,15 +1239,46 @@ body.format-cbz .comic-page {
 /* ==================== 7. 懸浮面板與彈出層 (Dropdown Panels) ==================== */
 .dropdown-panel {
   position: fixed;
-  right: 20px;
-  top: 74px;
+  right: max(20px, var(--sar, env(safe-area-inset-right, 0px)));
+  top: calc(60px + var(--sat, env(safe-area-inset-top, 0px)) + 12px);
   width: 320px;
-  padding: 20px;
+  max-width: calc(100vw - max(32px, calc(var(--sal, env(safe-area-inset-left, 0px)) + var(--sar, env(safe-area-inset-right, 0px)) + 16px)));
+  max-height: calc(100dvh - 60px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 24px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 20px 20px 20px;
   border-radius: 20px;
   z-index: 250;
   display: none; /* 默認隱藏 */
   flex-direction: column;
-  gap: 15px;
+  gap: 14px;
+  box-sizing: border-box;
+}
+
+.dropdown-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 2px;
+}
+
+.dropdown-panel-header .dropdown-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.dropdown-panel-header .btn-icon-only {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.dropdown-panel-header .btn-icon-only .svg-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .dropdown-active {
@@ -1410,6 +1457,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 /* TTS 控制面板專屬 */
 .tts-panel {
   width: 340px;
+  max-width: calc(100vw - max(32px, calc(var(--sal, env(safe-area-inset-left, 0px)) + var(--sar, env(safe-area-inset-right, 0px)) + 16px)));
 }
 
 .tts-controls-row {
@@ -2828,13 +2876,16 @@ html.transition-none .page-texture-slide {
   }
   
   .header-actions .btn {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
     padding: 0;
-    border-radius: 10px;
+    border-radius: 12px;
     flex-shrink: 0;
     justify-content: center;
     gap: 0;
+    touch-action: manipulation;
   }
   
   .header-actions .btn .btn-icon {
@@ -2845,8 +2896,8 @@ html.transition-none .page-texture-slide {
   }
   
   .header-actions .btn .svg-icon {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
   }
 
   .search-bar {
@@ -2937,6 +2988,21 @@ html.transition-none .page-texture-slide {
   .reader-title {
     max-width: calc(100% - 220px);
     font-size: 15px;
+  }
+
+  /* 懸浮下拉面板在移動端的安全區域與頂部距離適配，避開標題欄按鈕 */
+  .dropdown-panel {
+    top: calc(60px + var(--sat, env(safe-area-inset-top, 0px)) + 8px);
+    right: max(10px, var(--sar, env(safe-area-inset-right, 0px)));
+    width: min(340px, calc(100vw - 20px));
+    max-width: calc(100vw - 20px);
+    max-height: calc(100dvh - 60px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 16px);
+    padding: 14px 16px 16px 16px;
+    border-radius: 18px;
+  }
+  .tts-panel {
+    width: min(340px, calc(100vw - 20px));
+    max-width: calc(100vw - 20px);
   }
 
   /* 側邊欄標題欄與按鈕在移動端的響應式對齊優化 */
@@ -3767,6 +3833,7 @@ html.transition-none .page-texture-slide {
 .custom-dialog::backdrop {
   background-color: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .custom-dialog[open] {

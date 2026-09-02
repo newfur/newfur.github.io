@@ -129,6 +129,24 @@
   "backing_up": {
     "message": "正在進行備份..."
   },
+  "backup_dialog_title": {
+    "message": "書庫備份"
+  },
+  "backup_packing_hint": {
+    "message": "正在整合所有書籍檔案、進度與筆記..."
+  },
+  "backup_ready_title": {
+    "message": "書庫備份包已打包就緒！"
+  },
+  "backup_ios_instruction": {
+    "message": "iPhone / iPad 使用者請點擊下方【儲存到系統 / 分享】，在系統彈出的選單中選擇「儲存至『檔案』」即可儲存至手機或 iCloud。"
+  },
+  "backup_btn_save_share": {
+    "message": "儲存到系統 / 分享 (.zip)"
+  },
+  "backup_btn_direct_download": {
+    "message": "直接下載備份檔案"
+  },
   "backup_share_title": {
     "message": "讀書人書庫備份"
   },
@@ -925,7 +943,7 @@
   "search_book": {
     "message": "搜尋"
   },
-  "search_placeholder": {
+  "search_in_book_placeholder": {
     "message": "在本書中搜尋..."
   },
   "searching": {
@@ -971,5 +989,14 @@
   },
   "duplicate_btn_skip": {
     "message": "跳過"
+  },
+  "load_sample_book": {
+    "message": "快速體驗內置示例書"
+  },
+  "sample_book_title": {
+    "message": "小王子 (精選試讀)"
+  },
+  "sample_book_author": {
+    "message": "安托萬·德·聖-埃克蘇佩里"
   }
 }
