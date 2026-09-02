@@ -3,173 +3,227 @@
 Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en.md)
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![License](https://img.shields.io/badge/license-ISC-green)](javascript:;)
+[![Version](https://img.shields.io/badge/version-3.3.26-orange)](javascript:;)
+[![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
-一款专为网页和移动端设计的现代、美观、功能强大且高度定制化的电子书阅读器。项目集成了多格式解析器、高质量 Microsoft Edge 云端神经网络语音朗读（TTS）、本地/云端 AI 阅读助手以及精美的阅读统计分析。支持**浏览器插件**、**本地 Web 服务 (PWA)**、**单文件离线版**、**安卓原生 App** 以及 **iOS 原生 App (含 LiveContainer 免签侧载)** 五种形态。
+一款专为现代浏览器和移动设备打造的沉浸式、高性能且高度可定制的跨平台电子书阅读器。项目基于纯前端与原生桥接架构，集成了多格式电子书解析引擎、微软 Edge 神经网络自然人声语音朗读（TTS）、端侧/云端 AI 伴侣、动态思维导图以及深度的阅读数据统计。
 
----
-
-## 📖 项目简介
-
-本项目旨在打破电子书阅读的平台限制，提供最顶级、最流畅的跨端阅读与朗读体验。特别针对**微软 Edge 神经网络语音**进行了技术突破，使您无需安装复杂的客户端，即可在任何主流 Chromium 浏览器及移动设备上享受媲美真人的有声书朗读。
+项目提供 **浏览器插件版**、**单文件离线网页版**、**在线网页/PWA版**、**Android 原生 App** 以及 **iOS 原生 App (支持 LiveContainer 永久免签侧载)** 五种形态，满足从桌面浏览器到手机和平板的全场景阅读需求。
 
 ---
 
-## ✨ 核心特性
+## 📱 五大版本能力与对比
 
-1. **🗂️ 广泛的电子书格式支持**：内置轻量级纯 JS 解析引擎，支持 **EPUB**（章节目录、图文混排）、**AZW3 / MOBI**（Kindle 格式兼容）、**TXT / MD**（智能提取章节与段落）、**FB2**、**CBZ**（漫画瀑布流/单页）。
-2. **🎨 极致的个性化排版系统**：支持“左右模拟翻页”与“上下连续滚动”；内置霞鹜文楷、思源宋体、OpenDyslexic 等字体；预设明亮白、纯黑 (OLED)、深雅灰等 8 种主题并支持纸张质感底纹叠加。
-3. **🎙️ 高保真神经网络 TTS 朗读**：直连微软 Edge 神经网络云端 TTS，支持数十种极具表现力的自然人声；内置无缝双播放器预加载机制，消除切换卡顿；支持 iOS/Android 移动端后台/锁屏静音保活播放；智能断句过滤角标。
-4. **🤖 浏览器本地/云端 AI 伴侣**：对接浏览器内置 **Gemini Nano** 接口（完全本地处理），同时支持配置 OpenAI、DeepSeek、Gemini API、SiliconFlow 及本地 Ollama、LM Studio。支持一键划词释义、章节/段落摘要、离线翻译。
-5. **📊 深度阅读数据统计**：总时长、阅读天数统计；单本书日均阅读明细；24小时阅读时间段分布；日历热力图式足迹记录。
-6. **📁 书库管理与安全备份**：支持书籍分类文件夹管理、批量移动/删除；支持一键导出包含书籍文件、阅读进度、高亮划线、笔记和阅读统计的加密压缩备份包 (`.zip`)。
-7. **📱 原生移动端支持**：基于 Ionic Capacitor 构建，支持打包为 Android 原生 App，适配高精圆形/自适应系统图标。
+为了让您根据使用场景选择最适合的形态，以下是五个版本的核心能力、差异限制及安装指南：
 
----
-
-## 🔄 版本历史与更新
-
-### 🚀 v3.2.x (当前最新)
-* **安卓原生体验与版本统一 (v3.2.0)**:
-  - 拦截安卓原生返回键（MainActivity `onBackPressed`），支持优先关闭悬浮面板/对话框，并在阅读界面按返回键返回书库（而非退出 App）。
-  - 版本号读取机制统一，直接从 `manifest.json` 动态读取，避免硬编码。
-  - 打开书籍时，自动跳转到上次的 TTS 朗读进度句，而不仅仅是视觉上的滚动位置。
-  - 优化移动端拖拽导入覆盖层，防止多点触摸时闪烁。
-
-### 🎨 v3.1.x (高精图标与朗读优化)
-* **高精图标重构 (v3.1.8)**: 重新以 AI 高清绘制并裁剪替换了全套平台的极简扁平化 App 图标（无数字、超清晰矢量风），并为 Android 原生壳工程适配了自适应背景色及圆形、前景层图标。
-* **TTS 朗读进度保存优化 (v3.1.5)**: 解决了背景/锁屏状态下因浏览器定时器暂停导致进度丢失的问题。新增了在暂停、隐藏（visibilitychange）及页面关闭时的立即同步写入机制；优化章节过渡逻辑，防止加载临界点越界卡死。
-* **高亮位置微调 (v3.1.4)**: 实现了朗读高亮同步偏移微调与启动性能优化。
-
-### 📱 v3.0.0 (原生跨平台支持)
-* **Android/iOS 双端打包**: 引入 Capacitor 架构，支持将阅读器无缝打包为原生移动端 App。
-* **阅读统计 Bug 修复**: 修复了备份还原时，同一天同一小时的阅读时间重复累计的 Bug。
-
-### 🤖 v2.x.x (AI 伴侣与 RAG 搜索)
-* **多服务商 AI 配置**: 支持自定义 OpenAI、DeepSeek、Gemini API、SiliconFlow 及本地 Ollama、LM Studio 实例。
-* **精准 AI 上下文提取**: 支持全局、章节及可见视窗级页面文字精准提取。
-* **本地 RAG 搜索索引**: 后台异步建立全书 TF-IDF 索引，向 AI 提问时自动检索最相关段落，防止幻觉。
-* **Mermaid 互动思维导图**: 支持 AI 自动生成思维导图，并支持拖拽缩放、平移与持久化存储。
+| 功能维度 | 🧩 浏览器插件版 | 💾 单文件离线版 | 🌐 在线网页/PWA版 | 🤖 Android 原生版 | 🍎 iOS 原生版 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **运行环境** | Chrome/Edge/Brave 桌面扩展 | 任意现代浏览器直接打开 | 浏览器访问或安装为 PWA | Android 8.0+ 手机/平板 | iOS 13.0+ (iPhone/iPad) |
+| **安装方式** | 开发者模式加载解压目录 | 双击单个 HTML 文件即用 | 访问 URL / 添加到主屏幕 | 安装 APK 安装包 | LiveContainer免签 / 签名工具 |
+| **网络要求** | 支持完全离线阅读（TTS需联网） | 支持完全离线阅读 | 依赖外网静态资源或本地Node | 支持完全离线阅读（TTS需联网） | 支持完全离线阅读（TTS需联网） |
+| **多格式解析** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ 完整支持 | ✅ 完整支持 | ✅ 完整支持 | ✅ 完整支持 |
+| **Edge 神经网络TTS**| ✅ 完美支持（MV3请求头伪装） | ⚠️ 受浏览器CORS限制 (可降级本地音) | ⚠️ 需自建Node代理或支持跨域 | ✅ 完美支持（原生网络层穿透） | ✅ 完美支持（原生网络层穿透） |
+| **后台/锁屏朗读** | ❌ 仅限浏览器标签页前台 | ❌ 手机端易被后台冻结 | ⚠️ 依赖静音保活，易被系统回收 | ✅ 极佳（前台服务+锁屏控制台） | ✅ 极佳（AVAudioSession+锁屏面板） |
+| **锁屏显示封面与进度** | ❌ 不支持 | ❌ 不支持 | ⚠️ 部分浏览器支持 MediaSession | ✅ 支持（实时显示书名、进度、缩略封面） | ✅ 支持（原生 MPNowPlayingInfo 深度集成） |
+| **AI 伴侣 / 思维导图** | ✅ Gemini Nano 本地端侧 + 云端 | ✅ 支持配置云端/本地大模型 API | ✅ 完整支持 | ✅ 推荐配置云端 API / 本地 Ollama | ✅ 推荐配置云端 API / 本地 Ollama |
+| **数据存储与安全** | IndexedDB（随扩展独立保存） | IndexedDB（按域名/本地路径存储） | IndexedDB（域名隔离，支持导出） | 沙盒 IndexedDB + 原生持久化 | 沙盒 IndexedDB + 原生持久化 |
 
 ---
 
-## 🛠️ 架构设计
+### 1. 🧩 浏览器插件版 (Chrome / Edge Extension - MV3)
+* **能做什么**：
+  - 拥有完整的阅读器排版、书籍解析、书架管理与阅读统计。
+  - 通过 Manifest V3 的 `declarativeNetRequest` 动态改写请求头，**完美突破微软 Edge 云端 TTS 的 CORS 跨域与 Origin 防盗链检测**，直接在浏览器内畅享几十种超自然真人员工语音朗读。
+  - 支持调用 Chrome/Edge 浏览器内置的 **Gemini Nano** 端侧大模型，无需外网即可进行段落翻译、释义与章节速读。
+* **缺少什么**：
+  - 仅限于 Chromium 内核的桌面端浏览器；手机浏览器若不支持扩展则无法使用。
+  - 受限于浏览器生命周期，浏览器完全关闭后朗读随即停止。
+* **怎么安装**：
+  1. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载 `Raconteur-Chrome-*.zip` 并解压为文件夹（或直接克隆源码）。
+  2. 在 Chrome/Edge 地址栏输入 `chrome://extensions/` 或 `edge://extensions/`。
+  3. 打开右上角的 **“开发者模式”** 开关。
+  4. 点击左上角的 **“加载已解压的扩展程序”**，选择解压出的文件夹即可。
 
-项目采用纯前端驱动架构，数据统一存储于浏览器本地的 **IndexedDB** 中。根据运行环境不同，设计了四种分发部署模式：
+---
+
+### 2. 💾 单文件离线网页版 (Single-File Offline Reader)
+* **能做什么**：
+  - **极致纯净，零依赖**：整个阅读器高度浓缩为一个独立的 `.html` 文件（约 2.3MB），内联打包了全部 JavaScript 引擎、CSS 主题、解析器（JSZip 等）、思维导图库及全套多语言资源。
+  - 无需安装 Node.js、无需部署服务器、无需安装任何 App，在 Windows/macOS/Linux/手机上双击即可阅读。
+  - 所有图书、进度、高亮和划线均存储在当前浏览器的本地 IndexedDB 中，安全保密。
+* **缺少什么**：
+  - **TTS 跨域受限**：由于直接以 `file:///` 本地文件协议在浏览器运行，无法直接绕过微软服务器的 CORS 来源校验。在此模式下，TTS 引擎会自动降级为调用系统的原生语音库（Web Speech API）。若需体验微软神经网络人声，建议配合 OpenAI 格式的 TTS 自定义代理使用，或选用插件版/移动客户端。
+* **怎么安装/使用**：
+  1. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载最新版的 `Raconteur-Offline-*.html`。
+  2. 任意现代浏览器双击直接打开即可使用；建议在浏览器中按下 `Ctrl+D` (或 `Cmd+D`) 收藏为书签以便日后随时打开。
+
+---
+
+### 3. 🌐 在线网页/PWA版 (Web Server & Progressive Web App)
+* **能做什么**：
+  - 打开网址即用，支持多设备无缝访问。
+  - **标准 PWA 体验**：支持安装到桌面或添加到手机主屏，启动后具备独立应用窗口、无地址栏遮挡与流畅的全屏体验，支持 Service Worker 离线资源缓存。
+  - 本地 Node.js 运行模式下内置了专属的 WebSocket 转发代理，直接中继 Edge TTS 流量，享受无任何网络限制的最高质量朗读。
+* **缺少什么**：
+  - 静态托管在公网（如 GitHub Pages / Vercel）时，直连微软 Edge TTS 在部分手机浏览器环境下可能受限于严格的跨域限制。
+  - 手机锁屏或切换到后台数分钟后，移动端 Safari/Chrome 可能会因内存管控机制冻结网页 JavaScript 执行，导致朗读暂停。
+* **怎么安装/使用**：
+  - **在线访问**：直接访问部署地址（如 GitHub Pages）。
+  - **安装 PWA**：桌面端点击地址栏右侧的“安装”图标；iOS 手机在 Safari 浏览器中点击底部“分享”按键，选择 **“添加到主屏幕”**。
+  - **本地 Node 服务运行**：
+    ```bash
+    git clone https://github.com/newfur/newfur.github.io.git
+    cd newfur.github.io
+    npm install
+    npm start
+    # 访问 http://localhost:3000
+    ```
+
+---
+
+### 4. 🤖 Android 原生版 (Android APK)
+* **能做什么**：
+  - 基于 Ionic Capacitor 架构构建的轻巧型 Android 原生客户端，安装包约十几兆。
+  - **真正的前台服务后台保活 (`AudioPlayerService`)**：在系统级启用带有唤醒锁（WakeLock/WifiLock）的前台播放服务，无论是退入后台聊天、刷其他 App 还是锁屏息屏，TTS 朗读持续稳定运行不被系统杀死。
+  - **系统锁屏与通知栏完整媒体控制**：深度接入 Android `MediaSession`。通知中心与锁屏界面实时显示**正在朗读的句子、书籍名称、作者信息及全局轻量化压缩版书籍封面**，并提供上一句、下一句、暂停/播放原生操作按键。
+  - **原生返回键拦截**：按下手机物理/手势返回键时，优先关闭目录、设置、AI 等浮层对话框；在阅读正文时返回书架，避免手滑误退出应用。
+  - 原生网络层直接请求，无浏览器的 CORS 困扰，原生畅享微软 Edge 神经网络语音。
+* **缺少什么**：
+  - 尚未上架官方 Google Play 应用商店，安装时需允许系统安装外部来源应用。
+* **怎么安装**：
+  1. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载最新的 `Raconteur-*.apk`。
+  2. 传输到安卓手机，点击安装包并确认安装（如弹出风险提示，选择允许继续安装）。
+
+---
+
+### 5. 🍎 iOS 原生版 (iOS IPA / LiveContainer)
+* **能做什么**：
+  - 基于 Capacitor 与原生 Swift 打造，体积仅 **2.25MB**，极度轻量快速。
+  - **为 LiveContainer 量身打造免签运行**：无需购买付费苹果开发者账号，无需使用个人证书每周签名（不占用个人免费 3 个 App 侧载名额），永久有效直接运行。同时兼容 TrollStore（巨魔商店）、AltStore、SideStore、Scarlet 等常用签名工具。
+  - **iOS 锁屏控制面板与音频后台播放**：深度对接系统 `MPNowPlayingInfoCenter` 与 `MPRemoteCommandCenter`，配置 `AVAudioSession (.playback)` 模式。锁屏界面优雅展示**当前朗读句子文本、书籍标题、作者及专属生成的 512px 动态全局压缩封面**，支持灵动岛与锁屏切句/暂停。
+  - 原生全面屏、刘海屏与灵动岛（Dynamic Island）顶部安全区自适应，沉浸式阅读。
+* **缺少什么**：
+  - 尚未上架 App Store，需要使用侧载工具安装。
+* **怎么安装**：
+  - **推荐方式：使用 LiveContainer 导入（永久免签、无需续期）**
+    1. 在电脑或手机上从 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载最新的 `EdgeReader-*.ipa`。
+    2. 打开手机上的 **LiveContainer** 应用程序。
+    3. 点击右上角 `+` 号，选取刚刚下载的 `EdgeReader-*.ipa` 导入。
+    4. 导入后直接点击图标即可运行，无需担心任何签名过期问题！
+  - **方式二：使用自签工具安装 (AltStore / SideStore / 巨魔 TrollStore)**
+    - 使用电脑端爱思助手、AltStore、SideStore 或越狱/巨魔工具，导入并签名安装该 `.ipa` 文件。
+  - **方式三：本地 Xcode 编译调试**
+    - 在 macOS 上运行 `npm run build:ipa` 或通过 `npx cap open ios` 打开 Xcode，连接真机即可直接编译安装。
+
+---
+
+## 🛠️ 项目架构与技术设计
+
+本项目采用**纯前端核心逻辑驱动 + 轻量跨平台原生桥接层**的分层架构设计。
 
 ```
-                               ┌────────────────────────┐
-                               │    Core Application    │
-                               │ (i18n, Parsers, Engine)│
-                               └───────────┬────────────┘
-                                           │
-         ┌─────────────────────────┬───────┴─────────┬─────────────────────────┐
-         ▼                         ▼                 ▼                         ▼
-   ┌───────────┐             ┌───────────┐     ┌───────────┐             ┌───────────┐
-   │ Extension │             │Web Server │     │Standalone │             │Android App│
-   │ (MV3)     │             │(Node+PWA) │     │(SingleHTML│             │(Capacitor)│
-   └─────┬─────┘             └─────┬─────┘     └─────┬─────┘             └─────┬─────┘
-         │                         │                 │                         │
- declarativeNetRequest         WebSockets      IndexedDB+base64         Capacitor Plugins
- 动态修改请求头绕过            Node服务代理    Data URL 绕过            原生接口与文件系统
- Bing TTS CORS 限制            TTS 流量限制    本地 file:// 限制         本地化沙盒存储
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Edge Reader 整体架构设计                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                  ┌─────────────────────────────────────────┐
+                  │          UI 排版与用户交互呈现层        │
+                  │   reader.html / reader.css / i18n.js    │
+                  │ (左右翻页/纵向滚动/主题纸质/字体/高亮浮层)  │
+                  └────────────────────┬────────────────────┘
+                                       │
+                  ┌────────────────────┴────────────────────┐
+                  │            核心阅读器控制器             │
+                  │               reader.js                 │
+                  └─────────┬──────────┬──────────┬─────────┘
+                            │          │          │
+   ┌────────────────────────┘          │          └─────────────────────────┐
+   ▼                                   ▼                                    ▼
+┌─────────────────────────┐ ┌─────────────────────────┐ ┌─────────────────────────┐
+│     多格式电子书解析    │ │      TTS 语音合成引擎   │ │   AI 伴侣 & 本地 RAG    │
+│    parsers/ (纯前端JS)  │ │          tts.js         │ │         ai.js           │
+├─────────────────────────┤ ├─────────────────────────┤ ├─────────────────────────┤
+│ • EPUB (EPUB 2/3 标准)  │ │ • Edge WebSocket 自然语音│ │ • 浏览器端侧Gemini Nano │
+│ • AZW3 / MOBI (Kindle)  │ │ • 双音频播放器无缝预热交替│ │ • 云端 API (OpenAI/Deep)│
+│ • TXT / Markdown (切章) │ │ • 标点断句算法/角标过滤  │ │ • 本地模型 (Ollama/LM)  │
+│ • CBZ (漫画图片瀑布流)   │ │ • 全局 512px 封面动态压缩 │ │ • 全书异步 TF-IDF 检索 │
+│ • FB2 (FictionBook)     │ │ • 跨章节无缝自动预读衔接  │ │ • Mermaid 思维导图生成  │
+└─────────────────────────┘ └─────────────────────────┘ └─────────────────────────┘
+                                       │
+                  ┌────────────────────┴────────────────────┐
+                  │          底层数据持久化层               │
+                  │             library.js                  │
+                  │   IndexedDB (书籍内容 / 进度 / 划线笔记)│
+                  │   备份还原引擎 (ZIP 压缩包导入导出)     │
+                  └────────────────────┬────────────────────┘
+                                       │
+     ┌─────────────────────────────────┴─────────────────────────────────┐
+     ▼                                                                   ▼
+┌───────────────────────────────────────┐ ┌───────────────────────────────────────┐
+│           Web 与浏览器扩展运行环境    │ │           移动端原生桥接层 (Capacitor) │
+├───────────────────────────────────────┤ ├───────────────────────────────────────┤
+│ • Chrome MV3 declarativeNetRequest    │ │ • NativeTTS 原生插件                  │
+│ • Service Worker (离线 PWA 资源缓存)   │ │ • Android: AudioPlayerService 前台服务│
+│ • 单文件静态内联 (reader_offline.html) │ │ • iOS: AVAudioSession + MPNowPlaying  │
+│ • Node.js 本地服务与开发调试环境       │ │ • 安全区 (SafeArea) 测量与物理返回拦截 │
+└───────────────────────────────────────┘ └───────────────────────────────────────┘
+```
+
+### 核心子系统与工作流程
+
+1. **封面全局压缩与广播机制 (`compressCoverImage`)**：
+   - 传统电子书的封面原图分辨率极高，体积往往达 3MB~10MB。若频繁通过 JS 桥接发送原图，极易导致移动端系统通信拥塞、卡顿甚至更新丢失。
+   - **机制**：当任意书籍被打开时，阅读器会通过 Canvas 算法将其等比缩放并压缩至最大 512×512 的高质量 JPEG 数据（体积压缩至仅 20KB~40KB），同时全局广播至 TTS 引擎及 Android/iOS 原生媒体会话中，确保锁屏界面的封面加载快速、零卡顿且永不丢失。
+
+2. **跨章节无缝连续朗读引擎**：
+   - 阅读器采用动态双播放器（Double Buffering）无缝预热交替机制，上一句语音播放至尾部空白期时，下一句音频已在后台完成请求并提前装配。
+   - **智能空章节跨越**：当听书推进至下一章（如插图、扉页等全图无文字章节）时，TTS 引擎会自动识别并立即递归预加载后续章节的文本，彻底避免传统阅读器遇到全图章节就卡死停顿的问题。
+
+3. **双向进度同步与记忆**：
+   - 视觉阅读进度与听书朗读进度独立记忆又协同工作。打开书籍时，系统会自动定位到最新的朗读句，并在用户滚动翻阅时支持随时点击任意句子即点即读。
+
+---
+
+## 💻 开发者与构建命令
+
+本项目根目录下提供了完善的自动化脚本：
+
+```bash
+# 1. 安装开发依赖
+npm install
+
+# 2. 启动本地开发网页服务 (默认端口 3000)
+npm start
+
+# 3. 编译单文件离线版 (生成 reader_offline.html 与 index.html)
+npm run build:offline
+
+# 4. 同步 Web 资源至 Android 原生工程
+npm run build:mobile
+
+# 5. 同步 Web 资源至 iOS 工程
+npm run build:ios
+
+# 6. 一键编译 iOS 免签 IPA 安装包 (需 macOS + Xcode)
+npm run build:ipa
+
+# 7. 一键自增小版本号并同步重新生成所有目标产物
+npm run bump
+
+# 8. 执行单元与回归测试
+npm test
 ```
 
 ---
 
-## 🚀 使用与构建方法
+## ⚠️ 常见问题与使用限制
 
-### 📦 方法 A：作为浏览器插件安装 (推荐)
-1. 下载本项目源码。
-2. 打开 Chrome 或 Edge 浏览器，进入 **“扩展程序”** 页面 (`chrome://extensions/`)。
-3. 开启右上角的 **“开发者模式”**。
-4. 点击 **“加载已解压的扩展程序”**，选择项目根目录。
-
-### 🌐 方法 B：本地 Node.js 网页版运行
-1. 安装依赖并启动本地服务器：
-   ```bash
-   npm install
-   npm start
-   ```
-2. 打开浏览器访问：`http://localhost:3000`。
-
-### 💾 方法 C：构建单文件离线版/静态部署
-1. 执行打包脚本：
-   ```bash
-   npm run build:offline
-   ```
-2. 打包完成后，会在根目录生成 `reader_offline.html` 和 `index.html`（双击 `reader_offline.html` 即可离线使用）。
-3. 静态文件 `index.html` 可以直接上传到 Vercel、GitHub Pages 等托管。
-
-### 📱 方法 D：构建 Android 原生 App
-1. 确保安装了 Android SDK 和 Gradle 环境。
-2. 运行构建脚本同步资产：
-   ```bash
-   npm run build:mobile
-   ```
-3. 使用 Android Studio 打开 `android/` 目录进行编译部署，或直接通过 Gradle 构建。
-
-### 🍎 方法 E：构建 iOS 原生 App / LiveContainer IPA
-1. 确保在 macOS 环境且安装了 Xcode 及 CocoaPods。
-2. 运行一键构建脚本生成 `.ipa` 安装包：
-   ```bash
-   npm run build:ipa
-   ```
-3. 构建完成后，根目录下会生成 `EdgeReader-iOS-LiveContainer.ipa`。
-4. **导入 LiveContainer**：
-   - 将生成的 `.ipa` 通过 AirDrop 或文件传输工具发送到 iPhone / iPad。
-   - 打开 iOS 设备上的 **LiveContainer**，点击右上角 `+` 号选择导入该 `.ipa`。
-   - 无需付费开发者账号，亦不占用 3 个免签侧载名额，点击即可启动阅读。
-5. **Xcode 直装（可选）**：
-   - 也可以通过 `npx cap open ios` 打开 Xcode，连接手机直接点击 Run 调试安装。
+1. **DRM 加密书籍**：本项目解析器为纯客户端前端解析，不支持带有商业 DRM 保护（如亚马逊 Kindle DRM、Adobe DRM）的加密文件，导入前请先解密为普通 EPUB/AZW3/TXT。
+2. **端侧本地大模型 (Gemini Nano)**：需使用 Chrome/Edge 128+ 开发版或金丝雀版，并在 `chrome://flags` 中开启相关实验特性（如 Prompt API），同时电脑需配备足够的显存和运行内存。
+3. **数据安全与备份**：所有数据均存放于您设备的本地 IndexedDB 中，没有任何外部服务器收集您的阅读记录。清理浏览器缓存或手机极度缺空间时，浏览器可能回收本地存储；**强烈建议定期在书架点击右上角“导出备份”保存 `.zip` 文件**。
 
 ---
 
-## ⚠️ 项目局限性
+## 📄 开源许可
 
-1. **DRM 版权限制**: 无法解析 DRM 加密保护的电子书（如 Amazon Kindle 保护格式、Adobe DRM），导入前需先解密。
-2. **本地 AI 硬件门槛**: 浏览器内置 Gemini Nano 需 Chrome/Edge 128+ 开发版并开启对应 Flags，且设备需有足够内存/显存运行模型。
-3. **TTS 限制**: 纯静态无代理服务器时直连微软 WebSocket。若微软修改校验规则可能导致失效。完全离线时会自动降级为本地 Web Speech 朗读。
-4. **数据安全**: 数据存于浏览器 IndexedDB。清理缓存或系统磁盘不足时可能会被浏览器回收，建议定期备份导出 `.zip` 文件。
-
----
-
-## 📂 项目结构
-
-```
-Edge-Reader/
-├── _locales/              # 国际化语言包 (支持中繁、中简、英文)
-├── android/               # Android 原生壳工程 (Capacitor)
-├── icons/                 # 插件及 PWA 图标
-├── reader/                # 阅读器核心源码
-│   ├── css/
-│   ├── libs/              # 第三方依赖库 (JSZip)
-│   ├── parsers/           # 电子书格式解析器 (EPUB, AZW3, TXT, CBZ)
-│   ├── ai.js              # 浏览器内置 Gemini Nano 与云端/本地大模型接口对接
-│   ├── i18n.js            # 多语言翻译模块
-│   ├── library.js         # 书库管理逻辑 (书库渲染、分类、导入导出)
-│   ├── reader.css         # 阅读器排版与主题样式
-│   ├── reader.html        # 主阅读界面 DOM
-│   ├── reader.js          # 阅读核心控制器 (翻页、滚动、事件监听)
-│   └── tts.js             # 微软 TTS 神经网络朗读引擎 (无缝双缓冲、断句)
-├── scratch/               # 构建与辅助脚本目录
-│   ├── build_dist.js      # 移动端/PWA 静态资源编译打包脚本
-│   └── compile_offline.js # 离线单文件打包脚本
-├── www/                   # 编译生成的 PWA/移动端静态资源目录
-├── capacitor.config.json  # Capacitor 跨平台配置文件
-├── manifest.json          # Chrome Extension Manifest V3 配置文件
-├── manifest.webmanifest   # PWA 配置文件
-├── sw.js                  # PWA Service Worker 缓存脚本
-├── service-worker.js      # 浏览器插件后台脚本 (Origin 修改规则)
-├── server.js              # 本地 Node.js 网页开发及 TTS 代理服务器
-├── index.html             # 编译生成的网页版主页 (同 reader_offline.html)
-├── reader_offline.html    # 离线单文件版 (双击即用)
-├── vercel.json            # Vercel 静态托管配置
-└── README.md              # 项目说明文档
-```
-
----
-
-## 📄 开源协议
-
-本项目采用 [ISC License](LICENSE) 许可协议开源。
+本项目采用 [ISC License](LICENSE) 许可协议开源发布。欢迎提交 Issue 与 Pull Request 共同改进！

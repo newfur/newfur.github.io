@@ -2,160 +2,226 @@
 
 Language: [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **English**
 
-[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android-blue)](javascript:;)
-[![License](https://img.shields.io/badge/license-ISC-green)](javascript:;)
+[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
+[![Version](https://img.shields.io/badge/version-3.3.26-orange)](javascript:;)
+[![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
-A modern, beautiful, powerful, and highly customizable e-book reader designed specifically for web pages and mobile devices. The project integrates multi-format parsers, high-quality Microsoft Edge cloud neural TTS (Text-to-Speech), a local/cloud AI reading assistant, and exquisite reading statistics. It supports four deployment forms: **Browser Extension**, **Local Web Service (PWA)**, **Single-File Offline Version**, and **Android Native App**.
+An immersive, high-performance, and deeply customizable cross-platform e-book reader crafted for modern web browsers and mobile devices. Engineered with a client-driven core and native bridge architecture, it integrates multi-format parsing, natural neural TTS powered by Microsoft Edge, on-device/cloud AI reading companions, dynamic mindmaps, and granular reading statistics.
 
----
-
-## 📖 Introduction
-
-This project aims to break the platform limitations of e-book reading, providing a premium, smooth cross-device reading and listening experience. Special technical breakthroughs have been made for the **Microsoft Edge Neural Voice**, allowing you to enjoy audiobook reading comparable to human narration in any mainstream Chromium browser and mobile device without installing complex clients.
+The project offers 5 tailored distribution formats: **Browser Extension**, **Single-File Offline Reader**, **Online Web / PWA**, **Android Native App**, and **iOS Native App (with LiveContainer permanent certificate-free sideloading)**, providing a seamless reading experience across desktop and mobile devices.
 
 ---
 
-## ✨ Core Features
+## 📱 Five Editions: Capabilities & Comparison
 
-1. **🗂️ Wide E-Book Formats Support**: Built-in lightweight pure JS parsing engines supporting **EPUB** (chapters, custom style, image alignment), **AZW3 / MOBI** (Kindle compatibility), **TXT / MD** (smart chaptering & markdown structure), **FB2**, and **CBZ** (comics waterfall/single page).
-2. **🎨 Personalization Typography**: Supports "simulate page turning" and "continuous scrolling"; built-in custom fonts (LXGW WenKai, Noto Serif, OpenDyslexic, etc.); 8 preset visual themes with paper texture overlays.
-3. **🎙️ High-Fidelity Neural TTS**: Direct connection to Edge cloud TTS with natural voices; dual-player preloading buffering to eliminate gap latency; iOS/Android mobile background/screen-locked keep-alive playback; smart splitting and footnote filtering.
-4. **🤖 Local/Cloud AI Assistant**: Seamlessly connects to browser built-in **Gemini Nano** API (100% local processing), as well as OpenAI, DeepSeek, Google Gemini API, SiliconFlow, and local Ollama/LM Studio. Supports one-click word translation/definition, chapter summary, and streaming offline translator.
-5. **📊 Deep Reading Statistics**: Tracking of total reading time, days read, daily logs, hourly distribution charts, and a calendar heatmap.
-6. **📁 Library Management & Backups**: Book category folder structure, batch moving/deletion; one-click export of a compressed backup zip (`.zip`) containing all books, progress, highlights, notes, and history logs.
-7. **📱 Mobile Platform Support**: Built using Ionic Capacitor, supporting compiled native Android APK package with adaptive app system icons.
+Choose the best form factor tailored to your workflow and device environment:
 
----
-
-## 🔄 Version History & Logs
-
-### 🚀 v3.2.x (Latest)
-* **Android Native UX & Unified Versioning (v3.2.0)**:
-  - Intercepted Android native back button (`onBackPressed` in MainActivity), allowing open panels/dialogs to close first, and returning to the bookshelf on back presses (instead of exiting the app immediately).
-  - Unified version reading by loading version numbers dynamically from `manifest.json`, eliminating hardcoded strings.
-  - Automatically navigates to the exact last read sentence on TTS playback when opening a book, rather than just scrolling visually.
-  - Improved mobile drag-to-import overlay, preventing flickering under multi-touch inputs.
-
-### 🎨 v3.1.x (High-Res Icons & TTS Saving)
-* **High-Res App Icons (v3.1.8)**: Redesigned with AI and cropped high-resolution system icons for all platforms (no numbers, clean vector aesthetics). Added native round and adaptive foreground/background icon layers for Android.
-* **TTS Progress Saving (v3.1.5)**: Fixed progress saving issue in background/lock screen due to browser timer throttle. Implemented immediate database sync on pause, visibility change (background), and window closing. Corrected chapter overflow edge cases.
-* **Tuning Highlights (v3.1.4)**: Sync offset fine-tuning and startup performance optimizations.
-
-### 📱 v3.0.0 (Native Mobile Support)
-* **Android Native Wrapper**: Introduced Capacitor wrapper, enabling seamless compilation into a native Android App.
-* **Statistics Bug Fix**: Solved the issue where restoring a backup duplicate-counted reading time on overlapping hours/days.
-
-### 🤖 v2.x.x (AI Assistant & RAG Search)
-* **Custom AI Providers**: Configurable profiles for OpenAI, DeepSeek, Gemini, SiliconFlow, Ollama, and LM Studio.
-* **Precision Context Extraction**: Precise context isolation at Global, Chapter, and visible Page level.
-* **Client-Side RAG Search Index**: Asynchronous TF-IDF indexing of imported books to inject relevant context snippets to AI prompts, reducing hallucinations.
-* **Mermaid Mindmaps**: Streamed generation of SVG mindmaps with pan, zoom, fit actions and database persistence.
+| Feature | 🧩 Browser Extension | 💾 Single-File Offline | 🌐 Online Web / PWA | 🤖 Android Native App | 🍎 iOS Native App |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Environment** | Chrome/Edge/Brave Desktop | Any modern browser | Web browser or PWA install | Android 8.0+ Phone/Tablet | iOS 13.0+ (iPhone/iPad) |
+| **Installation** | Unpacked extension in Dev mode | Double-click single HTML file | Visit URL / Add to Home Screen | Install APK package | LiveContainer / Sideload tools |
+| **Offline Reading** | Full offline support (TTS requires net) | Full offline support | Cached via Service Worker | Full offline support (TTS requires net) | Full offline support (TTS requires net) |
+| **Multi-Format Parsing** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ Full support | ✅ Full support | ✅ Full support | ✅ Full support |
+| **Edge Neural TTS** | ✅ Direct via MV3 header modification | ⚠️ Limited by browser CORS (local fallback) | ⚠️ Requires Node proxy / CORS setup | ✅ Native network bypass | ✅ Native network bypass |
+| **Background / Lockscreen TTS** | ❌ Active tab only | ❌ Frozen by mobile OS | ⚠️ Relies on silent keep-alive | ✅ Dedicated foreground service | ✅ AVAudioSession playback |
+| **Lockscreen Artwork & Metadata**| ❌ Not supported | ❌ Not supported | ⚠️ Limited MediaSession support | ✅ Full MediaSession notification | ✅ Native MPNowPlaying integration |
+| **AI Companion & Mindmap** | ✅ On-device Gemini Nano + Cloud | ✅ Supports custom Cloud/Ollama API | ✅ Full support | ✅ Recommended Cloud / Ollama | ✅ Recommended Cloud / Ollama |
+| **Storage & Privacy** | Isolated extension IndexedDB | Origin/file-scoped IndexedDB | Domain IndexedDB (Exportable) | Native sandbox IndexedDB | Native sandbox IndexedDB |
 
 ---
 
-## 🛠️ Architecture Design
+### 1. 🧩 Browser Extension (Chrome / Edge MV3)
+* **What it can do**:
+  - Complete reading typography, book parsing, bookshelf management, and reading analytics.
+  - Utilizes Manifest V3 `declarativeNetRequest` to rewrite headers on the fly, **bypassing Microsoft Edge cloud TTS CORS restrictions and Origin checks**, delivering natural human-like voice synthesis directly in the browser.
+  - Supports Chrome/Edge on-device **Gemini Nano** AI model for offline translation, definitions, and chapter summarization.
+* **What is missing / Limitations**:
+  - Limited to Chromium desktop browsers (Chrome, Edge, Brave, etc.). Mobile browsers generally do not support MV3 extensions.
+  - TTS playback terminates when the browser is closed.
+* **How to install**:
+  1. Download `Raconteur-Chrome-*.zip` from [Releases](https://github.com/newfur/newfur.github.io/releases) and extract it (or clone the source code).
+  2. Open `chrome://extensions/` or `edge://extensions/` in your browser.
+  3. Toggle **"Developer mode"** in the top-right corner.
+  4. Click **"Load unpacked"** and select the extracted directory.
 
-The project uses a pure client-driven architecture, saving all user data inside the browser's local **IndexedDB**. Depending on the environment, four distribution modes are implemented:
+---
+
+### 2. 💾 Single-File Offline Reader (HTML)
+* **What it can do**:
+  - **Zero dependencies, zero installation**: The entire reader is bundled into a single standalone `.html` file (~2.3MB). All JS engines, CSS themes, parsers (JSZip, etc.), mindmap renderers, and multilingual assets are inlined.
+  - Double-click to open in any modern browser on Windows, macOS, Linux, Android, or iOS.
+  - All books, reading progress, and highlights are stored securely in the browser's local IndexedDB.
+* **What is missing / Limitations**:
+  - **TTS CORS Constraints**: When opened directly under the `file:///` protocol, browsers enforce strict cross-origin policies, blocking direct WebSocket connections to Microsoft servers. In this mode, TTS automatically falls back to system voices (Web Speech API). You may configure an OpenAI-compatible custom TTS proxy or use the Extension/Native App for Edge voices.
+* **How to install / use**:
+  1. Download the latest `Raconteur-Offline-*.html` from [Releases](https://github.com/newfur/newfur.github.io/releases).
+  2. Double-click to open in Chrome, Edge, Safari, or Firefox. Press `Ctrl+D` (or `Cmd+D`) to bookmark for instant future access.
+
+---
+
+### 3. 🌐 Online Web / PWA (Web Server & Progressive Web App)
+* **What it can do**:
+  - Instant access via any web URL across desktop and mobile devices.
+  - **Full PWA Experience**: Installable as a standalone app with no browser address bar, seamless full-screen layout, and Service Worker offline caching.
+  - In local Node.js mode (`npm start`), an integrated WebSocket proxy relays Edge TTS traffic without CORS limitations.
+* **What is missing / Limitations**:
+  - When hosted on public static hosts (e.g. GitHub Pages / Vercel), direct connection to Edge TTS may be blocked by strict mobile browser CORS policies.
+  - When mobile devices enter sleep mode or lock screen, mobile Safari/Chrome may freeze background JavaScript execution after several minutes.
+* **How to install / use**:
+  - **Online**: Visit the deployed URL (e.g., GitHub Pages).
+  - **PWA Installation**: In desktop Chrome/Edge, click the "Install" icon in the address bar; on iOS Safari, tap "Share" -> **"Add to Home Screen"**.
+  - **Self-Hosted Node Server**:
+    ```bash
+    git clone https://github.com/newfur/newfur.github.io.git
+    cd newfur.github.io
+    npm install
+    npm start
+    # Access http://localhost:3000
+    ```
+
+---
+
+### 4. 🤖 Android Native App (APK)
+* **What it can do**:
+  - Lightweight Android application built with Ionic Capacitor (~15MB APK).
+  - **True Foreground Audio Service (`AudioPlayerService`)**: Runs a persistent foreground service with WakeLock/WifiLock, ensuring uninterrupted TTS playback when navigating apps, in background, or with screen locked.
+  - **System Lockscreen & Notification Media Controls**: Full Android `MediaSession` integration. Lockscreen and notification center display **the current sentence, book title, author, and dynamically generated 512px compressed book cover**, with native Previous, Next, and Play/Pause controls.
+  - **Native Back Button Interception**: Pressing the Android back button closes modals and dialogs first, and returns to the bookshelf from the reading view, preventing accidental app exit.
+  - Native network stack bypasses browser CORS for unhindered Edge neural voices.
+* **What is missing / Limitations**:
+  - Sourced outside Google Play Store; requires enabling "Install unknown apps" permission on your device.
+* **How to install**:
+  1. Download `Raconteur-*.apk` from [Releases](https://github.com/newfur/newfur.github.io/releases).
+  2. Open the APK on your Android device and confirm installation.
+
+---
+
+### 5. 🍎 iOS Native App (IPA / LiveContainer)
+* **What it can do**:
+  - Built with Capacitor and Swift, weighing only **2.25MB** — extremely fast and lightweight.
+  - **Crafted for LiveContainer (Certificate-Free Sideloading)**: Run permanently without a paid Apple Developer Account and without consuming 7-day 3-app free developer certificate quotas. Also compatible with TrollStore, AltStore, SideStore, and Scarlet.
+  - **Lockscreen Audio Controls & Background Playback**: Integrated with iOS `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` under `AVAudioSession (.playback)`. Lockscreen showcases **the active sentence text, book title, author, and dynamic 512px compressed book cover**, supporting lockscreen skipping and Dynamic Island status.
+  - Fully adaptive to iPhone notch, Dynamic Island, and iPad layouts with safe-area handling.
+* **What is missing / Limitations**:
+  - Not available on the official App Store; requires sideloading tools.
+* **How to install**:
+  - **Recommended: LiveContainer (Permanent & No Expiration)**:
+    1. Download `EdgeReader-*.ipa` from [Releases](https://github.com/newfur/newfur.github.io/releases).
+    2. Open **LiveContainer** on your iOS device.
+    3. Tap `+` in the top-right corner and select `EdgeReader-*.ipa` to import.
+    4. Tap the imported app to launch. Never expires!
+  - **Method 2: Sideloading Tools (AltStore / SideStore / TrollStore)**:
+    - Sign and install the `.ipa` file using your preferred sideloading utility.
+  - **Method 3: Build via Xcode**:
+    - On macOS, run `npm run build:ipa` or execute `npx cap open ios` to build and deploy to a connected device via Xcode.
+
+---
+
+## 🛠️ Architecture & Technical Design
+
+The project employs a **pure client-side core engine + lightweight native bridge** architecture:
 
 ```
-                               ┌────────────────────────┐
-                               │    Core Application    │
-                               │ (i18n, Parsers, Engine)│
-                               └───────────┬────────────┘
-                                           │
-         ┌─────────────────────────┬───────┴─────────┬─────────────────────────┐
-         ▼                         ▼                 ▼                         ▼
-   ┌───────────┐             ┌───────────┐     ┌───────────┐             ┌───────────┐
-   │ Extension │             │Web Server │     │Standalone │             │Android App│
-   │ (MV3)     │             │(Node+PWA) │     │(SingleHTML│             │(Capacitor)│
-   └─────┬─────┘             └─────┬─────┘     └─────┬─────┘             └─────┬─────┘
-         │                         │                 │                         │
- declarativeNetRequest         WebSockets      IndexedDB+base64         Capacitor Plugins
- Modify request headers        Node server proxy Data URL bypasses       Native API / Filesystem
- to bypass Bing CORS           TTS traffic       local file:// limits    Sandbox Local Storage
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Edge Reader System Architecture                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                  ┌─────────────────────────────────────────┐
+                  │        UI Typography & Presentation     │
+                  │   reader.html / reader.css / i18n.js    │
+                  │(Paginated/Scrolling/Themes/Fonts/Select)│
+                  └────────────────────┬────────────────────┘
+                                       │
+                  ┌────────────────────┴────────────────────┐
+                  │          Core Reader Controller         │
+                  │               reader.js                 │
+                  └─────────┬──────────┬──────────┬─────────┘
+                            │          │          │
+   ┌────────────────────────┘          │          └─────────────────────────┐
+   ▼                                   ▼                                    ▼
+┌─────────────────────────┐ ┌─────────────────────────┐ ┌─────────────────────────┐
+│   Multi-Format Parsers  │ │    TTS Speech Engine    │ │   AI Companion & RAG    │
+│    parsers/ (Pure JS)   │ │          tts.js         │ │         ai.js           │
+├─────────────────────────┤ ├─────────────────────────┤ ├─────────────────────────┤
+│ • EPUB (EPUB 2/3 spec)  │ │ • Edge WebSocket Neural │ │ • Built-in Gemini Nano  │
+│ • AZW3 / MOBI (Kindle)  │ │ • Dual-Player Buffering │ │ • Cloud API (OpenAI/Deep│
+│ • TXT / Markdown (Splits│ │ • Smart sentence parser │ │ • Local Ollama/LM Studio│
+│ • CBZ (Comic waterfall)│ │ • Global 512px cover opt│ │ • Async TF-IDF Indexing │
+│ • FB2 (FictionBook)     │ │ • Seamless empty chapter│ │ • Mermaid Mindmap stream│
+└─────────────────────────┘ └─────────────────────────┘ └─────────────────────────┘
+                                       │
+                  ┌────────────────────┴────────────────────┐
+                  │           Data Persistence Layer        │
+                  │             library.js                  │
+                  │   IndexedDB (Books, Progress, Notes)    │
+                  │   Backup Engine (ZIP import/export)     │
+                  └────────────────────┬────────────────────┘
+                                       │
+     ┌─────────────────────────────────┴─────────────────────────────────┐
+     ▼                                                                   ▼
+┌───────────────────────────────────────┐ ┌───────────────────────────────────────┐
+│        Web & Extension Runtime        │ │       Native Mobile Bridge (Capacitor)│
+├───────────────────────────────────────┤ ├───────────────────────────────────────┤
+│ • Chrome MV3 declarativeNetRequest    │ │ • NativeTTS Plugin                    │
+│ • Service Worker (Offline PWA Cache)  │ │ • Android: AudioPlayerService         │
+│ • Single-File Inline Compiler         │ │ • iOS: AVAudioSession + MPNowPlaying  │
+│ • Node.js Dev & WS Proxy Server       │ │ • SafeArea & Back Button Handlers     │
+└───────────────────────────────────────┘ └───────────────────────────────────────┘
+```
+
+### Key Subsystems & Workflows
+
+1. **Global Compressed Cover Mechanism (`compressCoverImage`)**:
+   - Original book covers frequently range from 3MB to 10MB in raw size. Passing high-resolution images repeatedly across JS bridges introduces IPC latency, memory pressure, and dropped lockscreen updates.
+   - **Solution**: Upon opening a book, a Canvas pipeline proportionally scales down and compresses the cover into a compact 512×512 JPEG DataURL (~20KB–40KB). This compressed thumbnail is cached globally and shared instantly across Web MediaSession, Android MediaSession, and iOS MPNowPlayingInfoCenter without memory spikes.
+
+2. **Seamless Cross-Chapter Audio Pipeline**:
+   - Features double-buffered audio playback: while the current sentence finishes its trailing silence, the next sentence is pre-fetched and pre-warmed in the background player.
+   - **Empty Chapter Skip**: When advancing to a chapter containing only illustrations or blank title pages, the TTS engine automatically recurses and pre-fetches the subsequent text chapter, preventing audio stalls.
+
+3. **Dual Progress Tracking**:
+   - Visual reading position and audio narration position are tracked independently yet synced. Opening a book restores the exact sentence position of the last TTS session, while tapping any sentence during visual reading starts playback from that exact point.
+
+---
+
+## 💻 Development & Build Scripts
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Launch local dev server (default: port 3000)
+npm start
+
+# 3. Compile standalone offline reader (outputs reader_offline.html & index.html)
+npm run build:offline
+
+# 4. Sync web assets to Android project
+npm run build:mobile
+
+# 5. Sync web assets to iOS project
+npm run build:ios
+
+# 6. Build iOS unsigned IPA for LiveContainer (macOS + Xcode required)
+npm run build:ipa
+
+# 7. Bump patch version and recompile all target assets
+npm run bump
+
+# 8. Run unit & regression tests
+npm test
 ```
 
 ---
 
-## 🚀 How to Run & Build
+## ⚠️ Notes & Limitations
 
-### 📦 Method A: Install as a Browser Extension (Recommended)
-1. Download this repository.
-2. Open Chrome or Edge and navigate to **Extensions** (`chrome://extensions/`).
-3. Toggle on **Developer Mode** (top-right).
-4. Click **Load unpacked** and select the root directory of the project.
-
-### 🌐 Method B: Local Node.js Web Server
-1. Install dependencies and start the developer server:
-   ```bash
-   npm install
-   npm start
-   ```
-2. Open your browser to `http://localhost:3000`.
-
-### 💾 Method C: Build Standalone Offline HTML
-1. Run the compilation script:
-   ```bash
-   npm run build:offline
-   ```
-2. Two files will be output to the root directory: `reader_offline.html` and `index.html` (double-click `reader_offline.html` to run offline immediately).
-3. `index.html` can be uploaded directly to static hosting sites (Vercel, GitHub Pages, etc.).
-
-### 📱 Method D: Build Android Native App
-1. Ensure Android SDK and Gradle are installed.
-2. Build mobile assets and sync:
-   ```bash
-   npm run build:mobile
-   ```
-3. Open the `android/` directory in Android Studio to build the APK, or run gradle assembly tasks.
-
----
-
-## ⚠️ Limitations & Disclaimers
-
-1. **DRM Encryption**: Cannot parse DRM-encrypted files (such as Adobe DRM or protected Kindle files). Books must be decrypted before import.
-2. **Local AI Hardware Requirements**: Built-in Gemini Nano requires Chrome/Edge 128+ Dev/Canary with correct flags enabled. Sufficient memory and GPU are required to run the local model.
-3. **TTS Server Availability**: Direct connection to Bing TTS endpoints requires active internet connection. If Microsoft changes its authentication protocol, direct connections might temporarily fail until updated. If fully offline, the engine falls back to standard Web Speech API.
-4. **IndexedDB Storage Security**: Data is saved locally in IndexedDB. Clearing browser data or running out of disk space might cause the browser to reclaim space. Regular backups are strongly recommended.
-
----
-
-## 📂 Project Structure
-
-```
-Edge-Reader/
-├── _locales/              # i18n language bundles (EN, ZH-TW, ZH-CN)
-├── android/               # Android native project (Capacitor)
-├── icons/                 # Extension & PWA icons
-├── reader/                # Core reader source code
-│   ├── css/
-│   ├── libs/              # Third-party dependency (JSZip)
-│   ├── parsers/           # Book parsers (EPUB, AZW3, TXT, CBZ)
-│   ├── ai.js              # Prompt API & Custom LLM wrapper
-│   ├── i18n.js            # Translator modules
-│   ├── library.js         # Library layout & IndexedDB interactions
-│   ├── reader.css         # Visual styles and themes
-│   ├── reader.html        # Main reader viewport DOM
-│   ├── reader.js          # Navigation, settings, and event loops
-│   └── tts.js             # High-quality Edge TTS wrapper
-├── scratch/               # Developer script utility directory
-│   ├── build_dist.js      # Web asset bundler script for mobile/PWA
-│   └── compile_offline.js # Single-file offline bundler script
-├── www/                   # Compiled PWA/mobile web assets output directory
-├── capacitor.config.json  # Capacitor configuration
-├── manifest.json          # Chrome Extension V3 manifest config
-├── manifest.webmanifest   # PWA manifest
-├── sw.js                  # PWA service worker caching
-├── service-worker.js      # Extension background script (Origin headers modifier)
-├── server.js              # Local Node.js server and API proxy
-├── index.html             # Built web reader page (identical to reader_offline.html)
-├── reader_offline.html    # Standalone offline page (double-click to use)
-├── vercel.json            # Vercel static routing config
-└── README.md              # Project documentation
-```
+1. **DRM Protected Books**: The parser is purely client-side and does not decrypt commercial DRM (Amazon Kindle DRM, Adobe DRM). Remove protection prior to importing.
+2. **On-Device Gemini Nano**: Requires Chrome/Edge 128+ Dev/Canary with experimental Prompt API flags enabled and adequate system VRAM/RAM.
+3. **Data Backup**: All data is stored locally in your browser/device's IndexedDB. Browsers may evict storage under extreme disk pressure. **Export regular `.zip` backups from the Bookshelf menu.**
 
 ---
 
 ## 📄 License
 
-This project is open-source and licensed under the [ISC License](LICENSE).
+Open-sourced under the [ISC License](LICENSE). Contributions, issues, and pull requests are welcome!
