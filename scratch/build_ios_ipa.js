@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 
 const rootDir = path.join(__dirname, '..');
 const buildDir = path.join(rootDir, 'ios', 'build');
-const outputIpaPath = path.join(rootDir, 'EdgeReader-iOS-LiveContainer.ipa');
+const outputIpaPath = path.join(rootDir, 'EdgeReader-iOS.ipa');
 
 console.log('=== Step 1: Building distribution web assets ===');
 execSync('node scratch/build_dist.js', { cwd: rootDir, stdio: 'inherit' });

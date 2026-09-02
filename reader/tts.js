@@ -134,6 +134,7 @@ export class TTSEngine {
     this.clockSkew = 0; // 用於與服務器同步時間，以產生正確的 Sec-MS-GEC Token
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
     this.playbackStartSessionIndex = null;
+    this.voiceSessionId = 0;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -197,6 +198,7 @@ export class TTSEngine {
       this.ttsModel = model;
     }
     if (voiceChanged) {
+      this.voiceSessionId++;
       this._initVoices();
     }
   }
@@ -1324,15 +1326,23 @@ export class TTSEngine {
     const isGroupPhase = (typeof this.playbackStartSessionIndex === 'number') && 
                          (index >= this.playbackStartSessionIndex + 10);
 
+    const currentVoiceSessionId = this.voiceSessionId;
+
     if (!isGroupPhase) {
       // 1. 單句獲取階段
       this.fetchingIndices.add(index);
       const sentence = this.sentences[index];
       
       this._downloadSentenceAudio(sentence).then(blob => {
+        if (this.voiceSessionId !== currentVoiceSessionId) {
+          return;
+        }
         this.consecutiveWsFailures = 0;
         this._saveToCache(index, blob);
       }).catch(err => {
+        if (this.voiceSessionId !== currentVoiceSessionId) {
+          return;
+        }
         console.error(`Failed to prefetch sentence ${index} (attempt ${retryCount + 1}):`, err);
         this.fetchingIndices.delete(index);
         
@@ -1433,9 +1443,15 @@ export class TTSEngine {
       };
       
       this._downloadSentenceAudio(virtualSentence).then(blob => {
+        if (this.voiceSessionId !== currentVoiceSessionId) {
+          return;
+        }
         this.consecutiveWsFailures = 0;
         this._saveGroupToCache(groupStartIndex, groupSentences, blob);
       }).catch(err => {
+        if (this.voiceSessionId !== currentVoiceSessionId) {
+          return;
+        }
         console.error(`Failed to prefetch group starting at ${groupStartIndex}:`, err);
         this.fetchingIndices.delete(groupStartIndex);
         
@@ -2533,6 +2549,7 @@ export class TTSEngine {
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
+      this.voiceSessionId++;
     }
 
     if (this.isPlaying) {
