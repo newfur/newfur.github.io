@@ -7,6 +7,7 @@ scratch/*
 !scratch/compile_offline.js
 !scratch/build_dist.js
 !scratch/build_ios_ipa.js
+!scratch/bump_version.js
 !scratch/test_tts_review_fixes.js
 www/
 ios/build/

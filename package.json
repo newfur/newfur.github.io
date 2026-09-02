@@ -1,6 +1,6 @@
 {
   "name": "raconteur-reader",
-  "version": "3.3.12",
+  "version": "3.3.13",
   "description": "",
   "main": "service-worker.js",
   "scripts": {
@@ -10,6 +10,7 @@
     "build:mobile": "node scratch/build_dist.js && npx cap sync android",
     "build:ios": "node scratch/build_dist.js && npx cap sync ios",
     "build:ipa": "node scratch/build_ios_ipa.js",
+    "bump": "node scratch/bump_version.js",
     "test": "node scratch/test_tts_review_fixes.js"
   },
   "keywords": [],
