@@ -9803,7 +9803,7 @@ function dataURLtoBlob(dataurl) {
 }
 
 // 打開備份對話框
-function openBackupDialog() {
+async function openBackupDialog() {
   const backupDialog = document.getElementById('backup-dialog');
   if (!backupDialog) {
     handleExportBackup('full');
@@ -9819,15 +9819,65 @@ function openBackupDialog() {
   if (completeView) completeView.style.display = 'none';
   if (errorView) errorView.style.display = 'none';
 
-  // 默認選中完整備份
   const fullRadio = document.querySelector('input[name="backup-mode-option"][value="full"]');
-  if (fullRadio) {
-    fullRadio.checked = true;
-    const fullLabel = document.getElementById('backup-mode-full-label');
-    const lightLabel = document.getElementById('backup-mode-light-label');
+  const lightRadio = document.querySelector('input[name="backup-mode-option"][value="lightweight"]');
+  const fullLabel = document.getElementById('backup-mode-full-label');
+  const lightLabel = document.getElementById('backup-mode-light-label');
+
+  // iOS Safari 大書庫檢測：自動鎖定輕量備份，禁用完整備份
+  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+  const IOS_SAFE_LIMIT = 150 * 1024 * 1024; // 150MB
+
+  let forceLight = false;
+  if (isIOSSafari && !isCapacitor) {
+    try {
+      const books = await library.getAllBooks();
+      let totalSize = 0;
+      for (const book of books) {
+        if (book.file instanceof Blob) totalSize += book.file.size;
+      }
+      if (totalSize > IOS_SAFE_LIMIT) {
+        forceLight = true;
+        console.warn(`[Backup] iOS Safari: library ${(totalSize / 1024 / 1024).toFixed(0)}MB > ${IOS_SAFE_LIMIT / 1024 / 1024}MB limit, disabling full backup`);
+      }
+    } catch (e) {
+      console.warn('[Backup] Failed to estimate library size:', e);
+    }
+  }
+
+  if (forceLight) {
+    // 強制選中輕量備份，禁用完整備份選項
+    if (lightRadio) lightRadio.checked = true;
+    if (fullRadio) fullRadio.disabled = true;
+    if (fullLabel) {
+      fullLabel.style.borderColor = 'var(--border-color)';
+      fullLabel.style.background = 'var(--bg-surface, rgba(255,255,255,0.04))';
+      fullLabel.style.opacity = '0.4';
+      fullLabel.style.pointerEvents = 'none';
+    }
+    if (lightLabel) {
+      lightLabel.style.borderColor = 'var(--primary-color)';
+      lightLabel.style.background = 'rgba(10, 132, 255, 0.08)';
+    }
+    // 在提示區域顯示警告
+    const hintEl = optionsView ? optionsView.querySelector('[data-i18n="backup_choose_mode_hint"]') : null;
+    if (hintEl) {
+      hintEl.innerHTML = `⚠️ <b>您的书库体积较大，iOS 网页端无法执行完整备份</b>（系统内存限制）。<br><br>` +
+        `请使用下方【轻量数据备份】保存您的阅读进度、笔记、书签与 AI 记录。<br>` +
+        `如需备份电子书源文件，请使用 <b>iOS 原生 App 版</b>或<b>电脑浏览器</b>。`;
+    }
+  } else {
+    // 正常模式：默認選中完整備份
+    if (fullRadio) {
+      fullRadio.checked = true;
+      fullRadio.disabled = false;
+    }
     if (fullLabel) {
       fullLabel.style.borderColor = 'var(--primary-color)';
       fullLabel.style.background = 'rgba(10, 132, 255, 0.08)';
+      fullLabel.style.opacity = '1';
+      fullLabel.style.pointerEvents = 'auto';
     }
     if (lightLabel) {
       lightLabel.style.borderColor = 'var(--border-color)';
@@ -9838,7 +9888,7 @@ function openBackupDialog() {
   try {
     if (!backupDialog.open) backupDialog.showModal();
   } catch (e) {
-    handleExportBackup('full');
+    handleExportBackup(forceLight ? 'lightweight' : 'full');
   }
 }
 
@@ -10117,30 +10167,6 @@ async function handleExportBackup(backupMode = 'full') {
         if (!backupDialogEl.open) backupDialogEl.showModal();
       } catch (dialogErr) {
         console.warn('Failed to open backup dialog:', dialogErr);
-      }
-    }
-
-    // iOS Safari 預飛檢查：估算書庫總體積，超過安全閾值時強制切換為輕量備份
-    if (isIOSSafari && !isLightweight) {
-      let estimatedSize = 0;
-      for (const book of books) {
-        if (book.file instanceof Blob) estimatedSize += book.file.size;
-      }
-      const IOS_SAFE_LIMIT = 150 * 1024 * 1024; // 150MB — iOS Jetsam 安全閾值
-      if (estimatedSize > IOS_SAFE_LIMIT) {
-        console.warn(`[Backup] iOS Safari: estimated ${(estimatedSize / 1024 / 1024).toFixed(0)}MB exceeds safe limit, forcing lightweight mode`);
-        const forceConfirm = confirm(
-          `您的书库约 ${(estimatedSize / 1024 / 1024).toFixed(0)}MB，在 iOS 网页端执行完整备份可能导致内存不足闪退。\n\n` +
-          `建议切换为【轻量数据备份】（保留全部进度、笔记、书签，仅不含电子书源文件）。\n\n` +
-          `点击「确定」切换为轻量备份，点击「取消」强制尝试完整备份（可能闪退）。`
-        );
-        if (forceConfirm) {
-          if (backupDialogEl && backupDialogEl.open) backupDialogEl.close();
-          backupBtn.disabled = false;
-          backupBtn.innerHTML = originalHtml;
-          return handleExportBackup('lightweight');
-        }
-        localStorage.setItem('backup_debug', 'force_full_backup_ios');
       }
     }
 
