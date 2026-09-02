@@ -8,7 +8,7 @@ Language: [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **Englis
 
 An immersive, high-performance, and deeply customizable cross-platform e-book reader crafted for modern web browsers and mobile devices. Engineered with a client-driven core and native bridge architecture, it integrates multi-format parsing, natural neural TTS powered by Microsoft Edge, on-device/cloud AI reading companions, dynamic mindmaps, and granular reading statistics.
 
-The project offers 5 tailored distribution formats: **Browser Extension**, **Single-File Offline Reader**, **Online Web / PWA**, **Android Native App**, and **iOS Native App (with LiveContainer permanent certificate-free sideloading)**, providing a seamless reading experience across desktop and mobile devices.
+The project offers 5 tailored distribution formats: **Browser Extension**, **Single-File Offline Reader**, **Online Web / PWA**, **Android Native App**, and **iOS Native App**, providing a seamless reading experience across desktop and mobile devices.
 
 ---
 
@@ -19,12 +19,12 @@ Choose the best form factor tailored to your workflow and device environment:
 | Feature | 🧩 Browser Extension | 💾 Single-File Offline | 🌐 Online Web / PWA | 🤖 Android Native App | 🍎 iOS Native App |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Environment** | Chrome/Edge/Brave Desktop | Any modern browser | Web browser or PWA install | Android 8.0+ Phone/Tablet | iOS 13.0+ (iPhone/iPad) |
-| **Installation** | Unpacked extension in Dev mode | Double-click single HTML file | Visit URL / Add to Home Screen | Install APK package | LiveContainer / Sideload tools |
-| **Offline Reading** | Full offline support (TTS requires net) | Full offline support | Cached via Service Worker | Full offline support (TTS requires net) | Full offline support (TTS requires net) |
+| **Installation** | Unpacked extension in Dev mode | Double-click single HTML file | Visit URL / Add to Home Screen | Install APK package | Install via Sideloadly |
+| **Offline Reading** | Full offline support (TTS requires net) | Full offline support (TTS requires net)| Cached via Service Worker | Full offline support (TTS requires net) | Full offline support (TTS requires net) |
 | **Multi-Format Parsing** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ Full support | ✅ Full support | ✅ Full support | ✅ Full support |
-| **Edge Neural TTS** | ✅ Direct via MV3 header modification | ⚠️ Limited by browser CORS (local fallback) | ⚠️ Requires Node proxy / CORS setup | ✅ Native network bypass | ✅ Native network bypass |
+| **Edge Neural TTS** | ✅ Direct via MV3 header modification | ✅ Direct via native WebSocket | ⚠️ Supported only in local Node mode; Public static hosts fall back to Web Speech | ✅ Native network stack | ✅ Native network stack |
 | **Background / Lockscreen TTS** | ❌ Active tab only | ❌ Frozen by mobile OS | ⚠️ Relies on silent keep-alive | ✅ Dedicated foreground service | ✅ AVAudioSession playback |
-| **Lockscreen Artwork & Metadata**| ❌ Not supported | ❌ Not supported | ⚠️ Limited MediaSession support | ✅ Full MediaSession notification | ✅ Native MPNowPlaying integration |
+| **Lockscreen Artwork & Controls**| ❌ Not supported | ❌ Not supported | ⚠️ Limited MediaSession support | ✅ Full MediaSession notification | ✅ Native MPNowPlaying integration |
 | **AI Companion & Mindmap** | ✅ On-device Gemini Nano + Cloud | ✅ Supports custom Cloud/Ollama API | ✅ Full support | ✅ Recommended Cloud / Ollama | ✅ Recommended Cloud / Ollama |
 | **Storage & Privacy** | Isolated extension IndexedDB | Origin/file-scoped IndexedDB | Domain IndexedDB (Exportable) | Native sandbox IndexedDB | Native sandbox IndexedDB |
 
@@ -49,10 +49,11 @@ Choose the best form factor tailored to your workflow and device environment:
 ### 2. 💾 Single-File Offline Reader (HTML)
 * **What it can do**:
   - **Zero dependencies, zero installation**: The entire reader is bundled into a single standalone `.html` file (~2.3MB). All JS engines, CSS themes, parsers (JSZip, etc.), mindmap renderers, and multilingual assets are inlined.
+  - **Direct Edge Neural TTS Support**: When opened locally under the `file:///` protocol, the reader connects directly to Microsoft's official voice service via WebSocket (`wss://speech.platform.bing.com/...`) combined with dynamic `Sec-MS-GEC` authentication tokens. **It is completely free from standard HTTP CORS restrictions and plays high-quality Microsoft Edge neural voices smoothly**! Automatically falls back to system voices (Web Speech API) if completely offline.
   - Double-click to open in any modern browser on Windows, macOS, Linux, Android, or iOS.
   - All books, reading progress, and highlights are stored securely in the browser's local IndexedDB.
 * **What is missing / Limitations**:
-  - **TTS CORS Constraints**: When opened directly under the `file:///` protocol, browsers enforce strict cross-origin policies, blocking direct WebSocket connections to Microsoft servers. In this mode, TTS automatically falls back to system voices (Web Speech API). You may configure an OpenAI-compatible custom TTS proxy or use the Extension/Native App for Edge voices.
+  - On mobile browsers, JavaScript execution is often suspended when entering the background or locking the screen; lacks native lock screen media controls.
 * **How to install / use**:
   1. Download the latest `Raconteur-Offline-*.html` from [Releases](https://github.com/newfur/newfur.github.io/releases).
   2. Double-click to open in Chrome, Edge, Safari, or Firefox. Press `Ctrl+D` (or `Cmd+D`) to bookmark for instant future access.
@@ -63,14 +64,15 @@ Choose the best form factor tailored to your workflow and device environment:
 * **What it can do**:
   - Instant access via any web URL across desktop and mobile devices.
   - **Full PWA Experience**: Installable as a standalone app with no browser address bar, seamless full-screen layout, and Service Worker offline caching.
-  - In local Node.js mode (`npm start`), an integrated WebSocket proxy relays Edge TTS traffic without CORS limitations.
+  - Complete bookshelf, reader typography, notes/highlights, and AI features.
+  - **Self-Hosted Local Node.js Mode** (`npm start`): Includes an integrated WebSocket `/api/tts` proxy that relays Edge TTS traffic without CORS limitations.
 * **What is missing / Limitations**:
-  - When hosted on public static hosts (e.g. GitHub Pages / Vercel), direct connection to Edge TTS may be blocked by strict mobile browser CORS policies.
-  - When mobile devices enter sleep mode or lock screen, mobile Safari/Chrome may freeze background JavaScript execution after several minutes.
+  - **Edge TTS is unavailable on public static hosting**: Static website hosting platforms (e.g. GitHub Pages, Vercel) have no backend server to run the `/api/tts` proxy. Furthermore, public HTTP/HTTPS web origins are restricted by browser cross-origin policies and cannot forge headers to connect directly to Microsoft servers. Consequently, **Edge TTS cannot play directly on public static web/PWA deployments** (it automatically falls back to browser default Web Speech synthesis).
+  - To experience Edge voices on the web, we recommend: ① Using the **Single-File Offline Reader** locally; ② Installing the **Browser Extension**; or ③ Running the Node.js server locally (`npm start`).
 * **How to install / use**:
-  - **Online**: Visit the deployed URL (e.g., GitHub Pages).
+  - **Online**: Visit the deployed URL.
   - **PWA Installation**: In desktop Chrome/Edge, click the "Install" icon in the address bar; on iOS Safari, tap "Share" -> **"Add to Home Screen"**.
-  - **Self-Hosted Node Server**:
+  - **Self-Hosted Node Server (with full Edge TTS)**:
     ```bash
     git clone https://github.com/newfur/newfur.github.io.git
     cd newfur.github.io
@@ -84,10 +86,10 @@ Choose the best form factor tailored to your workflow and device environment:
 ### 4. 🤖 Android Native App (APK)
 * **What it can do**:
   - Lightweight Android application built with Ionic Capacitor (~15MB APK).
+  - Native network stack connects directly to Microsoft Edge cloud service without browser CORS barriers.
   - **True Foreground Audio Service (`AudioPlayerService`)**: Runs a persistent foreground service with WakeLock/WifiLock, ensuring uninterrupted TTS playback when navigating apps, in background, or with screen locked.
   - **System Lockscreen & Notification Media Controls**: Full Android `MediaSession` integration. Lockscreen and notification center display **the current sentence, book title, author, and dynamically generated 512px compressed book cover**, with native Previous, Next, and Play/Pause controls.
   - **Native Back Button Interception**: Pressing the Android back button closes modals and dialogs first, and returns to the bookshelf from the reading view, preventing accidental app exit.
-  - Native network stack bypasses browser CORS for unhindered Edge neural voices.
 * **What is missing / Limitations**:
   - Sourced outside Google Play Store; requires enabling "Install unknown apps" permission on your device.
 * **How to install**:
@@ -96,24 +98,25 @@ Choose the best form factor tailored to your workflow and device environment:
 
 ---
 
-### 5. 🍎 iOS Native App (IPA / LiveContainer)
+### 5. 🍎 iOS Native App (IPA)
 * **What it can do**:
   - Built with Capacitor and Swift, weighing only **2.25MB** — extremely fast and lightweight.
-  - **Crafted for LiveContainer (Certificate-Free Sideloading)**: Run permanently without a paid Apple Developer Account and without consuming 7-day 3-app free developer certificate quotas. Also compatible with TrollStore, AltStore, SideStore, and Scarlet.
+  - Native network stack connects directly to Microsoft Edge TTS for pristine voice synthesis.
   - **Lockscreen Audio Controls & Background Playback**: Integrated with iOS `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` under `AVAudioSession (.playback)`. Lockscreen showcases **the active sentence text, book title, author, and dynamic 512px compressed book cover**, supporting lockscreen skipping and Dynamic Island status.
   - Fully adaptive to iPhone notch, Dynamic Island, and iPad layouts with safe-area handling.
 * **What is missing / Limitations**:
   - Not available on the official App Store; requires sideloading tools.
 * **How to install**:
-  - **Recommended: LiveContainer (Permanent & No Expiration)**:
-    1. Download `EdgeReader-*.ipa` from [Releases](https://github.com/newfur/newfur.github.io/releases).
-    2. Open **LiveContainer** on your iOS device.
-    3. Tap `+` in the top-right corner and select `EdgeReader-*.ipa` to import.
-    4. Tap the imported app to launch. Never expires!
-  - **Method 2: Sideloading Tools (AltStore / SideStore / TrollStore)**:
-    - Sign and install the `.ipa` file using your preferred sideloading utility.
-  - **Method 3: Build via Xcode**:
-    - On macOS, run `npm run build:ipa` or execute `npx cap open ios` to build and deploy to a connected device via Xcode.
+  - **Recommended: Sideloadly**:
+    1. Download and launch [Sideloadly](https://sideloadly.io/) on your PC or Mac;
+    2. Download the latest `EdgeReader-*.ipa` from [Releases](https://github.com/newfur/newfur.github.io/releases);
+    3. Drag and drop the `.ipa` into the Sideloadly window;
+    4. Enter your Apple ID;
+    5. Connect your iPhone / iPad via USB and click **Start** to sign and install;
+    6. On your iOS device, go to **Settings** -> **General** -> **VPN & Device Management** and trust the Apple ID certificate before launching.
+  - **Alternative Sideloading Tools**:
+    - Compatible with AltStore, SideStore, and TrollStore;
+    - Or build and install directly onto a connected device via Xcode on macOS.
 
 ---
 
@@ -190,7 +193,7 @@ The project employs a **pure client-side core engine + lightweight native bridge
 # 1. Install dependencies
 npm install
 
-# 2. Launch local dev server (default: port 3000)
+# 2. Launch local dev server with Edge TTS proxy (default: port 3000)
 npm start
 
 # 3. Compile standalone offline reader (outputs reader_offline.html & index.html)
@@ -202,7 +205,7 @@ npm run build:mobile
 # 5. Sync web assets to iOS project
 npm run build:ios
 
-# 6. Build iOS unsigned IPA for LiveContainer (macOS + Xcode required)
+# 6. Build iOS unsigned IPA (macOS + Xcode required)
 npm run build:ipa
 
 # 7. Bump patch version and recompile all target assets

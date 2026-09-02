@@ -33,7 +33,7 @@ const xcodeCmd = [
 
 execSync(xcodeCmd, { cwd: rootDir, stdio: 'inherit' });
 
-console.log('\n=== Step 4: Packaging into IPA for LiveContainer ===');
+console.log('\n=== Step 4: Packaging into IPA ===');
 const appSource = path.join(buildDir, 'Build', 'Products', 'Release-iphoneos', 'App.app');
 if (!fs.existsSync(appSource)) {
   console.error(`Error: App.app not found at ${appSource}`);
@@ -62,7 +62,7 @@ const stats = fs.statSync(outputIpaPath);
 const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
 console.log('\n🎉 ========================================================');
-console.log(`🎉 iOS IPA for LiveContainer successfully generated!`);
+console.log(`🎉 iOS IPA successfully generated!`);
 console.log(`📍 Path: ${outputIpaPath}`);
 console.log(`📦 Size: ${sizeMB} MB`);
 console.log('========================================================\n');

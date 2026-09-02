@@ -8,7 +8,7 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 
 一款专为现代浏览器和移动设备打造的沉浸式、高性能且高度可定制的跨平台电子书阅读器。项目基于纯前端与原生桥接架构，集成了多格式电子书解析引擎、微软 Edge 神经网络自然人声语音朗读（TTS）、端侧/云端 AI 伴侣、动态思维导图以及深度的阅读数据统计。
 
-项目提供 **浏览器插件版**、**单文件离线网页版**、**在线网页/PWA版**、**Android 原生 App** 以及 **iOS 原生 App (支持 LiveContainer 永久免签侧载)** 五种形态，满足从桌面浏览器到手机和平板的全场景阅读需求。
+项目提供 **浏览器插件版**、**单文件离线网页版**、**在线网页/PWA版**、**Android 原生 App** 以及 **iOS 原生 App** 五种形态，满足从桌面浏览器到手机和平板的全场景阅读需求。
 
 ---
 
@@ -19,21 +19,21 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 | 功能维度 | 🧩 浏览器插件版 | 💾 单文件离线版 | 🌐 在线网页/PWA版 | 🤖 Android 原生版 | 🍎 iOS 原生版 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **运行环境** | Chrome/Edge/Brave 桌面扩展 | 任意现代浏览器直接打开 | 浏览器访问或安装为 PWA | Android 8.0+ 手机/平板 | iOS 13.0+ (iPhone/iPad) |
-| **安装方式** | 开发者模式加载解压目录 | 双击单个 HTML 文件即用 | 访问 URL / 添加到主屏幕 | 安装 APK 安装包 | LiveContainer免签 / 签名工具 |
-| **网络要求** | 支持完全离线阅读（TTS需联网） | 支持完全离线阅读 | 依赖外网静态资源或本地Node | 支持完全离线阅读（TTS需联网） | 支持完全离线阅读（TTS需联网） |
+| **安装方式** | 开发者模式加载解压目录 | 双击单个 HTML 文件即用 | 访问 URL / 添加到主屏幕 | 安装 APK 安装包 | 使用 Sideloadly 签名安装 |
+| **网络要求** | 支持完全离线阅读（TTS需联网） | 支持完全离线阅读（TTS需联网）| 依赖外网静态资源或本地Node | 支持完全离线阅读（TTS需联网） | 支持完全离线阅读（TTS需联网） |
 | **多格式解析** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ 完整支持 | ✅ 完整支持 | ✅ 完整支持 | ✅ 完整支持 |
-| **Edge 神经网络TTS**| ✅ 完美支持（MV3请求头伪装） | ⚠️ 受浏览器CORS限制 (可降级本地音) | ⚠️ 需自建Node代理或支持跨域 | ✅ 完美支持（原生网络层穿透） | ✅ 完美支持（原生网络层穿透） |
+| **Edge 神经网络TTS**| ✅ 完美支持（MV3请求头伪装） | ✅ 完美支持（直连官方 WebSocket）| ⚠️ 仅本地Node代理支持；公网静态版暂不支持（降级本地音） | ✅ 完美支持（原生网络层穿透） | ✅ 完美支持（原生网络层穿透） |
 | **后台/锁屏朗读** | ❌ 仅限浏览器标签页前台 | ❌ 手机端易被后台冻结 | ⚠️ 依赖静音保活，易被系统回收 | ✅ 极佳（前台服务+锁屏控制台） | ✅ 极佳（AVAudioSession+锁屏面板） |
-| **锁屏显示封面与进度** | ❌ 不支持 | ❌ 不支持 | ⚠️ 部分浏览器支持 MediaSession | ✅ 支持（实时显示书名、进度、缩略封面） | ✅ 支持（原生 MPNowPlayingInfo 深度集成） |
+| **锁屏显示封面与控制** | ❌ 不支持 | ❌ 不支持 | ⚠️ 部分浏览器支持 MediaSession | ✅ 支持（实时显示书名、进度、缩略封面） | ✅ 支持（原生 MPNowPlayingInfo 深度集成） |
 | **AI 伴侣 / 思维导图** | ✅ Gemini Nano 本地端侧 + 云端 | ✅ 支持配置云端/本地大模型 API | ✅ 完整支持 | ✅ 推荐配置云端 API / 本地 Ollama | ✅ 推荐配置云端 API / 本地 Ollama |
-| **数据存储与安全** | IndexedDB（随扩展独立保存） | IndexedDB（按域名/本地路径存储） | IndexedDB（域名隔离，支持导出） | 沙盒 IndexedDB + 原生持久化 | 沙盒 IndexedDB + 原生持久化 |
+| **数据存储与安全** | IndexedDB（随扩展独立保存） | IndexedDB（按本地文件路径存储） | IndexedDB（域名隔离，支持导出） | 沙盒 IndexedDB + 原生持久化 | 沙盒 IndexedDB + 原生持久化 |
 
 ---
 
 ### 1. 🧩 浏览器插件版 (Chrome / Edge Extension - MV3)
 * **能做什么**：
   - 拥有完整的阅读器排版、书籍解析、书架管理与阅读统计。
-  - 通过 Manifest V3 的 `declarativeNetRequest` 动态改写请求头，**完美突破微软 Edge 云端 TTS 的 CORS 跨域与 Origin 防盗链检测**，直接在浏览器内畅享几十种超自然真人员工语音朗读。
+  - 通过 Manifest V3 的 `declarativeNetRequest` 动态改写请求头，**突破微软 Edge 云端 TTS 的 CORS 跨域与 Origin 防盗链检测**，直接在浏览器内畅享数十种超自然真人员工语音朗读。
   - 支持调用 Chrome/Edge 浏览器内置的 **Gemini Nano** 端侧大模型，无需外网即可进行段落翻译、释义与章节速读。
 * **缺少什么**：
   - 仅限于 Chromium 内核的桌面端浏览器；手机浏览器若不支持扩展则无法使用。
@@ -49,10 +49,11 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 ### 2. 💾 单文件离线网页版 (Single-File Offline Reader)
 * **能做什么**：
   - **极致纯净，零依赖**：整个阅读器高度浓缩为一个独立的 `.html` 文件（约 2.3MB），内联打包了全部 JavaScript 引擎、CSS 主题、解析器（JSZip 等）、思维导图库及全套多语言资源。
+  - **原生支持 Edge 神经网络语音**：直接在本地以 `file:///` 协议打开运行时，阅读器会通过 WebSocket (`wss://speech.platform.bing.com/...`) 直连微软官方语音服务，并结合动态计算的 `Sec-MS-GEC` 鉴权令牌，**完全不受浏览器常规 HTTP CORS 策略限制，可直接流畅播放微软高质量神经网络人声**！完全断网时会自动降级为调用系统的原生语音库（Web Speech API）。
   - 无需安装 Node.js、无需部署服务器、无需安装任何 App，在 Windows/macOS/Linux/手机上双击即可阅读。
   - 所有图书、进度、高亮和划线均存储在当前浏览器的本地 IndexedDB 中，安全保密。
 * **缺少什么**：
-  - **TTS 跨域受限**：由于直接以 `file:///` 本地文件协议在浏览器运行，无法直接绕过微软服务器的 CORS 来源校验。在此模式下，TTS 引擎会自动降级为调用系统的原生语音库（Web Speech API）。若需体验微软神经网络人声，建议配合 OpenAI 格式的 TTS 自定义代理使用，或选用插件版/移动客户端。
+  - 在手机移动端浏览器中运行时，若退入后台或熄屏，容易被移动操作系统冻结后台网页脚本导致朗读暂停；无法提供原生锁屏媒体控制卡片。
 * **怎么安装/使用**：
   1. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载最新版的 `Raconteur-Offline-*.html`。
   2. 任意现代浏览器双击直接打开即可使用；建议在浏览器中按下 `Ctrl+D` (或 `Cmd+D`) 收藏为书签以便日后随时打开。
@@ -63,20 +64,21 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 * **能做什么**：
   - 打开网址即用，支持多设备无缝访问。
   - **标准 PWA 体验**：支持安装到桌面或添加到手机主屏，启动后具备独立应用窗口、无地址栏遮挡与流畅的全屏体验，支持 Service Worker 离线资源缓存。
-  - 本地 Node.js 运行模式下内置了专属的 WebSocket 转发代理，直接中继 Edge TTS 流量，享受无任何网络限制的最高质量朗读。
+  - 书库管理、排版定制、划线笔记、AI 伴侣及思维导图等功能均可完整使用。
+  - **本地 Node.js 运行模式**（`npm start`）：内置了专用的 WebSocket `/api/tts` 反向代理服务，能完美中继并转发 Edge TTS 流量，实现最高音质的稳定朗读。
 * **缺少什么**：
-  - 静态托管在公网（如 GitHub Pages / Vercel）时，直连微软 Edge TTS 在部分手机浏览器环境下可能受限于严格的跨域限制。
-  - 手机锁屏或切换到后台数分钟后，移动端 Safari/Chrome 可能会因内存管控机制冻结网页 JavaScript 执行，导致朗读暂停。
+  - **公网静态托管环境下无法直接播放 Edge 语音**：由于静态网站托管平台（如 GitHub Pages、Vercel 等）不具备后端 Node.js 环境，无法提供 `/api/tts` 代理服务；且网页端在公网 HTTP/HTTPS 域名下受制于浏览器跨域策略限制，无法直接向微软服务器伪造请求头建立直连。因此**在公网纯静态网页/PWA版下，Edge TTS 暂无法直接播放**（会自动降级为浏览器系统默认的 Web Speech 发音）。
+  - 若需在网页版体验 Edge 神经网络语音，建议：① 下载**单文件离线版**双击使用；② 安装**浏览器插件版**；③ 或在本地通过 `npm start` 启动自带代理的 Node.js 网页版。
 * **怎么安装/使用**：
-  - **在线访问**：直接访问部署地址（如 GitHub Pages）。
+  - **在线访问**：直接访问已部署的站点网址。
   - **安装 PWA**：桌面端点击地址栏右侧的“安装”图标；iOS 手机在 Safari 浏览器中点击底部“分享”按键，选择 **“添加到主屏幕”**。
-  - **本地 Node 服务运行**：
+  - **本地 Node 服务运行（支持完整 Edge 语音）**：
     ```bash
     git clone https://github.com/newfur/newfur.github.io.git
     cd newfur.github.io
     npm install
     npm start
-    # 访问 http://localhost:3000
+    # 浏览器访问 http://localhost:3000
     ```
 
 ---
@@ -84,10 +86,10 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 ### 4. 🤖 Android 原生版 (Android APK)
 * **能做什么**：
   - 基于 Ionic Capacitor 架构构建的轻巧型 Android 原生客户端，安装包约十几兆。
+  - 原生网络层直接请求微软 Edge 云端服务，突破浏览器跨域限制，畅享高质量自然人声朗读。
   - **真正的前台服务后台保活 (`AudioPlayerService`)**：在系统级启用带有唤醒锁（WakeLock/WifiLock）的前台播放服务，无论是退入后台聊天、刷其他 App 还是锁屏息屏，TTS 朗读持续稳定运行不被系统杀死。
   - **系统锁屏与通知栏完整媒体控制**：深度接入 Android `MediaSession`。通知中心与锁屏界面实时显示**正在朗读的句子、书籍名称、作者信息及全局轻量化压缩版书籍封面**，并提供上一句、下一句、暂停/播放原生操作按键。
   - **原生返回键拦截**：按下手机物理/手势返回键时，优先关闭目录、设置、AI 等浮层对话框；在阅读正文时返回书架，避免手滑误退出应用。
-  - 原生网络层直接请求，无浏览器的 CORS 困扰，原生畅享微软 Edge 神经网络语音。
 * **缺少什么**：
   - 尚未上架官方 Google Play 应用商店，安装时需允许系统安装外部来源应用。
 * **怎么安装**：
@@ -96,24 +98,25 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 
 ---
 
-### 5. 🍎 iOS 原生版 (iOS IPA / LiveContainer)
+### 5. 🍎 iOS 原生版 (iOS IPA)
 * **能做什么**：
-  - 基于 Capacitor 与原生 Swift 打造，体积仅 **2.25MB**，极度轻量快速。
-  - **为 LiveContainer 量身打造免签运行**：无需购买付费苹果开发者账号，无需使用个人证书每周签名（不占用个人免费 3 个 App 侧载名额），永久有效直接运行。同时兼容 TrollStore（巨魔商店）、AltStore、SideStore、Scarlet 等常用签名工具。
-  - **iOS 锁屏控制面板与音频后台播放**：深度对接系统 `MPNowPlayingInfoCenter` 与 `MPRemoteCommandCenter`，配置 `AVAudioSession (.playback)` 模式。锁屏界面优雅展示**当前朗读句子文本、书籍标题、作者及专属生成的 512px 动态全局压缩封面**，支持灵动岛与锁屏切句/暂停。
+  - 基于 Capacitor 与原生 Swift 打造，安装包体积仅约 **2.25MB**，极度轻量快速。
+  - 原生网络层直连微软 Edge TTS，语音合成清晰自然，无任何浏览器跨域限制。
+  - **iOS 锁屏控制面板与音频后台播放**：深度对接系统 `MPNowPlayingInfoCenter` 与 `MPRemoteCommandCenter`，配置 `AVAudioSession (.playback)` 模式。手机锁屏与控制中心优雅展示**当前朗读句子文本、书籍标题、作者及专属生成的 512px 动态全局压缩封面**，支持灵动岛与锁屏切句/暂停。
   - 原生全面屏、刘海屏与灵动岛（Dynamic Island）顶部安全区自适应，沉浸式阅读。
 * **缺少什么**：
-  - 尚未上架 App Store，需要使用侧载工具安装。
+  - 尚未上架 App Store，需要使用自签工具侧载安装。
 * **怎么安装**：
-  - **推荐方式：使用 LiveContainer 导入（永久免签、无需续期）**
-    1. 在电脑或手机上从 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载最新的 `EdgeReader-*.ipa`。
-    2. 打开手机上的 **LiveContainer** 应用程序。
-    3. 点击右上角 `+` 号，选取刚刚下载的 `EdgeReader-*.ipa` 导入。
-    4. 导入后直接点击图标即可运行，无需担心任何签名过期问题！
-  - **方式二：使用自签工具安装 (AltStore / SideStore / 巨魔 TrollStore)**
-    - 使用电脑端爱思助手、AltStore、SideStore 或越狱/巨魔工具，导入并签名安装该 `.ipa` 文件。
-  - **方式三：本地 Xcode 编译调试**
-    - 在 macOS 上运行 `npm run build:ipa` 或通过 `npx cap open ios` 打开 Xcode，连接真机即可直接编译安装。
+  - **推荐使用 Sideloadly 安装**：
+    1. 在电脑端下载并安装 [Sideloadly](https://sideloadly.io/)；
+    2. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下载最新的 `EdgeReader-*.ipa`；
+    3. 打开 Sideloadly，将下载的 `.ipa` 文件拖入窗口中；
+    4. 输入您的 Apple ID 账号；
+    5. 用数据线将 iPhone / iPad 连接至电脑，点击 **Start** 签名并自动安装至设备；
+    6. 首次在手机打开应用前，进入手机「设置」->「通用」->「VPN 与设备管理」，信任该 Apple ID 证书即可畅享阅读！
+  - **其他安装方式**：
+    - 也可以使用 AltStore、SideStore、巨魔商店（TrollStore）等常用工具导入签名安装；
+    - 或在 macOS 电脑上通过 Xcode 连接真机本地编译安装。
 
 ---
 
@@ -165,7 +168,7 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 │ • Chrome MV3 declarativeNetRequest    │ │ • NativeTTS 原生插件                  │
 │ • Service Worker (离线 PWA 资源缓存)   │ │ • Android: AudioPlayerService 前台服务│
 │ • 单文件静态内联 (reader_offline.html) │ │ • iOS: AVAudioSession + MPNowPlaying  │
-│ • Node.js 本地服务与开发调试环境       │ │ • 安全区 (SafeArea) 测量与物理返回拦截 │
+│ • Node.js 本地服务与反向代理环境      │ │ • 安全区 (SafeArea) 测量与物理返回拦截 │
 └───────────────────────────────────────┘ └───────────────────────────────────────┘
 ```
 
@@ -192,7 +195,7 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 # 1. 安装开发依赖
 npm install
 
-# 2. 启动本地开发网页服务 (默认端口 3000)
+# 2. 启动本地开发网页服务 (默认端口 3000，包含 Edge TTS 代理)
 npm start
 
 # 3. 编译单文件离线版 (生成 reader_offline.html 与 index.html)
@@ -204,7 +207,7 @@ npm run build:mobile
 # 5. 同步 Web 资源至 iOS 工程
 npm run build:ios
 
-# 6. 一键编译 iOS 免签 IPA 安装包 (需 macOS + Xcode)
+# 6. 一键编译 iOS 原生 IPA 安装包 (需 macOS + Xcode)
 npm run build:ipa
 
 # 7. 一键自增小版本号并同步重新生成所有目标产物

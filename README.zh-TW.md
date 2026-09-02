@@ -8,7 +8,7 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 
 一款專為現代瀏覽器與行動裝置打造的沉浸式、高效能且高度可自訂的跨平台電子書閱讀器。專案基於純前端與原生橋接架構，整合了多格式電子書解析引擎、微軟 Edge 神經網路自然人聲語音朗讀（TTS）、端側/雲端 AI 伴侶、動態心智圖以及深度的閱讀數據統計。
 
-專案提供 **瀏覽器擴充功能版**、**單檔案離線網頁版**、**線上網頁/PWA版**、**Android 原生 App** 以及 **iOS 原生 App (支援 LiveContainer 永久免簽側載)** 五種形態，滿足從桌面瀏覽器到手機與平板的全場景閱讀需求。
+專案提供 **瀏覽器擴充功能版**、**單檔案離線網頁版**、**線上網頁/PWA版**、**Android 原生 App** 以及 **iOS 原生 App** 五種形態，滿足從桌面瀏覽器到手機與平板的全場景閱讀需求。
 
 ---
 
@@ -19,21 +19,21 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 | 功能維度 | 🧩 瀏覽器擴充功能版 | 💾 單檔案離線版 | 🌐 線上網頁/PWA版 | 🤖 Android 原生版 | 🍎 iOS 原生版 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **執行環境** | Chrome/Edge/Brave 桌面擴充 | 任意現代瀏覽器直接開啟 | 瀏覽器造訪或安裝為 PWA | Android 8.0+ 手機/平板 | iOS 13.0+ (iPhone/iPad) |
-| **安裝方式** | 開發者模式載入解壓目錄 | 按兩下單個 HTML 檔案即用 | 造訪 URL / 加入主畫面 | 安裝 APK 安裝套件 | LiveContainer免簽 / 簽名工具 |
-| **網路需求** | 支援完全離線閱讀（TTS需連線） | 支援完全離線閱讀 | 依賴外網靜態資源或本地Node | 支援完全離線閱讀（TTS需連線） | 支援完全離線閱讀（TTS需連線） |
+| **安裝方式** | 開發者模式載入解壓目錄 | 按兩下單個 HTML 檔案即用 | 造訪 URL / 加入主畫面 | 安裝 APK 安裝套件 | 使用 Sideloadly 簽名安裝 |
+| **網路需求** | 支援完全離線閱讀（TTS需連線） | 支援完全離線閱讀（TTS需連線）| 依賴外網靜態資源或本地Node | 支援完全離線閱讀（TTS需連線） | 支援完全離線閱讀（TTS需連線） |
 | **多格式解析** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ 完整支援 | ✅ 完整支援 | ✅ 完整支援 | ✅ 完整支援 |
-| **Edge 神經網路TTS**| ✅ 完美支援（MV3請求標頭偽裝） | ⚠️ 受瀏覽器CORS限制 (可降級本地音) | ⚠️ 需自建Node代理或支援跨域 | ✅ 完美支援（原生網路層穿透） | ✅ 完美支援（原生網路層穿透） |
+| **Edge 神經網路TTS**| ✅ 完美支援（MV3請求標頭偽裝） | ✅ 完美支援（直連官方 WebSocket）| ⚠️ 僅本地Node代理支援；公網靜態版暫不支援（降級本地音） | ✅ 完美支援（原生網路層穿透） | ✅ 完美支援（原生網路層穿透） |
 | **背景/鎖定畫面朗讀** | ❌ 僅限瀏覽器分頁前景 | ❌ 手機端易被系統背景凍結 | ⚠️ 依賴靜音保活，易被系統回收 | ✅ 極佳（前景服務+鎖定畫面控制台） | ✅ 極佳（AVAudioSession+鎖定畫面面板） |
-| **鎖定畫面顯示封面與進度** | ❌ 不支援 | ❌ 不支援 | ⚠️ 部分瀏覽器支援 MediaSession | ✅ 支援（即時顯示書名、進度、縮圖封面） | ✅ 支援（原生 MPNowPlayingInfo 深度整合） |
+| **鎖定畫面顯示封面與控制** | ❌ 不支援 | ❌ 不支援 | ⚠️ 部分瀏覽器支援 MediaSession | ✅ 支援（即時顯示書名、進度、縮圖封面） | ✅ 支援（原生 MPNowPlayingInfo 深度整合） |
 | **AI 伴侶 / 心智圖** | ✅ Gemini Nano 本地端側 + 雲端 | ✅ 支援設定雲端/本地大模型 API | ✅ 完整支援 | ✅ 建議設定雲端 API / 本地 Ollama | ✅ 建議設定雲端 API / 本地 Ollama |
-| **資料儲存與安全** | IndexedDB（隨擴充套件獨立儲存） | IndexedDB（依網域/本地路徑儲存） | IndexedDB（網域隔離，支援匯出） | 沙盒 IndexedDB + 原生持久化 | 沙盒 IndexedDB + 原生持久化 |
+| **資料儲存與安全** | IndexedDB（隨擴充套件獨立儲存） | IndexedDB（依本機檔案路徑儲存） | IndexedDB（網域隔離，支援匯出） | 沙盒 IndexedDB + 原生持久化 | 沙盒 IndexedDB + 原生持久化 |
 
 ---
 
 ### 1. 🧩 瀏覽器擴充功能版 (Chrome / Edge Extension - MV3)
 * **能做什麼**：
   - 擁有完整的閱讀器排版、書籍解析、書架管理與閱讀統計。
-  - 透過 Manifest V3 的 `declarativeNetRequest` 動態改寫請求標頭，**完美突破微軟 Edge 雲端 TTS 的 CORS 跨域與 Origin 防盜鏈檢查**，直接在瀏覽器內暢享數十種超自然真人員工語音朗讀。
+  - 透過 Manifest V3 的 `declarativeNetRequest` 動態改寫請求標頭，**突破微軟 Edge 雲端 TTS 的 CORS 跨域與 Origin 防盜鏈檢查**，直接在瀏覽器內暢享數十種超自然真人員工語音朗讀。
   - 支援呼叫 Chrome/Edge 瀏覽器內建的 **Gemini Nano** 端側大模型，無需外網即可進行段落翻譯、釋義與章節摘要。
 * **缺少什麼**：
   - 僅限於 Chromium 核心的桌面端瀏覽器；手機瀏覽器若不支援擴充功能則無法使用。
@@ -49,10 +49,11 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 ### 2. 💾 單檔案離線網頁版 (Single-File Offline Reader)
 * **能做什麼**：
   - **極致純淨，零依賴**：整個閱讀器高度濃縮為一個獨立的 `.html` 檔案（約 2.3MB），內聯打包了全部 JavaScript 引擎、CSS 主題、解析器（JSZip 等）、心智圖庫及全套多語言資源。
+  - **原生支援 Edge 神經網路語音**：直接在本地以 `file:///` 協定開啟執行時，閱讀器會透過 WebSocket (`wss://speech.platform.bing.com/...`) 直連微軟官方語音服務，並結合動態計算的 `Sec-MS-GEC` 鑑權權杖，**完全不受瀏覽器常規 HTTP CORS 政策限制，可直接流暢播放微軟高品質神經網路人聲**！完全斷網時會自動降級為呼叫系統的原生語音庫（Web Speech API）。
   - 無需安裝 Node.js、無需部署伺服器、無需安裝任何 App，在 Windows/macOS/Linux/手機上按兩下即可閱讀。
   - 所有圖書、進度、螢光筆標記均儲存在當前瀏覽器的本地 IndexedDB 中，安全隱密。
 * **缺少什麼**：
-  - **TTS 跨域受限**：由於直接以 `file:///` 本地檔案通訊協定在瀏覽器執行，無法直接繞過微軟伺服器的 CORS 來源校驗。在此模式下，TTS 引擎會自動降級為呼叫系統的原生語音庫（Web Speech API）。若需體驗微軟神經網路人聲，建議搭配 OpenAI 格式的 TTS 自訂代理使用，或選用擴充功能版/行動用戶端。
+  - 在手機行動端瀏覽器中執行時，若退入背景或熄屏，容易被行動作業系統凍結背景網頁腳本導致朗讀暫停；無法提供原生鎖定畫面媒體控制卡片。
 * **怎麼安裝/使用**：
   1. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下載最新版的 `Raconteur-Offline-*.html`。
   2. 任意現代瀏覽器按兩下直接開啟即可使用；建議在瀏覽器中按下 `Ctrl+D` (或 `Cmd+D`) 加入書籤以便日後隨時開啟。
@@ -63,20 +64,21 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 * **能做什麼**：
   - 開啟網址即用，支援多裝置無縫存取。
   - **標準 PWA 體驗**：支援安裝到桌面或加入手機主畫面，啟動後具備獨立應用程式視窗、無網址列遮擋與流暢的全螢幕體驗，支援 Service Worker 離線快取。
-  - 本地 Node.js 執行模式下內建了專屬的 WebSocket 轉發代理，直接中繼 Edge TTS 流量，享受無任何網路限制的最高品質朗讀。
+  - 書架管理、排版自訂、畫線筆記、AI 伴侶及心智圖等功能均可完整使用。
+  - **本地 Node.js 執行模式**（`npm start`）：內建了專用的 WebSocket `/api/tts` 反向代理服務，能完美中繼並轉發 Edge TTS 流量，實現最高音質的穩定朗讀。
 * **缺少什麼**：
-  - 靜態託管在公網（如 GitHub Pages / Vercel）時，直連微軟 Edge TTS 在部分手機瀏覽器環境下可能受限於嚴格的跨域限制。
-  - 手機鎖定畫面或切換至背景數分鐘後，行動端 Safari/Chrome 可能會因記憶體管控機制凍結網頁 JavaScript 執行，導致朗讀暫停。
+  - **公網靜態託管環境下無法直接播放 Edge 語音**：由於靜態網站託管平台（如 GitHub Pages、Vercel 等）不具備後端 Node.js 環境，無法提供 `/api/tts` 代理服務；且網頁端在公網 HTTP/HTTPS 網域下受制於瀏覽器跨域政策限制，無法直接向微軟伺服器偽造請求標頭建立直連。因此**在公網純靜態網頁/PWA版下，Edge TTS 暫無法直接播放**（會自動降級為瀏覽器系統預設的 Web Speech 發音）。
+  - 若需在網頁版體驗 Edge 神經網路語音，建議：① 下載**單檔案離線版**按兩下使用；② 安裝**瀏覽器擴充功能版**；③ 或在本地透過 `npm start` 啟動自帶代理的 Node.js 網頁版。
 * **怎麼安裝/使用**：
-  - **線上造訪**：直接存取部署網址（如 GitHub Pages）。
+  - **線上造訪**：直接存取已部署的站台網址。
   - **安裝 PWA**：桌面端點擊網址列右側的「安裝」圖示；iOS 手機在 Safari 瀏覽器中點擊底部「分享」按鈕，選擇 **「加入主畫面」**。
-  - **本地 Node 服務執行**：
+  - **本地 Node 服務執行（支援完整 Edge 語音）**：
     ```bash
     git clone https://github.com/newfur/newfur.github.io.git
     cd newfur.github.io
     npm install
     npm start
-    # 造訪 http://localhost:3000
+    # 瀏覽器造訪 http://localhost:3000
     ```
 
 ---
@@ -84,10 +86,10 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 ### 4. 🤖 Android 原生版 (Android APK)
 * **能做什麼**：
   - 基於 Ionic Capacitor 架構構建的輕巧型 Android 原生用戶端，安裝套件約十幾 MB。
+  - 原生網路層直接發送請求至微軟 Edge 雲端服務，突破瀏覽器跨域限制，暢享高品質自然人聲朗讀。
   - **真正的前景服務背景保活 (`AudioPlayerService`)**：在系統層級啟用帶有喚醒鎖（WakeLock/WifiLock）的前景播放服務，無論是退回背景聊天、使用其他 App 還是鎖定畫面滅屏，TTS 朗讀持續穩定執行不被系統中斷。
   - **系統鎖定畫面與通知欄完整媒體控制**：深度串接 Android `MediaSession`。通知中心與鎖定畫面即時顯示**正在朗讀的句子、書籍名稱、作者資訊及全域輕量化壓縮版書籍封面**，並提供上一句、下一句、暫停/播放原生控制按鈕。
   - **原生返回鍵攔截**：按下手機實體/手勢返回鍵時，優先關閉目錄、設定、AI 等浮動面板；在閱讀內文時返回書架，避免誤觸退出應用程式。
-  - 原生網路層直接發送請求，無瀏覽器的 CORS 困擾，原生暢享微軟 Edge 神經網路語音。
 * **缺少什麼**：
   - 尚未上架官方 Google Play 應用程式商店，安裝時需允許系統安裝未知來源應用程式。
 * **怎麼安裝**：
@@ -96,24 +98,25 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 
 ---
 
-### 5. 🍎 iOS 原生版 (iOS IPA / LiveContainer)
+### 5. 🍎 iOS 原生版 (iOS IPA)
 * **能做什麼**：
-  - 基於 Capacitor 與原生 Swift 打造，體積僅 **2.25MB**，極度輕量敏捷。
-  - **為 LiveContainer 量身打造免簽執行**：無需購買付費 Apple 開發者帳號，無需使用個人憑證每週重新簽名（不佔用個人免費 3 個 App 側載額度），永久有效直接執行。同時相容 TrollStore（巨魔商店）、AltStore、SideStore、Scarlet 等常用側載工具。
-  - **iOS 鎖定畫面控制面板與音訊背景播放**：深度對接系統 `MPNowPlayingInfoCenter` 與 `MPRemoteCommandCenter`，配置 `AVAudioSession (.playback)` 模式。鎖定畫面優雅呈現**當前朗讀句子文字、書籍標題、作者及專屬生成的 512px 動態全域壓縮封面**，支援動態島與鎖定畫面切換句子/暫停。
+  - 基於 Capacitor 與原生 Swift 打造，安裝套件體積僅約 **2.25MB**，極度輕量快速。
+  - 原生網路層直連微軟 Edge TTS，語音合成清晰自然，無任何瀏覽器跨域限制。
+  - **iOS 鎖定畫面控制面板與音訊背景播放**：深度對接系統 `MPNowPlayingInfoCenter` 與 `MPRemoteCommandCenter`，配置 `AVAudioSession (.playback)` 模式。手機鎖定畫面與控制中心優雅呈現**當前朗讀句子文字、書籍標題、作者及專屬生成的 512px 動態全域壓縮封面**，支援動態島與鎖定畫面切換句子/暫停。
   - 原生全螢幕、瀏海螢幕與動態島（Dynamic Island）頂部安全區域自適應，沉浸式閱讀。
 * **缺少什麼**：
-  - 尚未上架 App Store，需要使用側載工具安裝。
+  - 尚未上架 App Store，需要使用自簽工具側載安裝。
 * **怎麼安裝**：
-  - **推薦方式：使用 LiveContainer 匯入（永久免簽、無需續期）**
-    1. 在電腦或手機上從 [Releases](https://github.com/newfur/newfur.github.io/releases) 下載最新的 `EdgeReader-*.ipa`。
-    2. 開啟手機上的 **LiveContainer** 應用程式。
-    3. 點擊右上角 `+` 號，選取剛剛下載的 `EdgeReader-*.ipa` 匯入。
-    4. 匯入後直接點擊圖示即可執行，無需擔心任何憑證過期問題！
-  - **方式二：使用自簽工具安裝 (AltStore / SideStore / 巨魔 TrollStore)**
-    - 使用電腦端愛思助手、AltStore、SideStore 或越獄/巨魔工具，匯入並簽名安裝該 `.ipa` 檔案。
-  - **方式三：本地 Xcode 編譯除錯**
-    - 在 macOS 上執行 `npm run build:ipa` 或透過 `npx cap open ios` 開啟 Xcode，連接實機即可直接編譯安裝。
+  - **推薦使用 Sideloadly 安裝**：
+    1. 在電腦端下載並安裝 [Sideloadly](https://sideloadly.io/)；
+    2. 在 [Releases](https://github.com/newfur/newfur.github.io/releases) 下載最新的 `EdgeReader-*.ipa`；
+    3. 開啟 Sideloadly，將下載的 `.ipa` 檔案拖曳至視窗中；
+    4. 輸入您的 Apple ID 帳號；
+    5. 使用傳輸線將 iPhone / iPad 連接至電腦，點擊 **Start** 簽名並自動安裝至裝置；
+    6. 首次在手機開啟應用程式前，進入手機「設定」->「一般」->「VPN 與裝置管理」，信任該 Apple ID 憑證即可暢享閱讀！
+  - **其他安裝方式**：
+    - 亦可使用 AltStore、SideStore、巨魔商店（TrollStore）等常用側載工具匯入簽名安裝；
+    - 或在 macOS 電腦上透過 Xcode 連接實機本地編譯安裝。
 
 ---
 
@@ -165,7 +168,7 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 │ • Chrome MV3 declarativeNetRequest    │ │ • NativeTTS 原生外掛程式              │
 │ • Service Worker (離線 PWA 資源快取)   │ │ • Android: AudioPlayerService 前景服務│
 │ • 單檔案靜態內聯 (reader_offline.html) │ │ • iOS: AVAudioSession + MPNowPlaying  │
-│ • Node.js 本地服務與開發除錯環境       │ │ • 安全區域 (SafeArea) 測量與返回攔截  │
+│ • Node.js 本地服務與反向代理環境      │ │ • 安全區域 (SafeArea) 測量與返回攔截  │
 └───────────────────────────────────────┘ └───────────────────────────────────────┘
 ```
 
@@ -192,7 +195,7 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 # 1. 安裝開發依賴
 npm install
 
-# 2. 啟動本地開發網頁伺服器 (預設連接埠 3000)
+# 2. 啟動本地開發網頁伺服器 (預設連接埠 3000，包含 Edge TTS 代理)
 npm start
 
 # 3. 編譯單檔案離線版 (產生 reader_offline.html 與 index.html)
@@ -204,7 +207,7 @@ npm run build:mobile
 # 5. 同步 Web 資源至 iOS 專案
 npm run build:ios
 
-# 6. 一鍵編譯 iOS 免簽 IPA 安裝套件 (需 macOS + Xcode)
+# 6. 一鍵編譯 iOS 原生 IPA 安裝套件 (需 macOS + Xcode)
 npm run build:ipa
 
 # 7. 一鍵自動更新小版本號並同步重新產生所有目標成品
