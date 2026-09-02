@@ -278,7 +278,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
         let isPlaying = call.getBool("isPlaying") ?? true
-        updateNowPlaying(title: title, artist: artist, isPlaying: isPlaying)
+        let coverBase64 = call.getString("cover")
+        updateNowPlaying(title: title, artist: artist, isPlaying: isPlaying, coverBase64: coverBase64)
         call.resolve()
     }
 
@@ -294,12 +295,17 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     @objc func updateMetadata(_ call: CAPPluginCall) {
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
+        let coverBase64 = call.getString("cover")
+        
         if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
             info[MPMediaItemPropertyTitle] = title
             info[MPMediaItemPropertyArtist] = artist
+            if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData) {
+                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+            }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         } else {
-            updateNowPlaying(title: title, artist: artist, isPlaying: true)
+            updateNowPlaying(title: title, artist: artist, isPlaying: true, coverBase64: coverBase64)
         }
         call.resolve()
     }
@@ -351,11 +357,25 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
-    private func updateNowPlaying(title: String, artist: String, isPlaying: Bool) {
+    private func getCoverData(from base64String: String?) -> Data? {
+        guard let base64String = base64String, !base64String.isEmpty else { return nil }
+        var cleanBase64 = base64String
+        if let commaIndex = cleanBase64.firstIndex(of: ",") {
+            cleanBase64 = String(cleanBase64[cleanBase64.index(after: commaIndex)...])
+        }
+        return Data(base64Encoded: cleanBase64)
+    }
+
+    private func updateNowPlaying(title: String, artist: String, isPlaying: Bool, coverBase64: String? = nil) {
         var nowPlayingInfo = [String: Any]()
         nowPlayingInfo[MPMediaItemPropertyTitle] = title
         nowPlayingInfo[MPMediaItemPropertyArtist] = artist
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        
+        if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData) {
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+        }
+        
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }
 

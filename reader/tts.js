@@ -2055,27 +2055,35 @@ export class TTSEngine {
     }
   }
 
-  _updateMediaSession(sentence) {
+  async _updateMediaSession(sentence) {
     const text = sentence ? sentence.text : 'TTS Reading';
     const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
     const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
+    const coverBase64 = await getBookCoverBase64();
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
       window.Capacitor.Plugins.NativeTTS.updateMetadata({
         title: title,
         artist: artist,
-        text: text
+        text: text,
+        cover: coverBase64
       }).catch(e => console.error("Error updating native metadata:", e));
     }
 
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
-        navigator.mediaSession.metadata = new MediaMetadata({
+        const metadataOpts = {
           title: text,
           artist: artist,
           album: title
-        });
+        };
+        if (coverBase64) {
+          metadataOpts.artwork = [
+            { src: coverBase64, sizes: '512x512', type: 'image/jpeg' }
+          ];
+        }
+        navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
         navigator.mediaSession.playbackState = 'playing';
 

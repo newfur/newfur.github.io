@@ -136,6 +136,12 @@ public class AudioPlayerService extends Service {
                         currentTitle = intent.getStringExtra("title");
                         currentArtist = intent.getStringExtra("artist");
                         currentText = intent.getStringExtra("text");
+                        String updateCoverBase64 = intent.getStringExtra("cover");
+                        if (updateCoverBase64 != null && !updateCoverBase64.isEmpty()) {
+                            coverBitmap = decodeBase64ToBitmap(updateCoverBase64);
+                        } else if (updateCoverBase64 != null) {
+                            coverBitmap = null;
+                        }
                         updateMetadata(currentTitle, currentArtist, currentText);
                         updateNotification(currentTitle, currentArtist, currentText, isPlaying);
                         break;
@@ -254,7 +260,6 @@ public class AudioPlayerService extends Service {
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, title);
         if (coverBitmap != null) {
             metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
-            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, coverBitmap);
         }
         mediaSession.setMetadata(metadataBuilder.build());
     }

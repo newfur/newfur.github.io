@@ -103,6 +103,7 @@ public class NativeTTS extends Plugin {
             intent.putExtra("title", call.getString("title", ""));
             intent.putExtra("artist", call.getString("artist", ""));
             intent.putExtra("text", call.getString("text", ""));
+            intent.putExtra("cover", call.getString("cover", ""));
             context.startService(intent);
             call.resolve();
         } catch (Exception e) {
