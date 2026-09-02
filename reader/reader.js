@@ -10490,7 +10490,18 @@ function handleImportBackup(e) {
 
       if (isZip) {
         // 使用 JSZip 載入備份 (v2.0)
-        const metaFile = zip.file('metadata.json');
+        let metaFile = zip.file('metadata.json');
+        let prefix = '';
+        if (!metaFile) {
+          // 支援子目錄封裝（例如 iOS NSFileCoordinator 打包生成的 backup_temp/metadata.json 或自定義外層目錄）
+          const matches = zip.file(/metadata\.json$/i).filter(f => !f.name.includes('__MACOSX'));
+          if (matches && matches.length > 0) {
+            metaFile = matches[0];
+            const fullPath = metaFile.name;
+            prefix = fullPath.substring(0, fullPath.lastIndexOf('metadata.json'));
+          }
+        }
+
         if (!metaFile) {
           throw new Error('無效的備份檔案，ZIP 內找不到 metadata.json！');
         }
@@ -10507,7 +10518,7 @@ function handleImportBackup(e) {
         for (const b of data.books) {
           let fileBlob = null;
           if (b.hasFile) {
-            const fileEntry = zip.file(`books/${b.id}.bin`);
+            const fileEntry = zip.file(`${prefix}books/${b.id}.bin`) || zip.file(`books/${b.id}.bin`);
             if (fileEntry) {
               fileBlob = await fileEntry.async('blob');
             }
@@ -10515,7 +10526,7 @@ function handleImportBackup(e) {
 
           let coverBlobOrString = '';
           if (b.coverType === 'blob') {
-            const coverEntry = zip.file(`covers/${b.id}.bin`);
+            const coverEntry = zip.file(`${prefix}covers/${b.id}.bin`) || zip.file(`covers/${b.id}.bin`);
             if (coverEntry) {
               coverBlobOrString = await coverEntry.async('blob');
             }
