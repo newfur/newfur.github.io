@@ -797,8 +797,35 @@
       </div>
 
       <div class="dialog-body" style="font-size: 14px; line-height: 1.5; padding: 5px 0; display: flex; flex-direction: column; gap: 12px;">
+        <!-- 備份模式選擇/確認狀態 -->
+        <div id="backup-options-view" style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;" data-i18n="backup_choose_mode_hint">
+            请选择备份模式。若您的书库包含大量书籍文件（大于 100MB），推荐优先使用【轻量备份】或使用 iOS 原生 App 版。
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <label id="backup-mode-full-label" style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 12px; border: 1.5px solid var(--primary-color); background: rgba(10, 132, 255, 0.08); cursor: pointer;">
+              <input type="radio" name="backup-mode-option" value="full" checked style="margin-top: 3px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <div style="font-weight: 600; font-size: 14px; color: var(--text-color);" data-i18n="backup_mode_full_title">完整备份 (包含书籍源文件)</div>
+                <div style="font-size: 12px; color: var(--text-muted);" data-i18n="backup_mode_full_desc">打包全部书籍源文件、封面、阅读进度、笔记、书签与 AI 对话。</div>
+              </div>
+            </label>
+            <label id="backup-mode-light-label" style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 12px; border: 1.5px solid var(--border-color); background: var(--bg-surface, rgba(255,255,255,0.04)); cursor: pointer;">
+              <input type="radio" name="backup-mode-option" value="lightweight" style="margin-top: 3px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <div style="font-weight: 600; font-size: 14px; color: var(--text-color);" data-i18n="backup_mode_light_title">轻量数据备份 (不含电子书源文件)</div>
+                <div style="font-size: 12px; color: var(--text-muted);" data-i18n="backup_mode_light_desc">仅备份阅读进度、高亮笔记、书签与 AI 记录。体积仅几十 KB，秒级完成，杜绝内存溢出。</div>
+              </div>
+            </label>
+          </div>
+          <div class="dialog-actions" style="margin-top: 6px; display: flex; gap: 10px;">
+            <button type="button" id="backup-start-confirm-btn" class="btn btn-primary" style="flex: 1; padding: 11px 16px; border-radius: 12px; font-weight: 600;" data-i18n="btn_start_backup">开始备份</button>
+            <button type="button" id="backup-cancel-btn" class="btn btn-secondary" style="padding: 11px 16px; border-radius: 12px;" data-i18n="btn_cancel">取消</button>
+          </div>
+        </div>
+
         <!-- 打包中狀態 -->
-        <div id="backup-progress-view" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 25px 10px; gap: 12px; text-align: center;">
+        <div id="backup-progress-view" style="display: none; flex-direction: column; align-items: center; justify-content: center; padding: 25px 10px; gap: 12px; text-align: center;">
           <svg class="svg-icon" viewBox="0 0 24 24" style="width: 36px; height: 36px; color: var(--primary-color); animation: spin 1s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           <div id="backup-progress-text" style="font-weight: 500;" data-i18n="backing_up">正在进行备份...</div>
           <div style="font-size: 12px; color: var(--text-muted);" data-i18n="backup_packing_hint">正在整合所有书籍文件、进度与笔记...</div>

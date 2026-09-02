@@ -1001,5 +1001,23 @@
   },
   "btn_retry": {
     "message": "重试"
+  },
+  "backup_choose_mode_hint": {
+    "message": "请选择备份模式。若您的书库包含大量书籍文件（大于 100MB），推荐优先使用【轻量备份】或使用 iOS 原生 App 版。"
+  },
+  "backup_mode_full_title": {
+    "message": "完整备份 (包含书籍源文件)"
+  },
+  "backup_mode_full_desc": {
+    "message": "打包全部书籍源文件、封面、阅读进度、笔记、书签与 AI 对话。"
+  },
+  "backup_mode_light_title": {
+    "message": "轻量数据备份 (不含电子书源文件)"
+  },
+  "backup_mode_light_desc": {
+    "message": "仅备份阅读进度、高亮笔记、书签与 AI 记录。体积仅几十 KB，秒级完成，杜绝内存溢出。"
+  },
+  "btn_start_backup": {
+    "message": "开始备份"
   }
 }

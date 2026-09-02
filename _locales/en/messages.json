@@ -1004,5 +1004,23 @@
   },
   "btn_retry": {
     "message": "Retry"
+  },
+  "backup_choose_mode_hint": {
+    "message": "Select backup mode. If your library has many books (>100MB), Lightweight Backup or iOS Native App is recommended."
+  },
+  "backup_mode_full_title": {
+    "message": "Full Backup (Includes Book Files)"
+  },
+  "backup_mode_full_desc": {
+    "message": "Packs all book source files, covers, reading progress, notes, bookmarks, and AI conversations."
+  },
+  "backup_mode_light_title": {
+    "message": "Lightweight Backup (Data Only)"
+  },
+  "backup_mode_light_desc": {
+    "message": "Backs up reading progress, highlights, notes, bookmarks, and AI chats only. Takes only seconds and prevents out-of-memory."
+  },
+  "btn_start_backup": {
+    "message": "Start Backup"
   }
 }

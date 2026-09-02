@@ -545,7 +545,7 @@ function initUIEventBindings() {
   const backupBtn = document.getElementById('backup-btn');
   const restoreBtn = document.getElementById('restore-btn');
   if (backupBtn) {
-    backupBtn.addEventListener('click', handleExportBackup);
+    backupBtn.addEventListener('click', openBackupDialog);
   }
   if (restoreBtn && restoreFileInput) {
     restoreBtn.addEventListener('click', () => restoreFileInput.click());
@@ -1878,11 +1878,55 @@ function initUIEventBindings() {
   const backupDialog = document.getElementById('backup-dialog');
   const backupCloseBtn = document.getElementById('backup-dialog-close');
   const backupShareBtn = document.getElementById('backup-share-btn');
+  const backupStartConfirmBtn = document.getElementById('backup-start-confirm-btn');
+  const backupCancelBtn = document.getElementById('backup-cancel-btn');
+
   if (backupCloseBtn && backupDialog) {
     backupCloseBtn.addEventListener('click', () => {
       backupDialog.close();
     });
   }
+  if (backupCancelBtn && backupDialog) {
+    backupCancelBtn.addEventListener('click', () => {
+      backupDialog.close();
+    });
+  }
+  if (backupStartConfirmBtn) {
+    backupStartConfirmBtn.addEventListener('click', () => {
+      const selectedRadio = document.querySelector('input[name="backup-mode-option"]:checked');
+      const mode = selectedRadio ? selectedRadio.value : 'full';
+      const optionsView = document.getElementById('backup-options-view');
+      if (optionsView) optionsView.style.display = 'none';
+      handleExportBackup(mode);
+    });
+  }
+
+  document.querySelectorAll('input[name="backup-mode-option"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const fullLabel = document.getElementById('backup-mode-full-label');
+      const lightLabel = document.getElementById('backup-mode-light-label');
+      if (radio.value === 'full') {
+        if (fullLabel) {
+          fullLabel.style.borderColor = 'var(--primary-color)';
+          fullLabel.style.background = 'rgba(10, 132, 255, 0.08)';
+        }
+        if (lightLabel) {
+          lightLabel.style.borderColor = 'var(--border-color)';
+          lightLabel.style.background = 'var(--bg-surface, rgba(255,255,255,0.04))';
+        }
+      } else {
+        if (lightLabel) {
+          lightLabel.style.borderColor = 'var(--primary-color)';
+          lightLabel.style.background = 'rgba(10, 132, 255, 0.08)';
+        }
+        if (fullLabel) {
+          fullLabel.style.borderColor = 'var(--border-color)';
+          fullLabel.style.background = 'var(--bg-surface, rgba(255,255,255,0.04))';
+        }
+      }
+    });
+  });
+
   if (backupDialog) {
     backupDialog.addEventListener('click', (event) => {
       // 打包進行中嚴禁誤觸背景關閉
@@ -1901,12 +1945,22 @@ function initUIEventBindings() {
       }
       currentBackupBlob = null;
       currentBackupFilename = null;
+      const optionsView = document.getElementById('backup-options-view');
+      const progressView = document.getElementById('backup-progress-view');
+      const completeView = document.getElementById('backup-complete-view');
+      const errorView = document.getElementById('backup-error-view');
+      if (optionsView) optionsView.style.display = 'flex';
+      if (progressView) progressView.style.display = 'none';
+      if (completeView) completeView.style.display = 'none';
+      if (errorView) errorView.style.display = 'none';
     });
   }
   const backupRetryBtn = document.getElementById('backup-retry-btn');
   if (backupRetryBtn) {
     backupRetryBtn.addEventListener('click', () => {
-      handleExportBackup();
+      const selectedRadio = document.querySelector('input[name="backup-mode-option"]:checked');
+      const mode = selectedRadio ? selectedRadio.value : 'full';
+      handleExportBackup(mode);
     });
   }
   if (backupShareBtn) {
@@ -9774,8 +9828,48 @@ async function shareBackupBlobDirectly(backupBlob, filename) {
   return true;
 }
 
+// 打開備份對話框
+function openBackupDialog() {
+  const backupDialog = document.getElementById('backup-dialog');
+  if (!backupDialog) {
+    handleExportBackup('full');
+    return;
+  }
+  const optionsView = document.getElementById('backup-options-view');
+  const progressView = document.getElementById('backup-progress-view');
+  const completeView = document.getElementById('backup-complete-view');
+  const errorView = document.getElementById('backup-error-view');
+
+  if (optionsView) optionsView.style.display = 'flex';
+  if (progressView) progressView.style.display = 'none';
+  if (completeView) completeView.style.display = 'none';
+  if (errorView) errorView.style.display = 'none';
+
+  // 默認選中完整備份
+  const fullRadio = document.querySelector('input[name="backup-mode-option"][value="full"]');
+  if (fullRadio) {
+    fullRadio.checked = true;
+    const fullLabel = document.getElementById('backup-mode-full-label');
+    const lightLabel = document.getElementById('backup-mode-light-label');
+    if (fullLabel) {
+      fullLabel.style.borderColor = 'var(--primary-color)';
+      fullLabel.style.background = 'rgba(10, 132, 255, 0.08)';
+    }
+    if (lightLabel) {
+      lightLabel.style.borderColor = 'var(--border-color)';
+      lightLabel.style.background = 'var(--bg-surface, rgba(255,255,255,0.04))';
+    }
+  }
+
+  try {
+    if (!backupDialog.open) backupDialog.showModal();
+  } catch (e) {
+    handleExportBackup('full');
+  }
+}
+
 // 導出書庫備份
-async function handleExportBackup() {
+async function handleExportBackup(backupMode = 'full') {
   const backupBtn = document.getElementById('backup-btn');
   if (!backupBtn) return;
   const originalHtml = backupBtn.innerHTML;
@@ -9855,122 +9949,149 @@ async function handleExportBackup() {
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
-    const filename = `edgereader_backup_${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
+    const isLightweight = backupMode === 'lightweight';
+    const filenamePrefix = isLightweight ? 'edgereader_backup_light_' : 'edgereader_backup_';
+    const filename = `${filenamePrefix}${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
 
     const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
     const isAndroid = /android/i.test(navigator.userAgent);
+    const hasNativeZip = isCapacitor && window.Capacitor.Plugins.NativeTTS && typeof window.Capacitor.Plugins.NativeTTS.createZipFromDirectory === 'function' && window.Capacitor.Plugins.Filesystem;
 
     // =====================================================================
-    // 路徑 A：Android Capacitor — 逐文件寫入 CACHE + 原生 Java 端 ZIP 打包
-    // 優勢：避免整個 ZIP Blob 駐留 JS 記憶體，避免 Base64 橋接整個 ZIP
+    // 路徑 A：Capacitor 原生 (Android & iOS) — 逐文件寫入 CACHE + 原生端 ZIP 打包
+    // 優勢：避免整個 ZIP Blob 駐留 JS 記憶體，避免 Base64 橋接整個 ZIP，徹底杜絕 OOM 崩潰
     // =====================================================================
-    if (isCapacitor && isAndroid) {
-      const { NativeTTS, Filesystem } = window.Capacitor.Plugins;
-      if (NativeTTS && typeof NativeTTS.createZipFromDirectory === 'function' && Filesystem) {
-        try {
-          // 進入載入狀態
-          backupBtn.disabled = true;
-          backupBtn.innerHTML = `
-            <span class="btn-icon">
-              <svg class="svg-icon" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-            </span>
-            <span>${getMsg('backing_up')}</span>
-          `;
+    if (hasNativeZip) {
+      const { NativeTTS, Filesystem, Share } = window.Capacitor.Plugins;
+      try {
+        backupBtn.disabled = true;
+        backupBtn.innerHTML = `
+          <span class="btn-icon">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          </span>
+          <span>${getMsg('backing_up')}</span>
+        `;
 
-          // 清理並建立暫存目錄
-          try { await Filesystem.rmdir({ path: 'backup_temp', directory: 'CACHE', recursive: true }); } catch (e) { /* ignore */ }
-          await Filesystem.mkdir({ path: 'backup_temp', directory: 'CACHE', recursive: true });
-          await Filesystem.mkdir({ path: 'backup_temp/books', directory: 'CACHE', recursive: true });
-          await Filesystem.mkdir({ path: 'backup_temp/covers', directory: 'CACHE', recursive: true });
+        const backupDialogEl = document.getElementById('backup-dialog');
+        const backupProgressView = document.getElementById('backup-progress-view');
+        const backupCompleteView = document.getElementById('backup-complete-view');
+        const backupErrorView = document.getElementById('backup-error-view');
+        const backupErrorText = document.getElementById('backup-error-text');
+        const backupProgressText = document.getElementById('backup-progress-text');
 
-          // 逐本寫入書籍文件和封面至 CACHE（一次只有一本書的 Blob 在記憶體中）
-          const serializedBooks = [];
-          for (const book of books) {
-            const meta = {
-              id: book.id, title: book.title, author: book.author,
-              format: book.format, size: book.size, addedAt: book.addedAt,
-              lastReadAt: book.lastReadAt, progress: book.progress,
-              bookmarks: book.bookmarks || [], notes: book.notes || [],
-              stats: book.stats || null, aiChats: book.aiChats || [],
-              bookSummary: book.bookSummary || '', chapterSummaries: book.chapterSummaries || {},
-              folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
-            };
-
-            if (book.file instanceof Blob) {
-              meta.hasFile = true;
-              await writeBlobToCache(Filesystem, `backup_temp/books/${book.id}.bin`, book.file);
-            }
-
-            if (book.cover instanceof Blob) {
-              meta.coverType = 'blob';
-              await writeBlobToCache(Filesystem, `backup_temp/covers/${book.id}.bin`, book.cover);
-            } else if (typeof book.cover === 'string') {
-              meta.coverType = 'string';
-              meta.coverValue = book.cover;
-            }
-
-            serializedBooks.push(meta);
+        if (backupDialogEl) {
+          if (backupProgressView) backupProgressView.style.display = 'flex';
+          if (backupCompleteView) backupCompleteView.style.display = 'none';
+          if (backupErrorView) backupErrorView.style.display = 'none';
+          if (backupProgressText) {
+            backupProgressText.textContent = `${getMsg('backing_up')} (0/${books.length})`;
           }
-
-          // 寫入 metadata.json
-          const backupPayload = {
-            version: '2.0', backupAt: Date.now(), books: serializedBooks,
-            customFolders: getCustomFolders(), aiPromptsTemplates: aiPromptsTemplatesList
-          };
-          await Filesystem.writeFile({
-            path: 'backup_temp/metadata.json',
-            data: btoa(unescape(encodeURIComponent(JSON.stringify(backupPayload)))),
-            directory: 'CACHE'
-          });
-
-          // 呼叫原生 Java 端 ZipOutputStream 高速打包
-          const zipResult = await NativeTTS.createZipFromDirectory({
-            sourcePath: 'backup_temp',
-            outputFilename: filename
-          });
-
-          // 彈出系統另存為對話框
           try {
-            if (typeof NativeTTS.saveFileToSystem === 'function') {
-              await NativeTTS.saveFileToSystem({
-                filename: filename,
-                fileUri: zipResult.uri
-              });
-              alert(getMsg('backup_success'));
-            } else {
-              // 降級：使用分享
-              const { Share } = window.Capacitor.Plugins;
-              if (Share) {
-                await Share.share({
-                  title: getMsg('backup_share_title'),
-                  text: getMsg('backup_share_text'),
-                  url: zipResult.uri,
-                  dialogTitle: getMsg('backup_share_dialog_title')
-                });
-              }
-              alert(getMsg('backup_success'));
-            }
-          } catch (saveErr) {
-            if (saveErr.message && /cancel/i.test(saveErr.message)) {
-              console.log('User cancelled Android save dialog');
-            } else {
-              throw saveErr;
-            }
-          } finally {
-            // 清理暫存目錄和 ZIP 文件
-            try { await Filesystem.rmdir({ path: 'backup_temp', directory: 'CACHE', recursive: true }); } catch (e) { /* ignore */ }
-            try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
-          }
-          return;
-        } catch (err) {
-          console.warn('Android native ZIP backup failed, falling back to JSZip:', err);
-          // 降級到下面的通用 JSZip 路徑
+            if (!backupDialogEl.open) backupDialogEl.showModal();
+          } catch (e) {}
         }
+
+        // 清理並建立暫存目錄
+        try { await Filesystem.rmdir({ path: 'backup_temp', directory: 'CACHE', recursive: true }); } catch (e) { /* ignore */ }
+        await Filesystem.mkdir({ path: 'backup_temp', directory: 'CACHE', recursive: true });
+        await Filesystem.mkdir({ path: 'backup_temp/books', directory: 'CACHE', recursive: true });
+        await Filesystem.mkdir({ path: 'backup_temp/covers', directory: 'CACHE', recursive: true });
+
+        // 逐本寫入書籍文件和封面至 CACHE（一次只有一本書的 Blob 在記憶體中）
+        const serializedBooks = [];
+        for (let i = 0; i < books.length; i++) {
+          const book = books[i];
+          if (backupProgressText) {
+            backupProgressText.textContent = `${getMsg('backing_up')} (${i + 1}/${books.length})`;
+          }
+
+          const meta = {
+            id: book.id, title: book.title, author: book.author,
+            format: book.format, size: book.size, addedAt: book.addedAt,
+            lastReadAt: book.lastReadAt, progress: book.progress,
+            bookmarks: book.bookmarks || [], notes: book.notes || [],
+            stats: book.stats || null, aiChats: book.aiChats || [],
+            bookSummary: book.bookSummary || '', chapterSummaries: book.chapterSummaries || {},
+            folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
+          };
+
+          if (!isLightweight && book.file instanceof Blob) {
+            meta.hasFile = true;
+            await writeBlobToCache(Filesystem, `backup_temp/books/${book.id}.bin`, book.file);
+          }
+
+          if (book.cover instanceof Blob) {
+            meta.coverType = 'blob';
+            await writeBlobToCache(Filesystem, `backup_temp/covers/${book.id}.bin`, book.cover);
+          } else if (typeof book.cover === 'string') {
+            meta.coverType = 'string';
+            meta.coverValue = book.cover;
+          }
+
+          serializedBooks.push(meta);
+          // 微延遲讓垃圾回收釋放記憶體
+          await new Promise(r => setTimeout(r, 10));
+        }
+
+        // 寫入 metadata.json
+        const backupPayload = {
+          version: '2.0', backupAt: Date.now(), books: serializedBooks,
+          customFolders: getCustomFolders(), aiPromptsTemplates: aiPromptsTemplatesList
+        };
+        await Filesystem.writeFile({
+          path: 'backup_temp/metadata.json',
+          data: btoa(unescape(encodeURIComponent(JSON.stringify(backupPayload)))),
+          directory: 'CACHE'
+        });
+
+        if (backupProgressText) {
+          backupProgressText.textContent = getMsg('backup_packing_hint') || '正在生成压缩包...';
+        }
+
+        // 呼叫原生端 (Android Java / iOS Swift) 高速磁碟級打包
+        const zipResult = await NativeTTS.createZipFromDirectory({
+          sourcePath: 'backup_temp',
+          outputFilename: filename
+        });
+
+        // 彈出系統另存為對話框或調用 Share
+        try {
+          if (isAndroid && typeof NativeTTS.saveFileToSystem === 'function') {
+            await NativeTTS.saveFileToSystem({
+              filename: filename,
+              fileUri: zipResult.uri
+            });
+            if (backupDialogEl && backupDialogEl.open) backupDialogEl.close();
+            alert(getMsg('backup_success'));
+          } else if (Share) {
+            if (backupDialogEl && backupDialogEl.open) backupDialogEl.close();
+            await Share.share({
+              title: getMsg('backup_share_title'),
+              text: getMsg('backup_share_text'),
+              url: zipResult.uri,
+              dialogTitle: getMsg('backup_share_dialog_title')
+            });
+          }
+        } catch (saveErr) {
+          if (saveErr.message && /cancel/i.test(saveErr.message)) {
+            console.log('User cancelled save/share dialog');
+          } else {
+            throw saveErr;
+          }
+        } finally {
+          try { await Filesystem.rmdir({ path: 'backup_temp', directory: 'CACHE', recursive: true }); } catch (e) { /* ignore */ }
+          try { await Filesystem.deleteFile({ path: filename, directory: 'CACHE' }); } catch (e) { /* ignore */ }
+          if (backupDialogEl && backupDialogEl.open) backupDialogEl.close();
+        }
+        return;
+      } catch (err) {
+        console.warn('Native ZIP backup failed, falling back to JSZip:', err);
       }
     }
 
     // =====================================================================
-    // 路徑 B：瀏覽器 / 非 Android Capacitor — 使用 JSZip
+    // 路徑 B：瀏覽器 / 離線單文件版 (Safari, Chrome, PWA 等) — 流式 Blob JSZip
+    // 優勢：傳遞 Blob 引用由 JSZip 內部流式讀取，不把所有檔案全量加載至 JS Heap 內存，防止 iOS Jetsam OOM
     // =====================================================================
 
     // 3. 在支援的瀏覽器中，優先使用 File System Access API 直接彈出保存至文件系統對話框
@@ -10007,6 +10128,8 @@ async function handleExportBackup() {
     const backupDownloadLink = document.getElementById('backup-direct-download-link');
 
     if (backupDialogEl && !useSaveFilePicker && !isCapacitor) {
+      const optionsView = document.getElementById('backup-options-view');
+      if (optionsView) optionsView.style.display = 'none';
       if (backupProgressView) backupProgressView.style.display = 'flex';
       if (backupCompleteView) backupCompleteView.style.display = 'none';
       if (backupErrorView) backupErrorView.style.display = 'none';
@@ -10052,13 +10175,13 @@ async function handleExportBackup() {
         folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
       };
 
-      if (book.file instanceof Blob) {
+      if (!isLightweight && book.file instanceof Blob) {
         try {
-          const fileBuf = await book.file.arrayBuffer();
-          if (fileBuf && fileBuf.byteLength > 0) {
-            zip.file(`books/${book.id}.bin`, fileBuf);
-            meta.hasFile = true;
-          }
+          // 輕量檢查 Blob 是否可訪問（僅讀取 1 字節，避免將整個數十 MB 的文件加載進 JS Heap 內存）
+          await book.file.slice(0, 1).arrayBuffer();
+          // 直接傳入 Blob 引用由 JSZip 內部流式讀取，杜絕一次性加載數百 MB 數據引發的 iOS Jetsam OOM 崩潰
+          zip.file(`books/${book.id}.bin`, book.file);
+          meta.hasFile = true;
         } catch (fErr) {
           console.warn(`[Backup] Failed to read file for book ${book.id} (${book.title}):`, fErr);
         }
@@ -10066,11 +10189,9 @@ async function handleExportBackup() {
 
       if (book.cover instanceof Blob) {
         try {
-          const coverBuf = await book.cover.arrayBuffer();
-          if (coverBuf && coverBuf.byteLength > 0) {
-            zip.file(`covers/${book.id}.bin`, coverBuf);
-            meta.coverType = 'blob';
-          }
+          await book.cover.slice(0, 1).arrayBuffer();
+          zip.file(`covers/${book.id}.bin`, book.cover);
+          meta.coverType = 'blob';
         } catch (cErr) {
           const cached = bookCoverCache.get(book.id);
           if (typeof cached === 'string') {
@@ -10084,6 +10205,8 @@ async function handleExportBackup() {
       }
 
       serializedBooks.push(meta);
+      // 微延遲讓垃圾回收釋放記憶體
+      await new Promise(r => setTimeout(r, 10));
     }
 
     const backupPayload = {
@@ -10217,7 +10340,8 @@ async function handleExportBackup() {
 
       if (backupDialogEl) {
         if (backupFileMeta) {
-          backupFileMeta.textContent = `${filename} · ${fileSizeStr} · ${books.length} ${getMsg('books_count') || 'books'}`;
+          const modeTag = isLightweight ? (getMsg('backup_mode_light_title') || '轻量数据备份') : (getMsg('backup_mode_full_title') || '完整备份');
+          backupFileMeta.textContent = `${filename} · ${fileSizeStr} · ${books.length} ${getMsg('books_count') || 'books'} (${modeTag})`;
         }
         if (backupDownloadLink) {
           backupDownloadLink.href = downloadUrl;

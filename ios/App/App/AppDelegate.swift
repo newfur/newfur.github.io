@@ -310,7 +310,37 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func createZipFromDirectory(_ call: CAPPluginCall) {
-        call.reject("Not implemented on iOS (JSZip is used on iOS)")
+        guard let sourcePath = call.getString("sourcePath"),
+              let outputFilename = call.getString("outputFilename") else {
+            call.reject("Missing sourcePath or outputFilename")
+            return
+        }
+
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let sourceURL = cacheDir.appendingPathComponent(sourcePath)
+        let outputURL = cacheDir.appendingPathComponent(outputFilename)
+
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            call.reject("Source directory does not exist: \(sourceURL.path)")
+            return
+        }
+
+        try? FileManager.default.removeItem(at: outputURL)
+
+        var coordError: NSError?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: sourceURL, options: .forUploading, error: &coordError) { zipURL in
+            do {
+                try FileManager.default.copyItem(at: zipURL, to: outputURL)
+                call.resolve(["uri": outputURL.absoluteString])
+            } catch {
+                call.reject("Failed to save zip archive: \(error.localizedDescription)")
+            }
+        }
+
+        if let error = coordError {
+            call.reject("ZIP creation failed: \(error.localizedDescription)")
+        }
     }
 
     @objc func saveFileToSystem(_ call: CAPPluginCall) {
