@@ -511,6 +511,7 @@ export class TTSEngine {
     this.container = containerElement;
     this.sentences = [];
     this.currentIndex = 0;
+    this.lastPrefetchedChapterIndex = this.currentChapterIndex;
     
     // 清理舊的音訊快取 blob URLs，防止章節切換時內存累積
     if (this.audioCache.size > 0) {
@@ -2199,16 +2200,16 @@ export class TTSEngine {
 
   // 預加載下一章，並將句子直接追加到當前的 sentences 列表中以實現在線預合成
   async _prefetchNextChapter() {
-    if (!this.getNextChapterData || this.currentChapterIndex === undefined) return;
+    if (!this.getNextChapterData || this.lastPrefetchedChapterIndex === undefined) return;
     
-    const targetNextIndex = this.currentChapterIndex + 1;
+    const targetNextIndex = this.lastPrefetchedChapterIndex + 1;
     if (this.prefetchedChapterIndex === targetNextIndex) return;
     
     // 提前鎖定標記，防範多個異步調用同時並發預加載同一章節，導致句子隊列重複追加
     this.prefetchedChapterIndex = targetNextIndex;
     
     try {
-      const nextChapter = await this.getNextChapterData(this.currentChapterIndex);
+      const nextChapter = await this.getNextChapterData(this.lastPrefetchedChapterIndex);
       if (!nextChapter || !this.isPlaying) {
         if (this.prefetchedChapterIndex === targetNextIndex) {
           this.prefetchedChapterIndex = null;
@@ -2223,17 +2224,24 @@ export class TTSEngine {
         return;
       }
       
+      this.lastPrefetchedChapterIndex = targetNextIndex;
       const nextSentences = this._extractSentencesFromHtml(nextChapter.html, nextChapter.index);
       
-      const startIdx = this.sentences.length;
-      nextSentences.forEach((s, i) => {
-        s.index = startIdx + i;
-        s.relativeIndex = i;
-        s.chapterIndex = nextChapter.index;
-        this.sentences.push(s);
-      });
-      
-      this._fillPreFetchBuffer();
+      if (nextSentences.length > 0) {
+        const startIdx = this.sentences.length;
+        nextSentences.forEach((s, i) => {
+          s.index = startIdx + i;
+          s.relativeIndex = i;
+          s.chapterIndex = nextChapter.index;
+          this.sentences.push(s);
+        });
+        
+        this._fillPreFetchBuffer();
+      } else {
+        // 如果該章節為空（例如全是圖片無文字），直接解鎖並繼續預加載下一章
+        this.prefetchedChapterIndex = null;
+        this._prefetchNextChapter();
+      }
     } catch (e) {
       console.error("Failed to prefetch next chapter:", e);
       if (this.prefetchedChapterIndex === targetNextIndex) {
