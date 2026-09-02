@@ -363,7 +363,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         if let commaIndex = cleanBase64.firstIndex(of: ",") {
             cleanBase64 = String(cleanBase64[cleanBase64.index(after: commaIndex)...])
         }
-        return Data(base64Encoded: cleanBase64)
+        return Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters)
     }
 
     private func updateNowPlaying(title: String, artist: String, isPlaying: Bool, coverBase64: String? = nil) {

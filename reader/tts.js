@@ -135,6 +135,7 @@ export class TTSEngine {
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
     this.playbackStartSessionIndex = null;
     this.voiceSessionId = 0;
+    this._lastSentCoverBookId = null;
 
     // Custom LLM / Local TTS Config
     this.ttsProvider = 'edge'; // 'edge' | 'system' | 'openai' | 'local'
@@ -2061,15 +2062,23 @@ export class TTSEngine {
     const title = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading';
     const artist = typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader';
     const coverBase64 = await getBookCoverBase64();
+    const currentBookId = typeof currentBook !== 'undefined' && currentBook ? currentBook.id : null;
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
-      window.Capacitor.Plugins.NativeTTS.updateMetadata({
+      const nativePayload = {
         title: title,
         artist: artist,
-        text: text,
-        cover: coverBase64
-      }).catch(e => console.error("Error updating native metadata:", e));
+        text: text
+      };
+      
+      // 僅在書籍變更時發送封面，避免頻繁通過橋接發送數 MB 的 Base64 字串導致系統卡頓或忽略更新
+      if (coverBase64 && this._lastSentCoverBookId !== currentBookId) {
+        nativePayload.cover = coverBase64;
+        this._lastSentCoverBookId = currentBookId;
+      }
+      
+      window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
     if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
@@ -2080,8 +2089,13 @@ export class TTSEngine {
           album: title
         };
         if (coverBase64) {
+          let mimeType = 'image/jpeg';
+          if (coverBase64.startsWith('data:image/png')) mimeType = 'image/png';
+          else if (coverBase64.startsWith('data:image/webp')) mimeType = 'image/webp';
+          else if (coverBase64.startsWith('data:image/gif')) mimeType = 'image/gif';
+          
           metadataOpts.artwork = [
-            { src: coverBase64, sizes: '512x512', type: 'image/jpeg' }
+            { src: coverBase64, sizes: '512x512', type: mimeType }
           ];
         }
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
@@ -2425,6 +2439,7 @@ export class TTSEngine {
     this.isPlaying = false;
     this.isPaused = false;
     this.playbackStarted = false;
+    this._lastSentCoverBookId = null;
     this._stopSilenceKeepAlive();
     this._stopPolling();
     
@@ -2679,13 +2694,21 @@ export class TTSEngine {
   }
 }
 
+let _cachedCoverBookId = null;
+let _cachedCoverBase64 = '';
+
 async function getBookCoverBase64() {
   if (typeof currentBook === 'undefined' || !currentBook || !currentBook.cover) {
     return '';
   }
+  if (_cachedCoverBookId === currentBook.id && _cachedCoverBase64) {
+    return _cachedCoverBase64;
+  }
   try {
     if (typeof currentBook.cover === 'string') {
       if (currentBook.cover.startsWith('data:')) {
+        _cachedCoverBookId = currentBook.id;
+        _cachedCoverBase64 = currentBook.cover;
         return currentBook.cover;
       }
       return '';
@@ -2693,7 +2716,11 @@ async function getBookCoverBase64() {
     if (currentBook.cover instanceof Blob) {
       return new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
+        reader.onloadend = () => {
+          _cachedCoverBookId = currentBook.id;
+          _cachedCoverBase64 = reader.result;
+          resolve(reader.result);
+        };
         reader.onerror = () => resolve('');
         reader.readAsDataURL(currentBook.cover);
       });
