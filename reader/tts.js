@@ -1460,14 +1460,12 @@ export class TTSEngine {
     if (this.audioCache.has(index)) return;
     if (retryCount === 0 && this.fetchingIndices.has(index)) return;
 
-    // 判斷是否進入分組發送階段：前 2 句單句獲取以保證極速啟動，從第 3 句起合併請求
-    const isGroupPhase = (typeof this.playbackStartSessionIndex === 'number') ? 
-                         (index >= this.playbackStartSessionIndex + 2) : (index >= 2);
-
+    // 判斷是否進入分組發送階段：直接依據 _getGroupInfoForIndex 判定該句子是否屬於合併分組
     const currentVoiceSessionId = this.voiceSessionId;
+    const groupInfo = this._getGroupInfoForIndex(index);
 
-    if (!isGroupPhase) {
-      // 1. 單句獲取階段
+    if (!groupInfo) {
+      // 1. 單句獲取階段（前序單句或未分組的獨立句子）
       this.fetchingIndices.add(index);
       const sentence = this.sentences[index];
       return this._downloadSentenceAudio(sentence).then(blob => {
@@ -1540,9 +1538,6 @@ export class TTSEngine {
       });
     } else {
       // 2. 合併發送階段（動態分組，不跨越章節邊界）
-      const groupInfo = this._getGroupInfoForIndex(index);
-      if (!groupInfo) return;
-      
       const groupStartIndex = groupInfo.groupStartIndex;
       const groupSentences = groupInfo.sentences;
       
@@ -1573,9 +1568,10 @@ export class TTSEngine {
         }
         return text;
       });
-      const mergedText = texts.join(' ');
+      
+      const combinedText = texts.join(' ');
       const virtualSentence = {
-        text: mergedText,
+        text: combinedText,
         chapterIndex: groupSentences[0].chapterIndex,
         isHeading: groupSentences[groupSentences.length - 1].isHeading
       };
@@ -1597,6 +1593,13 @@ export class TTSEngine {
           setTimeout(() => {
             this._fetchSentence(groupStartIndex, retryCount + 1);
           }, 1500);
+          return;
+        }
+
+        // 若分組多次獲取失敗且當前正卡在該分組，跳過該分組繼續播放
+        if (this.isPlaying && !this.isPaused && this.currentIndex >= groupStartIndex && this.currentIndex < groupStartIndex + groupSentences.length) {
+          this.currentIndex = groupStartIndex + groupSentences.length;
+          this._playActiveSentence();
         }
       });
     }
