@@ -106,12 +106,6 @@ export class TTSEngine {
     this.players.forEach(audio => {
       audio.preload = 'auto';
       audio.disableRemotePlayback = true; // 停用遠端播放，提高 iOS 穩定性
-      
-      audio.addEventListener('pause', () => {
-        if (this.isPlaying && !this.isPaused && audio === this.currentAudio) {
-          this.pause();
-        }
-      });
     });
 
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
@@ -1421,7 +1415,7 @@ export class TTSEngine {
           return;
         }
 
-        if (this.isPlaying && this.currentIndex === index) {
+        if (this.isPlaying && !this.isPaused && this.currentIndex === index) {
           this.currentIndex = index + 1;
           this._playActiveSentence();
         }
@@ -1550,10 +1544,10 @@ export class TTSEngine {
   }
 
   _onAudioCacheReady(index) {
-    if (this.isPlaying && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
+    if (this.isPlaying && !this.isPaused && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
       this._playActiveSentence();
     }
-    if (this.isPlaying && index === this.currentIndex + 1) {
+    if (this.isPlaying && !this.isPaused && index === this.currentIndex + 1) {
       this._prewarmNextPlayer();
     }
   }
@@ -1613,7 +1607,7 @@ export class TTSEngine {
   }
 
   _playActiveSentence() {
-    if (!this.isPlaying) return;
+    if (!this.isPlaying || this.isPaused) return;
     
     const index = this.currentIndex;
     if (index >= this.sentences.length) {
@@ -2487,21 +2481,11 @@ export class TTSEngine {
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
         this.synth.resume();
-      } else if (this.currentAudio && this.currentAudio.src) {
+      } else if (this.currentAudio && this.currentAudio.src && !this.currentAudio.ended && this.currentAudio.currentTime < (this.currentAudio.duration || 1) - 0.05) {
         const playPromise = this.currentAudio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
             this._startPolling();
-            // 監控音訊是否真實推進：若 300ms 後仍處於暫停或 currentTime 停滯，說明音訊解碼管線已因系統中斷失效，重新激活播放
-            const savedTime = this.currentAudio.currentTime;
-            setTimeout(() => {
-              if (this.isPlaying && !this.isPaused && this.currentAudio) {
-                if (this.currentAudio.paused || (this.currentAudio.currentTime === savedTime && !this.currentAudio.ended)) {
-                  console.warn("Audio pipeline stalled after resume, restarting active sentence...");
-                  this._playActiveSentence();
-                }
-              }
-            }, 300);
           }).catch(err => {
             console.error("Resume error, replaying current sentence:", err);
             this._playActiveSentence();

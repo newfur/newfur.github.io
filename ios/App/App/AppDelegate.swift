@@ -641,13 +641,18 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
                 if #available(iOS 13.0, *) {
                     MPNowPlayingInfoCenter.default().playbackState = shouldPlay ? .playing : .paused
                 }
-                if shouldPlay {
-                    self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
-                    self.notifyListeners("mediaAction", data: ["action": "play"])
-                } else {
-                    self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); }", completionHandler: nil)
-                    self.notifyListeners("mediaAction", data: ["action": "pause"])
-                }
+                self.bridge?.webView?.evaluateJavaScript("""
+                    (function() {
+                        if (window.tts) {
+                            if (window.tts.isPaused || !window.tts.isPlaying) {
+                                window.tts.resume();
+                            } else {
+                                window.tts.pause();
+                            }
+                        }
+                    })();
+                """, completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "toggle"])
             }
             return .success
         }
