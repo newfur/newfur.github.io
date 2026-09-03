@@ -71,6 +71,9 @@ function isSeparatorSentence(text) {
 export class TTSEngine {
   constructor() {
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (typeof window !== 'undefined') {
+      window.tts = this;
+    }
     
     // 播放狀態定義
     this.isPlaying = false;
@@ -148,21 +151,20 @@ export class TTSEngine {
       try {
         window.Capacitor.Plugins.NativeTTS.addListener('mediaAction', (data) => {
           console.log("Received native media action:", data.action);
-          if (!this.isPlaying) return;
           const action = (data.action || '').toLowerCase();
           switch (action) {
             case 'play':
             case 'action_play':
-              if (this.isPaused) this.resume();
+              this.resume();
               break;
             case 'pause':
             case 'action_pause':
-              if (!this.isPaused) this.pause();
+              if (this.isPlaying && !this.isPaused) this.pause();
               break;
             case 'toggle':
             case 'action_toggle_play':
             case 'action_play_pause':
-              if (this.isPaused) {
+              if (this.isPaused || !this.isPlaying) {
                 this.resume();
               } else {
                 this.pause();
@@ -2458,7 +2460,11 @@ export class TTSEngine {
   }
 
   resume() {
-    if (this.isPlaying && this.isPaused) {
+    if (!this.isPlaying) {
+      this.play(this.currentIndex);
+      return;
+    }
+    if (this.isPaused) {
       this.isPaused = false;
       if (this._silencePauseTimeout) {
         clearTimeout(this._silencePauseTimeout);

@@ -64,7 +64,7 @@ public class NativeTTS extends Plugin {
                     if ("pause".equalsIgnoreCase(action)) {
                         js = "(function() { if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); } })()";
                     } else if ("play".equalsIgnoreCase(action)) {
-                        js = "(function() { if (window.tts) { window.tts.resume(); } })()";
+                        js = "(function() { if (window.tts) { window.tts.resume(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.play(); }); } })()";
                     } else if ("next".equalsIgnoreCase(action)) {
                         js = "(function() { if (window.tts) { window.tts.next(); } })()";
                     } else if ("previous".equalsIgnoreCase(action)) {
