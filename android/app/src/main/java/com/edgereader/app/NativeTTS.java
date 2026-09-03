@@ -103,6 +103,7 @@ public class NativeTTS extends Plugin {
             intent.putExtra("title", call.getString("title", ""));
             intent.putExtra("artist", call.getString("artist", ""));
             intent.putExtra("text", call.getString("text", ""));
+            intent.putExtra("isPlaying", call.getBoolean("isPlaying", true));
             String cover = call.getString("cover");
             if (cover != null && !cover.isEmpty()) {
                 intent.putExtra("cover", cover);

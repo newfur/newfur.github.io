@@ -2093,7 +2093,8 @@ export class TTSEngine {
       const nativePayload = {
         title: title,
         artist: artist,
-        text: text
+        text: text,
+        isPlaying: this.isPlaying && !this.isPaused
       };
       
       // 發送壓縮後的輕量封面 (約 20KB~40KB)，保證原生端能始終保持或更新封面

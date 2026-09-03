@@ -9,6 +9,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        application.beginReceivingRemoteControlEvents()
         // Configure audio session for background TTS playback
         do {
             let audioSession = AVAudioSession.sharedInstance()
@@ -114,6 +115,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     private var activeWebSocketTask: URLSessionWebSocketTask?
     private var currentArtwork: MPMediaItemArtwork?
     private var wasPlayingBeforeInterruption: Bool = false
+    private var isCurrentlyPlaying: Bool = false
+
+    public override init() {
+        super.init()
+        setupRemoteCommands()
+        setupAudioSessionObserver()
+    }
 
     @objc func setStatusBarStyle(_ call: CAPPluginCall) {
         let style = call.getString("style") ?? "dark"
@@ -282,17 +290,21 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func startForegroundService(_ call: CAPPluginCall) {
+        setupRemoteCommands()
+        setupAudioSessionObserver()
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
         let text = call.getString("text")
         let isPlaying = call.getBool("isPlaying") ?? true
         let coverBase64 = call.getString("cover")
+        self.isCurrentlyPlaying = isPlaying
         updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
         call.resolve()
     }
 
     @objc func updatePlaybackState(_ call: CAPPluginCall) {
         let isPlaying = call.getBool("isPlaying") ?? false
+        self.isCurrentlyPlaying = isPlaying
         if !isPlaying {
             self.wasPlayingBeforeInterruption = false
         }
@@ -315,12 +327,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         let text = call.getString("text")
         let coverBase64 = call.getString("cover")
         let isPlaying = call.getBool("isPlaying") ?? true
+        self.isCurrentlyPlaying = isPlaying
         updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
         call.resolve()
     }
 
     @objc func stopForegroundService(_ call: CAPPluginCall) {
         self.wasPlayingBeforeInterruption = false
+        self.isCurrentlyPlaying = false
         self.currentArtwork = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         if #available(iOS 13.0, *) {
@@ -494,23 +508,82 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         commandCenter.previousTrackCommand.isEnabled = true
 
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "play"])
+            guard let self = self else { return .commandFailed }
+            print("[NativeTTS] RemoteCommand: play")
+            DispatchQueue.main.async {
+                self.isCurrentlyPlaying = true
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .playing
+                }
+                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "play"])
+            }
             return .success
         }
+
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "pause"])
+            guard let self = self else { return .commandFailed }
+            print("[NativeTTS] RemoteCommand: pause")
+            DispatchQueue.main.async {
+                self.isCurrentlyPlaying = false
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .paused
+                }
+                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); }", completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "pause"])
+            }
             return .success
         }
+
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "toggle"])
+            guard let self = self else { return .commandFailed }
+            print("[NativeTTS] RemoteCommand: togglePlayPause")
+            DispatchQueue.main.async {
+                let shouldPlay = !self.isCurrentlyPlaying
+                self.isCurrentlyPlaying = shouldPlay
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = shouldPlay ? 1.0 : 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = shouldPlay ? .playing : .paused
+                }
+                if shouldPlay {
+                    self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
+                    self.notifyListeners("mediaAction", data: ["action": "play"])
+                } else {
+                    self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); }", completionHandler: nil)
+                    self.notifyListeners("mediaAction", data: ["action": "pause"])
+                }
+            }
             return .success
         }
+
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "next"])
+            guard let self = self else { return .commandFailed }
+            print("[NativeTTS] RemoteCommand: next")
+            DispatchQueue.main.async {
+                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.next(); }", completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "next"])
+            }
             return .success
         }
+
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.notifyListeners("mediaAction", data: ["action": "previous"])
+            guard let self = self else { return .commandFailed }
+            print("[NativeTTS] RemoteCommand: previous")
+            DispatchQueue.main.async {
+                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.previous(); }", completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "previous"])
+            }
             return .success
         }
     }

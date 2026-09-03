@@ -62,16 +62,23 @@ public class AudioPlayerService extends Service {
 
         // Initialize MediaSession
         mediaSession = new MediaSession(this, "EdgeReaderTTS");
+        mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
         mediaSession.setCallback(new MediaSession.Callback() {
             @Override
             public void onPlay() {
                 Log.d(TAG, "MediaSession: onPlay");
+                isPlaying = true;
+                updatePlaybackState(true);
+                updateNotification(currentTitle, currentArtist, currentText, true);
                 notifyJS("play");
             }
 
             @Override
             public void onPause() {
                 Log.d(TAG, "MediaSession: onPause");
+                isPlaying = false;
+                updatePlaybackState(false);
+                updateNotification(currentTitle, currentArtist, currentText, false);
                 notifyJS("pause");
             }
 
@@ -90,6 +97,10 @@ public class AudioPlayerService extends Service {
             @Override
             public void onStop() {
                 Log.d(TAG, "MediaSession: onStop");
+                isPlaying = false;
+                updatePlaybackState(false);
+                abandonAudioFocus();
+                wasPlayingBeforeFocusLoss = false;
                 notifyJS("stop");
             }
         });
@@ -131,6 +142,9 @@ public class AudioPlayerService extends Service {
                     Log.d(TAG, "AUDIOFOCUS_GAIN (wasPlayingBefore=" + wasPlayingBeforeFocusLoss + ")");
                     if (wasPlayingBeforeFocusLoss) {
                         wasPlayingBeforeFocusLoss = false;
+                        isPlaying = true;
+                        updatePlaybackState(true);
+                        updateNotification(currentTitle, currentArtist, currentText, true);
                         // 延迟 120ms 确保底层音频输出通道已完全交还
                         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                             notifyJS("play");
@@ -196,7 +210,17 @@ public class AudioPlayerService extends Service {
             if (action != null) {
                 switch (action) {
                     case "ACTION_PLAY_PAUSE":
-                        notifyJS("toggle");
+                        if (isPlaying) {
+                            isPlaying = false;
+                            updatePlaybackState(false);
+                            updateNotification(currentTitle, currentArtist, currentText, false);
+                            notifyJS("pause");
+                        } else {
+                            isPlaying = true;
+                            updatePlaybackState(true);
+                            updateNotification(currentTitle, currentArtist, currentText, true);
+                            notifyJS("play");
+                        }
                         break;
                     case "ACTION_NEXT":
                         notifyJS("next");
@@ -207,6 +231,8 @@ public class AudioPlayerService extends Service {
                     case "ACTION_STOP":
                         abandonAudioFocus();
                         wasPlayingBeforeFocusLoss = false;
+                        isPlaying = false;
+                        updatePlaybackState(false);
                         notifyJS("stop");
                         break;
                     case "ACTION_START":
@@ -222,8 +248,8 @@ public class AudioPlayerService extends Service {
                             coverBitmap = null;
                         }
                         
-                        startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
                         updatePlaybackState(isPlaying);
+                        startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
                         updateMetadata(currentTitle, currentArtist, currentText);
                         break;
                     case "ACTION_UPDATE_STATE":
@@ -238,6 +264,9 @@ public class AudioPlayerService extends Service {
                         currentTitle = intent.getStringExtra("title");
                         currentArtist = intent.getStringExtra("artist");
                         currentText = intent.getStringExtra("text");
+                        if (intent.hasExtra("isPlaying")) {
+                            isPlaying = intent.getBooleanExtra("isPlaying", isPlaying);
+                        }
                         if (intent.hasExtra("cover")) {
                             String updateCoverBase64 = intent.getStringExtra("cover");
                             if (updateCoverBase64 != null && !updateCoverBase64.isEmpty()) {
@@ -245,6 +274,7 @@ public class AudioPlayerService extends Service {
                             }
                         }
                         updateMetadata(currentTitle, currentArtist, currentText);
+                        updatePlaybackState(isPlaying);
                         updateNotification(currentTitle, currentArtist, currentText, isPlaying);
                         break;
                 }
@@ -290,7 +320,7 @@ public class AudioPlayerService extends Service {
         builder.setContentTitle(text != null && !text.isEmpty() ? text : "Reading...")
                .setContentText(title != null && !title.isEmpty() ? title : "E-Book Reader")
                .setSubText(artist != null && !artist.isEmpty() ? artist : "TTS")
-               .setSmallIcon(android.R.drawable.ic_media_play)
+               .setSmallIcon(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play)
                .setContentIntent(pendingIntent)
                .setVisibility(Notification.VISIBILITY_PUBLIC)
                .setOngoing(isPlaying);
@@ -336,16 +366,23 @@ public class AudioPlayerService extends Service {
     }
 
     private void updatePlaybackState(boolean isPlaying) {
+        this.isPlaying = isPlaying;
+        long actions = PlaybackState.ACTION_PLAY_PAUSE |
+                       PlaybackState.ACTION_SKIP_TO_NEXT |
+                       PlaybackState.ACTION_SKIP_TO_PREVIOUS |
+                       PlaybackState.ACTION_STOP;
+
+        if (isPlaying) {
+            actions |= PlaybackState.ACTION_PAUSE;
+        } else {
+            actions |= PlaybackState.ACTION_PLAY;
+        }
+
         PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_PLAY |
-                            PlaybackState.ACTION_PAUSE |
-                            PlaybackState.ACTION_PLAY_PAUSE |
-                            PlaybackState.ACTION_SKIP_TO_NEXT |
-                            PlaybackState.ACTION_SKIP_TO_PREVIOUS |
-                            PlaybackState.ACTION_STOP);
+                .setActions(actions);
 
         int state = isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
-        stateBuilder.setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f);
+        stateBuilder.setState(state, 0, isPlaying ? 1.0f : 0.0f, android.os.SystemClock.elapsedRealtime());
         mediaSession.setPlaybackState(stateBuilder.build());
 
         if (isPlaying) {

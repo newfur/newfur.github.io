@@ -62,6 +62,9 @@ import { ComicParser } from './parsers/comic-parser.js';
 // 全局實例
 const library = new BookLibrary();
 const tts = new TTSEngine();
+if (typeof window !== 'undefined') {
+  window.tts = tts;
+}
 const ai = new AIEngine();
 
 // 狀態追蹤
