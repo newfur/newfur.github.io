@@ -1828,7 +1828,8 @@ export class TTSEngine {
     }
 
     // 3. 已有 3 句以上緩存，有足夠時間，此時再放開並發加速填充 10 句緩衝區
-    return isNativeApp ? Math.min(2, this.maxConcurrentFetches) : this.maxConcurrentFetches;
+    // 統一所有平台（插件版、Android版、網頁版、iOS版）最大並發為 2，避免過多並發影響整體穩定性
+    return Math.min(2, this.maxConcurrentFetches);
   }
 
   _processPrefetchQueue() {
