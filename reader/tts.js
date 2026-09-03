@@ -68,6 +68,22 @@ function isSeparatorSentence(text) {
   return false;
 }
 
+// 輔助函式：判斷一個句子是否為常見語氣詞/嘆詞/擬聲詞超短句（如「嗯。」「啊！」「哦……」「哎呀！」「啧。」）
+// 若在同一段落內出現此類短句，斷句時會自動與後續句子合併，避免孤立發音突兀與過度碎片化
+function isInterjectionShortSentence(text) {
+  if (!text) return false;
+  // 去除所有標點符號、引號、括號、符號與空白字符
+  const core = text.replace(/[\s\p{P}\p{S}]/gu, '');
+  if (!core || core.length === 0 || core.length > 3) return false;
+  // 中文常見語氣詞/嘆詞/擬聲詞
+  const zhInterjection = /^[嗯啊哦呃哎咦呀哼哈哇切喂呸嘘咳嗷喔嘻呵哟唷嘿呜唔呐啧嘁]+$/;
+  if (zhInterjection.test(core)) return true;
+  // 英文常見語氣嘆詞 (oh, ah, um, uh, hmm, etc.)
+  const enInterjection = /^(oh|ah|um|uh|hmm|hm|alas|wow|oops|hey|eh)$/i;
+  if (enInterjection.test(core)) return true;
+  return false;
+}
+
 export class TTSEngine {
   constructor() {
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
@@ -670,7 +686,7 @@ export class TTSEngine {
               currentActiveSubChapterIndex = activeSubChapterIndex;
 
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence) {
+              if (endsSentence && !isInterjectionShortSentence(currentText)) {
                 flushCurrentSentence();
               }
             } else {
@@ -858,7 +874,7 @@ export class TTSEngine {
               currentActiveSubChapterIndex = activeSubChapterIndex;
 
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence) {
+              if (endsSentence && !isInterjectionShortSentence(currentText)) {
                 flushCurrentSentence();
               }
             } else {
@@ -912,24 +928,44 @@ export class TTSEngine {
     this.sentences = [];
     this.currentIndex = 0;
     
-    const matches = splitTextIntoSentences(text);
-    
-    if (matches) {
-      matches.forEach((s, index) => {
-        const clean = s.trim();
-        if (clean.length > 0) {
-          if (!isSeparatorSentence(clean)) {
-            this.sentences.push({
-              index: this.sentences.length,
-              chapterIndex: this.currentChapterIndex,
-              text: clean,
-              isHeading: false,
-              element: null
-            });
+    // 按行切分段落，保證跨行時不誤合併不同段落/角色的語氣短句
+    const paragraphs = text.split(/\r?\n/);
+    paragraphs.forEach(para => {
+      const cleanPara = para.trim();
+      if (!cleanPara) return;
+      const matches = splitTextIntoSentences(cleanPara);
+      if (matches) {
+        let currentText = "";
+        matches.forEach((s) => {
+          const clean = s.trim();
+          if (clean.length > 0) {
+            if (!isSeparatorSentence(clean)) {
+              currentText += (currentText ? " " : "") + clean;
+              const endsSentence = /[。！？.!?\r\n]/.test(s);
+              if (endsSentence && !isInterjectionShortSentence(currentText)) {
+                this.sentences.push({
+                  index: this.sentences.length,
+                  chapterIndex: this.currentChapterIndex,
+                  text: currentText.trim(),
+                  isHeading: false,
+                  element: null
+                });
+                currentText = "";
+              }
+            }
           }
+        });
+        if (currentText.trim().length > 0) {
+          this.sentences.push({
+            index: this.sentences.length,
+            chapterIndex: this.currentChapterIndex,
+            text: currentText.trim(),
+            isHeading: false,
+            element: null
+          });
         }
-      });
-    }
+      }
+    });
   }
 
   // 直接設置預先映射好的句子隊列
@@ -2824,7 +2860,7 @@ export class TTSEngine {
               currentActiveSubChapterIndex = activeSubChapterIndex;
 
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence) {
+              if (endsSentence && !isInterjectionShortSentence(currentText)) {
                 flushCurrentSentence();
               }
             }

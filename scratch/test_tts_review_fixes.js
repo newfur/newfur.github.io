@@ -84,4 +84,36 @@ assert.doesNotMatch(
   'detectBookLanguage must not use global language as first priority'
 );
 
+// Interjection short sentence detection
+const ttsSource = fs.readFileSync('reader/tts.js', 'utf8');
+function extractFunctionFromTTS(name) {
+  const marker = `function ${name}`;
+  const start = ttsSource.indexOf(marker);
+  if (start < 0) throw new Error(`Missing ${name}`);
+  let depth = 0;
+  let opened = false;
+  for (let i = ttsSource.indexOf('{', start); i < ttsSource.length; i++) {
+    if (ttsSource[i] === '{') {
+      depth++;
+      opened = true;
+    } else if (ttsSource[i] === '}') {
+      depth--;
+      if (opened && depth === 0) {
+        return ttsSource.slice(start, i + 1);
+      }
+    }
+  }
+  throw new Error(`Could not extract ${name}`);
+}
+
+const isInterjectionShortSentence = eval(`(${extractFunctionFromTTS('isInterjectionShortSentence')})`);
+assert.strictEqual(isInterjectionShortSentence('“嗯。”'), true, '“嗯。” should be an interjection');
+assert.strictEqual(isInterjectionShortSentence('“啊！”'), true, '“啊！” should be an interjection');
+assert.strictEqual(isInterjectionShortSentence('“哦……”'), true, '“哦……” should be an interjection');
+assert.strictEqual(isInterjectionShortSentence('“哎呀！”'), true, '“哎呀！” should be an interjection');
+assert.strictEqual(isInterjectionShortSentence('“走！”'), false, '“走！” is not an interjection');
+assert.strictEqual(isInterjectionShortSentence('“他死了。”'), false, '“他死了。” is not an interjection');
+assert.strictEqual(isInterjectionShortSentence('“第三章”'), false, '“第三章” is not an interjection');
+
 console.log('TTS review regression tests passed');
+
