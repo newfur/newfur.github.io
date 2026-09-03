@@ -99,6 +99,7 @@ let marginWidthPaginated = 5;
 let pendingGoToLastPage = false;
 let pendingGoToLastPageTimeout = null;
 let isChangingChapter = false;
+let pendingTTSPlayOnLoad = false;
 let lastChapterChangeTime = 0;
 let openBookRequestId = 0;
 let openingBookId = null;
@@ -1442,6 +1443,19 @@ function initUIEventBindings() {
   // TTS 語音朗讀控制
   const ttsPlayBtn = document.getElementById('tts-play-btn');
   ttsPlayBtn.addEventListener('click', () => {
+    if (pendingTTSPlayOnLoad) {
+      pendingTTSPlayOnLoad = false;
+      updatePlayPauseButtonIcon();
+      return;
+    }
+
+    if (isChangingChapter || !tts.sentences || tts.sentences.length === 0) {
+      // 若當前章節或書籍仍在加載中，記錄播放意圖，待加載完成後自動開始播放
+      pendingTTSPlayOnLoad = true;
+      updatePlayPauseButtonIcon();
+      return;
+    }
+
     if (tts.isPlaying) {
       if (tts.isPaused) {
         tts.resume();
@@ -1451,11 +1465,13 @@ function initUIEventBindings() {
     } else {
       // 從進度保存的句子索引或當前頁面第一個可見句子開始朗讀
       let savedIndex = 0;
+      let isAbsolute = false;
       if (currentBook && currentBook.progress) {
         const savedTTSChapter = currentBook.progress.ttsChapterIndex;
         if (savedTTSChapter === currentChapterIndex) {
-          // 保存的 TTS 章節與當前章節一致，直接恢復
+          // 保存的 TTS 章節與當前章節一致，直接恢復 (相對索引)
           savedIndex = currentBook.progress.ttsActiveSentenceIndex || 0;
+          isAbsolute = false;
         } else if (savedTTSChapter !== undefined && savedTTSChapter !== null) {
           // 保存的 TTS 章節與當前視覺章節不同
           // 檢查是否屬於相同 cleanHref 的子章節（多個子章節共享同一頁面內容）
@@ -1464,17 +1480,24 @@ function initUIEventBindings() {
           if (currentCleanHref && savedCleanHref && currentCleanHref === savedCleanHref) {
             // 同一個 HTML 文件的不同子章節，可以直接恢復（sentences 中包含所有子章節的句子）
             savedIndex = currentBook.progress.ttsActiveSentenceIndex || 0;
+            isAbsolute = false;
           } else {
-            // 完全不同的章節，使用當前可見位置
+            // 完全不同的章節，使用當前可見位置 (絕對索引)
             savedIndex = getFirstVisibleSentenceIndex();
+            isAbsolute = true;
           }
         } else if (currentBook.progress.activeSentenceIndex !== undefined && currentBook.progress.chapterIndex === currentChapterIndex) {
           savedIndex = currentBook.progress.activeSentenceIndex || 0;
+          isAbsolute = false;
         } else {
           savedIndex = getFirstVisibleSentenceIndex();
+          isAbsolute = true;
         }
+      } else {
+        savedIndex = getFirstVisibleSentenceIndex();
+        isAbsolute = true;
       }
-      tts.play(savedIndex);
+      tts.play(savedIndex, isAbsolute);
       updatePlayPauseButtonIcon();
     }
   });
@@ -4272,6 +4295,16 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   } finally {
     isChangingChapter = false;
     lastChapterChangeTime = Date.now();
+    if (pendingTTSPlayOnLoad) {
+      pendingTTSPlayOnLoad = false;
+      setTimeout(() => {
+        if (!tts.isPlaying && tts.sentences && tts.sentences.length > 0) {
+          const startIdx = getFirstVisibleSentenceIndex();
+          tts.play(startIdx, true);
+          updatePlayPauseButtonIcon();
+        }
+      }, 80);
+    }
     if (!isPaginated) {
       setTimeout(() => {
         document.documentElement.style.overflow = origHtmlOverflow;
@@ -6004,6 +6037,12 @@ function updatePlayPauseButtonIcon() {
   const ttsPlayBtn = document.getElementById('tts-play-btn');
   if (!ttsPlayBtn) return;
   
+  if (pendingTTSPlayOnLoad) {
+    ttsPlayBtn.innerHTML = `<div class="ai-loading-spinner" style="width: 18px; height: 18px; border-width: 2px; margin: auto;"></div>`;
+    ttsPlayBtn.title = getMsg('loading_book') || 'Loading...';
+    return;
+  }
+
   const isPlaying = tts.isPlaying && !tts.isPaused;
   if (isPlaying) {
     ttsPlayBtn.innerHTML = `<svg class="svg-icon" style="width: 24px; height: 24px; fill: currentColor;" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;

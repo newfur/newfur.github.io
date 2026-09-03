@@ -95,6 +95,9 @@ export class TTSEngine {
     // HTML5 Audio 播放隊列與快取
     this.audioCache = new Map(); // index -> { blobUrl, isReady }
     this.fetchingIndices = new Set();
+    this.prefetchQueue = []; // 預載排隊隊列
+    this.activeFetchCount = 0; // 當前並發抓取數
+    this.maxConcurrentFetches = 2; // 最大並發下載數，防止給 Edge TTS 發送過多連線導致擁塞與斷線
     
     // 建立雙播放器以進行無縫交替播放，消除播放間隙，防止 iOS 後台掛起
     this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
@@ -530,6 +533,8 @@ export class TTSEngine {
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
+      this.prefetchQueue = [];
+      this.activeFetchCount = 0;
     }
     
     let sentenceId = 0;
@@ -1108,7 +1113,37 @@ export class TTSEngine {
   }
 
   _downloadSentenceAudio(sentence) {
-    return new Promise(async (resolve, reject) => {
+    return new Promise(async (rawResolve, rawReject) => {
+      let isSettled = false;
+      let activeWs = null;
+      const timeoutTimer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          try {
+            if (activeWs && activeWs.readyState !== WebSocket.CLOSED) {
+              activeWs.close();
+            }
+          } catch (e) {}
+          rawReject(new Error("TTS request timed out (12s)"));
+        }
+      }, 12000);
+
+      const resolve = (val) => {
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timeoutTimer);
+          rawResolve(val);
+        }
+      };
+
+      const reject = (err) => {
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timeoutTimer);
+          rawReject(err);
+        }
+      };
+
       try {
         if (this.ttsProvider === 'openai' || this.ttsProvider === 'local') {
           try {
@@ -1238,6 +1273,7 @@ export class TTSEngine {
         }
                     
         const ws = new WebSocket(url);
+        activeWs = ws;
         const audioChunks = [];
         
         ws.binaryType = 'arraybuffer';
@@ -1402,8 +1438,7 @@ export class TTSEngine {
       // 1. 單句獲取階段
       this.fetchingIndices.add(index);
       const sentence = this.sentences[index];
-      
-      this._downloadSentenceAudio(sentence).then(blob => {
+      return this._downloadSentenceAudio(sentence).then(blob => {
         if (this.voiceSessionId !== currentVoiceSessionId) {
           return;
         }
@@ -1513,7 +1548,7 @@ export class TTSEngine {
         isHeading: groupSentences[groupSentences.length - 1].isHeading
       };
       
-      this._downloadSentenceAudio(virtualSentence).then(blob => {
+      return this._downloadSentenceAudio(virtualSentence).then(blob => {
         if (this.voiceSessionId !== currentVoiceSessionId) {
           return;
         }
@@ -1647,12 +1682,39 @@ export class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    // 保持當前播放位置後方的 70 句處於預載快取狀態。
-    // _fetchSentence 會自動處理前 10 句單句獲取與後續每 10 句分組獲取的邏輯。
-    for (let i = 1; i <= 70; i++) {
+    // 保持當前播放位置後方的 30 句處於預載排隊中（約 3 個分組，足夠 2-3 分鐘無縫播放）
+    for (let i = 1; i <= 30; i++) {
       const targetIndex = this.currentIndex + i;
       if (targetIndex < this.sentences.length) {
-        this._fetchSentence(targetIndex);
+        if (!this.audioCache.has(targetIndex) && !this.prefetchQueue.includes(targetIndex)) {
+          this.prefetchQueue.push(targetIndex);
+        }
+      }
+    }
+    this._processPrefetchQueue();
+  }
+
+  _processPrefetchQueue() {
+    if (!this.isPlaying || this.isPaused) return;
+    while (this.activeFetchCount < this.maxConcurrentFetches && this.prefetchQueue.length > 0) {
+      const nextIdx = this.prefetchQueue.shift();
+      if (this.audioCache.has(nextIdx) || this.fetchingIndices.has(nextIdx)) {
+        continue;
+      }
+      this.activeFetchCount++;
+      const finishFetch = () => {
+        this.activeFetchCount = Math.max(0, this.activeFetchCount - 1);
+        this._processPrefetchQueue();
+      };
+      try {
+        const p = this._fetchSentence(nextIdx);
+        if (p && typeof p.finally === 'function') {
+          p.finally(finishFetch);
+        } else {
+          finishFetch();
+        }
+      } catch (e) {
+        finishFetch();
       }
     }
   }
@@ -2218,10 +2280,7 @@ export class TTSEngine {
 
   play(index = 0, isAbsolute = false) {
     if (this.sentences.length === 0) {
-      // 若當前章節為純圖片或無文字章節，自動調用 onPlaybackEnd 跳轉至下一章進行朗讀
-      if (this.onPlaybackEnd) {
-        this.onPlaybackEnd();
-      }
+      console.warn("tts.play: sentences array is empty, skipping playback start");
       return;
     }
     
@@ -2287,6 +2346,9 @@ export class TTSEngine {
     this.isInitialPlay = true; // 標記為點擊開始的初始播放
     this.playbackStarted = false; // 標記尚未開始播放
     this.playbackStartSessionIndex = this.currentIndex;
+    
+    this.prefetchQueue = []; // 清空先前的後台預加載排隊
+    this.fetchingIndices.delete(this.currentIndex); // 強制解除當前目標句的獲取鎖定，防止因先前失敗或超時而直接 return
     
     // 點擊正文後，只向 tts 引擎發送 1 句 (當前句)
     this._fetchSentence(this.currentIndex);
@@ -2606,6 +2668,8 @@ export class TTSEngine {
     this.isPlaying = false;
     this.isPaused = false;
     this.playbackStarted = false;
+    this.prefetchQueue = [];
+    this.activeFetchCount = 0;
     this._lastSentCoverBookId = null;
     if (this._silencePauseTimeout) {
       clearTimeout(this._silencePauseTimeout);
@@ -2757,6 +2821,8 @@ export class TTSEngine {
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
+      this.prefetchQueue = [];
+      this.activeFetchCount = 0;
       this.voiceSessionId++;
     }
 
