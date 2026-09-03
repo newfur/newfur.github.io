@@ -1976,6 +1976,10 @@ export class TTSEngine {
         const boundaries = getBoundaries();
         if (!boundaries) return;
         const rawTime = audio.currentTime;
+        if (typeof audio._lastWatchedTime !== 'number' || Math.abs(rawTime - audio._lastWatchedTime) > 0.1) {
+          audio._lastWatchedTime = rawTime;
+          this._markPlaybackProgress();
+        }
         const currentTime = rawTime;
         
         // 尋找當前播放時間對應分組內的哪一句（若音訊播放至末尾或交替間隙，平滑保持在分組最後一句，防止倒跳回開頭 0）
@@ -2072,6 +2076,11 @@ export class TTSEngine {
     } else {
       audio.ontimeupdate = () => {
         if (!this.isPlaying || this.isPaused) return;
+        
+        if (typeof audio._lastWatchedTime !== 'number' || Math.abs(audio.currentTime - audio._lastWatchedTime) > 0.1) {
+          audio._lastWatchedTime = audio.currentTime;
+          this._markPlaybackProgress();
+        }
         
         // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
         const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
@@ -2349,18 +2358,35 @@ export class TTSEngine {
     }
   }
 
-  // 播放看門狗：每 5 秒偵測播放是否停滯，若停滯則強制恢復
+  // 播放看門狗：定期偵測播放是否異常中斷停滯，若停滯則自動恢復
   _startPlaybackWatchdog() {
     this._stopPlaybackWatchdog();
     this._lastPlaybackProgressTime = Date.now();
+    this._lastWatchedCurrentTime = null;
     this._playbackWatchdog = setInterval(() => {
       if (!this.isPlaying || this.isPaused) return;
       
       const now = Date.now();
+
+      // 1. 如果當前音訊正在正常發聲播放（非暫停、非結尾、且非靜音保活軌道），且時間指針正在前進，視為健康播放中
+      if (this.currentAudio && 
+          !this.currentAudio.paused && 
+          !this.currentAudio.ended && 
+          this.currentAudio !== this.silenceAudio) {
+        const curTime = this.currentAudio.currentTime;
+        if (typeof this._lastWatchedCurrentTime !== 'number' || Math.abs(curTime - this._lastWatchedCurrentTime) > 0.05) {
+          this._lastWatchedCurrentTime = curTime;
+          this._lastPlaybackProgressTime = now;
+          return; // 音訊正在正常發聲，絕對不干涉，防止重複觸發
+        }
+      } else {
+        this._lastWatchedCurrentTime = null;
+      }
+
       const timeSinceProgress = now - this._lastPlaybackProgressTime;
       
-      // 若超過 5 秒無播放進展（無新句子開始播放），判定為停滯
-      if (timeSinceProgress > 5000) {
+      // 若超過 8 秒完全無發聲且無進展（排除了正常的網絡緩衝時間），判定為停滯
+      if (timeSinceProgress > 8000) {
         console.warn(`[TTS Watchdog] Playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery...`);
         this._lastPlaybackProgressTime = now; // 重置以防止連續觸發
         
@@ -2374,9 +2400,11 @@ export class TTSEngine {
         
         const cached = this.audioCache.get(idx);
         if (cached && cached.isReady) {
-          // 快取已就緒但播放器卡住 → 直接重新啟動播放
-          console.warn('[TTS Watchdog] Cache ready but playback stuck, force replaying...');
-          this._playActiveSentence();
+          // 只有當音訊確實已暫停、已結束或未在發聲時，才允許嘗試恢復播放，防止打斷正在播放的聲音造成重播
+          if (!this.currentAudio || this.currentAudio.paused || this.currentAudio.ended) {
+            console.warn('[TTS Watchdog] Audio stalled, attempting to resume playback...');
+            this._playActiveSentence();
+          }
         } else {
           // 快取未就緒 → 強制重新請求該句（可能之前的請求超時或失敗後未清理乾淨）
           console.warn('[TTS Watchdog] Cache not ready, force re-fetching...');
@@ -2396,7 +2424,7 @@ export class TTSEngine {
         // 確保預取管線仍在推進
         this._fillPreFetchBuffer();
       }
-    }, 3000); // 每 3 秒檢查一次，保證 5 秒內能偵測到停滯
+    }, 2000); // 每 2 秒檢查一次
   }
 
   _stopPlaybackWatchdog() {

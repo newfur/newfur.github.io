@@ -3,7 +3,7 @@
 Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.4.11-orange)](javascript:;)
+[![Version](https://img.shields.io/badge/version-3.4.12-orange)](javascript:;)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
 一款專為現代瀏覽器與行動裝置打造的沉浸式、高效能且高度可自訂的跨平台電子書閱讀器。專案基於純前端與原生橋接架構，整合了多格式電子書解析引擎、微軟 Edge 神經網路自然人聲語音朗讀（TTS）、端側/雲端 AI 伴侶、動態心智圖以及深度的閱讀數據統計。
