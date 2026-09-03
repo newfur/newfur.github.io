@@ -1379,8 +1379,10 @@ export class TTSEngine {
   }
 
   _getGroupInfoForIndex(index) {
-    // 梯級優化：前 2 句單句獲取以保證極速啟動，從第 3 句（session + 2）起立即進入分組階段（每組 6~10 句或累積約 220 字）。
-    // 在連續短句/對話情境下，多個短句會合併在同一個請求與音訊流中，徹底消除因單句過短導致的網絡等待與卡頓。
+    // 梯級優化：前 2 句單句獲取以保證極速啟動，從第 3 句（session + 2）起立即進入分組階段。
+    // 降低分組閾值（每組最多 4 句，或累計約 120 字）：
+    // 1. 每 4 句進行一次真實音訊硬切換與基準歸零（校準頻率比原先每 10 句提升 2.5 倍），徹底杜絕時間估算誤差累積與高亮偏移；
+    // 2. 在連續短句對話時，4 句依然合併在同一個請求與音訊流中，保持 0 間隙切換，同時兼顧網絡吞吐量與極高精準度的高亮同步。
     const baseIndex = (typeof this.playbackStartSessionIndex === 'number') ? (this.playbackStartSessionIndex + 2) : 2;
     if (index < baseIndex) {
       return null;
@@ -1393,13 +1395,13 @@ export class TTSEngine {
 
       let groupLength = 1;
       let groupCharCount = startSentence.text ? startSentence.text.length : 0;
-      while (groupLength < 8 && (currentGroupStart + groupLength) < this.sentences.length) {
+      while (groupLength < 4 && (currentGroupStart + groupLength) < this.sentences.length) {
         const nextSentence = this.sentences[currentGroupStart + groupLength];
         if (nextSentence.chapterIndex !== chapterIdx) {
           break; // 不跨章節
         }
-        // 若累積字符數已超過 220 字（約 35-40 秒語音），適時分組，保證單個請求大小合理
-        if (groupCharCount > 220) {
+        // 若累積字符數已超過 120 字（約 20~25 秒語音），適時分組，保證單組內高亮預估極高精度
+        if (groupCharCount > 120) {
           break;
         }
         groupCharCount += (nextSentence.text ? nextSentence.text.length : 0);
