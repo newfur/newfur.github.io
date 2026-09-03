@@ -21,9 +21,15 @@ permissions:
   id-token: write
 
 jobs:
-  build-and-deploy:
-    name: Build APK, Offline Reader & Deploy Web
+  # ==========================================
+  # Job 1: Android & Web Build (ubuntu-latest)
+  # Runs concurrently with iOS build
+  # ==========================================
+  build-android-and-web:
+    name: Build Android APK & Deploy Web
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -81,54 +87,21 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug
 
-      - name: Rename APK
+      - name: Copy Versioned APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Raconteur-${{ steps.version.outputs.version }}.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk "Raconteur-${{ steps.version.outputs.version }}.apk"
 
-      - name: Upload Artifacts
+      - name: Upload Android & Web Artifacts
         continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
-          name: release-artifacts
+          name: android-web-artifacts
           path: |
-            android/app/build/outputs/apk/debug/Raconteur-${{ steps.version.outputs.version }}.apk
+            Raconteur-${{ steps.version.outputs.version }}.apk
             Raconteur-Offline-${{ steps.version.outputs.version }}.html
             Raconteur-Chrome-${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
           retention-days: 7
-
-      # ===== Create Tag & Release =====
-      - name: Create Tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}" --force
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Delete Existing Release
-        run: |
-          gh release delete "v${{ steps.version.outputs.version }}" --yes --cleanup-tag || true
-          git tag -f "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}" --force
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          files: |
-            android/app/build/outputs/apk/debug/Raconteur-${{ steps.version.outputs.version }}.apk
-            Raconteur-Offline-${{ steps.version.outputs.version }}.html
-            Raconteur-Chrome-${{ steps.version.outputs.version }}.zip
-          name: v${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ===== Deploy Web to GitHub Pages =====
       - name: Prepare Web Deploy
@@ -150,10 +123,13 @@ jobs:
           publish_dir: ./deploy
           force_orphan: true
 
+  # ==========================================
+  # Job 2: iOS IPA Build (macos-latest)
+  # Runs concurrently with Job 1 (No dependency)
+  # ==========================================
   build-ios:
     name: Build iOS IPA
     runs-on: macos-latest
-    needs: build-and-deploy
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -187,14 +163,59 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
-          name: ios-release-artifacts
+          name: ios-artifacts
           path: EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa
           if-no-files-found: error
           retention-days: 7
 
-      # ===== Upload IPA to Existing Release =====
-      - name: Upload IPA to Release
+  # ==========================================
+  # Job 3: Unified Release (ubuntu-latest)
+  # Waits for both Android and iOS builds, then publishes all assets together
+  # ==========================================
+  create-release:
+    name: Publish Unified Release
+    runs-on: ubuntu-latest
+    needs: [build-android-and-web, build-ios]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-files
+          merge-multiple: true
+
+      - name: Display Release Files
+        run: ls -lh release-files
+
+      - name: Create Tag
         run: |
-          gh release upload "v${{ steps.version.outputs.version }}" "EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa" --clobber
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "v${{ needs.build-android-and-web.outputs.version }}"
+          git push origin "v${{ needs.build-android-and-web.outputs.version }}" --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete Existing Release
+        run: |
+          gh release delete "v${{ needs.build-android-and-web.outputs.version }}" --yes --cleanup-tag || true
+          git tag -f "v${{ needs.build-android-and-web.outputs.version }}"
+          git push origin "v${{ needs.build-android-and-web.outputs.version }}" --force
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build-android-and-web.outputs.version }}
+          files: release-files/*
+          name: v${{ needs.build-android-and-web.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
