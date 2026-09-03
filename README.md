@@ -3,7 +3,7 @@
 Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en.md)
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.4.3-orange)](javascript:;)
+[![Version](https://img.shields.io/badge/version-3.4.4-orange)](javascript:;)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
 一款专为现代浏览器和移动设备打造的沉浸式、高性能且高度可定制的跨平台电子书阅读器。项目基于纯前端与原生桥接架构，集成了多格式电子书解析引擎、微软 Edge 神经网络自然人声语音朗读（TTS）、端侧/云端 AI 伴侣、动态思维导图以及深度的阅读数据统计。

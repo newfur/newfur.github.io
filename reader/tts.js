@@ -1,6 +1,6 @@
 // 輔助函式：將文字切分為句子，同時避免在英文縮寫、縮寫首字母（如 J. F.）或小數點（如 3.14）處發生錯誤截斷
 function splitTextIntoSentences(text) {
-  const parts = text.split(/([。！？.!?\r\n]+)/);
+  const parts = text.split(/([。！？.!?\r\n]+[」』”’"'）】〉》]*)/);
   const sentences = [];
   let currentSentence = "";
 
@@ -619,10 +619,10 @@ export class TTSEngine {
 
         const tagName = node.tagName.toLowerCase();
         
-        // 僅跳過上標 (sup)、下標 (sub) 標籤，以及 script, style, textLayer 和 a 標籤，以防誤傷正文中的其他 note 樣式段落或英文單詞
-        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        // 跳過上標 (sup)、下標 (sub)、腳本、樣式、超鏈結 (a) 以及文件元數據標籤 (title, head, meta, link)
+        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link' || tagName === 'a';
 
-        if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        if (isSkipTag || node.classList.contains('textLayer')) {
           return;
         }
       }
@@ -731,12 +731,17 @@ export class TTSEngine {
           if (!isSeparatorSentence(cleanSentence)) {
             const hasNoElements = (sent) => !sent.element && (!sent.elements || sent.elements.length === 0);
 
-            // 從 matchCursor 開始順序向前搜索，保證重複文本按出現順序逐一配對
+            const currentSubChapterIndices = new Set(subChapters.map(s => s.index));
+            if (currentSubChapterIndices.size === 0 && this.currentChapterIndex !== undefined) {
+              currentSubChapterIndices.add(this.currentChapterIndex);
+            }
+
+            // 從 matchCursor 開始順序向前搜索，保證重複文本按出現順序逐一配對，且絕不越界匹配到後續章節的句子
             let existingSentence = null;
             const searchLimit = Math.min(this.sentences.length, targetSentIdx + 100);
             for (let si = matchCursor; si < searchLimit; si++) {
               const sent = this.sentences[si];
-              if (sent.text === cleanSentence && hasNoElements(sent)) {
+              if (currentSubChapterIndices.has(sent.chapterIndex) && sent.text === cleanSentence && hasNoElements(sent)) {
                 existingSentence = sent;
                 matchCursor = si + 1; // 遊標前進到下一個位置，避免同一句子被重複匹配
                 break;
@@ -746,16 +751,20 @@ export class TTSEngine {
             if (existingSentence) {
               existingSentence.element = currentElements[0];
               existingSentence.elements = [...currentElements];
-              existingSentence.chapterIndex = currentActiveSubChapterIndex;
+              if (existingSentence.chapterIndex === undefined || existingSentence.chapterIndex === null) {
+                existingSentence.chapterIndex = currentActiveSubChapterIndex;
+              }
               existingSentence.isHeading = isHeading;
               finalSentIdx = existingSentence.index;
             } else {
-              // 退化降級：直接按 index 對照
+              // 退化降級：僅在 targetSentIdx 確實屬於當前文件的子章節時對照，嚴防越界篡改後續章節的句子引用與章節索引
               const sentByIndex = this.sentences[targetSentIdx];
-              if (sentByIndex) {
+              if (sentByIndex && currentSubChapterIndices.has(sentByIndex.chapterIndex)) {
                 sentByIndex.element = currentElements[0];
                 sentByIndex.elements = [...currentElements];
-                sentByIndex.chapterIndex = currentActiveSubChapterIndex;
+                if (sentByIndex.chapterIndex === undefined || sentByIndex.chapterIndex === null) {
+                  sentByIndex.chapterIndex = currentActiveSubChapterIndex;
+                }
                 sentByIndex.isHeading = isHeading;
                 finalSentIdx = sentByIndex.index;
               } else {
@@ -799,10 +808,10 @@ export class TTSEngine {
 
         const tagName = node.tagName.toLowerCase();
         
-        // 僅跳過上標 (sup)、下標 (sub) 標籤，以及 script, style, textLayer 和 a 標籤，以防誤傷正文中的其他 note 樣式段落或英文單詞
-        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        // 跳過上標 (sup)、下標 (sub)、腳本、樣式、超鏈結 (a) 以及文件元數據標籤 (title, head, meta, link)
+        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link' || tagName === 'a';
 
-        if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        if (isSkipTag || node.classList.contains('textLayer')) {
           return;
         }
       }
@@ -1757,10 +1766,10 @@ export class TTSEngine {
         const rawTime = audio.currentTime;
         const currentTime = rawTime;
         
-        // 尋找當前播放時間對應分組內的哪一句
-        let currentIdxInGroup = idxInGroup;
+        // 尋找當前播放時間對應分組內的哪一句（若音訊播放至末尾或交替間隙，平滑保持在分組最後一句，防止倒跳回開頭 0）
+        let currentIdxInGroup = boundaries.length - 1;
         for (let i = 0; i < boundaries.length; i++) {
-          if (currentTime >= boundaries[i].start && currentTime < boundaries[i].end) {
+          if (currentTime < boundaries[i].end) {
             currentIdxInGroup = i;
             break;
           }
@@ -2433,9 +2442,9 @@ export class TTSEngine {
         }
 
         const tagName = node.tagName.toLowerCase();
-        const isNoteTag = tagName === 'sup' || tagName === 'sub';
+        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link' || tagName === 'a';
 
-        if (isNoteTag || tagName === 'script' || tagName === 'style' || node.classList.contains('textLayer') || tagName === 'a') {
+        if (isSkipTag || node.classList.contains('textLayer')) {
           return;
         }
       }
