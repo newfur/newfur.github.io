@@ -2203,6 +2203,25 @@ function initUIEventBindings() {
       // 返回頁面時重置計時起點，防止將後台掛起時間計入
       lastReadingHeartbeat = Date.now();
       lastUserActivityTime = Date.now();
+
+      // 當從後台切回前台時，重新校準 TTS 播放狀態、按鈕圖示與當前句子高亮滾動
+      if (tts && tts.isPlaying) {
+        updatePlayPauseButtonIcon();
+        const activeIdx = (tts.currentlyPlayingIndex !== -1) ? tts.currentlyPlayingIndex : tts.currentIndex;
+        const currentSent = tts.sentences[activeIdx];
+        if (currentSent) {
+          if (currentSent.chapterIndex !== currentChapterIndex) {
+            loadChapter(currentSent.chapterIndex, false, false, false, true, null, null, null, null, null, true).then(() => {
+              const sent = tts.sentences[activeIdx];
+              if (sent && sent.element) {
+                tts._highlightSentence(sent);
+              }
+            });
+          } else if (currentSent.element) {
+            tts._highlightSentence(currentSent);
+          }
+        }
+      }
     }
   });
   window.addEventListener('beforeunload', () => {

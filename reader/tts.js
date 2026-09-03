@@ -128,6 +128,8 @@ export class TTSEngine {
     this.playbackStartSessionIndex = null;
     this.voiceSessionId = 0;
     this._lastSentCoverBookId = null;
+    this._lastSkipTime = 0; // 防抖時間戳：防止原生端雙重派發導致 next/previous 被執行兩次
+    this._lastPauseResumeTime = 0; // 防抖時間戳：防止原生端雙重派發導致 pause/resume 互相覆蓋
 
     // 全局書籍與封面資訊 (壓縮版 DataURL)，供鎖屏與通知欄即時調用
     this.currentBookTitle = 'TTS Reading';
@@ -1716,7 +1718,7 @@ export class TTSEngine {
     
     if (isGroupPlay) {
       audio.ontimeupdate = () => {
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || this.isPaused) return;
         
         const boundaries = getBoundaries();
         if (!boundaries) return;
@@ -1757,7 +1759,7 @@ export class TTSEngine {
                 const p = this.onChapterTransition(currentSentence.chapterIndex);
                 if (p && typeof p.then === 'function') {
                   p.then(() => {
-                    if (!this.isPlaying) return;
+                    if (!this.isPlaying || this.isPaused) return;
                     doGroupHighlight();
                   });
                 } else {
@@ -1802,7 +1804,7 @@ export class TTSEngine {
           this.audioCache.delete(groupStartIndex + i);
         }
         
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || this.isPaused) return;
         
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
@@ -1813,7 +1815,7 @@ export class TTSEngine {
       };
     } else {
       audio.ontimeupdate = () => {
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || this.isPaused) return;
         
         // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
         const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
@@ -1886,6 +1888,9 @@ export class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
+        // 若已停止或暫停，不修改索引避免狀態污染
+        if (!this.isPlaying || this.isPaused) return;
+        
         // 若播放失敗，跳過該句子
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
@@ -1917,7 +1922,7 @@ export class TTSEngine {
         const transitionPromise = this.onChapterTransition(sentence.chapterIndex);
         if (transitionPromise && typeof transitionPromise.then === 'function') {
           transitionPromise.then(() => {
-            if (!this.isPlaying) return;
+            if (!this.isPlaying || this.isPaused) return;
             startPlay();
           });
         } else {
@@ -1996,7 +2001,7 @@ export class TTSEngine {
           const p = this.onChapterTransition(sentence.chapterIndex);
           if (p && typeof p.then === 'function') {
             p.then(() => {
-              if (!this.isPlaying) return;
+              if (!this.isPlaying || this.isPaused) return;
               doNativeHighlight();
             });
           } else {
@@ -2120,7 +2125,7 @@ export class TTSEngine {
         }
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
-        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
 
         navigator.mediaSession.setActionHandler('play', () => {
           this.resume();
@@ -2129,7 +2134,7 @@ export class TTSEngine {
           this.pause();
         });
         navigator.mediaSession.setActionHandler('stop', () => {
-          this.pause();
+          this.stop();
         });
         navigator.mediaSession.setActionHandler('previoustrack', () => {
           this.previous();
@@ -2412,6 +2417,9 @@ export class TTSEngine {
 
   pause() {
     if (this.isPlaying && !this.isPaused) {
+      const now = Date.now();
+      if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
+      this._lastPauseResumeTime = now;
       this.isPaused = true;
       
       // 保持靜音保活音頻在後台繼續循環播放，防止 iOS 在暫停 10~15 秒後強行凍結 WKWebView 進程
@@ -2459,6 +2467,9 @@ export class TTSEngine {
       return;
     }
     if (this.isPaused) {
+      const now = Date.now();
+      if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
+      this._lastPauseResumeTime = now;
       this.isPaused = false;
       if (this._silencePauseTimeout) {
         clearTimeout(this._silencePauseTimeout);
@@ -2561,6 +2572,9 @@ export class TTSEngine {
 
   next() {
     if (this.isPlaying) {
+      const now = Date.now();
+      if (now - this._lastSkipTime < 200) return; // 防抖：200ms 內重複調用直接忽略
+      this._lastSkipTime = now;
       const nextIndex = Math.min(this.currentIndex + 1, this.sentences.length - 1);
       this.play(nextIndex, true);
     }
@@ -2568,6 +2582,9 @@ export class TTSEngine {
 
   previous() {
     if (this.isPlaying) {
+      const now = Date.now();
+      if (now - this._lastSkipTime < 200) return; // 防抖：200ms 內重複調用直接忽略
+      this._lastSkipTime = now;
       const prevIndex = Math.max(this.currentIndex - 1, 0);
       this.play(prevIndex, true);
     }

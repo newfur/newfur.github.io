@@ -52,33 +52,28 @@ public class NativeTTS extends Plugin {
         instance = this;
     }
 
+    private static OkHttpClient okHttpClient;
+    private static synchronized OkHttpClient getOkHttpClient() {
+        if (okHttpClient == null) {
+            okHttpClient = new OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .build();
+        }
+        return okHttpClient;
+    }
+
     public void sendMediaAction(String action) {
         JSObject data = new JSObject();
         data.put("action", action);
         notifyListeners("mediaAction", data);
+    }
 
-        try {
-            if (getActivity() != null && getBridge() != null && getBridge().getWebView() != null) {
-                getActivity().runOnUiThread(() -> {
-                    String js = null;
-                    if ("pause".equalsIgnoreCase(action)) {
-                        js = "(function() { if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); } })()";
-                    } else if ("play".equalsIgnoreCase(action)) {
-                        js = "(function() { if (window.tts) { window.tts.resume(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.play(); }); } })()";
-                    } else if ("next".equalsIgnoreCase(action)) {
-                        js = "(function() { if (window.tts) { window.tts.next(); } })()";
-                    } else if ("previous".equalsIgnoreCase(action)) {
-                        js = "(function() { if (window.tts) { window.tts.previous(); } })()";
-                    } else if ("stop".equalsIgnoreCase(action)) {
-                        js = "(function() { if (window.tts) { window.tts.stop(); } })()";
-                    }
-                    if (js != null) {
-                        getBridge().getWebView().evaluateJavascript(js, null);
-                    }
-                });
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed direct JS evaluation for media action: " + e.getMessage());
+    @Override
+    protected void handleOnDestroy() {
+        super.handleOnDestroy();
+        if (instance == this) {
+            instance = null;
         }
     }
 
@@ -193,10 +188,7 @@ public class NativeTTS extends Plugin {
                 "&Sec-MS-GEC=" + secMsGec +
                 "&Sec-MS-GEC-Version=1-143.0.3650.75";
 
-        OkHttpClient client = new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .build();
+        OkHttpClient client = getOkHttpClient();
 
         Request request = new Request.Builder()
                 .url(url)

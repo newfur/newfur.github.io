@@ -31,6 +31,12 @@ public class AudioPlayerService extends Service {
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     
+    private AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest;
+    private android.content.BroadcastReceiver noisyReceiver;
+    private boolean isReceiverRegistered = false;
+    private String lastCoverBase64 = null;
+
     private boolean isPlaying = false;
     private String currentTitle = "";
     private String currentArtist = "";
@@ -325,14 +331,113 @@ public class AudioPlayerService extends Service {
                 .setActions(actions);
 
         int state = isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
-        stateBuilder.setState(state, 0, isPlaying ? 1.0f : 0.0f, android.os.SystemClock.elapsedRealtime());
+        stateBuilder.setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, isPlaying ? 1.0f : 0.0f, android.os.SystemClock.elapsedRealtime());
         mediaSession.setPlaybackState(stateBuilder.build());
 
         if (isPlaying) {
             cancelScheduledLockRelease();
             acquireLocks();
+            requestAudioFocus();
+            registerNoisyReceiver();
         } else {
+            abandonAudioFocus();
+            unregisterNoisyReceiver();
             scheduleLockRelease();
+        }
+    }
+
+    private void requestAudioFocus() {
+        if (audioManager == null) {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        }
+        if (audioManager == null) return;
+
+        try {
+            int result;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (audioFocusRequest == null) {
+                    AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+                    audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                            .setAudioAttributes(playbackAttributes)
+                            .setAcceptsDelayedFocusGain(false)
+                            .setOnAudioFocusChangeListener(focusChangeListener)
+                            .build();
+                }
+                result = audioManager.requestAudioFocus(audioFocusRequest);
+            } else {
+                result = audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+            }
+            Log.d(TAG, "requestAudioFocus result: " + result);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to request audio focus: " + e.getMessage());
+        }
+    }
+
+    private void abandonAudioFocus() {
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            } else {
+                audioManager.abandonAudioFocus(focusChangeListener);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to abandon audio focus: " + e.getMessage());
+        }
+    }
+
+    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
+        Log.d(TAG, "onAudioFocusChange: " + focusChange);
+        switch (focusChange) {
+            case AudioManager.AUDIOFOCUS_LOSS:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                if (isPlaying) {
+                    isPlaying = false;
+                    updatePlaybackState(false);
+                    updateNotification(currentTitle, currentArtist, currentText, false);
+                    notifyJS("pause");
+                }
+                break;
+        }
+    };
+
+    private void registerNoisyReceiver() {
+        if (!isReceiverRegistered) {
+            if (noisyReceiver == null) {
+                noisyReceiver = new android.content.BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                            Log.d(TAG, "Audio becoming noisy (headphones unplugged), pausing...");
+                            if (isPlaying) {
+                                isPlaying = false;
+                                updatePlaybackState(false);
+                                updateNotification(currentTitle, currentArtist, currentText, false);
+                                notifyJS("pause");
+                            }
+                        }
+                    }
+                };
+            }
+            try {
+                registerReceiver(noisyReceiver, new android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+                isReceiverRegistered = true;
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to register noisy receiver: " + e.getMessage());
+            }
+        }
+    }
+
+    private void unregisterNoisyReceiver() {
+        if (isReceiverRegistered && noisyReceiver != null) {
+            try {
+                unregisterReceiver(noisyReceiver);
+            } catch (Exception ignored) {}
+            isReceiverRegistered = false;
         }
     }
 
@@ -360,26 +465,38 @@ public class AudioPlayerService extends Service {
                 .putString(MediaMetadata.METADATA_KEY_TITLE, text)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, title);
-        if (coverBitmap != null) {
+        if (coverBitmap != null && !coverBitmap.isRecycled()) {
             metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
         }
         mediaSession.setMetadata(metadataBuilder.build());
     }
 
     private Bitmap decodeBase64ToBitmap(String base64Str) {
+        if (base64Str == null || base64Str.isEmpty()) return null;
+        if (base64Str.equals(lastCoverBase64) && coverBitmap != null && !coverBitmap.isRecycled()) {
+            return coverBitmap;
+        }
         try {
-            if (base64Str.startsWith("data:")) {
-                int commaIdx = base64Str.indexOf(",");
+            String clean = base64Str;
+            if (clean.startsWith("data:")) {
+                int commaIdx = clean.indexOf(",");
                 if (commaIdx != -1) {
-                    base64Str = base64Str.substring(commaIdx + 1);
+                    clean = clean.substring(commaIdx + 1);
                 }
             }
-            byte[] decodedBytes = android.util.Base64.decode(base64Str, android.util.Base64.DEFAULT);
-            return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to decode base64 cover: " + e.getMessage());
-            return null;
+            byte[] decodedBytes = android.util.Base64.decode(clean, android.util.Base64.DEFAULT);
+            Bitmap newBmp = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+            if (newBmp != null) {
+                if (coverBitmap != null && coverBitmap != newBmp && !coverBitmap.isRecycled()) {
+                    coverBitmap.recycle();
+                }
+                lastCoverBase64 = base64Str;
+                return newBmp;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to decode base64 cover: " + t.getMessage());
         }
+        return coverBitmap;
     }
 
     private void acquireLocks() {
@@ -438,6 +555,13 @@ public class AudioPlayerService extends Service {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        Log.d(TAG, "onTaskRemoved: app removed from recents");
+        stopSelf();
+    }
+
+    @Override
     public IBinder onBind(Intent intent) {
         return null;
     }
@@ -446,11 +570,14 @@ public class AudioPlayerService extends Service {
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
         cancelScheduledLockRelease();
+        abandonAudioFocus();
+        unregisterNoisyReceiver();
         releaseLocks();
         if (coverBitmap != null) {
             coverBitmap.recycle();
             coverBitmap = null;
         }
+        lastCoverBase64 = null;
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();
