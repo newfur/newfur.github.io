@@ -2141,6 +2141,14 @@ export class TTSEngine {
         navigator.mediaSession.setActionHandler('nexttrack', () => {
           this.next();
         });
+        try {
+          navigator.mediaSession.setActionHandler('seekbackward', () => {
+            this.previous();
+          });
+          navigator.mediaSession.setActionHandler('seekforward', () => {
+            this.next();
+          });
+        } catch (seekErr) {}
       } catch (e) {
         console.warn("MediaSession update failed:", e);
       }
