@@ -103,6 +103,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "downloadTTS", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelTTS", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelAllTTS", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deleteTTSFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cleanupTTSFiles", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "syncClock", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getSafeAreaInsets", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setStatusBarStyle", returnType: CAPPluginReturnPromise),
@@ -274,8 +276,19 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             self.taskLock.unlock()
             webSocketTask.cancel(with: .normalClosure, reason: nil)
             if !audioData.isEmpty {
-                let base64 = audioData.base64EncodedString()
-                call.resolve(["audioBase64": base64])
+                // Write audio data to a temporary file instead of Base64 encoding
+                // This avoids the overhead of Base64 encode/decode and large string transfer through Capacitor bridge
+                let tmpDir = FileManager.default.temporaryDirectory
+                let fileName = "tts_\(connectionId).mp3"
+                let fileURL = tmpDir.appendingPathComponent(fileName)
+                do {
+                    try audioData.write(to: fileURL)
+                    call.resolve(["filePath": fileURL.path])
+                } catch {
+                    // Fallback to Base64 if file write fails
+                    let base64 = audioData.base64EncodedString()
+                    call.resolve(["audioBase64": base64])
+                }
             } else {
                 call.reject("No audio data received from Edge TTS")
             }
@@ -361,6 +374,26 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         }
 
         receiveNext()
+    }
+
+    @objc func deleteTTSFile(_ call: CAPPluginCall) {
+        if let filePath = call.getString("filePath") {
+            let fileURL = URL(fileURLWithPath: filePath)
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        call.resolve()
+    }
+
+    @objc func cleanupTTSFiles(_ call: CAPPluginCall) {
+        let tmpDir = FileManager.default.temporaryDirectory
+        if let files = try? FileManager.default.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: nil) {
+            for file in files {
+                if file.lastPathComponent.hasPrefix("tts_") && file.pathExtension == "mp3" {
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+        }
+        call.resolve()
     }
 
     @objc func getSafeAreaInsets(_ call: CAPPluginCall) {

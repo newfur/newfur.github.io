@@ -113,6 +113,8 @@ export class TTSEngine {
 
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
     this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
+    this._playbackWatchdog = null; // 播放看門狗計時器：偵測並恢復播放停滯
+    this._lastPlaybackProgressTime = 0; // 上次播放進展的時間戳
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -541,6 +543,7 @@ export class TTSEngine {
         if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
           URL.revokeObjectURL(cached.blobUrl);
         }
+        this._cleanupNativeTTSFile(cached);
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
@@ -1254,6 +1257,16 @@ export class TTSEngine {
               secMsGec: secMsGec,
               dateStr: this._dateToString()
             });
+            // Prefer file-based transfer (zero-copy) over Base64 to avoid encode/decode overhead
+            if (result.filePath) {
+              // Convert native file path to a Capacitor-compatible URL for Audio playback
+              const fileUrl = window.Capacitor.convertFileSrc
+                ? window.Capacitor.convertFileSrc(result.filePath)
+                : 'file://' + result.filePath;
+              resolve({ _isFileUrl: true, fileUrl: fileUrl, filePath: result.filePath });
+              return;
+            }
+            // Fallback: Base64 transfer (for older native builds)
             const base64ToBlob = (base64, mimeType) => {
               const byteCharacters = atob(base64);
               const len = byteCharacters.length;
@@ -1592,7 +1605,21 @@ export class TTSEngine {
     }
   }
 
-  _saveToCache(index, blob) {
+  _saveToCache(index, blobOrFileResult) {
+    // If native TTS returned a file URL, use it directly (zero-copy, no Blob/DataURL conversion)
+    if (blobOrFileResult && blobOrFileResult._isFileUrl) {
+      this.audioCache.set(index, {
+        blobUrl: blobOrFileResult.fileUrl,
+        filePath: blobOrFileResult.filePath, // Store native path for cleanup
+        isReady: true,
+        isGroup: false
+      });
+      this.fetchingIndices.delete(index);
+      this._onAudioCacheReady(index);
+      return;
+    }
+
+    const blob = blobOrFileResult;
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -1617,11 +1644,12 @@ export class TTSEngine {
     }
   }
 
-  _saveGroupToCache(groupStartIndex, groupSentences, blob) {
-    const onUrlReady = (blobUrl) => {
+  _saveGroupToCache(groupStartIndex, groupSentences, blobOrFileResult) {
+    const onUrlReady = (blobUrl, filePath) => {
       // 快取分組的音訊源，記錄所包含的句子清單
       this.audioCache.set(groupStartIndex, {
         blobUrl,
+        filePath: filePath || null, // Store native path for cleanup
         isReady: true,
         isGroup: true,
         groupStartIndex,
@@ -1642,12 +1670,19 @@ export class TTSEngine {
       this._onAudioCacheReady(groupStartIndex);
     };
 
+    // If native TTS returned a file URL, use it directly
+    if (blobOrFileResult && blobOrFileResult._isFileUrl) {
+      onUrlReady(blobOrFileResult.fileUrl, blobOrFileResult.filePath);
+      return;
+    }
+
+    const blob = blobOrFileResult;
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
-      reader.onloadend = () => onUrlReady(reader.result);
+      reader.onloadend = () => onUrlReady(reader.result, null);
       reader.readAsDataURL(blob);
     } else {
-      onUrlReady(URL.createObjectURL(blob));
+      onUrlReady(URL.createObjectURL(blob), null);
     }
   }
 
@@ -1713,7 +1748,7 @@ export class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    // 提前預取較少的句子（10 句），避免在首句播放前就過度佔用網絡帶寬
+    // 提前預取 10 句，與常規緩衝區保持一致
     let scanIndex = this.currentIndex + 1;
     const maxScanIndex = Math.min(this.sentences.length, this.currentIndex + 10);
 
@@ -1744,7 +1779,7 @@ export class TTSEngine {
     // 梯級動態預載隊列填充：
     // 單句階段逐句加入隊列；分組階段以 groupStartIndex 步進加入隊列，防止重複發送與隊列阻塞
     let scanIndex = this.currentIndex + 1;
-    const maxScanIndex = Math.min(this.sentences.length, this.currentIndex + 35);
+    const maxScanIndex = Math.min(this.sentences.length, this.currentIndex + 10);
 
     while (scanIndex < maxScanIndex) {
       const groupInfo = this._getGroupInfoForIndex(scanIndex);
@@ -1781,24 +1816,13 @@ export class TTSEngine {
     const nextTargetIdx = nextGroup ? nextGroup.groupStartIndex : nextIdx;
 
     // 如果即將播放的下一項尚未在快取中就緒：
-    // 必須將網絡通道 100% 獨佔留給該項，禁止並發預取後續分組搶奪帶寬造成卡頓
+    // 為保證下一句能最快返回，將並發限制為 1，避免後續句子的請求搶佔帶寬
     if (!this.audioCache.has(nextTargetIdx) && !this.audioCache.has(nextIdx)) {
       return 1;
     }
 
-    // 2. 檢查再下一項（下下一項）是否就緒
-    const afterNextIdx = nextGroup ? (nextGroup.groupStartIndex + nextGroup.groupLength) : (nextIdx + 1);
-    if (afterNextIdx < this.sentences.length) {
-      const afterGroup = this._getGroupInfoForIndex(afterNextIdx);
-      const afterTargetIdx = afterGroup ? afterGroup.groupStartIndex : afterNextIdx;
-      // 如果下下一項也尚未就緒，保持並發為 1，流水線逐個擊破，保證每個音訊塊全速最快完成
-      if (!this.audioCache.has(afterTargetIdx) && !this.audioCache.has(afterNextIdx)) {
-        return 1;
-      }
-    }
-
-    // 緩衝區已有至少兩批音訊就緒（至少已儲備 15~25 秒語音），安全放開並發加速填充遠端緩存
-    // 移動端環境限制最多 2 路並發，避免網絡隧道擁塞
+    // 2. 下一項已就緒，放開並發加速填充 10 句緩衝區
+    // 限制最高 2 路並發，避免過多並發影響整體響應速度
     return isNativeApp ? Math.min(2, this.maxConcurrentFetches) : this.maxConcurrentFetches;
   }
 
@@ -2020,6 +2044,9 @@ export class TTSEngine {
         if (audioUrl && audioUrl.startsWith('blob:')) {
           URL.revokeObjectURL(audioUrl);
         }
+        // 清理分組音訊的原生臨時文件
+        const groupCached = this.audioCache.get(groupStartIndex);
+        if (groupCached) this._cleanupNativeTTSFile(groupCached);
         for (let i = 0; i < groupSentences.length; i++) {
           this.audioCache.delete(groupStartIndex + i);
         }
@@ -2063,6 +2090,7 @@ export class TTSEngine {
         if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
           URL.revokeObjectURL(cached.blobUrl);
         }
+        this._cleanupNativeTTSFile(cached);
         this.audioCache.delete(index);
         
         if (!this.isPlaying || this.isPaused) return;
@@ -2094,6 +2122,7 @@ export class TTSEngine {
         audio.playbackRate = this.rate;
         
         this.playbackStarted = true;
+        this._markPlaybackProgress(); // 通知看門狗：播放正常推進中
         this._fillPreFetchBuffer();
         this._prefetchNextChapter();
         this._prewarmNextPlayer();
@@ -2311,6 +2340,79 @@ export class TTSEngine {
     }
   }
 
+  // 播放看門狗：每 5 秒偵測播放是否停滯，若停滯則強制恢復
+  _startPlaybackWatchdog() {
+    this._stopPlaybackWatchdog();
+    this._lastPlaybackProgressTime = Date.now();
+    this._playbackWatchdog = setInterval(() => {
+      if (!this.isPlaying || this.isPaused) return;
+      
+      const now = Date.now();
+      const timeSinceProgress = now - this._lastPlaybackProgressTime;
+      
+      // 若超過 5 秒無播放進展（無新句子開始播放），判定為停滯
+      if (timeSinceProgress > 5000) {
+        console.warn(`[TTS Watchdog] Playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery...`);
+        this._lastPlaybackProgressTime = now; // 重置以防止連續觸發
+        
+        const idx = this.currentIndex;
+        if (idx >= this.sentences.length) {
+          // 已播完所有句子
+          this.stop();
+          if (this.onPlaybackEnd) this.onPlaybackEnd();
+          return;
+        }
+        
+        const cached = this.audioCache.get(idx);
+        if (cached && cached.isReady) {
+          // 快取已就緒但播放器卡住 → 直接重新啟動播放
+          console.warn('[TTS Watchdog] Cache ready but playback stuck, force replaying...');
+          this._playActiveSentence();
+        } else {
+          // 快取未就緒 → 強制重新請求該句（可能之前的請求超時或失敗後未清理乾淨）
+          console.warn('[TTS Watchdog] Cache not ready, force re-fetching...');
+          this.fetchingIndices.delete(idx);
+          // 清理可能的分組鎖定
+          const groupInfo = this._getGroupInfoForIndex(idx);
+          if (groupInfo) {
+            this.fetchingIndices.delete(groupInfo.groupStartIndex);
+          }
+          this._fetchSentence(idx);
+          // 同時確保靜音保活仍在運行
+          if (this.silenceAudio && this.silenceAudio.paused) {
+            this.silenceAudio.play().catch(() => {});
+          }
+        }
+        
+        // 確保預取管線仍在推進
+        this._fillPreFetchBuffer();
+      }
+    }, 3000); // 每 3 秒檢查一次，保證 5 秒內能偵測到停滯
+  }
+
+  _stopPlaybackWatchdog() {
+    if (this._playbackWatchdog) {
+      clearInterval(this._playbackWatchdog);
+      this._playbackWatchdog = null;
+    }
+  }
+
+  // 記錄播放進展（在每次成功開始播放新句子時調用）
+  _markPlaybackProgress() {
+    this._lastPlaybackProgressTime = Date.now();
+  }
+
+  // 清理已播放完畢的原生臨時音訊文件
+  _cleanupNativeTTSFile(cached) {
+    if (!cached) return;
+    if (cached.filePath && typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
+      window.Capacitor.Plugins.NativeTTS.deleteTTSFile({ filePath: cached.filePath }).catch(() => {});
+    }
+    if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(cached.blobUrl);
+    }
+  }
+
   async _updateMediaSession(sentence) {
     const text = sentence ? sentence.text : (this.currentBookTitle || 'TTS Reading');
     const title = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
@@ -2448,6 +2550,7 @@ export class TTSEngine {
         if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
           URL.revokeObjectURL(cached.blobUrl);
         }
+        this._cleanupNativeTTSFile(cached);
         this.audioCache.delete(idx);
       }
     });
@@ -2459,9 +2562,14 @@ export class TTSEngine {
     this.prefetchQueue = []; // 清空先前的後台預加載排隊
     this.fetchingIndices.delete(this.currentIndex); // 強制解除當前目標句的獲取鎖定，防止因先前失敗或超時而直接 return
     
-    // 點擊正文後，優先僅向 TTS 引擎發送當前首句，避免雙路握手爭搶網絡帶寬拖慢首句啟動；
-    // 首句快取就緒後，_onAudioCacheReady 會立即調用 _earlyFillPreFetchBuffer 自動啟動後續預取
+    // 點擊正文後，立即同時請求首句與第二句，消除第二句的等待延遲；
+    // iOS 上每句需新建 WebSocket 連接（TCP+TLS 握手 200-400ms），並行請求可節省一次完整握手時間
     this._fetchSentence(this.currentIndex);
+    // 同時啟動第二句（若存在且不在同一分組中），使其在首句播放期間即可完成下載
+    if (this.currentIndex + 1 < this.sentences.length) {
+      this.fetchingIndices.delete(this.currentIndex + 1);
+      this._fetchSentence(this.currentIndex + 1);
+    }
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -2484,6 +2592,7 @@ export class TTSEngine {
     }
 
     this._startSilenceKeepAlive();
+    this._startPlaybackWatchdog();
     this._playActiveSentence();
     this._prefetchNextChapter();
     if (this.onStateChange) this.onStateChange();
@@ -2822,12 +2931,16 @@ export class TTSEngine {
     this.currentAudio = null;
     
     this.audioCache.forEach(cached => {
-      if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(cached.blobUrl);
-      }
+      this._cleanupNativeTTSFile(cached);
     });
     this.audioCache.clear();
     this.fetchingIndices.clear();
+    this._stopPlaybackWatchdog();
+    
+    // 批量清理所有殘留的原生臨時音訊文件
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS && typeof window.Capacitor.Plugins.NativeTTS.cleanupTTSFiles === 'function') {
+      window.Capacitor.Plugins.NativeTTS.cleanupTTSFiles().catch(() => {});
+    }
     
     this.prefetchedChapterIndex = null;
     this._clearHighlight();
@@ -2933,6 +3046,7 @@ export class TTSEngine {
         if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
           URL.revokeObjectURL(cached.blobUrl);
         }
+        this._cleanupNativeTTSFile(cached);
       });
       this.audioCache.clear();
       this.fetchingIndices.clear();
