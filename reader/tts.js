@@ -2132,6 +2132,9 @@ export class TTSEngine {
         navigator.mediaSession.setActionHandler('pause', () => {
           this.pause();
         });
+        navigator.mediaSession.setActionHandler('stop', () => {
+          this.pause();
+        });
         navigator.mediaSession.setActionHandler('previoustrack', () => {
           this.previous();
         });
@@ -2431,8 +2434,15 @@ export class TTSEngine {
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
         this.synth.pause();
-      } else if (this.currentAudio) {
-        this.currentAudio.pause();
+      } else {
+        if (this.currentAudio) {
+          this.currentAudio.pause();
+        }
+        if (this.players && this.players.length > 0) {
+          this.players.forEach(p => {
+            try { p.pause(); } catch(e) {}
+          });
+        }
       }
       this._stopPolling();
       if (this.onStateChange) this.onStateChange();

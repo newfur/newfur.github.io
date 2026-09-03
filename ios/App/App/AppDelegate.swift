@@ -408,7 +408,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         nowPlayingInfo[MPMediaItemPropertyArtist] = artist.isEmpty ? "E-Book Reader" : artist
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-        nowPlayingInfo[MPNowPlayingInfoPropertyIsLiveStream] = 1
         
         if let artwork = self.currentArtwork {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
@@ -497,12 +496,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.playCommand.removeTarget(nil)
         commandCenter.pauseCommand.removeTarget(nil)
+        commandCenter.stopCommand.removeTarget(nil)
         commandCenter.togglePlayPauseCommand.removeTarget(nil)
         commandCenter.nextTrackCommand.removeTarget(nil)
         commandCenter.previousTrackCommand.removeTarget(nil)
 
         commandCenter.playCommand.isEnabled = true
         commandCenter.pauseCommand.isEnabled = true
+        commandCenter.stopCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.isEnabled = true
@@ -553,8 +554,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             print("[NativeTTS] RemoteCommand: pause")
+            self.isCurrentlyPlaying = false
             DispatchQueue.main.async {
-                self.isCurrentlyPlaying = false
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
                     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
@@ -562,7 +563,41 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
                 if #available(iOS 13.0, *) {
                     MPNowPlayingInfoCenter.default().playbackState = .paused
                 }
-                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); }", completionHandler: nil)
+                self.bridge?.webView?.evaluateJavaScript("""
+                    (function() {
+                        if (window.tts) {
+                            window.tts.pause();
+                        }
+                        var audios = document.querySelectorAll('audio');
+                        audios.forEach(function(a) { a.pause(); });
+                    })();
+                """, completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "pause"])
+            }
+            return .success
+        }
+
+        commandCenter.stopCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            print("[NativeTTS] RemoteCommand: stop (handling as pause)")
+            self.isCurrentlyPlaying = false
+            DispatchQueue.main.async {
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .paused
+                }
+                self.bridge?.webView?.evaluateJavaScript("""
+                    (function() {
+                        if (window.tts) {
+                            window.tts.pause();
+                        }
+                        var audios = document.querySelectorAll('audio');
+                        audios.forEach(function(a) { a.pause(); });
+                    })();
+                """, completionHandler: nil)
                 self.notifyListeners("mediaAction", data: ["action": "pause"])
             }
             return .success
