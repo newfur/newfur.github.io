@@ -1406,6 +1406,12 @@ export class TTSEngine {
   }
 
   _getGroupInfoForIndex(index) {
+    // 每一句都進行物理校準：取消多句合併分組，所有句子均作為獨立單句獲取與播放。
+    // 每句起播瞬間由 audio.play() 嚴格觸發高亮同步，徹底消除組內時間比例估算偏差，實現 100% 物理精準對齊。
+    return null;
+
+    /*
+    // 歷史分組邏輯（每組最多 4 句，或累計約 120 字）：
     // 梯級優化：前 3 句單句獲取以保證極速啟動與順序緩存，從第 4 句（session + 3）起進入分組階段。
     const baseIndex = (typeof this.playbackStartSessionIndex === 'number') ? (this.playbackStartSessionIndex + 3) : 3;
     if (index < baseIndex) {
@@ -1448,6 +1454,7 @@ export class TTSEngine {
     }
 
     return null;
+    */
   }
 
   // 4. 預加載控制與播放隊列
