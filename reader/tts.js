@@ -1,8 +1,46 @@
+// 動態句子長度約束常數（方案一：動態槽位切分）
+// MIN: 最短句子長度（約 3.5~4 秒語音），低於此長度且同段後續有文字時向後合併，杜絕碎片化微請求與緩衝區耗盡
+// MAX: 最長句子長度（約 22~25 秒語音），高於此長度時在次級標點處自動換氣切分，防止超大語音區塊延遲
+const TTS_MIN_SENTENCE_LEN = 15;
+const TTS_MAX_SENTENCE_LEN = 100;
+
+// 輔助函式：對超過 MAX_LEN 的超長句子在分號、冒號、逗號等次級標點處進行自然換氣切分
+function splitLongSentence(sentence, maxLen = TTS_MAX_SENTENCE_LEN) {
+  if (!sentence || sentence.length <= maxLen) return [sentence];
+  const subParts = sentence.split(/([；;：:，,、]+[」』”’"'）】〉》]*)/);
+  const subSentences = [];
+  let current = "";
+  for (let i = 0; i < subParts.length; i++) {
+    const p = subParts[i];
+    if (!p) continue;
+    current += p;
+    if (i % 2 !== 0) {
+      if (current.length >= 35) {
+        subSentences.push(current);
+        current = "";
+      }
+    }
+  }
+  if (current.trim().length > 0) {
+    subSentences.push(current);
+  }
+  return subSentences.length > 0 ? subSentences : [sentence];
+}
+
 // 輔助函式：將文字切分為句子，同時避免在英文縮寫、縮寫首字母（如 J. F.）或小數點（如 3.14）處發生錯誤截斷
 function splitTextIntoSentences(text) {
   const parts = text.split(/([。！？.!?\r\n]+[」』”’"'）】〉》]*)/);
   const sentences = [];
   let currentSentence = "";
+
+  const pushSentence = (sent) => {
+    if (sent.length > TTS_MAX_SENTENCE_LEN) {
+      const subs = splitLongSentence(sent, TTS_MAX_SENTENCE_LEN);
+      subs.forEach(s => sentences.push(s));
+    } else {
+      sentences.push(sent);
+    }
+  };
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -35,7 +73,7 @@ function splitTextIntoSentences(text) {
           // 視為句子結束
           currentSentence += part;
           if (currentSentence.trim().length > 0) {
-            sentences.push(currentSentence);
+            pushSentence(currentSentence);
           }
           currentSentence = "";
         }
@@ -43,7 +81,7 @@ function splitTextIntoSentences(text) {
         // 其他定界符 (如 。 ！ ？ ! ? \n 等) 必然是句子結束
         currentSentence += part;
         if (currentSentence.trim().length > 0) {
-          sentences.push(currentSentence);
+          pushSentence(currentSentence);
         }
         currentSentence = "";
       }
@@ -51,7 +89,7 @@ function splitTextIntoSentences(text) {
   }
 
   if (currentSentence.trim().length > 0) {
-    sentences.push(currentSentence);
+    pushSentence(currentSentence);
   }
 
   return sentences;
@@ -686,8 +724,11 @@ export class TTSEngine {
               currentActiveSubChapterIndex = activeSubChapterIndex;
 
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence && !isInterjectionShortSentence(currentText)) {
-                flushCurrentSentence();
+              const hasClauseBreak = /[；;：:，,、]/.test(s);
+              if (endsSentence || hasClauseBreak) {
+                if (currentText.trim().length >= TTS_MIN_SENTENCE_LEN && !isInterjectionShortSentence(currentText)) {
+                  flushCurrentSentence();
+                }
               }
             } else {
               fragment.appendChild(document.createTextNode(s));
@@ -874,8 +915,11 @@ export class TTSEngine {
               currentActiveSubChapterIndex = activeSubChapterIndex;
 
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence && !isInterjectionShortSentence(currentText)) {
-                flushCurrentSentence();
+              const hasClauseBreak = /[；;：:，,、]/.test(s);
+              if (endsSentence || hasClauseBreak) {
+                if (currentText.trim().length >= TTS_MIN_SENTENCE_LEN && !isInterjectionShortSentence(currentText)) {
+                  flushCurrentSentence();
+                }
               }
             } else {
               fragment.appendChild(document.createTextNode(s));
@@ -942,15 +986,18 @@ export class TTSEngine {
             if (!isSeparatorSentence(clean)) {
               currentText += (currentText ? " " : "") + clean;
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence && !isInterjectionShortSentence(currentText)) {
-                this.sentences.push({
-                  index: this.sentences.length,
-                  chapterIndex: this.currentChapterIndex,
-                  text: currentText.trim(),
-                  isHeading: false,
-                  element: null
-                });
-                currentText = "";
+              const hasClauseBreak = /[；;：:，,、]/.test(s);
+              if (endsSentence || hasClauseBreak) {
+                if (currentText.trim().length >= TTS_MIN_SENTENCE_LEN && !isInterjectionShortSentence(currentText)) {
+                  this.sentences.push({
+                    index: this.sentences.length,
+                    chapterIndex: this.currentChapterIndex,
+                    text: currentText.trim(),
+                    isHeading: false,
+                    element: null
+                  });
+                  currentText = "";
+                }
               }
             }
           }
@@ -2860,8 +2907,11 @@ export class TTSEngine {
               currentActiveSubChapterIndex = activeSubChapterIndex;
 
               const endsSentence = /[。！？.!?\r\n]/.test(s);
-              if (endsSentence && !isInterjectionShortSentence(currentText)) {
-                flushCurrentSentence();
+              const hasClauseBreak = /[；;：:，,、]/.test(s);
+              if (endsSentence || hasClauseBreak) {
+                if (currentText.trim().length >= TTS_MIN_SENTENCE_LEN && !isInterjectionShortSentence(currentText)) {
+                  flushCurrentSentence();
+                }
               }
             }
           });

@@ -115,5 +115,15 @@ assert.strictEqual(isInterjectionShortSentence('“走！”'), false, '“走�
 assert.strictEqual(isInterjectionShortSentence('“他死了。”'), false, '“他死了。” is not an interjection');
 assert.strictEqual(isInterjectionShortSentence('“第三章”'), false, '“第三章” is not an interjection');
 
+// Test splitLongSentence
+const splitLongSentence = eval(`(${extractFunctionFromTTS('splitLongSentence')})`);
+const shortSent = '这是一句普通的句子，长度只有二十几个字。';
+assert.deepStrictEqual(splitLongSentence(shortSent, 100), [shortSent], 'short sentence should not be split');
+
+const ultraLong = '从拂晓开始，天空中就布满了阴沉沉的铅灰色云层，风夹杂着刺骨的寒意掠过荒原，远处的树木在风中剧烈地摇晃，仿佛在向无边的荒野诉说着即将来临的暴风雨，而我们一行人只能顶着狂风艰难前行，每迈出一步都需要耗费巨大的力气，甚至连呼吸都变得困难起来。';
+const splitResult = splitLongSentence(ultraLong, 100);
+assert.ok(splitResult.length > 1, 'ultra long sentence should be split into clauses');
+assert.ok(splitResult.every(s => s.length <= 100), 'all split clauses should be under 100 chars');
+
 console.log('TTS review regression tests passed');
 
