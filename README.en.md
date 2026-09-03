@@ -3,7 +3,7 @@
 Language: [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **English**
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.4.2-orange)](javascript:;)
+[![Version](https://img.shields.io/badge/version-3.4.3-orange)](javascript:;)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
 An immersive, high-performance, and deeply customizable cross-platform e-book reader crafted for modern web browsers and mobile devices. Engineered with a client-driven core and native bridge architecture, it integrates multi-format parsing, natural neural TTS powered by Microsoft Edge, on-device/cloud AI reading companions, dynamic mindmaps, and granular reading statistics.

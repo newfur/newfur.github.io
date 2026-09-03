@@ -520,7 +520,6 @@ export class TTSEngine {
     this.container = containerElement;
     this.sentences = [];
     this.currentIndex = 0;
-    this.lastPrefetchedChapterIndex = this.currentChapterIndex;
     
     // 清理舊的音訊快取 blob URLs，防止章節切換時內存累積
     if (this.audioCache.size > 0) {
@@ -534,19 +533,25 @@ export class TTSEngine {
     }
     
     let sentenceId = 0;
+    let relativeSentenceId = 0;
 
     // 找出所有與當前章節共享相同 cleanHref 的子章節及其 hash 對照，以便為每句話分配精確的 chapterIndex
     const subChapters = [];
+    let maxSubChapterIdx = this.currentChapterIndex;
     if (epubBookData && epubBookData.chapters && this.currentChapterIndex !== undefined) {
       const currentChapter = epubBookData.chapters[this.currentChapterIndex];
-      if (currentChapter) {
+      if (currentChapter && currentChapter.cleanHref) {
         epubBookData.chapters.forEach((ch, idx) => {
           if (ch.cleanHref === currentChapter.cleanHref) {
             subChapters.push({ hash: ch.hash || '', index: idx });
+            if (idx > maxSubChapterIdx) maxSubChapterIdx = idx;
           }
         });
       }
     }
+    // 當前容器已包含此 cleanHref 下所有子章節的內容，預加載進度應直接前進到最大子章節索引，防止後續重複預加載同一文件
+    this.lastPrefetchedChapterIndex = maxSubChapterIdx;
+
     let activeSubChapterIndex = subChapters.length > 0 ? subChapters[0].index : this.currentChapterIndex;
 
     let currentText = "";
@@ -568,7 +573,7 @@ export class TTSEngine {
           if (!isSeparatorSentence(cleanSentence)) {
             this.sentences.push({
               index: sentenceId,
-              relativeIndex: sentenceId,
+              relativeIndex: relativeSentenceId,
               chapterIndex: currentActiveSubChapterIndex,
               text: cleanSentence,
               isHeading: isHeading,
@@ -579,6 +584,7 @@ export class TTSEngine {
               el.setAttribute('data-sentence-index', sentenceId);
             });
             sentenceId++;
+            relativeSentenceId++;
           }
         }
       }
@@ -596,13 +602,19 @@ export class TTSEngine {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const nodeId = node.getAttribute('id') || '';
         const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
-        const matchedSub = subChapters.find(sub => 
-          sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
-        );
+        const matchedSub = subChapters.find(sub => {
+          if (!sub.hash) return false;
+          try {
+            return sub.hash === nodeId || decodeURIComponent(sub.hash) === nodeId || sub.hash === nodeName || decodeURIComponent(sub.hash) === nodeName;
+          } catch (e) {
+            return sub.hash === nodeId || sub.hash === nodeName;
+          }
+        });
         if (matchedSub) {
           flushCurrentSentence();
           activeSubChapterIndex = matchedSub.index;
           currentActiveSubChapterIndex = matchedSub.index;
+          relativeSentenceId = 0; // 重置子章節內的相對句子索引，保證 tts.play(0) 能精確定位到該子章節第 0 句
         }
 
         const tagName = node.tagName.toLowerCase();
@@ -771,9 +783,14 @@ export class TTSEngine {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const nodeId = node.getAttribute('id') || '';
         const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
-        const matchedSub = subChapters.find(sub => 
-          sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
-        );
+        const matchedSub = subChapters.find(sub => {
+          if (!sub.hash) return false;
+          try {
+            return sub.hash === nodeId || decodeURIComponent(sub.hash) === nodeId || sub.hash === nodeName || decodeURIComponent(sub.hash) === nodeName;
+          } catch (e) {
+            return sub.hash === nodeId || sub.hash === nodeName;
+          }
+        });
         if (matchedSub) {
           flushCurrentSentence();
           activeSubChapterIndex = matchedSub.index;
@@ -2172,7 +2189,13 @@ export class TTSEngine {
   }
 
   play(index = 0, isAbsolute = false) {
-    if (this.sentences.length === 0) return;
+    if (this.sentences.length === 0) {
+      // 若當前章節為純圖片或無文字章節，自動調用 onPlaybackEnd 跳轉至下一章進行朗讀
+      if (this.onPlaybackEnd) {
+        this.onPlaybackEnd();
+      }
+      return;
+    }
     
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
     this.isPlaying = false;
@@ -2292,15 +2315,29 @@ export class TTSEngine {
         return;
       }
       
-      this.lastPrefetchedChapterIndex = targetNextIndex;
+      // 如果當前文件包含多個子章節（共享相同 cleanHref），計算最大子章節索引
+      // 防止後續重複預加載同一個 HTML 文件導致句子被成倍重複加入隊列
+      let maxSubChapterIdx = targetNextIndex;
+      if (this.epubBookData && this.epubBookData.chapters) {
+        const currentChapter = this.epubBookData.chapters[targetNextIndex];
+        if (currentChapter && currentChapter.cleanHref) {
+          this.epubBookData.chapters.forEach((ch, idx) => {
+            if (ch.cleanHref === currentChapter.cleanHref && idx > maxSubChapterIdx) {
+              maxSubChapterIdx = idx;
+            }
+          });
+        }
+      }
+      this.lastPrefetchedChapterIndex = maxSubChapterIdx;
       const nextSentences = this._extractSentencesFromHtml(nextChapter.html, nextChapter.index);
       
       if (nextSentences.length > 0) {
         const startIdx = this.sentences.length;
         nextSentences.forEach((s, i) => {
           s.index = startIdx + i;
-          s.relativeIndex = i;
-          s.chapterIndex = nextChapter.index;
+          if (s.relativeIndex === undefined) s.relativeIndex = i;
+          // 保留 _extractSentencesFromHtml 精確識別的子章節索引，不盲目覆蓋為 nextChapter.index
+          if (s.chapterIndex === undefined || s.chapterIndex === null) s.chapterIndex = nextChapter.index;
           this.sentences.push(s);
         });
         
@@ -2323,6 +2360,7 @@ export class TTSEngine {
     const doc = parser.parseFromString(htmlStr, 'text/html');
     const sentences = [];
     let sentenceId = 0;
+    let relativeSentenceId = 0;
 
     const subChapters = [];
     const epubBookData = this.epubBookData;
@@ -2356,6 +2394,7 @@ export class TTSEngine {
         if (!isSeparatorSentence(cleanSentence)) {
           sentences.push({
             index: sentenceId,
+            relativeIndex: relativeSentenceId,
             text: cleanSentence,
             isHeading: isHeading,
             chapterIndex: currentActiveSubChapterIndex,
@@ -2363,6 +2402,7 @@ export class TTSEngine {
             elements: []
           });
           sentenceId++;
+          relativeSentenceId++;
         }
       }
       currentText = "";
@@ -2377,13 +2417,19 @@ export class TTSEngine {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const nodeId = node.getAttribute('id') || '';
         const nodeName = node.tagName.toLowerCase() === 'a' ? (node.getAttribute('name') || '') : '';
-        const matchedSub = subChapters.find(sub => 
-          sub.hash && (sub.hash === nodeId || sub.hash === nodeName)
-        );
+        const matchedSub = subChapters.find(sub => {
+          if (!sub.hash) return false;
+          try {
+            return sub.hash === nodeId || decodeURIComponent(sub.hash) === nodeId || sub.hash === nodeName || decodeURIComponent(sub.hash) === nodeName;
+          } catch (e) {
+            return sub.hash === nodeId || sub.hash === nodeName;
+          }
+        });
         if (matchedSub) {
           flushCurrentSentence();
           activeSubChapterIndex = matchedSub.index;
           currentActiveSubChapterIndex = matchedSub.index;
+          relativeSentenceId = 0; // 重置子章節內的相對句子索引
         }
 
         const tagName = node.tagName.toLowerCase();
