@@ -3842,8 +3842,24 @@ function updateActiveSubChapterOnPage() {
 async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
   if (isChangingChapter) {
-    console.warn("loadChapter ignored because a chapter change is already in progress.");
-    return;
+    console.warn("loadChapter waiting because a chapter change is already in progress.");
+    // 等待當前章節切換完成後重試，避免返回 undefined 導致 await 的調用方（如 onChapterTransition）
+    // 誤認為 DOM 已完成更新，在未就緒的 DOM 上嘗試高亮
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (!isChangingChapter) {
+          clearInterval(checkInterval);
+          resolve(loadChapter(index, goToLastPage, restoreProgress, animate, isSeamless, targetPageIndex, targetElementIndex, targetSentenceIndex, targetHash, targetKindleOffset, ignoreChapterHash));
+        }
+      }, 50);
+      // 安全超時：最多等待 5 秒，防止死鎖
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        console.warn("loadChapter timeout waiting for chapter change lock, forcing release.");
+        isChangingChapter = false;
+        resolve(loadChapter(index, goToLastPage, restoreProgress, animate, isSeamless, targetPageIndex, targetElementIndex, targetSentenceIndex, targetHash, targetKindleOffset, ignoreChapterHash));
+      }, 5000);
+    });
   }
 
   const isPaginated = document.body.classList.contains('layout-paginated');

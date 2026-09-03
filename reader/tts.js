@@ -699,6 +699,8 @@ export class TTSEngine {
     let currentElements = [];
     let currentActiveSubChapterIndex = activeSubChapterIndex;
     let isHeading = false;
+    // 使用順序遊標匹配，避免重複文本（如"是的。"、"好的。"多次出現）被 find() 從頭搜索導致匹配到錯誤句子
+    let matchCursor = startSentenceIndex;
 
     const isBlockElement = (node) => {
       if (node.nodeType !== Node.ELEMENT_NODE) return false;
@@ -717,16 +719,16 @@ export class TTSEngine {
           if (!isSeparatorSentence(cleanSentence)) {
             const hasNoElements = (sent) => !sent.element && (!sent.elements || sent.elements.length === 0);
 
-            let existingSentence = this.sentences.find(sent => 
-              sent.chapterIndex === currentActiveSubChapterIndex && 
-              sent.text === cleanSentence && 
-              hasNoElements(sent)
-            );
-            if (!existingSentence) {
-              existingSentence = this.sentences.find(sent => 
-                sent.text === cleanSentence && 
-                hasNoElements(sent)
-              );
+            // 從 matchCursor 開始順序向前搜索，保證重複文本按出現順序逐一配對
+            let existingSentence = null;
+            const searchLimit = Math.min(this.sentences.length, targetSentIdx + 100);
+            for (let si = matchCursor; si < searchLimit; si++) {
+              const sent = this.sentences[si];
+              if (sent.text === cleanSentence && hasNoElements(sent)) {
+                existingSentence = sent;
+                matchCursor = si + 1; // 遊標前進到下一個位置，避免同一句子被重複匹配
+                break;
+              }
             }
 
             if (existingSentence) {
@@ -744,6 +746,8 @@ export class TTSEngine {
                 sentByIndex.chapterIndex = currentActiveSubChapterIndex;
                 sentByIndex.isHeading = isHeading;
                 finalSentIdx = sentByIndex.index;
+              } else {
+                console.warn(`[TTS syncDOM] No matching sentence for text: "${cleanSentence.substring(0, 40)}..." at expected index ${targetSentIdx}, total: ${this.sentences.length}`);
               }
             }
 
@@ -835,12 +839,23 @@ export class TTSEngine {
     flushCurrentSentence();
     containerElement.replaceChildren(...clone.childNodes);
 
+    // 清除屬於「上一章」且仍殘留在句子隊列中的舊 DOM 引用。
+    // 這些引用指向的元素已隨 innerHTML 更新而被銷毀，若不清除將導致高亮時操作已脫離文件的「孤兒」元素。
+    for (let i = 0; i < this.sentences.length; i++) {
+      const sent = this.sentences[i];
+      if (sent.element && !containerElement.contains(sent.element)) {
+        sent.element = null;
+        sent.elements = [];
+      }
+    }
+
     // DOM 映射完成後，等瀏覽器完成佈局渲染後高亮並平移至當前正在播放的句子
     if (this.isPlaying) {
       setTimeout(() => {
         if (!this.isPlaying) return;
         const currentSent = this.sentences[this.currentIndex];
-        if (currentSent && currentSent.element) {
+        if (currentSent) {
+          // 即使 element 為 null 也嘗試高亮，_highlightSentence 內部的兜底邏輯會通過 data-sentence-index 查找
           this._highlightSentence(currentSent);
         }
       }, 100);
@@ -2694,6 +2709,22 @@ export class TTSEngine {
       sentence.element.classList.add(styleClass);
       sentence.element.classList.add('reading-sentence');
       targetEl = sentence.element;
+    }
+
+    // 兜底查找：如果句子的元素引用為空（可能由於 syncDOM 匹配失敗或章節切換後引用丟失），
+    // 通過 data-sentence-index 屬性在當前容器中搜索，確保跨章節後高亮不丟失
+    if (!targetEl && this.container && sentence.index !== undefined) {
+      const foundEls = this.container.querySelectorAll(`[data-sentence-index="${sentence.index}"]`);
+      if (foundEls.length > 0) {
+        foundEls.forEach(el => {
+          el.classList.add('reading-sentence');
+          el.classList.add(styleClass);
+        });
+        targetEl = foundEls[0];
+        // 修復引用以便後續高亮不再需要兜底查找
+        sentence.element = foundEls[0];
+        sentence.elements = Array.from(foundEls);
+      }
     }
 
     // 統一滾動邏輯：所有分支共用同一套精確居中滾動
