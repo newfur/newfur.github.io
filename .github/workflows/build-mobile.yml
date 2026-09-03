@@ -39,7 +39,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install Dependencies
         run: npm install
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload Android & Web Artifacts
         continue-on-error: true
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: android-web-artifacts
           path: |
@@ -139,7 +139,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install Dependencies
         run: npm install
@@ -161,7 +161,7 @@ jobs:
 
       - name: Upload iOS Artifacts
         continue-on-error: true
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ios-artifacts
           path: EdgeReader-${{ steps.version.outputs.version }}-iOS.ipa
@@ -183,7 +183,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: release-files
           merge-multiple: true
