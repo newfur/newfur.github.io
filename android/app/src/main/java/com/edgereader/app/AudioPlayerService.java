@@ -32,7 +32,6 @@ public class AudioPlayerService extends Service {
     private WifiManager.WifiLock wifiLock;
     
     private AudioManager audioManager;
-    private AudioFocusRequest audioFocusRequest;
     private android.content.BroadcastReceiver noisyReceiver;
     private boolean isReceiverRegistered = false;
     private String lastCoverBase64 = null;
@@ -337,73 +336,13 @@ public class AudioPlayerService extends Service {
         if (isPlaying) {
             cancelScheduledLockRelease();
             acquireLocks();
-            requestAudioFocus();
             registerNoisyReceiver();
         } else {
-            abandonAudioFocus();
             unregisterNoisyReceiver();
             scheduleLockRelease();
         }
     }
 
-    private void requestAudioFocus() {
-        if (audioManager == null) {
-            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        }
-        if (audioManager == null) return;
-
-        try {
-            int result;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (audioFocusRequest == null) {
-                    AudioAttributes playbackAttributes = new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build();
-                    audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                            .setAudioAttributes(playbackAttributes)
-                            .setAcceptsDelayedFocusGain(false)
-                            .setOnAudioFocusChangeListener(focusChangeListener)
-                            .build();
-                }
-                result = audioManager.requestAudioFocus(audioFocusRequest);
-            } else {
-                result = audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-            }
-            Log.d(TAG, "requestAudioFocus result: " + result);
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to request audio focus: " + e.getMessage());
-        }
-    }
-
-    private void abandonAudioFocus() {
-        if (audioManager == null) return;
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
-                audioManager.abandonAudioFocusRequest(audioFocusRequest);
-            } else {
-                audioManager.abandonAudioFocus(focusChangeListener);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to abandon audio focus: " + e.getMessage());
-        }
-    }
-
-    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
-        Log.d(TAG, "onAudioFocusChange: " + focusChange);
-        switch (focusChange) {
-            case AudioManager.AUDIOFOCUS_LOSS:
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                if (isPlaying) {
-                    isPlaying = false;
-                    updatePlaybackState(false);
-                    updateNotification(currentTitle, currentArtist, currentText, false);
-                    notifyJS("pause");
-                }
-                break;
-        }
-    };
 
     private void registerNoisyReceiver() {
         if (!isReceiverRegistered) {
@@ -570,7 +509,6 @@ public class AudioPlayerService extends Service {
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
         cancelScheduledLockRelease();
-        abandonAudioFocus();
         unregisterNoisyReceiver();
         releaseLocks();
         if (coverBitmap != null) {

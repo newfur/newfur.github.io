@@ -1163,6 +1163,27 @@ export class TTSEngine {
           return;
         }
 
+        let speakText = sentence.text || '';
+        // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
+        speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
+        speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
+        speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
+
+        // 若純為標點符號或空白，直接返回微型靜音音訊，避免向雲端請求無效音訊或導致超時報錯
+        const hasPronounceable = /[\p{L}\p{N}]/u.test(speakText);
+        if (!hasPronounceable) {
+          resolve(this._createSilentAudioBlob());
+          return;
+        }
+
+        if (!/[。！？.!?；;，,：:]\s*$/.test(speakText)) {
+          if (sentence.isHeading) {
+            speakText += "。";
+          } else {
+            speakText += "，";
+          }
+        }
+
         const secMsGec = await this._generateSecMsGecToken();
         const connectionId = this._generateConnectionId();
         const voiceShortName = this._getVoiceShortName(this.selectedVoice);
@@ -1178,7 +1199,7 @@ export class TTSEngine {
         if (isNativeApp && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS) {
           try {
             const result = await window.Capacitor.Plugins.NativeTTS.downloadTTS({
-              text: sentence.text,
+              text: speakText,
               voice: voiceShortName,
               connectionId: connectionId,
               secMsGec: secMsGec,
@@ -1240,20 +1261,6 @@ export class TTSEngine {
               }
             });
           ws.send(configMsg);
-          
-          let speakText = sentence.text;
-          // 清除註釋角標編號（例如 [1]、①、¹、〔注1〕等）
-          speakText = speakText.replace(/[\[\(\{〔【](?:[0-9]+|注[0-9]*|[a-zA-Z]+)[\]\)}〕】]/g, '');
-          speakText = speakText.replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '');
-          speakText = speakText.replace(/[\u00b2\u00b3\u00b9\u2070\u2074-\u2079\u2080-\u2089]/g, '');
-          
-          if (!/[。！？.!?；;，,：:]\s*$/.test(speakText)) {
-            if (sentence.isHeading) {
-              speakText += "。";
-            } else {
-              speakText += "，";
-            }
-          }
           
           const escapedText = this._escapeXml(speakText);
           const ssml = 
@@ -1322,7 +1329,7 @@ export class TTSEngine {
             const blob = new Blob(audioChunks, { type: 'audio/mpeg' });
             resolve(blob);
           } else {
-            reject(new Error("No audio data received"));
+            resolve(this._createSilentAudioBlob());
           }
         };
         
@@ -1417,7 +1424,8 @@ export class TTSEngine {
         }
         
         this.consecutiveWsFailures = (this.consecutiveWsFailures || 0) + 1;
-        if (this.consecutiveWsFailures >= 10) {
+        const hasSpeechSynth = typeof window !== 'undefined' && window.speechSynthesis && typeof window.speechSynthesis.speak === 'function' && window.speechSynthesis.getVoices().length > 0;
+        if (this.consecutiveWsFailures >= 10 && hasSpeechSynth) {
           console.warn("WebSocket TTS failed 10 times consecutively. Switching to native Web Speech API.");
           this.consecutiveWsFailures = 0;
           
@@ -2111,6 +2119,17 @@ export class TTSEngine {
     this.silenceAudio.play().catch(err => {
       console.warn("Failed to play silence audio keep-alive:", err);
     });
+  }
+
+  _createSilentAudioBlob() {
+    const base64 = 'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: 'audio/mpeg' });
   }
 
   _stopSilenceKeepAlive() {

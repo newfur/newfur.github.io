@@ -272,7 +272,10 @@ public class NativeTTS extends Plugin {
                     ret.put("audioBase64", base64Audio);
                     call.resolve(ret);
                 } else {
-                    call.reject("No audio data received from Edge TTS");
+                    // 若伺服器正常結束但未返回音訊幀（例如僅含標點符號的句子），返回極短靜音 MP3 避免前端崩潰
+                    JSObject ret = new JSObject();
+                    ret.put("audioBase64", "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV");
+                    call.resolve(ret);
                 }
             }
 
