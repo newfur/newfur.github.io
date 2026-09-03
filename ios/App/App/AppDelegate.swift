@@ -101,6 +101,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "NativeTTS"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "downloadTTS", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelTTS", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelAllTTS", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "syncClock", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getSafeAreaInsets", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setStatusBarStyle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startForegroundService", returnType: CAPPluginReturnPromise),
@@ -112,12 +115,20 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "copyFileToDownloads", returnType: CAPPluginReturnPromise)
     ]
 
-    private var activeWebSocketTask: URLSessionWebSocketTask?
+    private var activeTasks = [String: URLSessionWebSocketTask]()
+    private let taskLock = NSLock()
     private var currentArtwork: MPMediaItemArtwork?
     private var wasPlayingBeforeInterruption: Bool = false
     private var isAudioSessionInterrupted: Bool = false
     private var isCurrentlyPlaying: Bool = false
-    private lazy var ttsSession: URLSession = URLSession(configuration: .default)
+    private lazy var ttsSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10.0
+        config.timeoutIntervalForResource = 15.0
+        config.httpMaximumConnectionsPerHost = 10
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
 
     public override init() {
         super.init()
@@ -142,6 +153,58 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        taskLock.lock()
+        for (_, task) in activeTasks {
+            task.cancel(with: .goingAway, reason: nil)
+        }
+        activeTasks.removeAll()
+        taskLock.unlock()
+    }
+
+    @objc func cancelTTS(_ call: CAPPluginCall) {
+        if let connectionId = call.getString("connectionId") {
+            taskLock.lock()
+            if let task = activeTasks.removeValue(forKey: connectionId) {
+                task.cancel(with: .goingAway, reason: nil)
+            }
+            taskLock.unlock()
+        }
+        call.resolve()
+    }
+
+    @objc func cancelAllTTS(_ call: CAPPluginCall) {
+        taskLock.lock()
+        for (_, task) in activeTasks {
+            task.cancel(with: .goingAway, reason: nil)
+        }
+        activeTasks.removeAll()
+        taskLock.unlock()
+        call.resolve()
+    }
+
+    @objc func syncClock(_ call: CAPPluginCall) {
+        guard let url = URL(string: "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4") else {
+            call.resolve(["clockSkew": 0])
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 4.0
+        
+        let task = self.ttsSession.dataTask(with: request) { _, response, _ in
+            var clockSkew: Double = 0
+            if let httpResponse = response as? HTTPURLResponse,
+               let dateHeader = httpResponse.allHeaderFields["Date"] as? String {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+                if let serverDate = formatter.date(from: dateHeader) {
+                    clockSkew = (serverDate.timeIntervalSince(Date())) * 1000.0 // in ms
+                }
+            }
+            call.resolve(["clockSkew": clockSkew])
+        }
+        task.resume()
     }
 
     @objc func downloadTTS(_ call: CAPPluginCall) {
@@ -174,14 +237,41 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
 
         let session = self.ttsSession
         let webSocketTask = session.webSocketTask(with: request)
-        self.activeWebSocketTask = webSocketTask
+
+        self.taskLock.lock()
+        self.activeTasks[connectionId] = webSocketTask
+        self.taskLock.unlock()
 
         var audioData = Data()
         var isCompleted = false
 
+        var timeoutWorkItem: DispatchWorkItem?
+        timeoutWorkItem = DispatchWorkItem { [weak self, weak webSocketTask] in
+            guard !isCompleted else { return }
+            print("[NativeTTS] Task \(connectionId) timed out after 10s")
+            webSocketTask?.cancel(with: .goingAway, reason: nil)
+            if let self = self {
+                self.taskLock.lock()
+                self.activeTasks.removeValue(forKey: connectionId)
+                self.taskLock.unlock()
+            }
+            if !isCompleted {
+                isCompleted = true
+                call.reject("Edge TTS request timed out in native (10s)")
+            }
+        }
+        if let workItem = timeoutWorkItem {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10.0, execute: workItem)
+        }
+
         func finishWithSuccess() {
             guard !isCompleted else { return }
             isCompleted = true
+            timeoutWorkItem?.cancel()
+            timeoutWorkItem = nil
+            self.taskLock.lock()
+            self.activeTasks.removeValue(forKey: connectionId)
+            self.taskLock.unlock()
             webSocketTask.cancel(with: .normalClosure, reason: nil)
             if !audioData.isEmpty {
                 let base64 = audioData.base64EncodedString()
@@ -194,6 +284,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         func finishWithError(_ errorMsg: String) {
             guard !isCompleted else { return }
             isCompleted = true
+            timeoutWorkItem?.cancel()
+            timeoutWorkItem = nil
+            self.taskLock.lock()
+            self.activeTasks.removeValue(forKey: connectionId)
+            self.taskLock.unlock()
             webSocketTask.cancel(with: .goingAway, reason: nil)
             call.reject(errorMsg)
         }

@@ -337,6 +337,17 @@ export class TTSEngine {
           window.location.protocol === 'app:' ||
           window.location.protocol === 'file:'
         );
+
+        if (isNativeApp && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS && typeof window.Capacitor.Plugins.NativeTTS.syncClock === 'function') {
+          try {
+            const clockRes = await window.Capacitor.Plugins.NativeTTS.syncClock();
+            if (clockRes && typeof clockRes.clockSkew === 'number') {
+              this.clockSkew = clockRes.clockSkew;
+              console.log(`TTS Clock synced via NativeTTS. Skew: ${this.clockSkew} ms`);
+            }
+          } catch (e) {}
+        }
+
         const isWeb = !isNativeApp && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
         
         // 1. 若在 Web 模式（例如 node server.js），先嘗試本地 proxy 避免任何 CORS 警告
@@ -1120,6 +1131,9 @@ export class TTSEngine {
         if (!isSettled) {
           isSettled = true;
           try {
+            if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS && typeof window.Capacitor.Plugins.NativeTTS.cancelTTS === 'function') {
+              window.Capacitor.Plugins.NativeTTS.cancelTTS({ connectionId }).catch(() => {});
+            }
             if (activeWs && activeWs.readyState !== WebSocket.CLOSED) {
               activeWs.close();
             }
@@ -1242,11 +1256,11 @@ export class TTSEngine {
             });
             const base64ToBlob = (base64, mimeType) => {
               const byteCharacters = atob(base64);
-              const byteNumbers = new Array(byteCharacters.length);
-              for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              const len = byteCharacters.length;
+              const byteArray = new Uint8Array(len);
+              for (let i = 0; i < len; i++) {
+                byteArray[i] = byteCharacters.charCodeAt(i);
               }
-              const byteArray = new Uint8Array(byteNumbers);
               return new Blob([byteArray], { type: mimeType });
             };
             const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
@@ -1648,6 +1662,10 @@ export class TTSEngine {
     if (this.isPlaying && !this.isPaused && !this.playbackStarted && index === this.currentIndex) {
       this._earlyFillPreFetchBuffer();
     }
+    // 每次快取就緒時，持續驅動預取隊列推進後續流水線
+    if (this.isPlaying && !this.isPaused) {
+      this._fillPreFetchBuffer();
+    }
   }
 
   _getWeightedLength(text) {
@@ -1747,9 +1765,47 @@ export class TTSEngine {
     this._processPrefetchQueue();
   }
 
+  _getMaxConcurrentFetches() {
+    const isNativeApp = typeof window !== 'undefined' && (
+      window.Capacitor ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'app:' ||
+      window.location.protocol === 'file:'
+    );
+
+    // 1. 檢查緊接著要播放的下一項（currentIndex + 1）
+    const nextIdx = this.currentIndex + 1;
+    if (nextIdx >= this.sentences.length) return 1;
+
+    const nextGroup = this._getGroupInfoForIndex(nextIdx);
+    const nextTargetIdx = nextGroup ? nextGroup.groupStartIndex : nextIdx;
+
+    // 如果即將播放的下一項尚未在快取中就緒：
+    // 必須將網絡通道 100% 獨佔留給該項，禁止並發預取後續分組搶奪帶寬造成卡頓
+    if (!this.audioCache.has(nextTargetIdx) && !this.audioCache.has(nextIdx)) {
+      return 1;
+    }
+
+    // 2. 檢查再下一項（下下一項）是否就緒
+    const afterNextIdx = nextGroup ? (nextGroup.groupStartIndex + nextGroup.groupLength) : (nextIdx + 1);
+    if (afterNextIdx < this.sentences.length) {
+      const afterGroup = this._getGroupInfoForIndex(afterNextIdx);
+      const afterTargetIdx = afterGroup ? afterGroup.groupStartIndex : afterNextIdx;
+      // 如果下下一項也尚未就緒，保持並發為 1，流水線逐個擊破，保證每個音訊塊全速最快完成
+      if (!this.audioCache.has(afterTargetIdx) && !this.audioCache.has(afterNextIdx)) {
+        return 1;
+      }
+    }
+
+    // 緩衝區已有至少兩批音訊就緒（至少已儲備 15~25 秒語音），安全放開並發加速填充遠端緩存
+    // 移動端環境限制最多 2 路並發，避免網絡隧道擁塞
+    return isNativeApp ? Math.min(2, this.maxConcurrentFetches) : this.maxConcurrentFetches;
+  }
+
   _processPrefetchQueue() {
     if (!this.isPlaying || this.isPaused) return;
-    while (this.activeFetchCount < this.maxConcurrentFetches && this.prefetchQueue.length > 0) {
+    const maxConcurrent = this._getMaxConcurrentFetches();
+    while (this.activeFetchCount < maxConcurrent && this.prefetchQueue.length > 0) {
       const nextIdx = this.prefetchQueue.shift();
       if (this.audioCache.has(nextIdx) || this.fetchingIndices.has(nextIdx)) {
         continue;
@@ -1795,8 +1851,8 @@ export class TTSEngine {
     if (!cached || !cached.isReady) {
       this._fetchSentence(index);
       
-      // 如果當前沒有任何音訊在播放，為防止 iOS 挂起 JavaScript，應立刻啟動靜音播放器保活
-      if (!this.currentAudio && this.silenceAudio) {
+      // 如果當前沒有任何音訊在播放（或者當前音訊已暫停/播放結束），為防止 iOS 挂起 JavaScript，應立刻啟動靜音播放器保活
+      if ((!this.currentAudio || this.currentAudio.paused || this.currentAudio.ended) && this.silenceAudio) {
         this.silenceAudio.play().catch(e => console.warn("Failed to resume silence on cache miss:", e));
       }
       return;
@@ -2403,11 +2459,9 @@ export class TTSEngine {
     this.prefetchQueue = []; // 清空先前的後台預加載排隊
     this.fetchingIndices.delete(this.currentIndex); // 強制解除當前目標句的獲取鎖定，防止因先前失敗或超時而直接 return
     
-    // 點擊正文後，立即向 tts 引擎發送當前句和下一句，確保第二句能秒級銜接
+    // 點擊正文後，優先僅向 TTS 引擎發送當前首句，避免雙路握手爭搶網絡帶寬拖慢首句啟動；
+    // 首句快取就緒後，_onAudioCacheReady 會立即調用 _earlyFillPreFetchBuffer 自動啟動後續預取
     this._fetchSentence(this.currentIndex);
-    if (this.currentIndex + 1 < this.sentences.length) {
-      this._fetchSentence(this.currentIndex + 1);
-    }
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -2738,6 +2792,9 @@ export class TTSEngine {
     
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
+      if (typeof window.Capacitor.Plugins.NativeTTS.cancelAllTTS === 'function') {
+        window.Capacitor.Plugins.NativeTTS.cancelAllTTS().catch(() => {});
+      }
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 

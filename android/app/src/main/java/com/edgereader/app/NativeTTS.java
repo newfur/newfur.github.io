@@ -289,6 +289,43 @@ public class NativeTTS extends Plugin {
     }
 
     @PluginMethod
+    public void cancelTTS(PluginCall call) {
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void cancelAllTTS(PluginCall call) {
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void syncClock(PluginCall call) {
+        new Thread(() -> {
+            try {
+                String url = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+                Request request = new Request.Builder().url(url).head().build();
+                Response response = getOkHttpClient().newCall(request).execute();
+                String dateHeader = response.header("Date");
+                double clockSkew = 0;
+                if (dateHeader != null) {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", java.util.Locale.US);
+                    java.util.Date serverDate = sdf.parse(dateHeader);
+                    if (serverDate != null) {
+                        clockSkew = (double)(serverDate.getTime() - System.currentTimeMillis());
+                    }
+                }
+                JSObject ret = new JSObject();
+                ret.put("clockSkew", clockSkew);
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("clockSkew", 0);
+                call.resolve(ret);
+            }
+        }).start();
+    }
+
+    @PluginMethod
     public void copyFileToDownloads(PluginCall call) {
         String filename = call.getString("filename");
         String fileUri = call.getString("fileUri");
