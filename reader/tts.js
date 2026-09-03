@@ -1644,6 +1644,10 @@ export class TTSEngine {
     if (this.isPlaying && !this.isPaused && index === this.currentIndex + 1) {
       this._prewarmNextPlayer();
     }
+    // 即便尚未開始播放，只要首句快取就緒就立即啟動後續預取管線，不等 audio.play() 回調
+    if (this.isPlaying && !this.isPaused && !this.playbackStarted && index === this.currentIndex) {
+      this._earlyFillPreFetchBuffer();
+    }
   }
 
   _getWeightedLength(text) {
@@ -1682,6 +1686,35 @@ export class TTSEngine {
       currentStart = end;
     }
     return boundaries;
+  }
+
+  // 在首句快取就緒但尚未開始播放時提前啟動預取管線，縮短第二句及後續句子的等待時間
+  _earlyFillPreFetchBuffer() {
+    if (!this.isPlaying) return;
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis');
+    if (useNativeSynth) return;
+
+    // 提前預取較少的句子（10 句），避免在首句播放前就過度佔用網絡帶寬
+    let scanIndex = this.currentIndex + 1;
+    const maxScanIndex = Math.min(this.sentences.length, this.currentIndex + 10);
+
+    while (scanIndex < maxScanIndex) {
+      const groupInfo = this._getGroupInfoForIndex(scanIndex);
+      if (groupInfo) {
+        const gStart = groupInfo.groupStartIndex;
+        if (!this.audioCache.has(gStart) && !this.fetchingIndices.has(gStart) && !this.prefetchQueue.includes(gStart)) {
+          this.prefetchQueue.push(gStart);
+        }
+        scanIndex = gStart + groupInfo.groupLength;
+      } else {
+        if (!this.audioCache.has(scanIndex) && !this.fetchingIndices.has(scanIndex) && !this.prefetchQueue.includes(scanIndex)) {
+          this.prefetchQueue.push(scanIndex);
+        }
+        scanIndex++;
+      }
+    }
+    this._processPrefetchQueue();
   }
 
   _fillPreFetchBuffer() {
@@ -1976,7 +2009,7 @@ export class TTSEngine {
         }
         this.audioCache.delete(index);
         
-        if (!this.isPlaying) return;
+        if (!this.isPlaying || this.isPaused) return;
         
         // 若下一句還沒有被觸發播放，則在此手動觸發
         if (!hasTriggeredNext) {
@@ -2370,8 +2403,11 @@ export class TTSEngine {
     this.prefetchQueue = []; // 清空先前的後台預加載排隊
     this.fetchingIndices.delete(this.currentIndex); // 強制解除當前目標句的獲取鎖定，防止因先前失敗或超時而直接 return
     
-    // 點擊正文後，只向 tts 引擎發送 1 句 (當前句)
+    // 點擊正文後，立即向 tts 引擎發送當前句和下一句，確保第二句能秒級銜接
     this._fetchSentence(this.currentIndex);
+    if (this.currentIndex + 1 < this.sentences.length) {
+      this._fetchSentence(this.currentIndex + 1);
+    }
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -2678,6 +2714,8 @@ export class TTSEngine {
       } else {
         this._playActiveSentence();
       }
+      // 恢復播放後重啟預取管線，防止暫停期間預取停止導致後續快取枯竭
+      this._fillPreFetchBuffer();
       if (this.onStateChange) this.onStateChange();
     }
   }
