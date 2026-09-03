@@ -2406,8 +2406,16 @@ export class TTSEngine {
   pause() {
     if (this.isPlaying && !this.isPaused) {
       this.isPaused = true;
-      this._stopSilenceKeepAlive();
       
+      // 保持靜音保活音頻在後台繼續循環播放，防止 iOS 在暫停 10~15 秒後強行凍結 WKWebView 進程
+      // 設置 15 分鐘超時：若暫停超過 15 分鐘未操作，才安全釋放靜音保活以節省電量
+      if (this._silencePauseTimeout) clearTimeout(this._silencePauseTimeout);
+      this._silencePauseTimeout = setTimeout(() => {
+        if (this.isPaused) {
+          this._stopSilenceKeepAlive();
+        }
+      }, 15 * 60 * 1000);
+
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (isCapacitorApp) {
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
@@ -2434,6 +2442,10 @@ export class TTSEngine {
   resume() {
     if (this.isPlaying && this.isPaused) {
       this.isPaused = false;
+      if (this._silencePauseTimeout) {
+        clearTimeout(this._silencePauseTimeout);
+        this._silencePauseTimeout = null;
+      }
       this._startSilenceKeepAlive();
       
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
@@ -2487,6 +2499,10 @@ export class TTSEngine {
     this.isPaused = false;
     this.playbackStarted = false;
     this._lastSentCoverBookId = null;
+    if (this._silencePauseTimeout) {
+      clearTimeout(this._silencePauseTimeout);
+      this._silencePauseTimeout = null;
+    }
     this._stopSilenceKeepAlive();
     this._stopPolling();
     

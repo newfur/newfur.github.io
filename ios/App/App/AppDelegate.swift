@@ -510,6 +510,31 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         commandCenter.playCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             print("[NativeTTS] RemoteCommand: play")
+
+            // 重新激活音频会话，防止在后台暂停超过 10 秒后会话被 iOS 系统释放
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                try session.setActive(true)
+            } catch {
+                print("[NativeTTS] Failed to reactivate AVAudioSession on playCommand: \(error)")
+            }
+
+            // 申请后台执行任务，防止 WKWebView 从深度冻结恢复时在音频输出前被系统再次挂起
+            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+            bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlayback") {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
+
             DispatchQueue.main.async {
                 self.isCurrentlyPlaying = true
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
@@ -546,8 +571,33 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             print("[NativeTTS] RemoteCommand: togglePlayPause")
+            let shouldPlay = !self.isCurrentlyPlaying
+
+            if shouldPlay {
+                do {
+                    let session = AVAudioSession.sharedInstance()
+                    try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                    try session.setActive(true)
+                } catch {
+                    print("[NativeTTS] Failed to reactivate AVAudioSession on toggle: \(error)")
+                }
+
+                var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+                bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackToggle") {
+                    if bgTaskId != .invalid {
+                        UIApplication.shared.endBackgroundTask(bgTaskId)
+                        bgTaskId = .invalid
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                    if bgTaskId != .invalid {
+                        UIApplication.shared.endBackgroundTask(bgTaskId)
+                        bgTaskId = .invalid
+                    }
+                }
+            }
+
             DispatchQueue.main.async {
-                let shouldPlay = !self.isCurrentlyPlaying
                 self.isCurrentlyPlaying = shouldPlay
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = shouldPlay ? 1.0 : 0.0
