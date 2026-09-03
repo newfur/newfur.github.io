@@ -3,6 +3,7 @@ package com.edgereader.app;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.PowerManager;
 import android.util.Base64;
 import android.util.Log;
 import android.content.ContentValues;
@@ -55,6 +56,50 @@ public class NativeTTS extends Plugin {
         JSObject data = new JSObject();
         data.put("action", action);
         notifyListeners("mediaAction", data);
+
+        try {
+            if (getActivity() != null && getBridge() != null && getBridge().getWebView() != null) {
+                getActivity().runOnUiThread(() -> {
+                    String js = null;
+                    if ("pause".equalsIgnoreCase(action)) {
+                        js = "(function() { if (window.tts) { window.tts.pause(); } else { var a = document.querySelectorAll('audio'); a.forEach(function(e){ e.pause(); }); } })()";
+                    } else if ("play".equalsIgnoreCase(action)) {
+                        js = "(function() { if (window.tts) { window.tts.resume(); } })()";
+                    } else if ("next".equalsIgnoreCase(action)) {
+                        js = "(function() { if (window.tts) { window.tts.next(); } })()";
+                    } else if ("previous".equalsIgnoreCase(action)) {
+                        js = "(function() { if (window.tts) { window.tts.previous(); } })()";
+                    } else if ("stop".equalsIgnoreCase(action)) {
+                        js = "(function() { if (window.tts) { window.tts.stop(); } })()";
+                    }
+                    if (js != null) {
+                        getBridge().getWebView().evaluateJavascript(js, null);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed direct JS evaluation for media action: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void requestIgnoreBatteryOptimizations(PluginCall call) {
+        try {
+            Context context = getContext();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(context.getPackageName())) {
+                    Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    intent.setData(android.net.Uri.parse("package:" + context.getPackageName()));
+                    if (getActivity() != null) {
+                        getActivity().startActivity(intent);
+                    }
+                }
+            }
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to request battery optimization whitelist: " + e.getMessage());
+        }
     }
 
     @PluginMethod

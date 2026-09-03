@@ -65,6 +65,43 @@ public class AudioPlayerService extends Service {
         mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
         mediaSession.setCallback(new MediaSession.Callback() {
             @Override
+            public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                if (mediaButtonIntent != null && Intent.ACTION_MEDIA_BUTTON.equals(mediaButtonIntent.getAction())) {
+                    android.view.KeyEvent event = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                    if (event != null && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                        int keyCode = event.getKeyCode();
+                        Log.d(TAG, "MediaSession onMediaButtonEvent keyCode: " + keyCode);
+                        switch (keyCode) {
+                            case android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                            case android.view.KeyEvent.KEYCODE_HEADSETHOOK:
+                                if (isPlaying) {
+                                    onPause();
+                                } else {
+                                    onPlay();
+                                }
+                                return true;
+                            case android.view.KeyEvent.KEYCODE_MEDIA_PLAY:
+                                onPlay();
+                                return true;
+                            case android.view.KeyEvent.KEYCODE_MEDIA_PAUSE:
+                                onPause();
+                                return true;
+                            case android.view.KeyEvent.KEYCODE_MEDIA_STOP:
+                                onStop();
+                                return true;
+                            case android.view.KeyEvent.KEYCODE_MEDIA_NEXT:
+                                onSkipToNext();
+                                return true;
+                            case android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                                onSkipToPrevious();
+                                return true;
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(mediaButtonIntent);
+            }
+
+            @Override
             public void onPlay() {
                 Log.d(TAG, "MediaSession: onPlay");
                 isPlaying = true;
@@ -102,6 +139,8 @@ public class AudioPlayerService extends Service {
                 abandonAudioFocus();
                 wasPlayingBeforeFocusLoss = false;
                 notifyJS("stop");
+                stopForeground(true);
+                stopSelf();
             }
         });
         
@@ -229,11 +268,14 @@ public class AudioPlayerService extends Service {
                         notifyJS("previous");
                         break;
                     case "ACTION_STOP":
+                        cancelScheduledLockRelease();
                         abandonAudioFocus();
                         wasPlayingBeforeFocusLoss = false;
                         isPlaying = false;
                         updatePlaybackState(false);
                         notifyJS("stop");
+                        stopForeground(true);
+                        stopSelf();
                         break;
                     case "ACTION_START":
                         currentTitle = intent.getStringExtra("title");
@@ -362,6 +404,11 @@ public class AudioPlayerService extends Service {
 
         builder.setStyle(mediaStyle);
 
+        // Add Delete (dismiss) action when paused
+        Intent deleteIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_STOP");
+        PendingIntent deletePending = PendingIntent.getService(this, 5, deleteIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
+        builder.setDeleteIntent(deletePending);
+
         return builder.build();
     }
 
@@ -386,10 +433,30 @@ public class AudioPlayerService extends Service {
         mediaSession.setPlaybackState(stateBuilder.build());
 
         if (isPlaying) {
+            cancelScheduledLockRelease();
             requestAudioFocus();
             acquireLocks();
         } else {
+            scheduleLockRelease();
+        }
+    }
+
+    private Runnable lockReleaseRunnable = null;
+    private final android.os.Handler lockHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private void scheduleLockRelease() {
+        cancelScheduledLockRelease();
+        lockReleaseRunnable = () -> {
             releaseLocks();
+            Log.d(TAG, "WakeLock released after 5min pause grace period");
+        };
+        lockHandler.postDelayed(lockReleaseRunnable, 5 * 60 * 1000);
+    }
+
+    private void cancelScheduledLockRelease() {
+        if (lockReleaseRunnable != null) {
+            lockHandler.removeCallbacks(lockReleaseRunnable);
+            lockReleaseRunnable = null;
         }
     }
 
@@ -483,6 +550,7 @@ public class AudioPlayerService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
+        cancelScheduledLockRelease();
         abandonAudioFocus();
         wasPlayingBeforeFocusLoss = false;
         releaseLocks();
