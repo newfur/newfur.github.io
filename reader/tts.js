@@ -1406,11 +1406,8 @@ export class TTSEngine {
   }
 
   _getGroupInfoForIndex(index) {
-    // 梯級優化：前 2 句單句獲取以保證極速啟動，從第 3 句（session + 2）起立即進入分組階段。
-    // 降低分組閾值（每組最多 4 句，或累計約 120 字）：
-    // 1. 每 4 句進行一次真實音訊硬切換與基準歸零（校準頻率比原先每 10 句提升 2.5 倍），徹底杜絕時間估算誤差累積與高亮偏移；
-    // 2. 在連續短句對話時，4 句依然合併在同一個請求與音訊流中，保持 0 間隙切換，同時兼顧網絡吞吐量與極高精準度的高亮同步。
-    const baseIndex = (typeof this.playbackStartSessionIndex === 'number') ? (this.playbackStartSessionIndex + 2) : 2;
+    // 梯級優化：前 3 句單句獲取以保證極速啟動與順序緩存，從第 4 句（session + 3）起進入分組階段。
+    const baseIndex = (typeof this.playbackStartSessionIndex === 'number') ? (this.playbackStartSessionIndex + 3) : 3;
     if (index < baseIndex) {
       return null;
     }
@@ -1808,21 +1805,29 @@ export class TTSEngine {
       window.location.protocol === 'file:'
     );
 
-    // 1. 檢查緊接著要播放的下一項（currentIndex + 1）
-    const nextIdx = this.currentIndex + 1;
-    if (nextIdx >= this.sentences.length) return 1;
+    // 1. 檢查目前進度往後的 3 句話是否已在快取中就緒
+    let cachedCount = 0;
+    for (let i = 1; i <= 3; i++) {
+      const checkIdx = this.currentIndex + i;
+      if (checkIdx >= this.sentences.length) {
+        cachedCount++; // 若已達結尾，視為就緒，避免死鎖
+        continue;
+      }
+      const group = this._getGroupInfoForIndex(checkIdx);
+      const targetIdx = group ? group.groupStartIndex : checkIdx;
+      if (this.audioCache.has(targetIdx) || this.audioCache.has(checkIdx)) {
+        cachedCount++;
+      } else {
+        break; // 只要遇到斷層就停止計數
+      }
+    }
 
-    const nextGroup = this._getGroupInfoForIndex(nextIdx);
-    const nextTargetIdx = nextGroup ? nextGroup.groupStartIndex : nextIdx;
-
-    // 如果即將播放的下一項尚未在快取中就緒：
-    // 為保證下一句能最快返回，將並發限制為 1，避免後續句子的請求搶佔帶寬
-    if (!this.audioCache.has(nextTargetIdx) && !this.audioCache.has(nextIdx)) {
+    // 2. 嚴格遵循順序：如果緩存不足 3 句，強制並發為 1，確保最前序的句子獨佔網絡帶寬，以最快速度返回
+    if (cachedCount < 3) {
       return 1;
     }
 
-    // 2. 下一項已就緒，放開並發加速填充 10 句緩衝區
-    // 限制最高 2 路並發，避免過多並發影響整體響應速度
+    // 3. 已有 3 句以上緩存，有足夠時間，此時再放開並發加速填充 10 句緩衝區
     return isNativeApp ? Math.min(2, this.maxConcurrentFetches) : this.maxConcurrentFetches;
   }
 
@@ -2562,14 +2567,8 @@ export class TTSEngine {
     this.prefetchQueue = []; // 清空先前的後台預加載排隊
     this.fetchingIndices.delete(this.currentIndex); // 強制解除當前目標句的獲取鎖定，防止因先前失敗或超時而直接 return
     
-    // 點擊正文後，立即同時請求首句與第二句，消除第二句的等待延遲；
-    // iOS 上每句需新建 WebSocket 連接（TCP+TLS 握手 200-400ms），並行請求可節省一次完整握手時間
+    // 點击正文後，优先仅向 TTS 引擎发送当前首句，确保首句以最快速度返回
     this._fetchSentence(this.currentIndex);
-    // 同時啟動第二句（若存在且不在同一分組中），使其在首句播放期間即可完成下載
-    if (this.currentIndex + 1 < this.sentences.length) {
-      this.fetchingIndices.delete(this.currentIndex + 1);
-      this._fetchSentence(this.currentIndex + 1);
-    }
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
