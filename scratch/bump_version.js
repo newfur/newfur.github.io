@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const rootDir = path.join(__dirname, '..');
 const manifestPath = path.join(rootDir, 'manifest.json');
@@ -46,10 +45,3 @@ if (fs.existsSync(pbxprojPath)) {
 }
 
 console.log(`[Version Bump] Version updated to ${newVersion}`);
-
-// Rebuild offline and dist assets with new version
-console.log('[Version Bump] Rebuilding offline assets...');
-execSync('node scratch/compile_offline.js', { cwd: rootDir, stdio: 'inherit' });
-execSync('node scratch/build_dist.js', { cwd: rootDir, stdio: 'inherit' });
-
-console.log(`[Version Bump] Successfully bumped version to ${newVersion} and updated builds.`);
