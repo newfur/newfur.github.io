@@ -1690,7 +1690,8 @@ export class TTSEngine {
     if (this.isPlaying && !this.isPaused && this.currentIndex === index && this.currentlyPlayingIndex !== index) {
       this._playActiveSentence();
     }
-    if (this.isPlaying && !this.isPaused && index === this.currentIndex + 1) {
+    // 只要有任何新快取就緒，主動嘗試為空閒播放器預熱下一個音訊源
+    if (this.isPlaying && !this.isPaused) {
       this._prewarmNextPlayer();
     }
     // 即便尚未開始播放，只要首句快取就緒就立即啟動後續預取管線，不等 audio.play() 回調
@@ -1929,6 +1930,28 @@ export class TTSEngine {
       audio._boundaries = null; // 重置已快取的邊界數據
     }
 
+    const cleanupAudioResources = () => {
+      if (isGroupPlay) {
+        if (audioUrl && audioUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(audioUrl);
+        }
+        const groupCached = this.audioCache.get(groupStartIndex);
+        if (groupCached) this._cleanupNativeTTSFile(groupCached);
+        if (groupSentences) {
+          for (let i = 0; i < groupSentences.length; i++) {
+            this.audioCache.delete(groupStartIndex + i);
+          }
+        }
+      } else {
+        if (cached && cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(cached.blobUrl);
+        }
+        this._cleanupNativeTTSFile(cached);
+        this.audioCache.delete(index);
+      }
+    };
+    audio._cleanupResources = cleanupAudioResources;
+
     const getBoundaries = () => {
       if (audio._boundaries) return audio._boundaries;
       if (isGroupPlay && groupSentences && audio.duration) {
@@ -2006,6 +2029,7 @@ export class TTSEngine {
               if (this.onSentenceStart) {
                 this.onSentenceStart(activeIdx);
               }
+              this._prewarmNextPlayer();
               this._fillPreFetchBuffer();
             };
 
@@ -2054,14 +2078,9 @@ export class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
-        if (audioUrl && audioUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(audioUrl);
-        }
-        // 清理分組音訊的原生臨時文件
-        const groupCached = this.audioCache.get(groupStartIndex);
-        if (groupCached) this._cleanupNativeTTSFile(groupCached);
-        for (let i = 0; i < groupSentences.length; i++) {
-          this.audioCache.delete(groupStartIndex + i);
+        if (typeof audio._cleanupResources === 'function') {
+          audio._cleanupResources();
+          audio._cleanupResources = null;
         }
         
         if (!this.isPlaying || this.isPaused) return;
@@ -2105,11 +2124,10 @@ export class TTSEngine {
         audio.onended = null;
         audio.onloadedmetadata = null;
         
-        if (cached.blobUrl && cached.blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cached.blobUrl);
+        if (typeof audio._cleanupResources === 'function') {
+          audio._cleanupResources();
+          audio._cleanupResources = null;
         }
-        this._cleanupNativeTTSFile(cached);
-        this.audioCache.delete(index);
         
         if (!this.isPlaying || this.isPaused) return;
         
@@ -2126,9 +2144,13 @@ export class TTSEngine {
     const startPlay = () => {
       if (!this.isPlaying) return;
       audio.play().then(() => {
-        // 成功播放後，如果有上一個正在播放的播放器，立即暫停並清理，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
+        // 成功播放後，如果有上一個正在播放的播放器，立即清理其快取與資源並暫停，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
         if (prevAudio && prevAudio !== audio) {
           try {
+            if (typeof prevAudio._cleanupResources === 'function') {
+              prevAudio._cleanupResources();
+              prevAudio._cleanupResources = null;
+            }
             prevAudio.pause();
             prevAudio.ontimeupdate = null;
             prevAudio.onended = null;
@@ -2935,6 +2957,9 @@ export class TTSEngine {
       if (typeof window.Capacitor.Plugins.NativeTTS.cancelAllTTS === 'function') {
         window.Capacitor.Plugins.NativeTTS.cancelAllTTS().catch(() => {});
       }
+      if (typeof window.Capacitor.Plugins.NativeTTS.cleanupTTSFiles === 'function') {
+        window.Capacitor.Plugins.NativeTTS.cleanupTTSFiles().catch(() => {});
+      }
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
@@ -3015,18 +3040,26 @@ export class TTSEngine {
 
   _prewarmNextPlayer() {
     if (!this.isPlaying) return;
-    const nextIndex = this.currentIndex + 1;
-    if (nextIndex >= this.sentences.length) return;
+    
+    // 找出下一個「需要使用不同音訊源」的目標句子索引
+    let nextAudioIndex = this.currentIndex + 1;
+    const currentGroup = this._getGroupInfoForIndex(this.currentIndex);
+    if (currentGroup) {
+      // 若當前句子屬於分組合併塊，下一個音訊源必然是整個分組後的第一句
+      nextAudioIndex = currentGroup.groupStartIndex + currentGroup.groupLength;
+    }
 
-    const cached = this.audioCache.get(nextIndex);
+    if (nextAudioIndex >= this.sentences.length) return;
+
+    const cached = this.audioCache.get(nextAudioIndex);
     if (cached && cached.isReady) {
-      // 如果下一句屬於同一個合併分組，則無需預熱，因為使用的是同一個音訊源
-      if (cached.isGroupRef) return;
+      const targetBlobUrl = cached.blobUrl;
+      if (!targetBlobUrl) return;
       
       const nextPlayer = this.players[1 - this.activePlayerIdx];
-      if (nextPlayer.dataset.srcUrl !== cached.blobUrl) {
-        nextPlayer.src = cached.blobUrl;
-        nextPlayer.dataset.srcUrl = cached.blobUrl;
+      if (nextPlayer.dataset.srcUrl !== targetBlobUrl) {
+        nextPlayer.src = targetBlobUrl;
+        nextPlayer.dataset.srcUrl = targetBlobUrl;
         nextPlayer.load();
         nextPlayer.playbackRate = this.rate;
         nextPlayer.volume = this.volume;
