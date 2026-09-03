@@ -97,7 +97,7 @@ export class TTSEngine {
     this.fetchingIndices = new Set();
     this.prefetchQueue = []; // 預載排隊隊列
     this.activeFetchCount = 0; // 當前並發抓取數
-    this.maxConcurrentFetches = 2; // 最大並發下載數，防止給 Edge TTS 發送過多連線導致擁塞與斷線
+    this.maxConcurrentFetches = 3; // 最大並發下載數，兼顧首句極速啟動與後續分組吞吐量
     
     // 建立雙播放器以進行無縫交替播放，消除播放間隙，防止 iOS 後台掛起
     this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
@@ -1379,7 +1379,9 @@ export class TTSEngine {
   }
 
   _getGroupInfoForIndex(index) {
-    const baseIndex = this.playbackStartSessionIndex + 10;
+    // 梯級優化：前 2 句單句獲取以保證極速啟動，從第 3 句（session + 2）起立即進入分組階段（每組 6~10 句或累積約 220 字）。
+    // 在連續短句/對話情境下，多個短句會合併在同一個請求與音訊流中，徹底消除因單句過短導致的網絡等待與卡頓。
+    const baseIndex = (typeof this.playbackStartSessionIndex === 'number') ? (this.playbackStartSessionIndex + 2) : 2;
     if (index < baseIndex) {
       return null;
     }
@@ -1390,11 +1392,17 @@ export class TTSEngine {
       const chapterIdx = startSentence.chapterIndex;
 
       let groupLength = 1;
-      while (groupLength < 10 && (currentGroupStart + groupLength) < this.sentences.length) {
+      let groupCharCount = startSentence.text ? startSentence.text.length : 0;
+      while (groupLength < 8 && (currentGroupStart + groupLength) < this.sentences.length) {
         const nextSentence = this.sentences[currentGroupStart + groupLength];
         if (nextSentence.chapterIndex !== chapterIdx) {
+          break; // 不跨章節
+        }
+        // 若累積字符數已超過 220 字（約 35-40 秒語音），適時分組，保證單個請求大小合理
+        if (groupCharCount > 220) {
           break;
         }
+        groupCharCount += (nextSentence.text ? nextSentence.text.length : 0);
         groupLength++;
       }
 
@@ -1426,11 +1434,9 @@ export class TTSEngine {
     if (this.audioCache.has(index)) return;
     if (retryCount === 0 && this.fetchingIndices.has(index)) return;
 
-    // 判斷是否進入“分組（10句）發送”階段：
-    // 每當開始播放（即 playbackStartSessionIndex 已設定），前10句（index < session + 10）單句獲取以保證極速啟動，
-    // 從第11句起，轉為每10句一組進行合併請求
-    const isGroupPhase = (typeof this.playbackStartSessionIndex === 'number') && 
-                         (index >= this.playbackStartSessionIndex + 10);
+    // 判斷是否進入分組發送階段：前 2 句單句獲取以保證極速啟動，從第 3 句起合併請求
+    const isGroupPhase = (typeof this.playbackStartSessionIndex === 'number') ? 
+                         (index >= this.playbackStartSessionIndex + 2) : (index >= 2);
 
     const currentVoiceSessionId = this.voiceSessionId;
 
@@ -1682,13 +1688,25 @@ export class TTSEngine {
     const useNativeSynth = (voice && voice.type === 'speechSynthesis');
     if (useNativeSynth) return;
 
-    // 保持當前播放位置後方的 30 句處於預載排隊中（約 3 個分組，足夠 2-3 分鐘無縫播放）
-    for (let i = 1; i <= 30; i++) {
-      const targetIndex = this.currentIndex + i;
-      if (targetIndex < this.sentences.length) {
-        if (!this.audioCache.has(targetIndex) && !this.prefetchQueue.includes(targetIndex)) {
-          this.prefetchQueue.push(targetIndex);
+    // 梯級動態預載隊列填充：
+    // 單句階段逐句加入隊列；分組階段以 groupStartIndex 步進加入隊列，防止重複發送與隊列阻塞
+    let scanIndex = this.currentIndex + 1;
+    const maxScanIndex = Math.min(this.sentences.length, this.currentIndex + 35);
+
+    while (scanIndex < maxScanIndex) {
+      const groupInfo = this._getGroupInfoForIndex(scanIndex);
+      if (groupInfo) {
+        const gStart = groupInfo.groupStartIndex;
+        if (!this.audioCache.has(gStart) && !this.fetchingIndices.has(gStart) && !this.prefetchQueue.includes(gStart)) {
+          this.prefetchQueue.push(gStart);
         }
+        // 步進跳過該組所包含的所有句子
+        scanIndex = gStart + groupInfo.groupLength;
+      } else {
+        if (!this.audioCache.has(scanIndex) && !this.fetchingIndices.has(scanIndex) && !this.prefetchQueue.includes(scanIndex)) {
+          this.prefetchQueue.push(scanIndex);
+        }
+        scanIndex++;
       }
     }
     this._processPrefetchQueue();
