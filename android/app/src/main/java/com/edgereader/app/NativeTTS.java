@@ -267,23 +267,10 @@ public class NativeTTS extends Plugin {
                 if (hasRejected) return;
                 byte[] audioData = audioStream.toByteArray();
                 if (audioData.length > 0) {
-                    // Write audio data to temporary file and return file path only
-                    // This eliminates Base64 encoding overhead and reduces memory usage by ~80%
-                    try {
-                        Context context = getContext();
-                        File cacheDir = context.getCacheDir();
-                        File audioFile = new File(cacheDir, "tts_" + connectionId + ".mp3");
-                        FileOutputStream fos = new FileOutputStream(audioFile);
-                        fos.write(audioData);
-                        fos.close();
-                        
-                        JSObject ret = new JSObject();
-                        ret.put("filePath", audioFile.getAbsolutePath());
-                        call.resolve(ret);
-                    } catch (IOException e) {
-                        Log.e(TAG, "Failed to write audio file: " + e.getMessage());
-                        call.reject("Failed to write audio file: " + e.getMessage());
-                    }
+                    String base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP);
+                    JSObject ret = new JSObject();
+                    ret.put("audioBase64", base64Audio);
+                    call.resolve(ret);
                 } else {
                     // 若伺服器正常結束但未返回音訊幀（例如僅含標點符號的句子），返回極短靜音 MP3 避免前端崩潰
                     JSObject ret = new JSObject();
