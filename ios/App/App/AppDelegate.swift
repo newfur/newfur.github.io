@@ -139,6 +139,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     private var callObserver: CXCallObserver?
     private var silencePlayer: AVAudioPlayer?
     private var silencePauseTimer: Timer?
+    private var nowPlayingGuardianTimer: Timer?
     private lazy var ttsSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10.0
@@ -242,10 +243,58 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
+    // MARK: - NowPlaying State Guardian
+    // Prevents WebKit's asynchronous audio pause IPC from knocking iOS lock screen/notification center into paused state
+    func startNowPlayingGuardian() {
+        stopNowPlayingGuardian()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.isCurrentlyPlaying else { return }
+            let timer = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                guard self.isCurrentlyPlaying else {
+                    self.stopNowPlayingGuardian()
+                    return
+                }
+                
+                var needsRestore = false
+                if #available(iOS 13.0, *) {
+                    if MPNowPlayingInfoCenter.default().playbackState != .playing {
+                        needsRestore = true
+                    }
+                }
+                let currentRate = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0.0
+                if currentRate < 0.5 {
+                    needsRestore = true
+                }
+                
+                if needsRestore {
+                    print("[NativeTTS] Guardian: Restoring NowPlaying to playing (was overwritten by WebKit)")
+                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                    }
+                    if #available(iOS 13.0, *) {
+                        MPNowPlayingInfoCenter.default().playbackState = .playing
+                    }
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.nowPlayingGuardianTimer = timer
+        }
+    }
+
+    func stopNowPlayingGuardian() {
+        DispatchQueue.main.async { [weak self] in
+            self?.nowPlayingGuardianTimer?.invalidate()
+            self?.nowPlayingGuardianTimer = nil
+        }
+    }
+
     // MARK: - Emergency Pause & Resume
     func emergencyPause(reason: String) {
         print("[NativeTTS] Emergency pause triggered: \(reason)")
         self.isCurrentlyPlaying = false
+        self.stopNowPlayingGuardian()
         // Immediately pause silence player to prevent any audio hardware output
         self.silencePlayer?.pause()
 
@@ -294,6 +343,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
         self.isCurrentlyPlaying = true
         self.stopSilencePlayer()
+        self.startNowPlayingGuardian()
 
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackInterruption") {
@@ -375,6 +425,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         callObserver?.setDelegate(nil, queue: nil)
         callObserver = nil
         stopSilencePlayer()
+        stopNowPlayingGuardian()
         taskLock.lock()
         for (_, task) in activeTasks {
             task.cancel(with: .goingAway, reason: nil)
@@ -642,18 +693,22 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         let text = call.getString("text")
         let isPlaying = call.getBool("isPlaying") ?? true
         let coverBase64 = call.getString("cover")
+        let duration = call.getDouble("duration")
+        let currentTime = call.getDouble("currentTime")
         self.isCurrentlyPlaying = isPlaying
 
         self.activateAudioSession()
 
         if isPlaying {
             self.stopSilencePlayer()
+            self.startNowPlayingGuardian()
         } else {
+            self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
         }
 
         DispatchQueue.main.async {
-            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
+            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
         }
         call.resolve()
     }
@@ -665,8 +720,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.wasPlayingBeforeInterruption = false
             self.wasPlayingBeforeCall = false
             self.stopSilencePlayer()
+            self.startNowPlayingGuardian()
         } else {
             self.wasPlayingBeforeInterruption = false
+            self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
         }
         DispatchQueue.main.async {
@@ -689,9 +746,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         let artist = call.getString("artist") ?? ""
         let text = call.getString("text")
         let coverBase64 = call.getString("cover")
+        let duration = call.getDouble("duration")
+        let currentTime = call.getDouble("currentTime")
         let isPlaying = self.isCurrentlyPlaying
         DispatchQueue.main.async {
-            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
+            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
         }
         call.resolve()
     }
@@ -702,6 +761,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.isCurrentlyPlaying = false
         self.currentArtwork = nil
         self.stopSilencePlayer()
+        self.stopNowPlayingGuardian()
         DispatchQueue.main.async {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             if #available(iOS 13.0, *) {
@@ -751,6 +811,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.activateAudioSession()
             self.isCurrentlyPlaying = true
             self.stopSilencePlayer()
+            self.startNowPlayingGuardian()
             DispatchQueue.main.async {
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
@@ -766,6 +827,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.wasPlayingBeforeInterruption = false
             self.wasPlayingBeforeCall = false
             self.isAudioSessionInterrupted = false
+            self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
             DispatchQueue.main.async {
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
@@ -783,6 +845,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.activateAudioSession()
                 self.isCurrentlyPlaying = true
                 self.stopSilencePlayer()
+                self.startNowPlayingGuardian()
                 DispatchQueue.main.async {
                     if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                         info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
@@ -798,6 +861,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.wasPlayingBeforeInterruption = false
                 self.wasPlayingBeforeCall = false
                 self.isAudioSessionInterrupted = false
+                self.stopNowPlayingGuardian()
                 self.scheduleSilencePauseTimer()
                 DispatchQueue.main.async {
                     if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
@@ -820,6 +884,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.wasPlayingBeforeCall = false
             self.isAudioSessionInterrupted = false
             self.stopSilencePlayer()
+            self.stopNowPlayingGuardian()
             DispatchQueue.main.async {
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
@@ -888,7 +953,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         return Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters)
     }
 
-    private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil) {
+    private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil, duration: Double? = nil, currentTime: Double? = nil) {
         if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData) {
             self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
         }
@@ -902,6 +967,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         nowPlayingInfo[MPMediaItemPropertyArtist] = artist.isEmpty ? "E-Book Reader" : artist
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+
+        if let d = duration, d > 0 {
+            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = d
+        }
+        if let c = currentTime, c >= 0 {
+            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = c
+        }
         
         if let artwork = self.currentArtwork {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
@@ -963,6 +1035,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.isCurrentlyPlaying = false
+                self.stopNowPlayingGuardian()
                 self.scheduleSilencePauseTimer()
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
@@ -1057,6 +1130,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
             self.isCurrentlyPlaying = true
             self.stopSilencePlayer()
+            self.startNowPlayingGuardian()
 
             var bgTaskId: UIBackgroundTaskIdentifier = .invalid
             bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlayback") {
@@ -1092,6 +1166,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.wasPlayingBeforeInterruption = false
             self.wasPlayingBeforeCall = false
             self.isAudioSessionInterrupted = false
+            self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
 
             DispatchQueue.main.async {
@@ -1115,6 +1190,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.wasPlayingBeforeCall = false
             self.isAudioSessionInterrupted = false
             self.stopSilencePlayer()
+            self.stopNowPlayingGuardian()
 
             DispatchQueue.main.async {
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
@@ -1141,6 +1217,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.activateAudioSession()
                 self.isCurrentlyPlaying = true
                 self.stopSilencePlayer()
+                self.startNowPlayingGuardian()
 
                 var bgTaskId: UIBackgroundTaskIdentifier = .invalid
                 bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackToggle") {
@@ -1171,6 +1248,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.wasPlayingBeforeInterruption = false
                 self.wasPlayingBeforeCall = false
                 self.isAudioSessionInterrupted = false
+                self.stopNowPlayingGuardian()
                 self.scheduleSilencePauseTimer()
 
                 DispatchQueue.main.async {

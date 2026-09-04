@@ -2211,17 +2211,12 @@ export class TTSEngine {
     const startPlay = () => {
       if (!this.isPlaying) return;
       
-      // 同步暫停所有非當前播放器並重置進度與事件回調，確保在任何情況下（尤其在 iOS 鎖屏後台或解鎖喚醒時）只有單一音訊軌道在發聲
+      // 停止其它播放器的回調，避免事件競爭，但延後到新音訊成功播放後再執行 pause()
+      // 消除新舊音訊切換時的「零音訊空窗期」，防止 iOS 鎖屏/通知欄判定為暫停而閃爍切換圖標
       if (Array.isArray(this.players)) {
         this.players.forEach(p => {
           if (p && p !== audio) {
             try {
-              if (typeof p._cleanupResources === 'function') {
-                p._cleanupResources();
-                p._cleanupResources = null;
-              }
-              p.pause();
-              p.currentTime = 0;
               p.ontimeupdate = null;
               p.onended = null;
               p.onloadedmetadata = null;
@@ -2238,13 +2233,20 @@ export class TTSEngine {
         // 成功播放真實語音後暫停靜音保活播放器，避免雙重音訊競爭或音量衰減
         this._stopSilenceKeepAlive();
 
-        // 成功播放後，二次確保其他播放器已停止
+        // 成功播放後，立即暫停所有非當前播放器並重置進度與清理資源
         if (Array.isArray(this.players)) {
           this.players.forEach(p => {
             if (p && p !== audio) {
               try {
+                if (typeof p._cleanupResources === 'function') {
+                  p._cleanupResources();
+                  p._cleanupResources = null;
+                }
                 p.pause();
                 p.currentTime = 0;
+                p.ontimeupdate = null;
+                p.onended = null;
+                p.onloadedmetadata = null;
               } catch (e) {}
             }
           });
@@ -2633,8 +2635,10 @@ export class TTSEngine {
       const nativePayload = {
         title: title,
         artist: artist,
-        text: text
-        // isPlaying 不再由 _updateMediaSession 發送，播放狀態由 updatePlaybackState 和 Remote Command 獨佔管理
+        text: text,
+        duration: (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration)) ? this.currentAudio.duration : 0,
+        currentTime: (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0,
+        isPlaying: this.isPlaying && !this.isPaused
       };
       
       // 發送壓縮後的輕量封面 (約 20KB~40KB)，保證原生端能始終保持或更新封面
@@ -2645,7 +2649,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -3006,7 +3010,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
 
@@ -3053,7 +3057,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
 
@@ -3126,7 +3130,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }
 
