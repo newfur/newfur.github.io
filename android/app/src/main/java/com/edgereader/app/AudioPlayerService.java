@@ -32,6 +32,9 @@ public class AudioPlayerService extends Service {
     private WifiManager.WifiLock wifiLock;
     
     private AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest;
+    private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener;
+    private boolean wasPlayingBeforeTransientLoss = false;
     private android.content.BroadcastReceiver noisyReceiver;
     private boolean isReceiverRegistered = false;
     private String lastCoverBase64 = null;
@@ -46,6 +49,43 @@ public class AudioPlayerService extends Service {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "onCreate");
+
+        // Initialize AudioManager and AudioFocus listener
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
+            @Override
+            public void onAudioFocusChange(int focusChange) {
+                Log.d(TAG, "onAudioFocusChange: " + focusChange);
+                switch (focusChange) {
+                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                        // Incoming phone call, ringtone, alarm, Siri/Assistant, navigation instruction
+                        // For speech reading, we MUST pause immediately!
+                        if (isPlaying) {
+                            wasPlayingBeforeTransientLoss = true;
+                            Log.d(TAG, "Audio focus lost transiently (e.g. phone call). Pausing playback.");
+                            emergencyPause();
+                        }
+                        break;
+                    case AudioManager.AUDIOFOCUS_LOSS:
+                        // Permanent loss: another app started playing media
+                        wasPlayingBeforeTransientLoss = false;
+                        Log.d(TAG, "Audio focus lost permanently. Pausing playback.");
+                        if (isPlaying) {
+                            emergencyPause();
+                        }
+                        break;
+                    case AudioManager.AUDIOFOCUS_GAIN:
+                        Log.d(TAG, "Audio focus gained.");
+                        if (wasPlayingBeforeTransientLoss) {
+                            wasPlayingBeforeTransientLoss = false;
+                            Log.d(TAG, "Resuming playback after transient focus loss (phone call ended).");
+                            resumePlayback();
+                        }
+                        break;
+                }
+            }
+        };
 
         // Initialize Notification Channel for Android 8.0+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -106,18 +146,24 @@ public class AudioPlayerService extends Service {
             @Override
             public void onPlay() {
                 Log.d(TAG, "MediaSession: onPlay");
+                requestAudioFocus();
                 isPlaying = true;
+                wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(true);
                 updateNotification(currentTitle, currentArtist, currentText, true);
+                evaluateJSInWebView("if (window.tts) { window.tts.resume(); }");
                 notifyJS("play");
             }
 
             @Override
             public void onPause() {
                 Log.d(TAG, "MediaSession: onPause");
+                abandonAudioFocus();
                 isPlaying = false;
+                wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(false);
                 updateNotification(currentTitle, currentArtist, currentText, false);
+                evaluateJSInWebView("if (window.tts) { window.tts.pause(); }");
                 notifyJS("pause");
             }
 
@@ -136,8 +182,11 @@ public class AudioPlayerService extends Service {
             @Override
             public void onStop() {
                 Log.d(TAG, "MediaSession: onStop");
+                abandonAudioFocus();
                 isPlaying = false;
+                wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(false);
+                evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
                 notifyJS("stop");
                 stopForeground(true);
                 stopSelf();
@@ -145,6 +194,93 @@ public class AudioPlayerService extends Service {
         });
         
         mediaSession.setActive(true);
+    }
+
+    private boolean requestAudioFocus() {
+        if (audioManager == null) {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        }
+        if (audioManager == null) return false;
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (audioFocusRequest == null) {
+                    AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+
+                    audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                            .setAudioAttributes(playbackAttributes)
+                            .setAcceptsDelayedFocusGain(true)
+                            .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                            .build();
+                }
+                int res = audioManager.requestAudioFocus(audioFocusRequest);
+                return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            } else {
+                int res = audioManager.requestAudioFocus(
+                        audioFocusChangeListener,
+                        AudioManager.STREAM_MUSIC,
+                        AudioManager.AUDIOFOCUS_GAIN
+                );
+                return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to request audio focus: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void abandonAudioFocus() {
+        if (audioManager != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (audioFocusRequest != null) {
+                        audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                    }
+                } else {
+                    if (audioFocusChangeListener != null) {
+                        audioManager.abandonAudioFocus(audioFocusChangeListener);
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to abandon audio focus: " + e.getMessage());
+            }
+        }
+    }
+
+    private void emergencyPause() {
+        isPlaying = false;
+        updatePlaybackState(false);
+        updateNotification(currentTitle, currentArtist, currentText, false);
+        evaluateJSInWebView("if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
+        notifyJS("pause");
+    }
+
+    private void resumePlayback() {
+        requestAudioFocus();
+        isPlaying = true;
+        updatePlaybackState(true);
+        updateNotification(currentTitle, currentArtist, currentText, true);
+        evaluateJSInWebView("if (window.tts) { window.tts.resume(); }");
+        notifyJS("play");
+    }
+
+    private void evaluateJSInWebView(String jsCode) {
+        try {
+            if (NativeTTS.instance != null && NativeTTS.instance.getBridge() != null && NativeTTS.instance.getBridge().getWebView() != null) {
+                NativeTTS.instance.getBridge().getWebView().post(() -> {
+                    try {
+                        NativeTTS.instance.getBridge().getWebView().evaluateJavascript(jsCode, null);
+                    } catch (Exception e) {
+                        Log.w(TAG, "Failed to evaluateJavascript: " + e.getMessage());
+                    }
+                });
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Error evaluating JS in webview: " + e.getMessage());
+        }
     }
 
     @Override
@@ -156,14 +292,20 @@ public class AudioPlayerService extends Service {
                 switch (action) {
                     case "ACTION_PLAY_PAUSE":
                         if (isPlaying) {
+                            abandonAudioFocus();
                             isPlaying = false;
+                            wasPlayingBeforeTransientLoss = false;
                             updatePlaybackState(false);
                             updateNotification(currentTitle, currentArtist, currentText, false);
+                            evaluateJSInWebView("if (window.tts) { window.tts.pause(); }");
                             notifyJS("pause");
                         } else {
+                            requestAudioFocus();
                             isPlaying = true;
+                            wasPlayingBeforeTransientLoss = false;
                             updatePlaybackState(true);
                             updateNotification(currentTitle, currentArtist, currentText, true);
+                            evaluateJSInWebView("if (window.tts) { window.tts.resume(); }");
                             notifyJS("play");
                         }
                         break;
@@ -174,9 +316,12 @@ public class AudioPlayerService extends Service {
                         notifyJS("previous");
                         break;
                     case "ACTION_STOP":
+                        abandonAudioFocus();
                         cancelScheduledLockRelease();
                         isPlaying = false;
+                        wasPlayingBeforeTransientLoss = false;
                         updatePlaybackState(false);
+                        evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
                         notifyJS("stop");
                         stopForeground(true);
                         stopSelf();
@@ -193,6 +338,12 @@ public class AudioPlayerService extends Service {
                         } else {
                             coverBitmap = null;
                         }
+
+                        if (isPlaying) {
+                            requestAudioFocus();
+                        } else {
+                            abandonAudioFocus();
+                        }
                         
                         updateMetadata(currentTitle, currentArtist, currentText);
                         updatePlaybackState(isPlaying);
@@ -200,6 +351,11 @@ public class AudioPlayerService extends Service {
                         break;
                     case "ACTION_UPDATE_STATE":
                         isPlaying = intent.getBooleanExtra("isPlaying", false);
+                        if (isPlaying) {
+                            requestAudioFocus();
+                        } else {
+                            abandonAudioFocus();
+                        }
                         updatePlaybackState(isPlaying);
                         updateNotification(currentTitle, currentArtist, currentText, isPlaying);
                         break;
@@ -353,9 +509,12 @@ public class AudioPlayerService extends Service {
                         if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
                             Log.d(TAG, "Audio becoming noisy (headphones unplugged), pausing...");
                             if (isPlaying) {
+                                abandonAudioFocus();
                                 isPlaying = false;
+                                wasPlayingBeforeTransientLoss = false;
                                 updatePlaybackState(false);
                                 updateNotification(currentTitle, currentArtist, currentText, false);
+                                evaluateJSInWebView("if (window.tts) { window.tts.pause(); }");
                                 notifyJS("pause");
                             }
                         }
@@ -387,9 +546,9 @@ public class AudioPlayerService extends Service {
         cancelScheduledLockRelease();
         lockReleaseRunnable = () -> {
             releaseLocks();
-            Log.d(TAG, "WakeLock released after 5min pause grace period");
+            Log.d(TAG, "WakeLock released after 30min pause grace period");
         };
-        lockHandler.postDelayed(lockReleaseRunnable, 5 * 60 * 1000);
+        lockHandler.postDelayed(lockReleaseRunnable, 30 * 60 * 1000);
     }
 
     private void cancelScheduledLockRelease() {
@@ -508,6 +667,7 @@ public class AudioPlayerService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
+        abandonAudioFocus();
         cancelScheduledLockRelease();
         unregisterNoisyReceiver();
         releaseLocks();
