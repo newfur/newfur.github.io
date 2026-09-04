@@ -27,7 +27,6 @@ import android.app.Activity;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
@@ -46,7 +45,6 @@ public class NativeTTS extends Plugin {
     private static final String TAG = "NativeTTS";
     public static NativeTTS instance;
     private String pendingSaveFileUri;
-    private final ConcurrentHashMap<String, WebSocket> activeTasks = new ConcurrentHashMap<>();
 
     @Override
     public void load() {
@@ -58,8 +56,8 @@ public class NativeTTS extends Plugin {
     private static synchronized OkHttpClient getOkHttpClient() {
         if (okHttpClient == null) {
             okHttpClient = new OkHttpClient.Builder()
-                    .connectTimeout(12, TimeUnit.SECONDS)
-                    .readTimeout(12, TimeUnit.SECONDS)
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
                     .build();
         }
         return okHttpClient;
@@ -200,7 +198,7 @@ public class NativeTTS extends Plugin {
 
         ByteArrayOutputStream audioStream = new ByteArrayOutputStream();
 
-        WebSocket ws = client.newWebSocket(request, new WebSocketListener() {
+        client.newWebSocket(request, new WebSocketListener() {
             private boolean hasRejected = false;
 
             @Override
@@ -266,7 +264,6 @@ public class NativeTTS extends Plugin {
 
             @Override
             public void onClosed(WebSocket webSocket, int code, String reason) {
-                activeTasks.remove(connectionId);
                 if (hasRejected) return;
                 byte[] audioData = audioStream.toByteArray();
                 if (audioData.length > 0) {
@@ -284,37 +281,20 @@ public class NativeTTS extends Plugin {
 
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                activeTasks.remove(connectionId);
                 if (hasRejected) return;
                 hasRejected = true;
                 call.reject("WebSocket failure: " + t.getMessage());
             }
         });
-        activeTasks.put(connectionId, ws);
     }
 
     @PluginMethod
     public void cancelTTS(PluginCall call) {
-        String connectionId = call.getString("connectionId");
-        if (connectionId != null) {
-            WebSocket ws = activeTasks.remove(connectionId);
-            if (ws != null) {
-                try {
-                    ws.cancel();
-                } catch (Exception ignored) {}
-            }
-        }
         call.resolve();
     }
 
     @PluginMethod
     public void cancelAllTTS(PluginCall call) {
-        for (WebSocket ws : activeTasks.values()) {
-            try {
-                ws.cancel();
-            } catch (Exception ignored) {}
-        }
-        activeTasks.clear();
         call.resolve();
     }
 
