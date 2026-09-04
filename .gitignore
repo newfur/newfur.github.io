@@ -12,6 +12,7 @@ scratch/*
 www/
 ios/build/
 ios/build_sim/
+ios/build-sim/
 ios/App/Pods/
 ios/App/App/public/
 ios/capacitor-cordova-ios-plugins/

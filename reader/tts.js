@@ -671,8 +671,8 @@ export class TTSEngine {
 
         const tagName = node.tagName.toLowerCase();
         
-        // 跳過上標 (sup)、下標 (sub)、腳本、樣式、超鏈結 (a) 以及文件元數據標籤 (title, head, meta, link)
-        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link' || tagName === 'a';
+        // 跳過上標 (sup)、下標 (sub)、腳本、樣式以及文件元數據標籤 (title, head, meta, link)
+        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link';
 
         if (isSkipTag || node.classList.contains('textLayer')) {
           return;
@@ -862,8 +862,8 @@ export class TTSEngine {
 
         const tagName = node.tagName.toLowerCase();
         
-        // 跳過上標 (sup)、下標 (sub)、腳本、樣式、超鏈結 (a) 以及文件元數據標籤 (title, head, meta, link)
-        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link' || tagName === 'a';
+        // 跳過上標 (sup)、下標 (sub)、腳本、樣式以及文件元數據標籤 (title, head, meta, link)
+        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link';
 
         if (isSkipTag || node.classList.contains('textLayer')) {
           return;
@@ -2891,7 +2891,7 @@ export class TTSEngine {
         }
 
         const tagName = node.tagName.toLowerCase();
-        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link' || tagName === 'a';
+        const isSkipTag = tagName === 'sup' || tagName === 'sub' || tagName === 'script' || tagName === 'style' || tagName === 'title' || tagName === 'head' || tagName === 'meta' || tagName === 'link';
 
         if (isSkipTag || node.classList.contains('textLayer')) {
           return;

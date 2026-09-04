@@ -1453,6 +1453,13 @@ function initUIEventBindings() {
     }
 
     if (isChangingChapter || !tts.sentences || tts.sentences.length === 0) {
+      if (epubBookData && epubBookData.chapters && currentChapterIndex < epubBookData.chapters.length - 1) {
+        pendingTTSPlayOnLoad = true;
+        updatePlayPauseButtonIcon();
+        // 如果當前章節沒有文本句子（如封面圖），自動跳轉至下一章開始朗讀
+        loadChapter(currentChapterIndex + 1);
+        return;
+      }
       // 若當前章節或書籍仍在加載中，記錄播放意圖，待加載完成後自動開始播放
       pendingTTSPlayOnLoad = true;
       updatePlayPauseButtonIcon();
@@ -1724,10 +1731,74 @@ function initUIEventBindings() {
     }
   });
 
-  // 單擊句子直接從該句開始朗讀（帶延遲檢測選區，使用事件委託與坐標輔助定位）
+  // 記錄最後一次由觸控 Tap 觸發朗讀的時間戳，避免後續合成 click 事件重複觸發
+  let lastTtsTouchTriggerTime = 0;
+  let bookTouchStartX = 0;
+  let bookTouchStartY = 0;
+  let bookTouchStartTime = 0;
+  let bookTouchMoved = false;
+
+  bookContent.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      bookTouchStartX = e.touches[0].clientX;
+      bookTouchStartY = e.touches[0].clientY;
+      bookTouchStartTime = Date.now();
+      bookTouchMoved = false;
+    }
+  }, { passive: true });
+
+  bookContent.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1) {
+      const dx = e.touches[0].clientX - bookTouchStartX;
+      const dy = e.touches[0].clientY - bookTouchStartY;
+      if (Math.hypot(dx, dy) > 10) {
+        bookTouchMoved = true;
+      }
+    }
+  }, { passive: true });
+
+  // 移動端觸摸結束：若為純單擊（非滑動、非長按選詞），直接觸發朗讀
+  bookContent.addEventListener('touchend', (e) => {
+    const touchDuration = Date.now() - bookTouchStartTime;
+    // 僅當手指未明顯移動且觸摸時間短於 350ms 時視為 Tap
+    if (!bookTouchMoved && touchDuration < 350 && e.changedTouches && e.changedTouches.length === 1) {
+      const touch = e.changedTouches[0];
+      const tx = touch.clientX;
+      const ty = touch.clientY;
+
+      // 忽略點擊交互元素與內部導航鏈接
+      const target = document.elementFromPoint(tx, ty) || e.target;
+      if (target && (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('#selection-menu') || target.closest('.color-dot') || target.closest('a[href]') || target.closest('[data-epub-href]'))) {
+        return;
+      }
+
+      if (ttsClickTimeout) clearTimeout(ttsClickTimeout);
+      ttsClickTimeout = setTimeout(() => {
+        const selection = window.getSelection().toString().trim();
+        if (selection.length > 0) return; // 用戶正在選詞，不干擾
+
+        let targetSpan = (target && target.closest('.tts-sentence')) || findClosestTTSSentence(tx, ty);
+        if (!targetSpan) return;
+
+        const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
+        if (!isNaN(sentenceIdx)) {
+          lastTtsTouchTriggerTime = Date.now();
+          tts.play(sentenceIdx, true);
+          updatePlayPauseButtonIcon();
+        }
+      }, 60);
+    }
+  });
+
+  // 單擊句子直接從該句開始朗讀（桌面端點擊或移動端合成點擊，帶延遲檢測選區與防抖去重）
   bookContent.addEventListener('click', (e) => {
-    // 忽略點擊鏈接、按鈕、輸入框等交互元素
-    if (e.target.closest('a') || e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) {
+    // 若剛被移動端 touchend Tap 觸發過，忽略本次 click 事件
+    if (Date.now() - lastTtsTouchTriggerTime < 600) {
+      return;
+    }
+
+    // 忽略點擊交互元素與內部導航鏈接
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('#selection-menu') || e.target.closest('.color-dot') || e.target.closest('a[href]') || e.target.closest('[data-epub-href]')) {
       return;
     }
     
@@ -1748,7 +1819,7 @@ function initUIEventBindings() {
           updatePlayPauseButtonIcon();
         }
       }
-    }, 150);
+    }, 120);
   });
 
   // 劃線高亮按鈕事件
@@ -4424,6 +4495,17 @@ function nextComicPage() {
 
 // 尋找離給定坐標最近的 TTS 句子節點（用於優化點擊朗讀）
 function findClosestTTSSentence(x, y) {
+  if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) return null;
+
+  // 1. 優先利用 elementFromPoint 進行即時精確命中檢測 (O(1))
+  try {
+    const elAtPoint = document.elementFromPoint(x, y);
+    if (elAtPoint) {
+      const directSpan = elAtPoint.closest('.tts-sentence');
+      if (directSpan) return directSpan;
+    }
+  } catch (e) {}
+
   const elements = document.querySelectorAll('#book-content .tts-sentence');
   let closestEl = null;
   let minDistance = Infinity;
@@ -4449,8 +4531,8 @@ function findClosestTTSSentence(x, y) {
     }
   });
 
-  // 如果最接近的元素在 60px 範圍內，則採用
-  return minDistance < 60 ? closestEl : null;
+  // 如果最接近的元素在 80px 範圍內，則採用（容許移動端手指點擊誤差）
+  return minDistance < 80 ? closestEl : null;
 }
 
 

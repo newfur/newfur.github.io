@@ -1173,6 +1173,8 @@ body.format-cbz .comic-page {
   border-radius: 4px;
   transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), border 0.25s ease, color 0.25s ease;
   display: inline;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.05);
 }
 
 /* 當前朗讀的句子 - 各式自定義樣式 */
