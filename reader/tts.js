@@ -1316,28 +1316,29 @@ export class TTSEngine {
               secMsGec: secMsGec,
               dateStr: this._dateToString()
             });
-            // Prefer file-based transfer (zero-copy) over Base64 to avoid encode/decode overhead
+            // Prefer in-memory Base64 Blob (100% native WebKit in-memory playback, avoids custom scheme range issues)
+            if (result.audioBase64) {
+              const base64ToBlob = (base64, mimeType) => {
+                const byteCharacters = atob(base64);
+                const len = byteCharacters.length;
+                const byteArray = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                  byteArray[i] = byteCharacters.charCodeAt(i);
+                }
+                return new Blob([byteArray], { type: mimeType });
+              };
+              const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
+              resolve(blob);
+              return;
+            }
             if (result.filePath) {
-              // Convert native file path to a Capacitor-compatible URL for Audio playback
+              // Fallback: Convert native file path to a Capacitor-compatible URL
               const fileUrl = window.Capacitor.convertFileSrc
                 ? window.Capacitor.convertFileSrc(result.filePath)
                 : 'file://' + result.filePath;
               resolve({ _isFileUrl: true, fileUrl: fileUrl, filePath: result.filePath });
               return;
             }
-            // Fallback: Base64 transfer (for older native builds)
-            const base64ToBlob = (base64, mimeType) => {
-              const byteCharacters = atob(base64);
-              const len = byteCharacters.length;
-              const byteArray = new Uint8Array(len);
-              for (let i = 0; i < len; i++) {
-                byteArray[i] = byteCharacters.charCodeAt(i);
-              }
-              return new Blob([byteArray], { type: mimeType });
-            };
-            const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
-            resolve(blob);
-            return;
           } catch (nativeErr) {
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
           }
@@ -2234,6 +2235,9 @@ export class TTSEngine {
           try { audio.pause(); } catch (e) {}
           return;
         }
+        // 成功播放真實語音後暫停靜音保活播放器，避免雙重音訊競爭或音量衰減
+        this._stopSilenceKeepAlive();
+
         // 成功播放後，二次確保其他播放器已停止
         if (Array.isArray(this.players)) {
           this.players.forEach(p => {

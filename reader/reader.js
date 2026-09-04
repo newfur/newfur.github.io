@@ -6194,6 +6194,20 @@ function applyLayoutDimensions() {
 
 function updatePlayPauseButtonIcon() {
   const ttsPlayBtn = document.getElementById('tts-play-btn');
+  const ttsToggle = document.getElementById('tts-toggle');
+  const isPlaying = tts.isPlaying && !tts.isPaused;
+
+  if (ttsToggle) {
+    ttsToggle.classList.toggle('tts-playing', isPlaying);
+    if (pendingTTSPlayOnLoad) {
+      ttsToggle.classList.add('tts-loading');
+      ttsToggle.title = getMsg('loading_book') || 'Loading...';
+    } else {
+      ttsToggle.classList.remove('tts-loading');
+      ttsToggle.title = isPlaying ? (getMsg('tts_pause') || 'Pause') : (getMsg('read_aloud') || 'Read Aloud');
+    }
+  }
+
   if (!ttsPlayBtn) return;
   
   if (pendingTTSPlayOnLoad) {
@@ -6203,7 +6217,6 @@ function updatePlayPauseButtonIcon() {
     return;
   }
 
-  const isPlaying = tts.isPlaying && !tts.isPaused;
   ttsPlayBtn.classList.toggle('playing', isPlaying);
   if (isPlaying) {
     ttsPlayBtn.innerHTML = `<svg class="svg-icon" style="width: 24px; height: 24px; fill: currentColor;" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
@@ -6456,6 +6469,7 @@ function toggleTTSPanel() {
   document.getElementById('reader-sidebar').classList.remove('active');
   document.getElementById('settings-panel').classList.remove('dropdown-active');
   updateHeaderActiveStates();
+  updatePlayPauseButtonIcon();
   if (willBeActive && currentBook) {
     initTTSPanelVoices(currentBook.file?.name || currentBook.title || '', false);
   }

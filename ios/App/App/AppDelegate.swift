@@ -11,11 +11,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         application.beginReceivingRemoteControlEvents()
-        // Configure audio session for background TTS playback (exclusive, no ducking)
+        // Configure audio session for background TTS playback (defaultToSpeaker, bluetooth, airplay)
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [])
+            try audioSession.setCategory(.playback, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay])
             try audioSession.setActive(true)
+            try? audioSession.overrideOutputAudioPort(.speaker)
         } catch {
             print("Failed to configure AVAudioSession: \(error)")
         }
@@ -276,15 +277,20 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
-    func resumeAfterInterruptionOrCall() {
-        print("[NativeTTS] Resuming playback after interruption/call")
+    private func activateAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [])
+            try session.setCategory(.playback, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay])
             try session.setActive(true)
+            try? session.overrideOutputAudioPort(.speaker)
         } catch {
-            print("[NativeTTS] Failed to reactivate AVAudioSession on resume: \(error)")
+            print("[NativeTTS] Failed to activate AVAudioSession: \(error)")
         }
+    }
+
+    func resumeAfterInterruptionOrCall() {
+        print("[NativeTTS] Resuming playback after interruption/call")
+        self.activateAudioSession()
 
         self.isCurrentlyPlaying = true
         self.stopSilencePlayer()
@@ -491,16 +497,15 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             webSocketTask.cancel(with: .normalClosure, reason: nil)
             if !audioData.isEmpty {
                 // Write audio data to a temporary file instead of Base64 encoding
-                // This avoids the overhead of Base64 encode/decode and large string transfer through Capacitor bridge
+                // Return audioBase64 for reliable, zero-latency in-memory Blob URL playback in WebKit
+                let base64 = audioData.base64EncodedString()
                 let tmpDir = FileManager.default.temporaryDirectory
                 let fileName = "tts_\(connectionId).mp3"
                 let fileURL = tmpDir.appendingPathComponent(fileName)
                 do {
                     try audioData.write(to: fileURL)
-                    call.resolve(["filePath": fileURL.path])
+                    call.resolve(["audioBase64": base64, "filePath": fileURL.path])
                 } catch {
-                    // Fallback to Base64 if file write fails
-                    let base64 = audioData.base64EncodedString()
                     call.resolve(["audioBase64": base64])
                 }
             } else {
@@ -639,13 +644,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         let coverBase64 = call.getString("cover")
         self.isCurrentlyPlaying = isPlaying
 
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [])
-            try session.setActive(true)
-        } catch {
-            print("[NativeTTS] Failed to activate AVAudioSession on startForegroundService: \(error)")
-        }
+        self.activateAudioSession()
 
         if isPlaying {
             self.stopSilencePlayer()
@@ -749,9 +748,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         print("[NativeTTS] Simulating RemoteCommand: \(action)")
         switch action {
         case "play":
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, mode: .spokenAudio, options: [])
-            try? session.setActive(true)
+            self.activateAudioSession()
             self.isCurrentlyPlaying = true
             self.stopSilencePlayer()
             DispatchQueue.main.async {
@@ -783,9 +780,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         case "toggle":
             let shouldPlay = !self.isCurrentlyPlaying
             if shouldPlay {
-                let session = AVAudioSession.sharedInstance()
-                try? session.setCategory(.playback, mode: .spokenAudio, options: [])
-                try? session.setActive(true)
+                self.activateAudioSession()
                 self.isCurrentlyPlaying = true
                 self.stopSilencePlayer()
                 DispatchQueue.main.async {
@@ -1058,14 +1053,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         commandCenter.playCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             print("[NativeTTS] RemoteCommand: play")
-
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .spokenAudio, options: [])
-                try session.setActive(true)
-            } catch {
-                print("[NativeTTS] Failed to reactivate AVAudioSession on playCommand: \(error)")
-            }
+            self.activateAudioSession()
 
             self.isCurrentlyPlaying = true
             self.stopSilencePlayer()
@@ -1150,14 +1138,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             let shouldPlay = !self.isCurrentlyPlaying
 
             if shouldPlay {
-                do {
-                    let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.playback, mode: .spokenAudio, options: [])
-                    try session.setActive(true)
-                } catch {
-                    print("[NativeTTS] Failed to reactivate AVAudioSession on toggle: \(error)")
-                }
-
+                self.activateAudioSession()
                 self.isCurrentlyPlaying = true
                 self.stopSilencePlayer()
 
