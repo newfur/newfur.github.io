@@ -3138,19 +3138,35 @@ export class TTSEngine {
           });
         }
         if (this.currentAudio && this.currentAudio.src && !this.currentAudio.ended && this.currentAudio.currentTime < (this.currentAudio.duration || 1) - 0.05) {
+          let hasSettled = false;
+          const resumeTimeout = setTimeout(() => {
+            if (!hasSettled && !this.isPaused && this.isPlaying) {
+              hasSettled = true;
+              console.warn("currentAudio.play() stalled on resume (>600ms), falling back to _playActiveSentence()");
+              this._playActiveSentence();
+            }
+          }, 600);
+
           const playPromise = this.currentAudio.play();
           if (playPromise !== undefined) {
             playPromise.then(() => {
+              if (hasSettled) return;
+              hasSettled = true;
+              clearTimeout(resumeTimeout);
               if (!this.isPlaying || this.isPaused) {
                 try { this.currentAudio.pause(); } catch (e) {}
                 return;
               }
               this._startPolling();
             }).catch(err => {
+              if (hasSettled) return;
+              hasSettled = true;
+              clearTimeout(resumeTimeout);
               console.error("Resume error, replaying current sentence:", err);
               this._playActiveSentence();
             });
           } else {
+            clearTimeout(resumeTimeout);
             this._playActiveSentence();
           }
         } else {
