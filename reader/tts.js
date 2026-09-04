@@ -2029,11 +2029,8 @@ export class TTSEngine {
         this.audioCache.delete(index);
       }
     };
-    // 清理旧 _cleanupResources，避免闭包覆盖导致内存泄漏
-    if (typeof audio._cleanupResources === 'function') {
-      audio._cleanupResources();
-      audio._cleanupResources = null;
-    }
+    // 保存旧的 _cleanupResources 引用，但不立即调用（会在 audio 真正被释放时自动调用）
+    // 这里只是覆盖引用，让新的 cleanup 函数负责当前播放会话
     audio._cleanupResources = cleanupAudioResources;
 
     const getBoundaries = () => {
