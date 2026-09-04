@@ -156,6 +156,7 @@ export class TTSEngine {
     this.consecutiveWsFailures = 0; // 連續 WebSocket 語音加載失敗計數器，用於自動降級 fallback
     this.playbackStartSessionIndex = null;
     this.voiceSessionId = 0;
+    this._retryTimers = new Set();
     this._lastSentCoverBookId = null;
     this._lastSkipTime = 0; // 防抖時間戳：防止原生端雙重派發導致 next/previous 被執行兩次
     this._lastPauseResumeTime = 0; // 防抖時間戳：防止原生端雙重派發導致 pause/resume 互相覆蓋
@@ -1550,9 +1551,12 @@ export class TTSEngine {
         this.fetchingIndices.delete(index);
         
         if (retryCount < 2) {
-          setTimeout(() => {
+          const retryTimer = setTimeout(() => {
+            if (this._retryTimers) this._retryTimers.delete(retryTimer);
             this._fetchSentence(index, retryCount + 1);
           }, 1500);
+          if (!this._retryTimers) this._retryTimers = new Set();
+          this._retryTimers.add(retryTimer);
           return;
         }
         
@@ -1658,9 +1662,12 @@ export class TTSEngine {
         this.fetchingIndices.delete(groupStartIndex);
         
         if (retryCount < 2) {
-          setTimeout(() => {
+          const retryTimer = setTimeout(() => {
+            if (this._retryTimers) this._retryTimers.delete(retryTimer);
             this._fetchSentence(groupStartIndex, retryCount + 1);
           }, 1500);
+          if (!this._retryTimers) this._retryTimers = new Set();
+          this._retryTimers.add(retryTimer);
           return;
         }
 
@@ -1894,9 +1901,12 @@ export class TTSEngine {
       }
     }
 
-    // 2. 嚴格遵循順序：如果緩存不足 3 句，強制並發為 1，確保最前序的句子獨佔網絡帶寬，以最快速度返回
+    // 2. 改进冷启动并发策略：完全冷启动（无后序缓存）时允许并发 2 同时抓取句0与句1，缩短前段卡顿
+    if (cachedCount < 1) {
+      return 2;
+    }
     if (cachedCount < 3) {
-      return 1;
+      return 1; // 已有 1~2 句缓冲：单并发保首句优先
     }
 
     // 3. 已有 3 句以上緩存，有足夠時間，此時再放開並發加速填充 10 句緩衝區
@@ -2061,14 +2071,18 @@ export class TTSEngine {
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
 
-    // 綁定原生媒體事件，確保 WebKit 與 iOS 鎖屏狀態嚴格同步
+    // 綁定原生媒體事件，確保 WebKit 與 iOS 鎖屏狀態嚴格同步（Capacitor 环境由原生层独立管理）
     audio.onplay = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && 
+        window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     };
     audio.onpause = () => {
-      if (this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && 
+        window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (this.isPaused && !isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
     };
@@ -2160,6 +2174,7 @@ export class TTSEngine {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
+        audio.onerror = null;
         audio.onloadedmetadata = null;
         
         if (typeof audio._cleanupResources === 'function') {
@@ -2170,6 +2185,27 @@ export class TTSEngine {
         if (!this.isPlaying || this.isPaused) return;
         
         if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = groupStartIndex + groupSentences.length;
+          this._playActiveSentence();
+        }
+      };
+
+      audio.onerror = (e) => {
+        console.error(`[TTS] Audio decode error in group starting at ${groupStartIndex}:`, e);
+        this._stopPolling();
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onloadedmetadata = null;
+        
+        if (typeof audio._cleanupResources === 'function') {
+          audio._cleanupResources();
+          audio._cleanupResources = null;
+        }
+        
+        if (!hasTriggeredNext && this.isPlaying && !this.isPaused) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
           this.currentIndex = groupStartIndex + groupSentences.length;
@@ -2206,6 +2242,7 @@ export class TTSEngine {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
+        audio.onerror = null;
         audio.onloadedmetadata = null;
         
         if (typeof audio._cleanupResources === 'function') {
@@ -2217,6 +2254,27 @@ export class TTSEngine {
         
         // 若下一句還沒有被觸發播放，則在此手動觸發
         if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = index + 1;
+          this._playActiveSentence();
+        }
+      };
+
+      audio.onerror = (e) => {
+        console.error(`[TTS] Audio decode error at index ${index}:`, e);
+        this._stopPolling();
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onloadedmetadata = null;
+        
+        if (typeof audio._cleanupResources === 'function') {
+          audio._cleanupResources();
+          audio._cleanupResources = null;
+        }
+        
+        if (!hasTriggeredNext && this.isPlaying && !this.isPaused) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
           this.currentIndex = index + 1;
@@ -2682,7 +2740,9 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    // Only register mediaSession in non-Capacitor environments (web/extension)
+    // In Capacitor apps, native layer (MPRemoteCommandCenter/MediaSession) handles all media control
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -3195,6 +3255,16 @@ export class TTSEngine {
     this.prefetchQueue = [];
     this.activeFetchCount = 0;
     this._lastSentCoverBookId = null;
+
+    // 递增 voiceSessionId，使所有在飞请求的回调自动失效，杜绝幽灵缓存
+    this.voiceSessionId = (this.voiceSessionId || 0) + 1;
+
+    // 清除所有挂起的 retry timers
+    if (this._retryTimers) {
+      this._retryTimers.forEach(timer => clearTimeout(timer));
+      this._retryTimers.clear();
+    }
+
     if (this._silencePauseTimeout) {
       clearTimeout(this._silencePauseTimeout);
       this._silencePauseTimeout = null;
