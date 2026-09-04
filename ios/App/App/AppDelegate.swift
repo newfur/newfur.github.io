@@ -207,7 +207,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             do {
                 silencePlayer = try AVAudioPlayer(data: silentData)
                 silencePlayer?.numberOfLoops = -1
-                silencePlayer?.volume = 0.5
+                silencePlayer?.volume = 0.1
                 silencePlayer?.prepareToPlay()
             } catch {
                 print("[NativeTTS] Failed to initialize silencePlayer: \(error)")
@@ -365,9 +365,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     private func activateAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP, .mixWithOthers])
             try session.setActive(true)
-            try? session.overrideOutputAudioPort(.speaker)
         } catch {
             print("[NativeTTS] Failed to activate AVAudioSession: \(error)")
         }
@@ -384,7 +383,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.activateAudioSession()
 
         self.isCurrentlyPlaying = true
-        self.startSilencePlayer()
+        self.stopSilencePlayer()
         self.updateRemoteCommandsState(isPlaying: true)
         self.startNowPlayingGuardian()
 
@@ -395,7 +394,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 bgTaskId = .invalid
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
             if bgTaskId != .invalid {
                 UIApplication.shared.endBackgroundTask(bgTaskId)
                 bgTaskId = .invalid
@@ -866,6 +865,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         case "play":
             self.activateAudioSession()
             self.isCurrentlyPlaying = true
+            self.stopSilencePlayer()
             self.updateRemoteCommandsState(isPlaying: true)
             self.startNowPlayingGuardian()
             DispatchQueue.main.async {
@@ -906,6 +906,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             if shouldPlay {
                 self.activateAudioSession()
                 self.isCurrentlyPlaying = true
+                self.stopSilencePlayer()
                 self.updateRemoteCommandsState(isPlaying: true)
                 self.startNowPlayingGuardian()
                 DispatchQueue.main.async {
@@ -1196,7 +1197,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.activateAudioSession()
 
             self.isCurrentlyPlaying = true
-            // Keep silence keep-alive player running as safety bridge until real TTS audio starts
+            self.stopSilencePlayer()
             self.updateRemoteCommandsState(isPlaying: true)
             self.startNowPlayingGuardian()
 
@@ -1207,7 +1208,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                     bgTaskId = .invalid
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
                 if bgTaskId != .invalid {
                     UIApplication.shared.endBackgroundTask(bgTaskId)
                     bgTaskId = .invalid
@@ -1292,7 +1293,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             if shouldPlay {
                 self.activateAudioSession()
                 self.isCurrentlyPlaying = true
-                // Keep silence keep-alive player running as safety bridge until real TTS audio starts
+                self.stopSilencePlayer()
                 self.updateRemoteCommandsState(isPlaying: true)
                 self.startNowPlayingGuardian()
 
@@ -1303,7 +1304,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                         bgTaskId = .invalid
                     }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
                     if bgTaskId != .invalid {
                         UIApplication.shared.endBackgroundTask(bgTaskId)
                         bgTaskId = .invalid

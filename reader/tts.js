@@ -3138,31 +3138,38 @@ export class TTSEngine {
           });
         }
         if (this.currentAudio && this.currentAudio.src && !this.currentAudio.ended && this.currentAudio.currentTime < (this.currentAudio.duration || 1) - 0.05) {
+          const initialTime = this.currentAudio.currentTime;
           let hasSettled = false;
+          // 驗證看門狗：若 play() 雖已 resolve 但音訊指針在 500ms 內未實質前進（或仍處於 paused），強制呼叫 _playActiveSentence()
           const resumeTimeout = setTimeout(() => {
             if (!hasSettled && !this.isPaused && this.isPlaying) {
-              hasSettled = true;
-              console.warn("currentAudio.play() stalled on resume (>600ms), falling back to _playActiveSentence()");
-              this._playActiveSentence();
+              const cur = this.currentAudio ? this.currentAudio.currentTime : initialTime;
+              const isStalled = !this.currentAudio || this.currentAudio.paused || Math.abs(cur - initialTime) < 0.01;
+              if (isStalled) {
+                hasSettled = true;
+                console.warn("[TTS Resume] currentAudio stalled on resume (paused or time not advancing), falling back to _playActiveSentence()");
+                this._playActiveSentence();
+              }
             }
-          }, 600);
+          }, 500);
 
           const playPromise = this.currentAudio.play();
           if (playPromise !== undefined) {
             playPromise.then(() => {
-              if (hasSettled) return;
-              hasSettled = true;
-              clearTimeout(resumeTimeout);
               if (!this.isPlaying || this.isPaused) {
                 try { this.currentAudio.pause(); } catch (e) {}
+                hasSettled = true;
+                clearTimeout(resumeTimeout);
                 return;
               }
+              // 注意：此處絕不可直接 clearTimeout(resumeTimeout)，因為 WebKit 在後台環境下 Promise 可能立即 resolve，
+              // 但硬體音訊管線仍可能卡頓未啟動！讓 resumeTimeout 在 500ms 時檢查 currentTime 是否真正前進
               this._startPolling();
             }).catch(err => {
               if (hasSettled) return;
               hasSettled = true;
               clearTimeout(resumeTimeout);
-              console.error("Resume error, replaying current sentence:", err);
+              console.error("[TTS Resume] play() failed, replaying sentence:", err);
               this._playActiveSentence();
             });
           } else {
