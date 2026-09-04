@@ -179,19 +179,29 @@ export class TTSEngine {
           switch (action) {
             case 'play':
             case 'action_play':
+              this._resumeFromNative = true;
               this.resume();
+              this._resumeFromNative = false;
               break;
             case 'pause':
             case 'action_pause':
-              if (this.isPlaying && !this.isPaused) this.pause();
+              if (this.isPlaying && !this.isPaused) {
+                this._pauseFromNative = true;
+                this.pause();
+                this._pauseFromNative = false;
+              }
               break;
             case 'toggle':
             case 'action_toggle_play':
             case 'action_play_pause':
               if (this.isPaused || !this.isPlaying) {
+                this._resumeFromNative = true;
                 this.resume();
+                this._resumeFromNative = false;
               } else {
+                this._pauseFromNative = true;
                 this.pause();
+                this._pauseFromNative = false;
               }
               break;
             case 'next':
@@ -2568,8 +2578,8 @@ export class TTSEngine {
       const nativePayload = {
         title: title,
         artist: artist,
-        text: text,
-        isPlaying: this.isPlaying && !this.isPaused
+        text: text
+        // isPlaying 不再由 _updateMediaSession 發送，播放狀態由 updatePlaybackState 和 Remote Command 獨佔管理
       };
       
       // 發送壓縮後的輕量封面 (約 20KB~40KB)，保證原生端能始終保持或更新封面
@@ -2935,7 +2945,8 @@ export class TTSEngine {
       this._stopSilenceKeepAlive(); // 暫停時立即停止靜音播放器，避免 iOS 鎖屏介面因底層仍有音訊播放而錯誤顯示為「播放中」
 
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-      if (isCapacitorApp) {
+      if (isCapacitorApp && !this._pauseFromNative) {
+        // 只有非原生端觸發的暫停才需要通知原生端（原生端 Remote Command 已自行處理完畢）
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
           isPlaying: false
         }).catch(e => console.error("Error updating native playback state:", e));
@@ -2981,7 +2992,8 @@ export class TTSEngine {
       this._startSilenceKeepAlive();
       
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-      if (isCapacitorApp) {
+      if (isCapacitorApp && !this._resumeFromNative) {
+        // 只有非原生端觸發的恢復才需要通知原生端（原生端 Remote Command 已自行處理完畢）
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
           isPlaying: true
         }).catch(e => console.error("Error updating native playback state:", e));

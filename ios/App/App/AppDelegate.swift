@@ -465,8 +465,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
         let artist = call.getString("artist") ?? ""
         let text = call.getString("text")
         let coverBase64 = call.getString("cover")
-        let isPlaying = call.getBool("isPlaying") ?? true
-        self.isCurrentlyPlaying = isPlaying
+        // 不再從 JS payload 讀取 isPlaying，而是使用原生端的 isCurrentlyPlaying 作為唯一真相。
+        // 這避免了句子切換（每 3-10 秒觸發一次 _updateMediaSession）的異步回調
+        // 覆蓋由 updatePlaybackState / Remote Command 設置的權威播放狀態。
+        let isPlaying = self.isCurrentlyPlaying
         DispatchQueue.main.async {
             self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64)
         }
