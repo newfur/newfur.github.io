@@ -2434,6 +2434,53 @@ export class TTSEngine {
     this.synth.speak(utterance);
   }
 
+  unlock() {
+    if (typeof Audio === 'undefined') return;
+    if (this._isAudioUnlocked) return;
+    this._isAudioUnlocked = true;
+
+    // 1. 初始化並在用戶手勢中解鎖靜音保活播放器
+    if (!this.silenceAudio) {
+      this.silenceAudio = new Audio();
+      this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.loop = true;
+      this.silenceAudio.volume = 0.01;
+    }
+    try {
+      const pSilence = this.silenceAudio.play();
+      if (pSilence && typeof pSilence.then === 'function') {
+        pSilence.then(() => {
+          // 若當前未在播放 TTS，解鎖成功後暫停靜音播放器，避免背景耗電
+          if (!this.isPlaying || this.isPaused) {
+            this.silenceAudio.pause();
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {}
+
+    // 2. 在用戶手勢中同步預熱雙播放器，使其獲得 WebKit Autoplay 授權
+    const SILENCE_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    if (Array.isArray(this.players)) {
+      this.players.forEach(p => {
+        if (p && !p._unlocked) {
+          p._unlocked = true;
+          try {
+            if (!p.src) {
+              p.src = SILENCE_DATA_URI;
+            }
+            const pr = p.play();
+            if (pr && typeof pr.then === 'function') {
+              pr.then(() => {
+                p.pause();
+                p.currentTime = 0;
+              }).catch(() => {});
+            }
+          } catch (e) {}
+        }
+      });
+    }
+  }
+
   _startSilenceKeepAlive() {
     if (typeof Audio === 'undefined') return;
     
@@ -2653,7 +2700,7 @@ export class TTSEngine {
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
     this.isPlaying = false;
     this.isPaused = false;
-    this._stopSilenceKeepAlive();
+    this._startSilenceKeepAlive(); // 在用戶手勢中同步啟動靜音保活，維持 iOS 音訊會話
     this._stopPolling();
     
     if (this.synth) {
@@ -2665,8 +2712,7 @@ export class TTSEngine {
     this.players.forEach(p => {
       try {
         p.pause();
-        p.removeAttribute('src'); // 移除 src 屬性以防止在 file:// 協議下瀏覽器將空字串解析為當前 HTML 路徑而拋出 CORS 錯誤
-        p.load(); // 徹底重置播放器狀態
+        p.currentTime = 0;
         if (p.dataset) p.dataset.srcUrl = '';
         p.ontimeupdate = null;
         p.onended = null;

@@ -400,6 +400,19 @@ function initUIEventBindings() {
   window.addEventListener('touchstart', recordActivity, { capture: true, passive: true });
   window.addEventListener('scroll', recordActivity, { capture: true, passive: true });
 
+  // 移動端音訊自動播放權限預解鎖：在用戶首次觸摸或點擊任意區域時同步解鎖音訊上下文
+  const initAudioUnlockOnce = () => {
+    if (window.tts && typeof window.tts.unlock === 'function') {
+      window.tts.unlock();
+    }
+    window.removeEventListener('touchstart', initAudioUnlockOnce, true);
+    window.removeEventListener('touchend', initAudioUnlockOnce, true);
+    window.removeEventListener('click', initAudioUnlockOnce, true);
+  };
+  window.addEventListener('touchstart', initAudioUnlockOnce, { capture: true, passive: true });
+  window.addEventListener('touchend', initAudioUnlockOnce, { capture: true, passive: true });
+  window.addEventListener('click', initAudioUnlockOnce, { capture: true, passive: true });
+
   // 資料夾與批量管理事件
   const createFolderBtn = document.getElementById('create-folder-btn');
   if (createFolderBtn) {
@@ -1744,6 +1757,10 @@ function initUIEventBindings() {
       bookTouchStartY = e.touches[0].clientY;
       bookTouchStartTime = Date.now();
       bookTouchMoved = false;
+      // 在用戶首次觸摸螢幕手勢中預熱解鎖音訊上下文
+      if (window.tts && typeof window.tts.unlock === 'function') {
+        window.tts.unlock();
+      }
     }
   }, { passive: true });
 
@@ -1751,17 +1768,18 @@ function initUIEventBindings() {
     if (e.touches.length === 1) {
       const dx = e.touches[0].clientX - bookTouchStartX;
       const dy = e.touches[0].clientY - bookTouchStartY;
-      if (Math.hypot(dx, dy) > 10) {
+      // 提高移動容差至 18px，適應人手拇指在觸控螢幕上的微幅形變
+      if (Math.hypot(dx, dy) > 18) {
         bookTouchMoved = true;
       }
     }
   }, { passive: true });
 
-  // 移動端觸摸結束：若為純單擊（非滑動、非長按選詞），直接觸發朗讀
+  // 移動端觸摸結束：若為純單擊（非滑動、非長按選詞），直接同步觸發朗讀
   bookContent.addEventListener('touchend', (e) => {
     const touchDuration = Date.now() - bookTouchStartTime;
-    // 僅當手指未明顯移動且觸摸時間短於 350ms 時視為 Tap
-    if (!bookTouchMoved && touchDuration < 350 && e.changedTouches && e.changedTouches.length === 1) {
+    // 容許觸摸時間放寬至 500ms，手指微移在 18px 以內均視為 Tap
+    if (!bookTouchMoved && touchDuration < 500 && e.changedTouches && e.changedTouches.length === 1) {
       const touch = e.changedTouches[0];
       const tx = touch.clientX;
       const ty = touch.clientY;
@@ -1772,28 +1790,34 @@ function initUIEventBindings() {
         return;
       }
 
-      if (ttsClickTimeout) clearTimeout(ttsClickTimeout);
-      ttsClickTimeout = setTimeout(() => {
-        const selection = window.getSelection().toString().trim();
-        if (selection.length > 0) return; // 用戶正在選詞，不干擾
+      const selection = window.getSelection().toString().trim();
+      if (selection.length > 0) return; // 用戶正在選詞，不干擾
 
-        let targetSpan = (target && target.closest('.tts-sentence')) || findClosestTTSSentence(tx, ty);
-        if (!targetSpan) return;
+      let targetSpan = (target && target.closest('.tts-sentence')) || findClosestTTSSentence(tx, ty);
+      if (!targetSpan) return;
 
-        const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        if (!isNaN(sentenceIdx)) {
-          lastTtsTouchTriggerTime = Date.now();
-          tts.play(sentenceIdx, true);
-          updatePlayPauseButtonIcon();
+      const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
+      if (!isNaN(sentenceIdx)) {
+        lastTtsTouchTriggerTime = Date.now();
+        // 嚴格在同步用戶手勢事件中解鎖音訊並發起播放，保證 iOS WebKit User Activation 狀態生效
+        if (window.tts) {
+          if (typeof window.tts.unlock === 'function') window.tts.unlock();
+          window.tts.play(sentenceIdx, true);
         }
-      }, 60);
+        updatePlayPauseButtonIcon();
+      }
     }
   });
 
-  // 單擊句子直接從該句開始朗讀（桌面端點擊或移動端合成點擊，帶延遲檢測選區與防抖去重）
+  // 單擊句子直接從該句開始朗讀（桌面端點擊或移動端合成點擊，防抖去重並保留同步手勢權限）
   bookContent.addEventListener('click', (e) => {
-    // 若剛被移動端 touchend Tap 觸發過，忽略本次 click 事件
+    // 若剛被移動端 touchend Tap 觸發過，忽略本次合成 click 事件
     if (Date.now() - lastTtsTouchTriggerTime < 600) {
+      return;
+    }
+
+    // 忽略雙擊或多擊（桌面端選詞）
+    if (e.detail > 1) {
       return;
     }
 
@@ -1808,18 +1832,18 @@ function initUIEventBindings() {
     }
     if (!targetSpan) return;
 
+    const selection = window.getSelection().toString().trim();
+    if (selection.length > 0) return;
+
     e.stopPropagation();
-    if (ttsClickTimeout) clearTimeout(ttsClickTimeout);
-    ttsClickTimeout = setTimeout(() => {
-      const selection = window.getSelection().toString().trim();
-      if (selection.length === 0) {
-        const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        if (!isNaN(sentenceIdx)) {
-          tts.play(sentenceIdx, true);
-          updatePlayPauseButtonIcon();
-        }
+    const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
+    if (!isNaN(sentenceIdx)) {
+      if (window.tts) {
+        if (typeof window.tts.unlock === 'function') window.tts.unlock();
+        window.tts.play(sentenceIdx, true);
       }
-    }, 120);
+      updatePlayPauseButtonIcon();
+    }
   });
 
   // 劃線高亮按鈕事件
