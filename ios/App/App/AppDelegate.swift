@@ -294,6 +294,22 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         silencePlayer = nil
         print("[NativeTTS] Silence keep-alive player stopped")
     }
+    
+    func dimSilencePlayer() {
+        if silencePlayer == nil {
+            startSilencePlayer()
+        }
+        silencePlayer?.volume = 0.005  // Very low volume, inaudible
+        print("[NativeTTS] Silence player volume dimmed during WebKit audio playback")
+    }
+    
+    func restoreSilencePlayer() {
+        if silencePlayer == nil {
+            startSilencePlayer()
+        }
+        silencePlayer?.volume = 0.1  // Restore keep-alive volume
+        print("[NativeTTS] Silence player volume restored")
+    }
 
     func scheduleSilencePauseTimer() {
         cancelSilencePauseTimer()
@@ -448,7 +464,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.activateAudioSession()
 
         self.isCurrentlyPlaying = true
-        self.stopSilencePlayer()
+        self.dimSilencePlayer()  // Dim instead of stop during playback
         self.updateRemoteCommandsState(isPlaying: true)
         self.startNowPlayingGuardian()
 
@@ -812,7 +828,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.updateRemoteCommandsState(isPlaying: isPlaying)
 
         if isPlaying {
-            self.stopSilencePlayer()
+            self.dimSilencePlayer()  // Dim instead of stop during playback
             self.startNowPlayingGuardian()
         } else {
             self.stopNowPlayingGuardian()
@@ -832,7 +848,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         if isPlaying {
             self.wasPlayingBeforeInterruption = false
             self.wasPlayingBeforeCall = false
-            self.stopSilencePlayer()
+            self.dimSilencePlayer()  // Dim instead of stop during playback
             self.startNowPlayingGuardian()
         } else {
             self.wasPlayingBeforeInterruption = false
@@ -864,7 +880,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         if let callIsPlaying = call.getBool("isPlaying") {
             self.isCurrentlyPlaying = callIsPlaying
             if callIsPlaying {
-                self.stopSilencePlayer()
+                self.dimSilencePlayer()  // Dim instead of stop during playback
                 self.startNowPlayingGuardian()
             } else {
                 self.stopNowPlayingGuardian()
@@ -1162,7 +1178,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         print("[NativeTTS] handleRemotePlay")
         self.activateAudioSession()
         self.isCurrentlyPlaying = true
-        self.stopSilencePlayer()
+        self.dimSilencePlayer()  // Dim instead of stop during playback
         self.updateRemoteCommandsState(isPlaying: true)
         self.startNowPlayingGuardian()
 
@@ -1229,7 +1245,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         if shouldPlay {
             self.activateAudioSession()
             self.isCurrentlyPlaying = true
-            self.stopSilencePlayer()
+            self.dimSilencePlayer()  // Dim instead of stop during playback
             self.updateRemoteCommandsState(isPlaying: true)
             self.startNowPlayingGuardian()
 
@@ -1287,6 +1303,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func handleRemoteNext() {
+        if shouldThrottleRemoteCommand() { return }
         print("[NativeTTS] handleRemoteNext")
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "NextTrack") {
@@ -1309,6 +1326,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func handleRemotePrevious() {
+        if shouldThrottleRemoteCommand() { return }
         print("[NativeTTS] handleRemotePrevious")
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "PreviousTrack") {
@@ -1331,6 +1349,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func handleRemoteStop() {
+        if shouldThrottleRemoteCommand() { return }
         print("[NativeTTS] handleRemoteStop")
         self.isCurrentlyPlaying = false
         self.wasPlayingBeforeInterruption = false

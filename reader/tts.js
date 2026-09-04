@@ -1550,9 +1550,12 @@ export class TTSEngine {
         this.fetchingIndices.delete(index);
         
         if (retryCount < 2) {
-          setTimeout(() => {
+          const retryTimer = setTimeout(() => {
             this._fetchSentence(index, retryCount + 1);
           }, 1500);
+          // Store timer for cleanup on stop()
+          if (!this._retryTimers) this._retryTimers = new Set();
+          this._retryTimers.add(retryTimer);
           return;
         }
         
@@ -1658,9 +1661,12 @@ export class TTSEngine {
         this.fetchingIndices.delete(groupStartIndex);
         
         if (retryCount < 2) {
-          setTimeout(() => {
+          const retryTimer = setTimeout(() => {
             this._fetchSentence(groupStartIndex, retryCount + 1);
           }, 1500);
+          // Store timer for cleanup on stop()
+          if (!this._retryTimers) this._retryTimers = new Set();
+          this._retryTimers.add(retryTimer);
           return;
         }
 
@@ -1894,7 +1900,12 @@ export class TTSEngine {
       }
     }
 
-    // 2. 嚴格遵循順序：如果緩存不足 3 句，強制並發為 1，確保最前序的句子獨佔網絡帶寬，以最快速度返回
+    // 2. 冷启动策略优化：
+    //    - 完全冷启动（cachedCount = 0）: 允许 2 并发加速首句到达
+    //    - 缓存不足 3 句: 强制并发为 1，确保最前序的句子独占网络带宽
+    if (cachedCount === 0) {
+      return Math.min(2, this.maxConcurrentFetches);
+    }
     if (cachedCount < 3) {
       return 1;
     }
@@ -2018,6 +2029,11 @@ export class TTSEngine {
         this.audioCache.delete(index);
       }
     };
+    // 清理旧 _cleanupResources，避免闭包覆盖导致内存泄漏
+    if (typeof audio._cleanupResources === 'function') {
+      audio._cleanupResources();
+      audio._cleanupResources = null;
+    }
     audio._cleanupResources = cleanupAudioResources;
 
     const getBoundaries = () => {
@@ -2160,6 +2176,7 @@ export class TTSEngine {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
+        audio.onerror = null;
         audio.onloadedmetadata = null;
         
         if (typeof audio._cleanupResources === 'function') {
@@ -2170,6 +2187,28 @@ export class TTSEngine {
         if (!this.isPlaying || this.isPaused) return;
         
         if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = groupStartIndex + groupSentences.length;
+          this._playActiveSentence();
+        }
+      };
+      
+      // 添加 onerror 处理，避免解码错误时永久卡住
+      audio.onerror = (e) => {
+        console.error(`[TTS] Audio decode error at group starting index ${groupStartIndex}:`, e);
+        this._stopPolling();
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onloadedmetadata = null;
+        
+        if (typeof audio._cleanupResources === 'function') {
+          audio._cleanupResources();
+          audio._cleanupResources = null;
+        }
+        
+        if (!hasTriggeredNext && this.isPlaying && !this.isPaused) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
           this.currentIndex = groupStartIndex + groupSentences.length;
@@ -2206,6 +2245,7 @@ export class TTSEngine {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
+        audio.onerror = null;
         audio.onloadedmetadata = null;
         
         if (typeof audio._cleanupResources === 'function') {
@@ -2217,6 +2257,28 @@ export class TTSEngine {
         
         // 若下一句還沒有被觸發播放，則在此手動觸發
         if (!hasTriggeredNext) {
+          hasTriggeredNext = true;
+          this.activePlayerIdx = nextPlayerIdx;
+          this.currentIndex = index + 1;
+          this._playActiveSentence();
+        }
+      };
+      
+      // 添加 onerror 处理，避免解码错误时永久卡住
+      audio.onerror = (e) => {
+        console.error(`[TTS] Audio decode error at index ${index}:`, e);
+        this._stopPolling();
+        audio.ontimeupdate = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onloadedmetadata = null;
+        
+        if (typeof audio._cleanupResources === 'function') {
+          audio._cleanupResources();
+          audio._cleanupResources = null;
+        }
+        
+        if (!hasTriggeredNext && this.isPlaying && !this.isPaused) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
           this.currentIndex = index + 1;
@@ -3201,6 +3263,15 @@ export class TTSEngine {
     }
     this._stopSilenceKeepAlive();
     this._stopPolling();
+    
+    // 递增 voiceSessionId，用于取消所有挂起的 retry 和异步操作
+    this.voiceSessionId = (this.voiceSessionId || 0) + 1;
+    
+    // 清除所有挂起的 retry timers
+    if (this._retryTimers) {
+      this._retryTimers.forEach(timer => clearTimeout(timer));
+      this._retryTimers.clear();
+    }
     
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
