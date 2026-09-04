@@ -2235,16 +2235,28 @@ function initUIEventBindings() {
           tts._lastWatchedCurrentTime = null;
         }
 
-        // 強制確保雙播放器互斥：只有當前播放中的音訊允許發聲，關閉其它閒置播放器
-        if (Array.isArray(tts.players) && tts.currentAudio) {
-          tts.players.forEach(p => {
-            if (p && p !== tts.currentAudio) {
-              try {
-                p.pause();
-                p.currentTime = 0;
-              } catch (e) {}
-            }
-          });
+        if (tts.isPaused) {
+          // 若當前處於暫停狀態，確保所有播放器（包括 currentAudio）均嚴格保持暫停
+          if (Array.isArray(tts.players)) {
+            tts.players.forEach(p => {
+              try { p.pause(); } catch (e) {}
+            });
+          }
+          if (tts.currentAudio) {
+            try { tts.currentAudio.pause(); } catch (e) {}
+          }
+        } else {
+          // 強制確保雙播放器互斥：只有當前播放中的音訊允許發聲，關閉其它閒置播放器
+          if (Array.isArray(tts.players) && tts.currentAudio) {
+            tts.players.forEach(p => {
+              if (p && p !== tts.currentAudio) {
+                try {
+                  p.pause();
+                  p.currentTime = 0;
+                } catch (e) {}
+              }
+            });
+          }
         }
 
         updatePlayPauseButtonIcon();

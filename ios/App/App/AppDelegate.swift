@@ -442,7 +442,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     @objc func updatePlaybackState(_ call: CAPPluginCall) {
         let isPlaying = call.getBool("isPlaying") ?? false
         self.isCurrentlyPlaying = isPlaying
-        if !isPlaying && !self.isAudioSessionInterrupted {
+        if !isPlaying {
             self.wasPlayingBeforeInterruption = false
         }
         DispatchQueue.main.async {
@@ -644,15 +644,21 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             }
 
         case .ended:
-            if let wasSuspended = userInfo[AVAudioSessionInterruptionWasSuspendedKey] as? Bool, wasSuspended {
-                print("[NativeTTS] Audio session interruption ended was due to system suspension, ignoring resume")
+            // 只有此前確實記錄了真實外部中斷（如電話、Siri），才允許處理恢復
+            guard self.isAudioSessionInterrupted else {
+                print("[NativeTTS] Audio session interruption ended ignored: no active interruption was recorded")
                 return
             }
+            self.isAudioSessionInterrupted = false
+
+            // 如果此前未在播放，或者用戶已在鎖屏/控制中心手動暫停，絕不自動恢復播放
+            guard self.wasPlayingBeforeInterruption else {
+                print("[NativeTTS] Audio session interruption ended ignored: was not playing or paused by user")
+                return
+            }
+            self.wasPlayingBeforeInterruption = false
 
             print("[NativeTTS] Audio session interruption ended (other app stopped)")
-            let shouldResume = self.wasPlayingBeforeInterruption
-            self.wasPlayingBeforeInterruption = false
-            self.isAudioSessionInterrupted = false
 
             var systemAllowsResume = true
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
@@ -660,7 +666,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
                 systemAllowsResume = options.contains(.shouldResume)
             }
 
-            if shouldResume && systemAllowsResume {
+            if systemAllowsResume {
                 do {
                     let session = AVAudioSession.sharedInstance()
                     try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
@@ -673,7 +679,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
 
-                if shouldResume && systemAllowsResume {
+                if systemAllowsResume {
                     self.isCurrentlyPlaying = true
                     if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                         info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
@@ -770,6 +776,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return .commandFailed }
             print("[NativeTTS] RemoteCommand: pause")
             self.isCurrentlyPlaying = false
+            self.wasPlayingBeforeInterruption = false
+            self.isAudioSessionInterrupted = false
             DispatchQueue.main.async {
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
@@ -787,6 +795,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return .commandFailed }
             print("[NativeTTS] RemoteCommand: stop")
             self.isCurrentlyPlaying = false
+            self.wasPlayingBeforeInterruption = false
+            self.isAudioSessionInterrupted = false
             DispatchQueue.main.async {
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
@@ -827,6 +837,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
                         bgTaskId = .invalid
                     }
                 }
+            } else {
+                self.wasPlayingBeforeInterruption = false
+                self.isAudioSessionInterrupted = false
             }
 
             DispatchQueue.main.async {
