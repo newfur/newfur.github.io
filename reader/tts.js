@@ -122,8 +122,9 @@ export class TTSEngine {
     this.activeFetchCount = 0; // 當前並發抓取數
     this.maxConcurrentFetches = 3; // 最大並發下載數，兼顧首句極速啟動與後續分組吞吐量
     
-    // 建立雙播放器以進行無縫交替播放，消除播放間隙，防止 iOS 後台掛起
-    this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
+    // 建立持久的 Audio 播放器。使用單一音訊實例可完全消除 iOS WebKit 在多播放器交替切換時
+    // 因舊播放器 pause/ended 觸發的鎖屏與通知欄狀態循環閃爍問題，確保鎖屏狀態與封面文字始終如一
+    this.players = typeof Audio !== 'undefined' ? [new Audio()] : [];
     this.activePlayerIdx = 0;
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
@@ -1985,8 +1986,8 @@ export class TTSEngine {
       }
     }
     
-    // 獲取下一個閒置的播放器
-    const nextPlayerIdx = 1 - this.activePlayerIdx;
+    // 獲取播放器（單一播放器架構始終使用 index 0，保證 iOS NowPlaying 會話穩定）
+    const nextPlayerIdx = this.players.length > 1 ? (1 - this.activePlayerIdx) : 0;
     const prevAudio = this.currentAudio;
     const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
@@ -2490,6 +2491,11 @@ export class TTSEngine {
   _startSilenceKeepAlive() {
     if (typeof Audio === 'undefined') return;
     
+    // 在 Capacitor 原生 iOS 環境中，原生 Swift (AppDelegate) 已通過 AVAudioPlayer 提供底層硬體保活
+    // 嚴禁在 WKWebView 內同時啟動靜音 Audio 標籤，否則會作為隱藏媒體元素干擾系統 NowPlaying 鎖屏狀態
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    if (isCapacitorApp) return;
+    
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
       this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
@@ -2649,7 +2655,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -3010,7 +3016,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
 
@@ -3057,7 +3063,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
 
@@ -3130,7 +3136,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }
 
@@ -3206,7 +3212,7 @@ export class TTSEngine {
 
 
   _prewarmNextPlayer() {
-    if (!this.isPlaying) return;
+    if (!this.isPlaying || !this.players || this.players.length <= 1) return;
     
     // 找出下一個「需要使用不同音訊源」的目標句子索引
     let nextAudioIndex = this.currentIndex + 1;

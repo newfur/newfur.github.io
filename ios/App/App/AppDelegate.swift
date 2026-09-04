@@ -269,10 +269,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 
                 if needsRestore {
                     print("[NativeTTS] Guardian: Restoring NowPlaying to playing (was overwritten by WebKit)")
-                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                    var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [String: Any]()
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                    info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+                    if let artwork = self.currentArtwork {
+                        info[MPMediaItemPropertyArtwork] = artwork
                     }
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
                     if #available(iOS 13.0, *) {
                         MPNowPlayingInfoCenter.default().playbackState = .playing
                     }
