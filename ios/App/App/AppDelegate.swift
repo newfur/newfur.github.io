@@ -282,10 +282,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     func startSilencePlayer() {
         self.activateAudioSession()
-        ensureSilencePlayer()
         cancelSilencePauseTimer()
-        silencePlayer?.play()
-        print("[NativeTTS] Silence keep-alive player running (keeps WKWebView process alive)")
+        print("[NativeTTS] AudioSession kept active for WebKit keep-alive")
     }
 
     func stopSilencePlayer() {
@@ -1189,7 +1187,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             if #available(iOS 13.0, *) {
                 MPNowPlayingInfoCenter.default().playbackState = .playing
             }
-            self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
+            self.bridge?.webView?.evaluateJavaScript(
+                "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
+                completionHandler: nil
+            )
             self.notifyListeners("mediaAction", data: ["action": "play"])
         }
     }
@@ -1215,7 +1216,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 MPNowPlayingInfoCenter.default().playbackState = .paused
             }
             self.bridge?.webView?.evaluateJavaScript(
-                "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
+                "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
                 completionHandler: nil
             )
             self.notifyListeners("mediaAction", data: ["action": "pause"])
@@ -1256,7 +1257,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 if #available(iOS 13.0, *) {
                     MPNowPlayingInfoCenter.default().playbackState = .playing
                 }
-                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
+                self.bridge?.webView?.evaluateJavaScript(
+                    "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
+                    completionHandler: nil
+                )
                 self.notifyListeners("mediaAction", data: ["action": "play"])
             }
         } else {
@@ -1278,7 +1282,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                     MPNowPlayingInfoCenter.default().playbackState = .paused
                 }
                 self.bridge?.webView?.evaluateJavaScript(
-                    "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
+                    "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
                     completionHandler: nil
                 )
                 self.notifyListeners("mediaAction", data: ["action": "pause"])

@@ -2511,21 +2511,19 @@ export class TTSEngine {
   _startSilenceKeepAlive() {
     if (typeof Audio === 'undefined') return;
     
-    // 在 Capacitor 原生 iOS 環境中，原生 Swift (AppDelegate) 已通過 AVAudioPlayer 提供底層硬體保活
-    // 嚴禁在 WKWebView 內同時啟動靜音 Audio 標籤，否則會作為隱藏媒體元素干擾系統 NowPlaying 鎖屏狀態
-    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-    if (isCapacitorApp) return;
-    
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
       this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
       this.silenceAudio.loop = true;
-      this.silenceAudio.volume = 0.01;
+      this.silenceAudio.volume = 0.001; // 微量音量維持 WebKit CoreAudio 活躍，完全無感靜音
+      this.silenceAudio.preload = 'auto';
     }
     
-    this.silenceAudio.play().catch(err => {
-      console.warn("Failed to play silence audio keep-alive:", err);
-    });
+    if (this.silenceAudio.paused) {
+      this.silenceAudio.play().catch(err => {
+        console.warn("Failed to play silence audio keep-alive:", err);
+      });
+    }
   }
 
   _createSilentAudioBlob() {
@@ -3060,7 +3058,14 @@ export class TTSEngine {
         clearTimeout(this._silencePauseTimeout);
         this._silencePauseTimeout = null;
       }
-      this._stopSilenceKeepAlive(); // 暫停時立即停止靜音播放器，避免 iOS 鎖屏介面因底層仍有音訊播放而錯誤顯示為「播放中」
+      this._startSilenceKeepAlive(); // 暫停時啟動 WebKit 靜音音訊保活，維持 WebContent 進程活躍，防止 iOS 20秒後凍結進程
+      // 暫停 30 分鐘後自動停止保活以節省電量
+      this._silencePauseTimeout = setTimeout(() => {
+        if (this.isPaused) {
+          console.log("[TTS] 30min pause timeout reached, stopping silence keep-alive");
+          this.stop();
+        }
+      }, 30 * 60 * 1000);
 
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (isCapacitorApp && !this._pauseFromNative) {
@@ -3124,6 +3129,7 @@ export class TTSEngine {
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
+        this._stopSilenceKeepAlive();
         this.synth.resume();
       } else {
         // 確保其它所有未處於播放狀態的播放器完全暫停並重置進度
@@ -3164,6 +3170,7 @@ export class TTSEngine {
               }
               // 注意：此處絕不可直接 clearTimeout(resumeTimeout)，因為 WebKit 在後台環境下 Promise 可能立即 resolve，
               // 但硬體音訊管線仍可能卡頓未啟動！讓 resumeTimeout 在 500ms 時檢查 currentTime 是否真正前進
+              this._stopSilenceKeepAlive();
               this._startPolling();
             }).catch(err => {
               if (hasSettled) return;
