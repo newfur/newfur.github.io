@@ -731,7 +731,10 @@ function initUIEventBindings() {
   }
 
   // 閱讀器頂部導航
-  document.getElementById('close-reader-btn').addEventListener('click', closeCurrentBook);
+  document.getElementById('close-reader-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeCurrentBook(true);
+  });
   window.addEventListener('popstate', (e) => {
     if (!e.state || !e.state.bookId) {
       if (currentBook) {
@@ -1740,7 +1743,10 @@ function initUIEventBindings() {
       const selection = window.getSelection().toString().trim();
       if (selection.length === 0) {
         const sentenceIdx = parseInt(targetSpan.getAttribute('data-sentence-index'));
-        tts.play(sentenceIdx, true);
+        if (!isNaN(sentenceIdx)) {
+          tts.play(sentenceIdx, true);
+          updatePlayPauseButtonIcon();
+        }
       }
     }, 150);
   });
@@ -3348,14 +3354,28 @@ async function closeCurrentBook(triggerBack = true) {
   document.body.style.overflow = '';
 
   // 1. 停止 TTS 播放
-  tts.stop();
+  try {
+    tts.stop();
+  } catch (e) {
+    console.warn('[Reader] Error stopping TTS on close:', e);
+  }
 
   // 2. 停止閱讀計時並立即保存最後剩餘的時長
-  await saveReadingTime();
-  stopReadingTracker();
+  try {
+    await saveReadingTime();
+  } catch (e) {
+    console.warn('[Reader] Error saving reading time:', e);
+  }
+  try {
+    stopReadingTracker();
+  } catch (e) {}
 
   // 3. 強制保存進度
-  await forceSaveCurrentProgress();
+  try {
+    await forceSaveCurrentProgress();
+  } catch (e) {
+    console.warn('[Reader] Error saving progress:', e);
+  }
 
   // 清理舊的資源 Object URL
   clearResourceUrls();
@@ -6073,10 +6093,12 @@ function updatePlayPauseButtonIcon() {
   if (pendingTTSPlayOnLoad) {
     ttsPlayBtn.innerHTML = `<div class="ai-loading-spinner" style="width: 18px; height: 18px; border-width: 2px; margin: auto;"></div>`;
     ttsPlayBtn.title = getMsg('loading_book') || 'Loading...';
+    ttsPlayBtn.classList.remove('playing');
     return;
   }
 
   const isPlaying = tts.isPlaying && !tts.isPaused;
+  ttsPlayBtn.classList.toggle('playing', isPlaying);
   if (isPlaying) {
     ttsPlayBtn.innerHTML = `<svg class="svg-icon" style="width: 24px; height: 24px; fill: currentColor;" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
     ttsPlayBtn.title = getMsg('tts_pause') || 'Pause';
@@ -11595,5 +11617,14 @@ window.__testRunner = {
   async closeBackup() {
     const dialog = document.getElementById('backup-dialog');
     if (dialog && dialog.open) dialog.close();
+  },
+  async loadChapter(index) {
+    await loadChapter(index);
+  },
+  getCurrentChapterIndex() {
+    return currentChapterIndex;
+  },
+  getTotalChapters() {
+    return epubBookData?.chapters?.length ?? 0;
   }
 };

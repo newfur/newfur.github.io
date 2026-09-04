@@ -2230,6 +2230,10 @@ export class TTSEngine {
       }
 
       audio.play().then(() => {
+        if (!this.isPlaying || this.isPaused) {
+          try { audio.pause(); } catch (e) {}
+          return;
+        }
         // 成功播放後，二次確保其他播放器已停止
         if (Array.isArray(this.players)) {
           this.players.forEach(p => {
@@ -3023,6 +3027,10 @@ export class TTSEngine {
           const playPromise = this.currentAudio.play();
           if (playPromise !== undefined) {
             playPromise.then(() => {
+              if (!this.isPlaying || this.isPaused) {
+                try { this.currentAudio.pause(); } catch (e) {}
+                return;
+              }
               this._startPolling();
             }).catch(err => {
               console.error("Resume error, replaying current sentence:", err);

@@ -151,7 +151,6 @@ public class AudioPlayerService extends Service {
                 wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(true);
                 updateNotification(currentTitle, currentArtist, currentText, true);
-                evaluateJSInWebView("if (window.tts) { window.tts.resume(); }");
                 notifyJS("play");
             }
 
@@ -163,7 +162,6 @@ public class AudioPlayerService extends Service {
                 wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(false);
                 updateNotification(currentTitle, currentArtist, currentText, false);
-                evaluateJSInWebView("if (window.tts) { window.tts.pause(); }");
                 notifyJS("pause");
             }
 
@@ -186,7 +184,6 @@ public class AudioPlayerService extends Service {
                 isPlaying = false;
                 wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(false);
-                evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
                 notifyJS("stop");
                 stopForeground(true);
                 stopSelf();
@@ -263,7 +260,6 @@ public class AudioPlayerService extends Service {
         isPlaying = true;
         updatePlaybackState(true);
         updateNotification(currentTitle, currentArtist, currentText, true);
-        evaluateJSInWebView("if (window.tts) { window.tts.resume(); }");
         notifyJS("play");
     }
 
@@ -297,7 +293,6 @@ public class AudioPlayerService extends Service {
                             wasPlayingBeforeTransientLoss = false;
                             updatePlaybackState(false);
                             updateNotification(currentTitle, currentArtist, currentText, false);
-                            evaluateJSInWebView("if (window.tts) { window.tts.pause(); }");
                             notifyJS("pause");
                         } else {
                             requestAudioFocus();
@@ -305,7 +300,6 @@ public class AudioPlayerService extends Service {
                             wasPlayingBeforeTransientLoss = false;
                             updatePlaybackState(true);
                             updateNotification(currentTitle, currentArtist, currentText, true);
-                            evaluateJSInWebView("if (window.tts) { window.tts.resume(); }");
                             notifyJS("play");
                         }
                         break;
@@ -321,7 +315,6 @@ public class AudioPlayerService extends Service {
                         isPlaying = false;
                         wasPlayingBeforeTransientLoss = false;
                         updatePlaybackState(false);
-                        evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
                         notifyJS("stop");
                         stopForeground(true);
                         stopSelf();
@@ -514,7 +507,6 @@ public class AudioPlayerService extends Service {
                                 wasPlayingBeforeTransientLoss = false;
                                 updatePlaybackState(false);
                                 updateNotification(currentTitle, currentArtist, currentText, false);
-                                evaluateJSInWebView("if (window.tts) { window.tts.pause(); }");
                                 notifyJS("pause");
                             }
                         }
