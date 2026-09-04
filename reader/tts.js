@@ -2199,19 +2199,37 @@ export class TTSEngine {
 
     const startPlay = () => {
       if (!this.isPlaying) return;
+      
+      // 同步暫停所有非當前播放器並重置進度與事件回調，確保在任何情況下（尤其在 iOS 鎖屏後台或解鎖喚醒時）只有單一音訊軌道在發聲
+      if (Array.isArray(this.players)) {
+        this.players.forEach(p => {
+          if (p && p !== audio) {
+            try {
+              if (typeof p._cleanupResources === 'function') {
+                p._cleanupResources();
+                p._cleanupResources = null;
+              }
+              p.pause();
+              p.currentTime = 0;
+              p.ontimeupdate = null;
+              p.onended = null;
+              p.onloadedmetadata = null;
+            } catch (e) {}
+          }
+        });
+      }
+
       audio.play().then(() => {
-        // 成功播放後，如果有上一個正在播放的播放器，立即清理其快取與資源並暫停，避免在 iOS 後台因 JavaScript 延時器延遲而造成長時間雙路播放/音量起伏
-        if (prevAudio && prevAudio !== audio) {
-          try {
-            if (typeof prevAudio._cleanupResources === 'function') {
-              prevAudio._cleanupResources();
-              prevAudio._cleanupResources = null;
+        // 成功播放後，二次確保其他播放器已停止
+        if (Array.isArray(this.players)) {
+          this.players.forEach(p => {
+            if (p && p !== audio) {
+              try {
+                p.pause();
+                p.currentTime = 0;
+              } catch (e) {}
             }
-            prevAudio.pause();
-            prevAudio.ontimeupdate = null;
-            prevAudio.onended = null;
-            prevAudio.onloadedmetadata = null;
-          } catch (e) {}
+          });
         }
         
         // 再次強制設置播放速度，以防止部分 iOS 瀏覽器在啟動播放時強制將速度重設為 1.0
@@ -2446,12 +2464,13 @@ export class TTSEngine {
       
       const now = Date.now();
 
-      // 1. 如果當前音訊正在正常發聲播放（非暫停、非結尾、且非靜音保活軌道），且時間指針正在前進，視為健康播放中
-      if (this.currentAudio && 
-          !this.currentAudio.paused && 
-          !this.currentAudio.ended && 
-          this.currentAudio !== this.silenceAudio) {
-        const curTime = this.currentAudio.currentTime;
+      // 1. 如果當前音訊或任何播放器正在正常發聲播放（非暫停、非結尾、且非靜音保活軌道），且時間指針正在前進，視為健康播放中
+      const activeAudio = (this.currentAudio && !this.currentAudio.paused && !this.currentAudio.ended && this.currentAudio !== this.silenceAudio)
+        ? this.currentAudio
+        : (Array.isArray(this.players) ? this.players.find(p => p && !p.paused && !p.ended && p !== this.silenceAudio) : null);
+
+      if (activeAudio) {
+        const curTime = activeAudio.currentTime;
         if (typeof this._lastWatchedCurrentTime !== 'number' || Math.abs(curTime - this._lastWatchedCurrentTime) > 0.05) {
           this._lastWatchedCurrentTime = curTime;
           this._lastPlaybackProgressTime = now;
@@ -2465,6 +2484,13 @@ export class TTSEngine {
       
       // 若超過 8 秒完全無發聲且無進展（排除了正常的網絡緩衝時間），判定為停滯
       if (timeSinceProgress > 8000) {
+        // 如果此時有任何播放器仍在發聲，絕不可干涉
+        const anyPlayerPlaying = Array.isArray(this.players) && this.players.some(p => p && !p.paused && !p.ended && p !== this.silenceAudio);
+        if (anyPlayerPlaying) {
+          this._lastPlaybackProgressTime = now;
+          return;
+        }
+
         console.warn(`[TTS Watchdog] Playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery...`);
         this._lastPlaybackProgressTime = now; // 重置以防止連續觸發
         
@@ -2973,20 +2999,33 @@ export class TTSEngine {
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
       if (useNativeSynth && this.synth) {
         this.synth.resume();
-      } else if (this.currentAudio && this.currentAudio.src && !this.currentAudio.ended && this.currentAudio.currentTime < (this.currentAudio.duration || 1) - 0.05) {
-        const playPromise = this.currentAudio.play();
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            this._startPolling();
-          }).catch(err => {
-            console.error("Resume error, replaying current sentence:", err);
-            this._playActiveSentence();
+      } else {
+        // 確保其它所有未處於播放狀態的播放器完全暫停並重置進度
+        if (Array.isArray(this.players)) {
+          this.players.forEach(p => {
+            if (p && p !== this.currentAudio) {
+              try {
+                p.pause();
+                p.currentTime = 0;
+              } catch (e) {}
+            }
           });
+        }
+        if (this.currentAudio && this.currentAudio.src && !this.currentAudio.ended && this.currentAudio.currentTime < (this.currentAudio.duration || 1) - 0.05) {
+          const playPromise = this.currentAudio.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              this._startPolling();
+            }).catch(err => {
+              console.error("Resume error, replaying current sentence:", err);
+              this._playActiveSentence();
+            });
+          } else {
+            this._playActiveSentence();
+          }
         } else {
           this._playActiveSentence();
         }
-      } else {
-        this._playActiveSentence();
       }
       // 恢復播放後重啟預取管線，防止暫停期間預取停止導致後續快取枯竭
       this._fillPreFetchBuffer();

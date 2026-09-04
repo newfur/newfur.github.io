@@ -619,6 +619,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
 
         switch type {
         case .began:
+            // 檢查是否為系統後台掛起/鎖屏喚醒造成的通知 (wasSuspended == true)
+            // iOS 在鎖屏掛起及解鎖恢復時會派發此通知，這不是外部 App（如電話、Siri）的真實打斷。
+            // 切勿向前端發送 pause / play，否則解鎖進入前台時會導致原生端與前端狀態衝突，造成雙重音訊並發！
+            if let wasSuspended = userInfo[AVAudioSessionInterruptionWasSuspendedKey] as? Bool, wasSuspended {
+                print("[NativeTTS] Audio session interruption began was due to system suspension, ignoring pause")
+                return
+            }
+
             print("[NativeTTS] Audio session interruption began (other app playing sound)")
             self.isAudioSessionInterrupted = true
             self.wasPlayingBeforeInterruption = self.isCurrentlyPlaying
@@ -636,6 +644,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             }
 
         case .ended:
+            if let wasSuspended = userInfo[AVAudioSessionInterruptionWasSuspendedKey] as? Bool, wasSuspended {
+                print("[NativeTTS] Audio session interruption ended was due to system suspension, ignoring resume")
+                return
+            }
+
             print("[NativeTTS] Audio session interruption ended (other app stopped)")
             let shouldResume = self.wasPlayingBeforeInterruption
             self.wasPlayingBeforeInterruption = false

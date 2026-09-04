@@ -2229,6 +2229,24 @@ function initUIEventBindings() {
 
       // 當從後台切回前台時，重新校準 TTS 播放狀態、按鈕圖示與當前句子高亮滾動
       if (tts && tts.isPlaying) {
+        // 重置看門狗進展時間，防止喚醒瞬間因超過停滯閾值而誤判觸發重複播放
+        if (typeof tts._markPlaybackProgress === 'function') {
+          tts._markPlaybackProgress();
+          tts._lastWatchedCurrentTime = null;
+        }
+
+        // 強制確保雙播放器互斥：只有當前播放中的音訊允許發聲，關閉其它閒置播放器
+        if (Array.isArray(tts.players) && tts.currentAudio) {
+          tts.players.forEach(p => {
+            if (p && p !== tts.currentAudio) {
+              try {
+                p.pause();
+                p.currentTime = 0;
+              } catch (e) {}
+            }
+          });
+        }
+
         updatePlayPauseButtonIcon();
         const activeIdx = (tts.currentlyPlayingIndex !== -1) ? tts.currentlyPlayingIndex : tts.currentIndex;
         const currentSent = tts.sentences[activeIdx];
