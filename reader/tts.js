@@ -1317,7 +1317,15 @@ export class TTSEngine {
               secMsGec: secMsGec,
               dateStr: this._dateToString()
             });
-            // Prefer in-memory Base64 Blob (100% native WebKit in-memory playback, avoids custom scheme range issues)
+            // Prefer file URL (eliminates Base64 overhead, reduces memory by ~80%)
+            if (result.filePath) {
+              const fileUrl = window.Capacitor.convertFileSrc
+                ? window.Capacitor.convertFileSrc(result.filePath)
+                : 'file://' + result.filePath;
+              resolve({ _isFileUrl: true, fileUrl: fileUrl, filePath: result.filePath });
+              return;
+            }
+            // Fallback: audioBase64 (for backward compatibility if native returns base64)
             if (result.audioBase64) {
               const base64ToBlob = (base64, mimeType) => {
                 const byteCharacters = atob(base64);
@@ -1330,14 +1338,6 @@ export class TTSEngine {
               };
               const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
               resolve(blob);
-              return;
-            }
-            if (result.filePath) {
-              // Fallback: Convert native file path to a Capacitor-compatible URL
-              const fileUrl = window.Capacitor.convertFileSrc
-                ? window.Capacitor.convertFileSrc(result.filePath)
-                : 'file://' + result.filePath;
-              resolve({ _isFileUrl: true, fileUrl: fileUrl, filePath: result.filePath });
               return;
             }
           } catch (nativeErr) {
@@ -1900,14 +1900,12 @@ export class TTSEngine {
       }
     }
 
-    // 2. 冷启动策略优化：
-    //    - 完全冷启动（cachedCount = 0）: 允许 2 并发加速首句到达
-    //    - 缓存不足 3 句: 强制并发为 1，确保最前序的句子独占网络带宽
-    if (cachedCount === 0) {
-      return Math.min(2, this.maxConcurrentFetches);
+    // 2. 改进冷启动策略：至少允许2个并发加速前两句下载
+    if (cachedCount < 1) {
+      return 2;  // 完全冷启动：2并发同时下载句0和句1
     }
     if (cachedCount < 3) {
-      return 1;
+      return 1;  // 有缓冲但不足：1并发保首句优先
     }
 
     // 3. 已有 3 句以上緩存，有足夠時間，此時再放開並發加速填充 10 句緩衝區
@@ -2007,6 +2005,11 @@ export class TTSEngine {
     
     if (!isSameSource) {
       audio._boundaries = null; // 重置已快取的邊界數據
+      // 清理旧 _cleanupResources，避免闭包覆盖导致内存泄漏
+      if (typeof audio._cleanupResources === 'function') {
+        audio._cleanupResources();
+        audio._cleanupResources = null;
+      }
     }
 
     const cleanupAudioResources = () => {
@@ -2029,8 +2032,6 @@ export class TTSEngine {
         this.audioCache.delete(index);
       }
     };
-    // 保存旧的 _cleanupResources 引用，但不立即调用（会在 audio 真正被释放时自动调用）
-    // 这里只是覆盖引用，让新的 cleanup 函数负责当前播放会话
     audio._cleanupResources = cleanupAudioResources;
 
     const getBoundaries = () => {
@@ -2076,12 +2077,16 @@ export class TTSEngine {
 
     // 綁定原生媒體事件，確保 WebKit 與 iOS 鎖屏狀態嚴格同步
     audio.onplay = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && 
+        window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     };
     audio.onpause = () => {
-      if (this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && 
+        window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (this.isPaused && !isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
     };
@@ -2173,7 +2178,6 @@ export class TTSEngine {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
-        audio.onerror = null;
         audio.onloadedmetadata = null;
         
         if (typeof audio._cleanupResources === 'function') {
@@ -2184,28 +2188,6 @@ export class TTSEngine {
         if (!this.isPlaying || this.isPaused) return;
         
         if (!hasTriggeredNext) {
-          hasTriggeredNext = true;
-          this.activePlayerIdx = nextPlayerIdx;
-          this.currentIndex = groupStartIndex + groupSentences.length;
-          this._playActiveSentence();
-        }
-      };
-      
-      // 添加 onerror 处理，避免解码错误时永久卡住
-      audio.onerror = (e) => {
-        console.error(`[TTS] Audio decode error at group starting index ${groupStartIndex}:`, e);
-        this._stopPolling();
-        audio.ontimeupdate = null;
-        audio.onended = null;
-        audio.onerror = null;
-        audio.onloadedmetadata = null;
-        
-        if (typeof audio._cleanupResources === 'function') {
-          audio._cleanupResources();
-          audio._cleanupResources = null;
-        }
-        
-        if (!hasTriggeredNext && this.isPlaying && !this.isPaused) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
           this.currentIndex = groupStartIndex + groupSentences.length;
@@ -2242,7 +2224,6 @@ export class TTSEngine {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
         audio.onended = null;
-        audio.onerror = null;
         audio.onloadedmetadata = null;
         
         if (typeof audio._cleanupResources === 'function') {
@@ -2741,7 +2722,12 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    // Only register mediaSession in non-Capacitor environments (web/extension)
+    // In Capacitor apps, native layer (MPRemoteCommandCenter/MediaSession) handles all media control
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && 
+      window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -3254,12 +3240,6 @@ export class TTSEngine {
     this.prefetchQueue = [];
     this.activeFetchCount = 0;
     this._lastSentCoverBookId = null;
-    if (this._silencePauseTimeout) {
-      clearTimeout(this._silencePauseTimeout);
-      this._silencePauseTimeout = null;
-    }
-    this._stopSilenceKeepAlive();
-    this._stopPolling();
     
     // 递增 voiceSessionId，用于取消所有挂起的 retry 和异步操作
     this.voiceSessionId = (this.voiceSessionId || 0) + 1;
@@ -3269,6 +3249,13 @@ export class TTSEngine {
       this._retryTimers.forEach(timer => clearTimeout(timer));
       this._retryTimers.clear();
     }
+    
+    if (this._silencePauseTimeout) {
+      clearTimeout(this._silencePauseTimeout);
+      this._silencePauseTimeout = null;
+    }
+    this._stopSilenceKeepAlive();
+    this._stopPolling();
     
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
