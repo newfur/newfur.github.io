@@ -572,6 +572,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
     private func setupAudioSessionObserver() {
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
 
         NotificationCenter.default.addObserver(
             self,
@@ -585,6 +586,26 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin {
             name: AVAudioSession.routeChangeNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApplicationDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleApplicationDidEnterBackground() {
+        if !self.isCurrentlyPlaying {
+            DispatchQueue.main.async {
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .paused
+                }
+            }
+        }
     }
 
     @objc private func handleAudioRouteChange(notification: Notification) {

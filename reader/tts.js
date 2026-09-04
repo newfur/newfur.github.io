@@ -2928,15 +2928,11 @@ export class TTSEngine {
       if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
       this._lastPauseResumeTime = now;
       this.isPaused = true;
-      
-      // 保持靜音保活音頻在後台繼續循環播放，防止 iOS 在暫停 10~15 秒後強行凍結 WKWebView 進程
-      // 設置 15 分鐘超時：若暫停超過 15 分鐘未操作，才安全釋放靜音保活以節省電量
-      if (this._silencePauseTimeout) clearTimeout(this._silencePauseTimeout);
-      this._silencePauseTimeout = setTimeout(() => {
-        if (this.isPaused) {
-          this._stopSilenceKeepAlive();
-        }
-      }, 15 * 60 * 1000);
+      if (this._silencePauseTimeout) {
+        clearTimeout(this._silencePauseTimeout);
+        this._silencePauseTimeout = null;
+      }
+      this._stopSilenceKeepAlive(); // 暫停時立即停止靜音播放器，避免 iOS 鎖屏介面因底層仍有音訊播放而錯誤顯示為「播放中」
 
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (isCapacitorApp) {

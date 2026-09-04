@@ -2236,7 +2236,10 @@ function initUIEventBindings() {
         }
 
         if (tts.isPaused) {
-          // 若當前處於暫停狀態，確保所有播放器（包括 currentAudio）均嚴格保持暫停
+          // 若當前處於暫停狀態，確保所有播放器（包括 currentAudio 和 silenceAudio）均嚴格保持暫停
+          if (typeof tts._stopSilenceKeepAlive === 'function') {
+            tts._stopSilenceKeepAlive();
+          }
           if (Array.isArray(tts.players)) {
             tts.players.forEach(p => {
               try { p.pause(); } catch (e) {}
