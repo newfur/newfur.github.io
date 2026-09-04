@@ -2045,10 +2045,14 @@ export class TTSEngine {
       audio.src = audioUrl;
       audio.dataset.srcUrl = audioUrl;
       audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
-      // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度
+      // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度，並同步最新真實時長
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
         setupGroupSeeking();
+        if (this.isPlaying && !this.isPaused) {
+          const sent = this.sentences[index] || sentence;
+          this._updateMediaSession(sent);
+        }
       };
     } else {
       audio.playbackRate = this.rate;
@@ -2056,6 +2060,18 @@ export class TTSEngine {
     }
     audio.volume = this.volume;
     audio.playbackRate = this.rate;
+
+    // 綁定原生媒體事件，確保 WebKit 與 iOS 鎖屏狀態嚴格同步
+    audio.onplay = () => {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+      }
+    };
+    audio.onpause = () => {
+      if (this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
+    };
     
     // 監聽時間更新事件：在當前句子即將結束前，提前預加載並播放下一句，實現完美無縫交替
     let hasTriggeredNext = false;
@@ -2446,26 +2462,30 @@ export class TTSEngine {
     if (this._isAudioUnlocked) return;
     this._isAudioUnlocked = true;
 
-    // 1. 初始化並在用戶手勢中解鎖靜音保活播放器
-    if (!this.silenceAudio) {
-      this.silenceAudio = new Audio();
-      this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
-      this.silenceAudio.loop = true;
-      this.silenceAudio.volume = 0.01;
-    }
-    try {
-      const pSilence = this.silenceAudio.play();
-      if (pSilence && typeof pSilence.then === 'function') {
-        pSilence.then(() => {
-          // 若當前未在播放 TTS，解鎖成功後暫停靜音播放器，避免背景耗電
-          if (!this.isPlaying || this.isPaused) {
-            this.silenceAudio.pause();
-          }
-        }).catch(() => {});
-      }
-    } catch (e) {}
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
-    // 2. 在用戶手勢中同步預熱雙播放器，使其獲得 WebKit Autoplay 授權
+    // 1. 初始化並在用戶手勢中解鎖靜音保活播放器 (僅網頁瀏覽器端需要，原生 Capacitor 由 Swift 原生層提供硬體保活)
+    if (!isCapacitorApp) {
+      if (!this.silenceAudio) {
+        this.silenceAudio = new Audio();
+        this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+        this.silenceAudio.loop = true;
+        this.silenceAudio.volume = 0.01;
+      }
+      try {
+        const pSilence = this.silenceAudio.play();
+        if (pSilence && typeof pSilence.then === 'function') {
+          pSilence.then(() => {
+            // 若當前未在播放 TTS，解鎖成功後暫停靜音播放器，避免背景耗電
+            if (!this.isPlaying || this.isPaused) {
+              this.silenceAudio.pause();
+            }
+          }).catch(() => {});
+        }
+      } catch (e) {}
+    }
+
+    // 2. 在用戶手勢中同步預熱音訊播放器，使其獲得 WebKit Autoplay 授權
     const SILENCE_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
     if (Array.isArray(this.players)) {
       this.players.forEach(p => {
@@ -2638,12 +2658,19 @@ export class TTSEngine {
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
+      const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
+        ? this.currentAudio.duration
+        : Math.max(3, (text ? text.length : 10) * 0.35);
+      const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
+        ? this.currentAudio.currentTime
+        : 0;
+
       const nativePayload = {
         title: title,
         artist: artist,
         text: text,
-        duration: (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration)) ? this.currentAudio.duration : 0,
-        currentTime: (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0,
+        duration: rawDuration,
+        currentTime: rawCurrentTime,
         isPlaying: this.isPlaying && !this.isPaused
       };
       
@@ -2675,6 +2702,23 @@ export class TTSEngine {
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
         navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
+
+        const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
+          ? this.currentAudio.duration
+          : Math.max(3, (text ? text.length : 10) * 0.35);
+        const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
+          ? this.currentAudio.currentTime
+          : 0;
+
+        if ('setPositionState' in navigator.mediaSession && rawDuration > 0) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: rawDuration,
+              playbackRate: this.rate || 1.0,
+              position: Math.min(rawCurrentTime, rawDuration)
+            });
+          } catch (posErr) {}
+        }
 
         navigator.mediaSession.setActionHandler('play', () => {
           this.resume();
@@ -2782,6 +2826,12 @@ export class TTSEngine {
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
+      // 1. 立即同步通知原生端開始播放，確保 isCurrentlyPlaying 立即置為 true，守護計時器啟動，鎖屏按鈕即時變更為暫停（⏸）
+      window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+        isPlaying: true
+      }).catch(() => {});
+
+      // 2. 異步傳遞封面與書籍元數據給前台服務
       (async () => {
         const bookTitle = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
         const bookArtist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
@@ -2798,6 +2848,10 @@ export class TTSEngine {
           isPlaying: true
         }).catch(e => console.error("Error starting native foreground service:", e));
       })();
+    }
+
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'playing';
     }
 
     this._startSilenceKeepAlive();
