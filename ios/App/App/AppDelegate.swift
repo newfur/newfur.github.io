@@ -11,14 +11,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         application.beginReceivingRemoteControlEvents()
-        // Configure audio session for background TTS playback (defaultToSpeaker, bluetooth, airplay)
+        // Configure audio session for background TTS playback (.allowAirPlay, .allowBluetoothA2DP)
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay])
+            try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
             try audioSession.setActive(true)
-            try? audioSession.overrideOutputAudioPort(.speaker)
         } catch {
-            print("Failed to configure AVAudioSession: \(error)")
+            print("[NativeTTS] Failed to configure AVAudioSession at launch: \(error)")
         }
         return true
     }
@@ -59,11 +58,64 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+    override func remoteControlReceived(with event: UIEvent?) {
+        guard let event = event, event.type == .remoteControl else { return }
+        print("[NativeTTS] AppDelegate remoteControlReceived: subtype=\(event.subtype.rawValue)")
+        guard let tts = NativeTTS.shared else { return }
+        switch event.subtype {
+        case .remoteControlPlay:
+            tts.handleRemotePlay()
+        case .remoteControlPause:
+            tts.handleRemotePause()
+        case .remoteControlTogglePlayPause:
+            tts.handleRemoteTogglePlayPause()
+        case .remoteControlNextTrack:
+            tts.handleRemoteNext()
+        case .remoteControlPreviousTrack:
+            tts.handleRemotePrevious()
+        case .remoteControlStop:
+            tts.handleRemoteStop()
+        default:
+            break
+        }
+    }
+
 }
 
 class ViewController: CAPBridgeViewController {
     var currentStatusBarStyle: UIStatusBarStyle = .default
     private var cmdTimer: Timer?
+
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+
+    override func remoteControlReceived(with event: UIEvent?) {
+        guard let event = event, event.type == .remoteControl else { return }
+        print("[NativeTTS] ViewController remoteControlReceived: subtype=\(event.subtype.rawValue)")
+        guard let tts = NativeTTS.shared else { return }
+        switch event.subtype {
+        case .remoteControlPlay:
+            tts.handleRemotePlay()
+        case .remoteControlPause:
+            tts.handleRemotePause()
+        case .remoteControlTogglePlayPause:
+            tts.handleRemoteTogglePlayPause()
+        case .remoteControlNextTrack:
+            tts.handleRemoteNext()
+        case .remoteControlPreviousTrack:
+            tts.handleRemotePrevious()
+        case .remoteControlStop:
+            tts.handleRemoteStop()
+        default:
+            break
+        }
+    }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return currentStatusBarStyle
@@ -128,6 +180,19 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         CAPPluginMethod(name: "getPlaybackSyncState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "simulateRemoteCommand", returnType: CAPPluginReturnPromise)
     ]
+
+    public static weak var shared: NativeTTS?
+
+    private var lastRemoteCommandTime: TimeInterval = 0
+    private func shouldThrottleRemoteCommand() -> Bool {
+        let now = Date().timeIntervalSince1970
+        if now - lastRemoteCommandTime < 0.25 {
+            print("[NativeTTS] Throttling duplicated remote command (<\(now - lastRemoteCommandTime)s)")
+            return true
+        }
+        lastRemoteCommandTime = now
+        return false
+    }
 
     private var activeTasks = [String: URLSessionWebSocketTask]()
     private let taskLock = NSLock()
@@ -365,7 +430,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     private func activateAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP, .mixWithOthers])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             print("[NativeTTS] Failed to activate AVAudioSession: \(error)")
@@ -457,12 +522,16 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     public override func load() {
         super.load()
+        NativeTTS.shared = self
         setupRemoteCommands()
         setupAudioSessionObserver()
         setupCallObserver()
     }
 
     deinit {
+        if NativeTTS.shared === self {
+            NativeTTS.shared = nil
+        }
         NotificationCenter.default.removeObserver(self)
         callObserver?.setDelegate(nil, queue: nil)
         callObserver = nil
@@ -863,107 +932,17 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         print("[NativeTTS] Simulating RemoteCommand: \(action)")
         switch action {
         case "play":
-            self.activateAudioSession()
-            self.isCurrentlyPlaying = true
-            self.stopSilencePlayer()
-            self.updateRemoteCommandsState(isPlaying: true)
-            self.startNowPlayingGuardian()
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .playing
-                }
-                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
-                self.notifyListeners("mediaAction", data: ["action": "play"])
-            }
+            self.handleRemotePlay()
         case "pause":
-            self.isCurrentlyPlaying = false
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopNowPlayingGuardian()
-            self.updateRemoteCommandsState(isPlaying: false)
-            self.scheduleSilencePauseTimer()
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .paused
-                }
-                self.bridge?.webView?.evaluateJavaScript(
-                    "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
-                    completionHandler: nil
-                )
-                self.notifyListeners("mediaAction", data: ["action": "pause"])
-            }
+            self.handleRemotePause()
         case "toggle":
-            let shouldPlay = !self.isCurrentlyPlaying
-            if shouldPlay {
-                self.activateAudioSession()
-                self.isCurrentlyPlaying = true
-                self.stopSilencePlayer()
-                self.updateRemoteCommandsState(isPlaying: true)
-                self.startNowPlayingGuardian()
-                DispatchQueue.main.async {
-                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                    if #available(iOS 13.0, *) {
-                        MPNowPlayingInfoCenter.default().playbackState = .playing
-                    }
-                    self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
-                    self.notifyListeners("mediaAction", data: ["action": "play"])
-                }
-            } else {
-                self.isCurrentlyPlaying = false
-                self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
-                self.isAudioSessionInterrupted = false
-                self.stopNowPlayingGuardian()
-                self.updateRemoteCommandsState(isPlaying: false)
-                self.scheduleSilencePauseTimer()
-                DispatchQueue.main.async {
-                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                    if #available(iOS 13.0, *) {
-                        MPNowPlayingInfoCenter.default().playbackState = .paused
-                    }
-                    self.bridge?.webView?.evaluateJavaScript(
-                        "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
-                        completionHandler: nil
-                    )
-                    self.notifyListeners("mediaAction", data: ["action": "pause"])
-                }
-            }
+            self.handleRemoteTogglePlayPause()
         case "next":
-            self.notifyListeners("mediaAction", data: ["action": "next"])
+            self.handleRemoteNext()
         case "previous":
-            self.notifyListeners("mediaAction", data: ["action": "previous"])
+            self.handleRemotePrevious()
         case "stop":
-            self.isCurrentlyPlaying = false
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopSilencePlayer()
-            self.stopNowPlayingGuardian()
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .stopped
-                }
-                self.notifyListeners("mediaAction", data: ["action": "stop"])
-            }
+            self.handleRemoteStop()
         default:
             call.reject("Unknown action: \(action)")
             return
@@ -1177,6 +1156,207 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
+    // MARK: - Remote Control Handlers (Handles both MPRemoteCommandCenter and Bluetooth UIEvent)
+    func handleRemotePlay() {
+        if shouldThrottleRemoteCommand() { return }
+        print("[NativeTTS] handleRemotePlay")
+        self.activateAudioSession()
+        self.isCurrentlyPlaying = true
+        self.stopSilencePlayer()
+        self.updateRemoteCommandsState(isPlaying: true)
+        self.startNowPlayingGuardian()
+
+        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlayback") {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            }
+            if #available(iOS 13.0, *) {
+                MPNowPlayingInfoCenter.default().playbackState = .playing
+            }
+            self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
+            self.notifyListeners("mediaAction", data: ["action": "play"])
+        }
+    }
+
+    func handleRemotePause() {
+        if shouldThrottleRemoteCommand() { return }
+        print("[NativeTTS] handleRemotePause")
+        self.isCurrentlyPlaying = false
+        self.wasPlayingBeforeInterruption = false
+        self.wasPlayingBeforeCall = false
+        self.isAudioSessionInterrupted = false
+        self.stopNowPlayingGuardian()
+        self.updateRemoteCommandsState(isPlaying: false)
+        self.scheduleSilencePauseTimer()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            }
+            if #available(iOS 13.0, *) {
+                MPNowPlayingInfoCenter.default().playbackState = .paused
+            }
+            self.bridge?.webView?.evaluateJavaScript(
+                "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
+                completionHandler: nil
+            )
+            self.notifyListeners("mediaAction", data: ["action": "pause"])
+        }
+    }
+
+    func handleRemoteTogglePlayPause() {
+        if shouldThrottleRemoteCommand() { return }
+        print("[NativeTTS] handleRemoteTogglePlayPause, current isPlaying=\(self.isCurrentlyPlaying)")
+        let shouldPlay = !self.isCurrentlyPlaying
+        if shouldPlay {
+            self.activateAudioSession()
+            self.isCurrentlyPlaying = true
+            self.stopSilencePlayer()
+            self.updateRemoteCommandsState(isPlaying: true)
+            self.startNowPlayingGuardian()
+
+            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+            bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackToggle") {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .playing
+                }
+                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
+                self.notifyListeners("mediaAction", data: ["action": "play"])
+            }
+        } else {
+            self.isCurrentlyPlaying = false
+            self.wasPlayingBeforeInterruption = false
+            self.wasPlayingBeforeCall = false
+            self.isAudioSessionInterrupted = false
+            self.stopNowPlayingGuardian()
+            self.updateRemoteCommandsState(isPlaying: false)
+            self.scheduleSilencePauseTimer()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                if #available(iOS 13.0, *) {
+                    MPNowPlayingInfoCenter.default().playbackState = .paused
+                }
+                self.bridge?.webView?.evaluateJavaScript(
+                    "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
+                    completionHandler: nil
+                )
+                self.notifyListeners("mediaAction", data: ["action": "pause"])
+            }
+        }
+    }
+
+    func handleRemoteNext() {
+        print("[NativeTTS] handleRemoteNext")
+        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "NextTrack") {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.next(); }", completionHandler: nil)
+            self.notifyListeners("mediaAction", data: ["action": "next"])
+        }
+    }
+
+    func handleRemotePrevious() {
+        print("[NativeTTS] handleRemotePrevious")
+        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "PreviousTrack") {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.previous(); }", completionHandler: nil)
+            self.notifyListeners("mediaAction", data: ["action": "previous"])
+        }
+    }
+
+    func handleRemoteStop() {
+        print("[NativeTTS] handleRemoteStop")
+        self.isCurrentlyPlaying = false
+        self.wasPlayingBeforeInterruption = false
+        self.wasPlayingBeforeCall = false
+        self.isAudioSessionInterrupted = false
+        self.stopSilencePlayer()
+        self.stopNowPlayingGuardian()
+        self.updateRemoteCommandsState(isPlaying: false)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            }
+            if #available(iOS 13.0, *) {
+                MPNowPlayingInfoCenter.default().playbackState = .stopped
+            }
+            self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.stop(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }", completionHandler: nil)
+            self.notifyListeners("mediaAction", data: ["action": "stop"])
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.playCommand.removeTarget(nil)
@@ -1192,204 +1372,32 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         commandCenter.previousTrackCommand.isEnabled = true
 
         commandCenter.playCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            print("[NativeTTS] RemoteCommand: play")
-            self.activateAudioSession()
-
-            self.isCurrentlyPlaying = true
-            self.stopSilencePlayer()
-            self.updateRemoteCommandsState(isPlaying: true)
-            self.startNowPlayingGuardian()
-
-            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-            bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlayback") {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .playing
-                }
-                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
-                self.notifyListeners("mediaAction", data: ["action": "play"])
-            }
+            self?.handleRemotePlay()
             return .success
         }
 
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            print("[NativeTTS] RemoteCommand: pause")
-            self.isCurrentlyPlaying = false
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopNowPlayingGuardian()
-            self.updateRemoteCommandsState(isPlaying: false)
-            self.scheduleSilencePauseTimer()
-
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .paused
-                }
-                self.bridge?.webView?.evaluateJavaScript(
-                    "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
-                    completionHandler: nil
-                )
-                self.notifyListeners("mediaAction", data: ["action": "pause"])
-            }
+            self?.handleRemotePause()
             return .success
         }
 
         commandCenter.stopCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            print("[NativeTTS] RemoteCommand: stop")
-            self.isCurrentlyPlaying = false
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopSilencePlayer()
-            self.stopNowPlayingGuardian()
-            self.updateRemoteCommandsState(isPlaying: false)
-
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .stopped
-                }
-                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.stop(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }", completionHandler: nil)
-                self.notifyListeners("mediaAction", data: ["action": "stop"])
-            }
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            }
+            self?.handleRemoteStop()
             return .success
         }
 
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            print("[NativeTTS] RemoteCommand: togglePlayPause")
-            let shouldPlay = !self.isCurrentlyPlaying
-
-            if shouldPlay {
-                self.activateAudioSession()
-                self.isCurrentlyPlaying = true
-                self.stopSilencePlayer()
-                self.updateRemoteCommandsState(isPlaying: true)
-                self.startNowPlayingGuardian()
-
-                var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-                bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackToggle") {
-                    if bgTaskId != .invalid {
-                        UIApplication.shared.endBackgroundTask(bgTaskId)
-                        bgTaskId = .invalid
-                    }
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
-                    if bgTaskId != .invalid {
-                        UIApplication.shared.endBackgroundTask(bgTaskId)
-                        bgTaskId = .invalid
-                    }
-                }
-
-                DispatchQueue.main.async {
-                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                    if #available(iOS 13.0, *) {
-                        MPNowPlayingInfoCenter.default().playbackState = .playing
-                    }
-                    self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
-                    self.notifyListeners("mediaAction", data: ["action": "play"])
-                }
-            } else {
-                self.isCurrentlyPlaying = false
-                self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
-                self.isAudioSessionInterrupted = false
-                self.stopNowPlayingGuardian()
-                self.updateRemoteCommandsState(isPlaying: false)
-                self.scheduleSilencePauseTimer()
-
-                DispatchQueue.main.async {
-                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                    if #available(iOS 13.0, *) {
-                        MPNowPlayingInfoCenter.default().playbackState = .paused
-                    }
-                    self.bridge?.webView?.evaluateJavaScript(
-                        "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
-                        completionHandler: nil
-                    )
-                    self.notifyListeners("mediaAction", data: ["action": "pause"])
-                }
-            }
+            self?.handleRemoteTogglePlayPause()
             return .success
         }
 
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            print("[NativeTTS] RemoteCommand: next")
-            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-            bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "NextTrack") {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-            DispatchQueue.main.async {
-                self.notifyListeners("mediaAction", data: ["action": "next"])
-            }
+            self?.handleRemoteNext()
             return .success
         }
 
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            print("[NativeTTS] RemoteCommand: previous")
-            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-            bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "PreviousTrack") {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-            DispatchQueue.main.async {
-                self.notifyListeners("mediaAction", data: ["action": "previous"])
-            }
+            self?.handleRemotePrevious()
             return .success
         }
     }
