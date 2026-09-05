@@ -1,0 +1,1023 @@
+{
+  "extension_name": {
+    "message": "读书人"
+  },
+  "extension_description": {
+    "message": "一款高级电子书阅读器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，并支持微软高质量语音朗读。"
+  },
+  "library_title": {
+    "message": "我的书库"
+  },
+  "import_book": {
+    "message": "导入书籍"
+  },
+  "create_folder": {
+    "message": "新建文件夹"
+  },
+  "batch_manage": {
+    "message": "批量管理"
+  },
+  "batch_move": {
+    "message": "移动到文件夹"
+  },
+  "batch_delete": {
+    "message": "删除所选"
+  },
+  "move_to_root": {
+    "message": "移出文件夹"
+  },
+  "rename_folder": {
+    "message": "重命名文件夹"
+  },
+  "confirm_delete_folder": {
+    "message": "确定要删除这个文件夹吗？其中的书籍不会被删除。"
+  },
+  "folder_books_count": {
+    "message": "$count$ 本书籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "folder_name_placeholder": {
+    "message": "文件夹名称"
+  },
+  "batch_selected_count": {
+    "message": "已选择 $count$ 本书籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_library": {
+    "message": "备份书库"
+  },
+  "restore_library": {
+    "message": "还原书库"
+  },
+  "backup_library_tooltip": {
+    "message": "导出包含所有书籍、阅读进度、高亮与笔记的备份文件 (.zip)"
+  },
+  "restore_library_tooltip": {
+    "message": "导入先前备份的书库文件"
+  },
+  "more_actions": {
+    "message": "更多"
+  },
+  "check_update": {
+    "message": "检查更新"
+  },
+  "check_update_tooltip": {
+    "message": "检查新版本并下载更新"
+  },
+  "checking_update": {
+    "message": "正在检查..."
+  },
+  "update_available": {
+    "message": "发现新版本"
+  },
+  "up_to_date": {
+    "message": "已是最新"
+  },
+  "update_check_failed": {
+    "message": "检查失败"
+  },
+  "view_releases": {
+    "message": "前往 GitHub 查看版本"
+  },
+  "ai_offline_unavailable": {
+    "message": "AI 功能需要网络访问。离线 HTML 版在 file:// 协议下无法连接外部 AI 服务（浏览器安全限制）。请使用 Chrome 插件版、网页版，或配置本地 AI 模型（如 Ollama localhost）。"
+  },
+  "download_latest": {
+    "message": "下载最新版本"
+  },
+  "download_apk": {
+    "message": "Android APK"
+  },
+  "download_offline_html": {
+    "message": "离线网页版"
+  },
+  "download_chrome": {
+    "message": "Chrome 插件"
+  },
+  "voice_gender_female": {
+    "message": "女"
+  },
+  "voice_gender_male": {
+    "message": "男"
+  },
+  "already_offline": {
+    "message": "您当前已经处于离线版或本地运行环境中！"
+  },
+  "backup_success": {
+    "message": "书库备份成功！已下载备份文件。"
+  },
+  "restore_success": {
+    "message": "书库还原成功！所有书籍与进度已恢复。"
+  },
+  "backup_failed": {
+    "message": "备份书库时发生错误"
+  },
+  "restore_failed": {
+    "message": "还原书库时发生错误"
+  },
+  "invalid_backup_file": {
+    "message": "无效的备份文件，格式不符！"
+  },
+  "backing_up": {
+    "message": "正在进行备份..."
+  },
+  "backup_dialog_title": {
+    "message": "书库备份"
+  },
+  "backup_packing_hint": {
+    "message": "正在整合所有书籍文件、进度与笔记..."
+  },
+  "backup_ready_title": {
+    "message": "书库备份包已打包就绪！"
+  },
+  "backup_ios_instruction": {
+    "message": "iPhone / iPad 用户请点击下方【保存到系统 / 分享】，在系统弹出的菜单中选择「存储到“文件”」即可保存至手机或 iCloud。"
+  },
+  "backup_btn_save_share": {
+    "message": "保存到系统 / 分享 (.zip)"
+  },
+  "backup_btn_direct_download": {
+    "message": "直接下载备份文件"
+  },
+  "backup_share_title": {
+    "message": "读书人书库备份"
+  },
+  "backup_share_text": {
+    "message": "读书人书库备份文件"
+  },
+  "backup_share_dialog_title": {
+    "message": "保存或分享备份文件"
+  },
+  "backup_share_success": {
+    "message": "备份文件已交给系统保存/分享面板。请在面板中选择保存位置。"
+  },
+  "backup_save_prompt": {
+    "message": "您希望如何保存备份文件？\n\n点“确定”：保存到应用文件目录。\n点“取消”：打开系统分享面板。"
+  },
+  "backup_saved_to_downloads": {
+    "message": "备份成功！文件已保存至系统下载目录：\n$path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_save_fallback_share": {
+    "message": "直接保存到下载目录失败，将改为打开系统分享面板。"
+  },
+  "backup_native_save_unavailable": {
+    "message": "原生保存不可用，将改为打开系统分享面板。"
+  },
+  "backup_saved_to_app_directory": {
+    "message": "备份成功！文件已保存至应用文件目录：\n$filename$",
+    "placeholders": {
+      "filename": {
+        "content": "$1"
+      }
+    }
+  },
+  "restoring": {
+    "message": "正在进行还原，请稍候..."
+  },
+  "drag_drop_tip": {
+    "message": "将电子书拖拽到此处导入"
+  },
+  "no_books": {
+    "message": "书库空空如也。请拖拽电子书文件到此处，或点击上方“导入书籍”按钮！"
+  },
+  "settings": {
+    "message": "阅读设置"
+  },
+  "theme": {
+    "message": "背景主题"
+  },
+  "theme_light": {
+    "message": "明亮白"
+  },
+  "theme_dark": {
+    "message": "深雅灰"
+  },
+  "theme_sepia": {
+    "message": "复古纸"
+  },
+  "theme_mint": {
+    "message": "极简绿"
+  },
+  "theme_oled": {
+    "message": "纯黑 (OLED)"
+  },
+  "theme_sakura": {
+    "message": "樱花粉"
+  },
+  "theme_ocean": {
+    "message": "海洋蓝"
+  },
+  "theme_slate": {
+    "message": "石板灰"
+  },
+  "font_size": {
+    "message": "字体大小"
+  },
+  "font_family": {
+    "message": "阅读字体"
+  },
+  "line_height": {
+    "message": "行间距"
+  },
+  "margin_width": {
+    "message": "左右边距"
+  },
+  "margin_top": {
+    "message": "上方留白"
+  },
+  "margin_bottom": {
+    "message": "下方留白"
+  },
+  "page_padding": {
+    "message": "纸张边框留白"
+  },
+  "read_aloud": {
+    "message": "语音朗读 (TTS)"
+  },
+  "tts_voice": {
+    "message": "朗读人声"
+  },
+  "tts_speed": {
+    "message": "播放倍速"
+  },
+  "tts_sync_offset": {
+    "message": "高亮同步微调"
+  },
+  "toc": {
+    "message": "章节目录"
+  },
+  "highlights": {
+    "message": "书签与笔记"
+  },
+  "ai_summary": {
+    "message": "AI 摘要"
+  },
+  "ai_explain": {
+    "message": "AI 释义"
+  },
+  "ai_translate": {
+    "message": "AI 翻译"
+  },
+  "search_placeholder": {
+    "message": "搜索书籍名称或作者..."
+  },
+  "unsupported_format": {
+    "message": "不支持此文件格式！"
+  },
+  "parse_failed": {
+    "message": "书籍解析失败，请确认文件是否损坏。"
+  },
+  "drm_warning": {
+    "message": "此电子书似乎受到 DRM 加密保护，插件无法解析。"
+  },
+  "reading_progress": {
+    "message": "已读 $progress$%",
+    "placeholders": {
+      "progress": {
+        "content": "$1"
+      }
+    }
+  },
+  "font_sans": {
+    "message": "黑体/无衬线 (Inter)"
+  },
+  "font_serif": {
+    "message": "宋体/明体 (Lora)"
+  },
+  "font_lxgw": {
+    "message": "霞鹜文楷 (LXGW WenKai)"
+  },
+  "font_noto_serif": {
+    "message": "思源宋体 (Noto Serif TC)"
+  },
+  "font_playfair": {
+    "message": "Playfair Display (西文衬线)"
+  },
+  "font_fira": {
+    "message": "Fira Code (等宽代码)"
+  },
+  "font_dyslexic": {
+    "message": "易读字体 (OpenDyslexic)"
+  },
+  "font_system": {
+    "message": "系统默认字体"
+  },
+  "layout_scroll": {
+    "message": "上下连续滚动"
+  },
+  "layout_paginated": {
+    "message": "左右模拟翻页"
+  },
+  "layout_mode": {
+    "message": "版面布局"
+  },
+  "close_reader": {
+    "message": "返回书库"
+  },
+  "prev_page": {
+    "message": "上一页"
+  },
+  "next_page": {
+    "message": "下一页"
+  },
+  "note_title": {
+    "message": "笔记"
+  },
+  "highlight_title": {
+    "message": "划线"
+  },
+  "pages_displayed": {
+    "message": "分栏显示页数"
+  },
+  "pages_displayed_auto": {
+    "message": "自动自适应"
+  },
+  "pages_displayed_1": {
+    "message": "单页显示"
+  },
+  "pages_displayed_2": {
+    "message": "双页显示"
+  },
+  "pages_displayed_3": {
+    "message": "三页显示"
+  },
+  "tts_highlight_style": {
+    "message": "朗读高亮样式"
+  },
+  "highlight_style_yellow": {
+    "message": "黄色荧光笔"
+  },
+  "highlight_style_green": {
+    "message": "绿色荧光笔"
+  },
+  "highlight_style_blue": {
+    "message": "蓝色荧光笔"
+  },
+  "highlight_style_underline": {
+    "message": "仅下划线"
+  },
+  "highlight_style_border": {
+    "message": "虚线边框"
+  },
+  "highlight_style_text": {
+    "message": "仅文字着色"
+  },
+  "btn_cancel": {
+    "message": "取消"
+  },
+  "btn_save": {
+    "message": "保存"
+  },
+  "add_bookmark": {
+    "message": "添加书签"
+  },
+  "bookmarks_header": {
+    "message": "书签"
+  },
+  "notes_header": {
+    "message": "笔记与高亮"
+  },
+  "selection_speak": {
+    "message": "朗读"
+  },
+  "selection_delete": {
+    "message": "删除"
+  },
+  "note_placeholder": {
+    "message": "在此输入笔记..."
+  },
+  "ai_assistant_title": {
+    "message": "AI 阅读助手"
+  },
+  "chapter_label": {
+    "message": "第 $num$ 章",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
+  "tts_play": {
+    "message": "播放"
+  },
+  "tts_pause": {
+    "message": "暂停"
+  },
+  "tts_stop": {
+    "message": "停止"
+  },
+  "tts_prev": {
+    "message": "上一句"
+  },
+  "tts_next": {
+    "message": "下一句"
+  },
+  "loading_book": {
+    "message": "正在加载书籍..."
+  },
+  "loading_page": {
+    "message": "正在加载第 $page$ 页...",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "ai_thinking": {
+    "message": "AI 正在思考..."
+  },
+  "error_prefix": {
+    "message": "错误"
+  },
+  "failed_load_book": {
+    "message": "书籍加载失败"
+  },
+  "failed_init_db": {
+    "message": "数据库初始化失败"
+  },
+  "delete_book_title": {
+    "message": "删除书籍"
+  },
+  "confirm_delete_book": {
+    "message": "确定要删除这本书吗？"
+  },
+  "unknown_author": {
+    "message": "未知作者"
+  },
+  "paper_texture": {
+    "message": "纸张底纹"
+  },
+  "texture_none": {
+    "message": "无"
+  },
+  "texture_classic": {
+    "message": "经典纸纹"
+  },
+  "texture_parchment": {
+    "message": "羊皮纸"
+  },
+  "texture_linen": {
+    "message": "亚麻布纹"
+  },
+  "texture_aged": {
+    "message": "仿旧纸"
+  },
+  "texture_wove": {
+    "message": "水纹纸"
+  },
+  "transition_effect": {
+    "message": "翻页动画效果"
+  },
+  "transition_slide": {
+    "message": "滑动效果"
+  },
+  "transition_flip": {
+    "message": "3D 翻页效果"
+  },
+  "transition_none": {
+    "message": "无动画"
+  },
+  "tts_filter_edge": {
+    "message": "仅显示 Edge 线上高质量语音"
+  },
+  "notes_chapter_title": {
+    "message": "附录/注释"
+  },
+  "export_book_title": {
+    "message": "导出书籍"
+  },
+  "cover_size_tooltip": {
+    "message": "调整封面大小"
+  },
+  "stats_title": {
+    "message": "数据统计"
+  },
+  "stats_btn_tooltip": {
+    "message": "查看阅读统计"
+  },
+  "stats_modal_title": {
+    "message": "阅读数据统计"
+  },
+  "stats_tab_overview": {
+    "message": "全局概览"
+  },
+  "stats_tab_books": {
+    "message": "单本统计"
+  },
+  "stats_total_time": {
+    "message": "总阅读时长"
+  },
+  "stats_total_books": {
+    "message": "阅读书籍数"
+  },
+  "stats_total_days": {
+    "message": "阅读天数"
+  },
+  "stats_hourly_dist_title": {
+    "message": "阅读时间段分布"
+  },
+  "stats_select_book": {
+    "message": "选择书籍:"
+  },
+  "stats_book_time": {
+    "message": "阅读时间"
+  },
+  "stats_book_days": {
+    "message": "阅读天数"
+  },
+  "stats_book_daily_avg": {
+    "message": "日均阅读时长"
+  },
+  "stats_book_hourly_title": {
+    "message": "阅读时间段分布"
+  },
+  "stats_reading_history_title": {
+    "message": "每日阅读明细"
+  },
+  "stats_no_time": {
+    "message": "暂无时长"
+  },
+  "about_title": {
+    "message": "关于"
+  },
+  "about_dialog_title": {
+    "message": "关于阅读器"
+  },
+  "about_dialog_desc": {
+    "message": "一款面向网页、浏览器及移动设备的现代化电子书阅读器。集成多格式解析、高品质 Edge 神经网络语音朗读、智能 AI 伴侣与深度阅读统计。"
+  },
+  "about_features_title": {
+    "message": "核心特性:"
+  },
+  "about_feature_1": {
+    "message": "支持格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等多格式本地解析"
+  },
+  "about_feature_2": {
+    "message": "语音朗读：直连 Edge 高品质云端神经网络 TTS，双播放器无缝预加载，支持移动端后台静音保活"
+  },
+  "about_feature_3": {
+    "message": "极致排版：滚动与翻页布局，内置思源宋体、霞鹜文楷等字体，支持多款纸张质感底纹"
+  },
+  "about_feature_4": {
+    "message": "AI 伴侣：支持划词释义、摘要与离线翻译，适配本地 Gemini Nano 及云端/本地大语言模型"
+  },
+  "about_feature_5": {
+    "message": "数据与多端：包含阅读时间段分布与日历热力图，支持全量备份，适配插件、PWA 及安卓原生 App"
+  },
+  "about_usage_title": {
+    "message": "基本用法:"
+  },
+  "about_usage_1": {
+    "message": "导入：点击书架上的“导入书籍”按钮或直接拖拽电子书文件到书架中。"
+  },
+  "about_usage_2": {
+    "message": "阅读与朗读：点击书籍开始阅读。点击顶部喇叭图标可开启语音朗读面板，点击句子可直接从该句开始朗读。"
+  },
+  "about_usage_3": {
+    "message": "高亮标注：在阅读时选中文本即可弹出菜单进行划线、记笔记和发起本地 AI 交互。"
+  },
+  "about_usage_4": {
+    "message": "备份：点击“更多” -> “备份书库”可一键导出包含书籍和阅读进度的 .zip 压缩包。"
+  },
+  "about_tip_title": {
+    "message": "重要提示"
+  },
+  "about_tip_content": {
+    "message": "强烈推荐下载离线单文件版！本地双击打开运行离线版，可以直接免除各种跨域（CORS）与服务代理限制，完美利用微软 Edge 原生高品质在线神经网络语音朗读（Natural TTS Engine）。"
+  },
+  "btn_close": {
+    "message": "关闭"
+  },
+  "clear_all_stats": {
+    "message": "清理阅读记录"
+  },
+  "clear_book_stats": {
+    "message": "清理阅读记录"
+  },
+  "confirm_clear_all_stats": {
+    "message": "确定要清除所有书籍的阅读统计数据吗？此操作无法撤销。"
+  },
+  "confirm_clear_book_stats": {
+    "message": "确定要清除本书的阅读统计数据吗？此操作无法撤销。"
+  },
+  "texture_kraft": {
+    "message": "牛皮纸"
+  },
+  "texture_bamboo": {
+    "message": "竹木纤维"
+  },
+  "texture_grid": {
+    "message": "复古格子"
+  },
+  "ai_profile": {
+    "message": "AI 配置 / 服务商"
+  },
+  "ai_profile_name": {
+    "message": "配置名称"
+  },
+  "ai_profile_add": {
+    "message": "新建配置"
+  },
+  "ai_profile_delete": {
+    "message": "删除配置"
+  },
+  "ai_profile_default_custom_name": {
+    "message": "新自定义 AI"
+  },
+  "ai_profile_migrated": {
+    "message": "已迁移配置"
+  },
+  "ai_profile_builtin": {
+    "message": "内置 AI (Gemini Nano)"
+  },
+  "ai_profile_openai": {
+    "message": "OpenAI (官方)"
+  },
+  "ai_profile_deepseek": {
+    "message": "DeepSeek"
+  },
+  "ai_profile_gemini": {
+    "message": "Google Gemini API"
+  },
+  "ai_profile_siliconflow": {
+    "message": "硅基流动 (SiliconFlow)"
+  },
+  "ai_profile_ollama": {
+    "message": "Ollama (本地)"
+  },
+  "ai_profile_lmstudio": {
+    "message": "LM Studio"
+  },
+  "confirm_delete_profile": {
+    "message": "确定要删除此 AI 配置吗？"
+  },
+  "ai_builtin_not_supported": {
+    "message": "当前浏览器不支持内置 AI (Gemini Nano)。请在全局设置（点击齿轮图标）中配置自定义 AI 服务商（如 DeepSeek、OpenAI 或 Ollama）。"
+  },
+  "ai_provider": {
+    "message": "AI 服务商"
+  },
+  "ai_provider_builtin": {
+    "message": "浏览器内置 AI (Gemini Nano)"
+  },
+  "ai_provider_openai": {
+    "message": "OpenAI 兼容接口"
+  },
+  "ai_provider_ollama": {
+    "message": "Ollama (本地部署)"
+  },
+  "ai_api_key": {
+    "message": "API 密钥 (Key)"
+  },
+  "ai_endpoint": {
+    "message": "API 接口地址"
+  },
+  "ai_model": {
+    "message": "模型名称 (Model)"
+  },
+  "ai_input_placeholder": {
+    "message": "输入问题，向 AI 提问..."
+  },
+  "ai_save_settings": {
+    "message": "保存"
+  },
+  "ai_settings_saved": {
+    "message": "已保存"
+  },
+  "ai_test_settings": {
+    "message": "测试连接"
+  },
+  "ai_test_testing": {
+    "message": "测试中..."
+  },
+  "ai_test_success": {
+    "message": "测试成功！"
+  },
+  "ai_test_fail": {
+    "message": "测试失败"
+  },
+  "ai_assistant": {
+    "message": "AI 助手"
+  },
+  "ai_summary_label": {
+    "message": "AI 摘要"
+  },
+  "ai_explain_label": {
+    "message": "AI 释义"
+  },
+  "ai_translate_label": {
+    "message": "AI 翻译"
+  },
+  "global_settings_title": {
+    "message": "全局设置"
+  },
+  "library_settings_section": {
+    "message": "书库设置"
+  },
+  "ai_settings_section": {
+    "message": "AI 配置"
+  },
+  "tts_settings_section": {
+    "message": "TTS 朗读配置"
+  },
+  "tts_provider": {
+    "message": "TTS 服务商"
+  },
+  "tts_provider_edge": {
+    "message": "微软 Edge 在线高质量语音"
+  },
+  "tts_provider_system": {
+    "message": "系统原生 WebSpeech 语音"
+  },
+  "tts_provider_openai": {
+    "message": "OpenAI TTS 语音接口"
+  },
+  "tts_provider_local": {
+    "message": "本地部署语音接口 (OpenAI兼容)"
+  },
+  "tts_api_key": {
+    "message": "API 密钥"
+  },
+  "tts_endpoint": {
+    "message": "API 端点 URL"
+  },
+  "tts_model": {
+    "message": "朗读模型"
+  },
+  "tts_fetch_models": {
+    "message": "获取模型"
+  },
+  "tts_api_key_optional": {
+    "message": "可选 (例如本地代理认证)"
+  },
+  "tts_language": {
+    "message": "朗读语言"
+  },
+  "tts_lang_auto": {
+    "message": "自动检测"
+  },
+  "tts_lang_zh_cn": {
+    "message": "简体中文"
+  },
+  "tts_lang_zh_tw": {
+    "message": "繁体中文"
+  },
+  "tts_lang_en": {
+    "message": "英语"
+  },
+  "tts_lang_ja": {
+    "message": "日语"
+  },
+  "tts_lang_ko": {
+    "message": "韩语"
+  },
+  "tts_voice_label": {
+    "message": "声音名称"
+  },
+  "tts_lang_multilingual": {
+    "message": "多语言"
+  },
+  "cover_width_setting": {
+    "message": "封面大小"
+  },
+  "ai_welcome_msg": {
+    "message": "你好！我是你的 AI 阅读助手。今天有什么我可以帮你的吗？"
+  },
+  "ai_system_prompt_summarize": {
+    "message": "你是一位得力的阅读助手。请简明扼要地总结以下文本。用简体中文回答。"
+  },
+  "ai_system_prompt_explain": {
+    "message": "你是一位词典助手。请结合上下文，简明扼要地解释所选词语的含义。用简体中文回答。"
+  },
+  "ai_system_prompt_translate": {
+    "message": "你是一位专业的翻译官。请将文本翻译为 {target}。只输出翻译结果，不要有任何解释。"
+  },
+  "ai_target_lang": {
+    "message": "Simplified Chinese"
+  },
+  "ai_fetch_models": {
+    "message": "获取模型"
+  },
+  "ai_fetching_models": {
+    "message": "获取中..."
+  },
+  "ai_fetch_models_success": {
+    "message": "模型列表获取成功！"
+  },
+  "ai_fetch_models_fail": {
+    "message": "模型列表获取失败"
+  },
+  "ai_api_key_optional": {
+    "message": "可选 (例如本地代理认证)"
+  },
+  "ai_ask": {
+    "message": "提问"
+  },
+  "ai_focus": {
+    "message": "聚焦于:"
+  },
+  "ai_clear_history_title": {
+    "message": "清除所有对话历史"
+  },
+  "ai_delete_chat_title": {
+    "message": "删除该对话"
+  },
+  "confirm_delete_all_chats": {
+    "message": "确定要清除本书的所有 AI 沟通记录吗？此操作无法撤销。"
+  },
+  "confirm_delete_single_chat": {
+    "message": "确定要删除这条沟通记录吗？"
+  },
+  "ai_suggest_sum_chapter_lbl": {
+    "message": "总结本章"
+  },
+  "ai_suggest_sum_chapter_prt": {
+    "message": "帮我总结当前章节的核心观点与主要内容。"
+  },
+  "ai_suggest_chapter_map_lbl": {
+    "message": "本章思维导图"
+  },
+  "ai_suggest_chapter_map_prt": {
+    "message": "请梳理当前章节的内容结构，输出一份 Mermaid mindmap 思维导图。请根据书籍体裁调整梳理重点（若为小说故事，侧重时间轴与情节；若为非虚构/学术书籍，侧重核心论点与逻辑推导）。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 节点文本必须非常简短（建议不超过 10 个字，最好 2-4 个字），绝对不要输出长句或段落以防止节点重叠；6) 参考格式：mindmap\n  root(主题)\n    分支1\n      子节点A\n      子节点B\n    分支2\n      子节点C"
+  },
+  "ai_suggest_book_map_lbl": {
+    "message": "全书思维导图"
+  },
+  "ai_suggest_book_map_prt": {
+    "message": "请结合全书检索到的脉络，梳理本书的整体架构与核心章节逻辑，输出一份 Mermaid mindmap 思维导图。请根据书籍体裁调整梳理重点（若为小说故事，侧重时间轴与情节；若为非虚构/学术书籍，侧重核心论点与逻辑推导）。严格要求：1) 必须以 ```mermaid 代码块包裹；2) 第一行写 mindmap；3) 纯缩进表示层级，禁止使用箭头 -->、::icon()、subgraph 等语法；4) 节点文本不要包含括号或特殊符号；5) 节点文本必须非常简短（建议不超过 10 个字，最好 2-4 个字），绝对不要输出长句或段落以防止节点重叠；6) 参考格式：mindmap\n  root(书名)\n    第一部分\n      要点1\n      要点2\n    第二部分\n      要点3"
+  },
+  "ai_suggest_takeaways_lbl": {
+    "message": "核心要点"
+  },
+  "ai_suggest_takeaways_prt": {
+    "message": "分析当前章节或全书中最重要的 3-5 个核心知识点与启示（Key Takeaways）。"
+  },
+  "ai_suggest_characters_lbl": {
+    "message": "人物关系"
+  },
+  "ai_suggest_characters_prt": {
+    "message": "梳理本书中出现的主要人物、角色背景及其相互之间的关系脉络。"
+  },
+  "ai_suggest_explain_concept_lbl": {
+    "message": "名词解释"
+  },
+  "ai_suggest_explain_concept_prt": {
+    "message": "解释本书当前上下文中提到的核心专业术语或深奥概念。"
+  },
+  "ai_suggest_quiz_lbl": {
+    "message": "阅读自测"
+  },
+  "ai_suggest_quiz_prt": {
+    "message": "根据当前章节的内容，为我设计 3 道阅读理解或自测思考题，帮助我加深理解。"
+  },
+  "ai_toggle_suggestions_title": {
+    "message": "折叠/展开常用提示词"
+  },
+  "ai_prompts_section": {
+    "message": "AI 提示词模板"
+  },
+  "ai_add_prompt": {
+    "message": "新增"
+  },
+  "ai_prompt_name_placeholder": {
+    "message": "名称"
+  },
+  "ai_prompt_content_placeholder": {
+    "message": "提示词内容"
+  },
+  "ai_prompt_edit_title": {
+    "message": "编辑提示词模板"
+  },
+  "ai_prompt_add_title": {
+    "message": "添加提示词模板"
+  },
+  "ai_prompt_name_label": {
+    "message": "模板名称"
+  },
+  "ai_prompt_content_label": {
+    "message": "提示词内容"
+  },
+  "confirm_delete_prompt": {
+    "message": "确定要删除这个提示词模板吗？"
+  },
+  "btn_edit": {
+    "message": "编辑"
+  },
+  "btn_delete": {
+    "message": "删除"
+  },
+  "zoom_in": {
+    "message": "放大"
+  },
+  "zoom_out": {
+    "message": "缩小"
+  },
+  "zoom_reset": {
+    "message": "重置"
+  },
+  "ai_deep_analysis_title": {
+    "message": "一键全书深度分析"
+  },
+  "ai_deep_analysis_trigger": {
+    "message": "一键全书深度分析"
+  },
+  "confirm_reanalyze_book": {
+    "message": "这本书已经有深度分析报告了，确定要重新生成吗？这将会消耗较多 API Token。"
+  },
+  "confirm_deep_analysis": {
+    "message": "「深度分析全书」将会分析本书，并消耗较多 API Token。是否继续？"
+  },
+  "search_book": {
+    "message": "搜索"
+  },
+  "search_in_book_placeholder": {
+    "message": "在本书中搜索..."
+  },
+  "searching": {
+    "message": "正在搜索..."
+  },
+  "search_no_results": {
+    "message": "未找到匹配内容。"
+  },
+  "search_results_count": {
+    "message": "共找到 $count$ 处匹配",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "indexing_book": {
+    "message": "正在建立搜索索引..."
+  },
+  "duplicate_dialog_title": {
+    "message": "检测到重复书籍"
+  },
+  "duplicate_desc_hash": {
+    "message": "书库中已存在内容完全相同的书籍。"
+  },
+  "duplicate_desc_name": {
+    "message": "书库中已存在同名但内容不同的书籍。"
+  },
+  "duplicate_new_file": {
+    "message": "准备导入的文件："
+  },
+  "duplicate_existing_book": {
+    "message": "书库中的现有书籍："
+  },
+  "duplicate_apply_all": {
+    "message": "套用到所有剩余冲突"
+  },
+  "duplicate_btn_replace": {
+    "message": "覆盖文件 (保留阅读进度与笔记)"
+  },
+  "duplicate_btn_keep_both": {
+    "message": "保留两者"
+  },
+  "duplicate_btn_skip": {
+    "message": "跳过"
+  },
+  "load_sample_book": {
+    "message": "快速体验内置示例书"
+  },
+  "sample_book_title": {
+    "message": "小王子 (精选试读)"
+  },
+  "sample_book_author": {
+    "message": "安托万·德·圣-埃克苏佩里"
+  },
+  "btn_retry": {
+    "message": "重试"
+  },
+  "backup_choose_mode_hint": {
+    "message": "请选择备份模式。若您的书库包含大量书籍文件（大于 100MB），推荐优先使用【轻量备份】或使用 iOS 原生 App 版。"
+  },
+  "backup_mode_full_title": {
+    "message": "完整备份 (包含书籍源文件)"
+  },
+  "backup_mode_full_desc": {
+    "message": "打包全部书籍源文件、封面、阅读进度、笔记、书签与 AI 对话。"
+  },
+  "backup_mode_light_title": {
+    "message": "轻量数据备份 (不含电子书源文件)"
+  },
+  "backup_mode_light_desc": {
+    "message": "仅备份阅读进度、高亮笔记、书签与 AI 记录。体积仅几十 KB，秒级完成，杜绝内存溢出。"
+  },
+  "btn_start_backup": {
+    "message": "开始备份"
+  }
+}

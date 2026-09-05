@@ -1,0 +1,1026 @@
+{
+  "extension_name": {
+    "message": "Raconteur"
+  },
+  "extension_description": {
+    "message": "A premium web-based reader for EPUB, AZW3, MOBI, TXT, MD, FB2, and CBZ with high-quality Edge TTS Read Aloud support."
+  },
+  "library_title": {
+    "message": "Library"
+  },
+  "import_book": {
+    "message": "Import Book"
+  },
+  "create_folder": {
+    "message": "New Folder"
+  },
+  "batch_manage": {
+    "message": "Manage"
+  },
+  "batch_move": {
+    "message": "Move to Folder"
+  },
+  "batch_delete": {
+    "message": "Delete Selected"
+  },
+  "move_to_root": {
+    "message": "Move out of Folder"
+  },
+  "rename_folder": {
+    "message": "Rename Folder"
+  },
+  "confirm_delete_folder": {
+    "message": "Are you sure you want to delete this folder? The books inside will not be deleted."
+  },
+  "folder_books_count": {
+    "message": "$count$ books",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "folder_name_placeholder": {
+    "message": "Folder Name"
+  },
+  "batch_selected_count": {
+    "message": "Selected: $count$ books",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_library": {
+    "message": "Backup"
+  },
+  "restore_library": {
+    "message": "Restore"
+  },
+  "backup_library_tooltip": {
+    "message": "Export a backup file (.zip) containing all books, progress, and notes"
+  },
+  "restore_library_tooltip": {
+    "message": "Restore a previously backed up library file"
+  },
+  "more_actions": {
+    "message": "More"
+  },
+  "check_update": {
+    "message": "Check for Updates"
+  },
+  "check_update_tooltip": {
+    "message": "Check for new version and download updates"
+  },
+  "checking_update": {
+    "message": "Checking..."
+  },
+  "update_available": {
+    "message": "New version"
+  },
+  "up_to_date": {
+    "message": "Up to date"
+  },
+  "update_check_failed": {
+    "message": "Check failed"
+  },
+  "view_releases": {
+    "message": "View releases on GitHub"
+  },
+  "ai_offline_unavailable": {
+    "message": "AI features require network access. The offline HTML version running under file:// cannot connect to external AI services due to browser security restrictions. Please use the Chrome extension, web version, or configure a local AI model (e.g. Ollama at localhost)."
+  },
+  "download_latest": {
+    "message": "Download Latest Version"
+  },
+  "download_apk": {
+    "message": "Android APK"
+  },
+  "download_offline_html": {
+    "message": "Offline HTML"
+  },
+  "download_chrome": {
+    "message": "Chrome Extension"
+  },
+  "voice_gender_female": {
+    "message": "Female"
+  },
+  "voice_gender_male": {
+    "message": "Male"
+  },
+  "already_offline": {
+    "message": "You are already running in the offline/local environment!"
+  },
+  "backup_success": {
+    "message": "Library backup successful! Backup file downloaded."
+  },
+  "restore_success": {
+    "message": "Library restored successfully! All books and progress recovered."
+  },
+  "backup_failed": {
+    "message": "Error backing up library"
+  },
+  "restore_failed": {
+    "message": "Error restoring library"
+  },
+  "invalid_backup_file": {
+    "message": "Invalid backup file format!"
+  },
+  "backing_up": {
+    "message": "Backing up..."
+  },
+  "backup_dialog_title": {
+    "message": "Library Backup"
+  },
+  "backup_packing_hint": {
+    "message": "Packaging books, reading progress, and notes..."
+  },
+  "backup_ready_title": {
+    "message": "Backup Archive Ready!"
+  },
+  "backup_ios_instruction": {
+    "message": "iOS / mobile users please tap [Save to System / Share] below and choose 'Save to Files' to save onto your device or iCloud."
+  },
+  "backup_btn_save_share": {
+    "message": "Save to System / Share (.zip)"
+  },
+  "backup_btn_direct_download": {
+    "message": "Download Backup File"
+  },
+  "backup_share_title": {
+    "message": "Raconteur Library Backup"
+  },
+  "backup_share_text": {
+    "message": "Raconteur library backup file"
+  },
+  "backup_share_dialog_title": {
+    "message": "Save or Share Backup"
+  },
+  "backup_share_success": {
+    "message": "The backup file has been handed to the system save/share panel. Choose a save location in the panel."
+  },
+  "backup_save_prompt": {
+    "message": "How would you like to save the backup file?\n\nOK: save to the app files directory.\nCancel: open the system share panel."
+  },
+  "backup_saved_to_downloads": {
+    "message": "Backup successful! File saved to Downloads:\n$path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_save_fallback_share": {
+    "message": "Saving directly to Downloads failed. Opening the system share panel instead."
+  },
+  "backup_native_save_unavailable": {
+    "message": "Native save is unavailable. Opening the system share panel instead."
+  },
+  "backup_saved_to_app_directory": {
+    "message": "Backup successful! File saved to the app files directory:\n$filename$",
+    "placeholders": {
+      "filename": {
+        "content": "$1"
+      }
+    }
+  },
+  "restoring": {
+    "message": "Restoring, please wait..."
+  },
+  "drag_drop_tip": {
+    "message": "Drag & Drop books here to import"
+  },
+  "no_books": {
+    "message": "Your library is empty. Drag and drop files here to add books!"
+  },
+  "settings": {
+    "message": "Settings"
+  },
+  "theme": {
+    "message": "Theme"
+  },
+  "theme_light": {
+    "message": "Light"
+  },
+  "theme_dark": {
+    "message": "Dark"
+  },
+  "theme_sepia": {
+    "message": "Sepia"
+  },
+  "theme_mint": {
+    "message": "Mint"
+  },
+  "theme_oled": {
+    "message": "OLED Black"
+  },
+  "theme_sakura": {
+    "message": "Sakura Pink"
+  },
+  "theme_ocean": {
+    "message": "Ocean Blue"
+  },
+  "theme_slate": {
+    "message": "Slate Gray"
+  },
+  "font_size": {
+    "message": "Font Size"
+  },
+  "font_family": {
+    "message": "Font Family"
+  },
+  "line_height": {
+    "message": "Line Spacing"
+  },
+  "margin_width": {
+    "message": "Margins"
+  },
+  "margin_top": {
+    "message": "Top Spacing"
+  },
+  "margin_bottom": {
+    "message": "Bottom Spacing"
+  },
+  "page_padding": {
+    "message": "Page Padding"
+  },
+  "read_aloud": {
+    "message": "Read Aloud"
+  },
+  "tts_voice": {
+    "message": "Voice"
+  },
+  "tts_speed": {
+    "message": "Speed"
+  },
+  "tts_sync_offset": {
+    "message": "Highlight Sync Adjust"
+  },
+  "toc": {
+    "message": "Table of Contents"
+  },
+  "highlights": {
+    "message": "Bookmarks & Notes"
+  },
+  "ai_summary": {
+    "message": "AI Summary"
+  },
+  "ai_explain": {
+    "message": "AI Explain"
+  },
+  "ai_translate": {
+    "message": "AI Translate"
+  },
+  "search_placeholder": {
+    "message": "Search books..."
+  },
+  "unsupported_format": {
+    "message": "Unsupported file format!"
+  },
+  "parse_failed": {
+    "message": "Failed to parse book."
+  },
+  "drm_warning": {
+    "message": "This file is protected by DRM and cannot be read."
+  },
+  "reading_progress": {
+    "message": "Read $progress$%",
+    "placeholders": {
+      "progress": {
+        "content": "$1"
+      }
+    }
+  },
+  "font_sans": {
+    "message": "Sans-serif (Inter)"
+  },
+  "font_serif": {
+    "message": "Serif (Lora)"
+  },
+  "font_lxgw": {
+    "message": "LXGW WenKai (Chinese)"
+  },
+  "font_noto_serif": {
+    "message": "Noto Serif TC (Chinese)"
+  },
+  "font_playfair": {
+    "message": "Playfair Display (Serif)"
+  },
+  "font_fira": {
+    "message": "Fira Code (Monospace)"
+  },
+  "font_dyslexic": {
+    "message": "OpenDyslexic"
+  },
+  "font_system": {
+    "message": "System UI"
+  },
+  "layout_scroll": {
+    "message": "Continuous Scroll"
+  },
+  "layout_paginated": {
+    "message": "Paginated"
+  },
+  "layout_mode": {
+    "message": "Layout"
+  },
+  "close_reader": {
+    "message": "Back to Library"
+  },
+  "prev_page": {
+    "message": "Previous Page"
+  },
+  "next_page": {
+    "message": "Next Page"
+  },
+  "note_title": {
+    "message": "Note"
+  },
+  "highlight_title": {
+    "message": "Highlight"
+  },
+  "pages_displayed": {
+    "message": "Pages Displayed"
+  },
+  "pages_displayed_auto": {
+    "message": "Auto"
+  },
+  "pages_displayed_1": {
+    "message": "1 Page"
+  },
+  "pages_displayed_2": {
+    "message": "2 Pages"
+  },
+  "pages_displayed_3": {
+    "message": "3 Pages"
+  },
+  "tts_highlight_style": {
+    "message": "Speech Highlight Style"
+  },
+  "highlight_style_yellow": {
+    "message": "Yellow Highlight"
+  },
+  "highlight_style_green": {
+    "message": "Green Highlight"
+  },
+  "highlight_style_blue": {
+    "message": "Blue Highlight"
+  },
+  "highlight_style_underline": {
+    "message": "Underline Only"
+  },
+  "highlight_style_border": {
+    "message": "Border Box"
+  },
+  "highlight_style_text": {
+    "message": "Text Color Only"
+  },
+  "btn_cancel": {
+    "message": "Cancel"
+  },
+  "btn_save": {
+    "message": "Save"
+  },
+  "add_bookmark": {
+    "message": "Add Bookmark"
+  },
+  "bookmarks_header": {
+    "message": "Bookmarks"
+  },
+  "notes_header": {
+    "message": "Notes & Highlights"
+  },
+  "selection_speak": {
+    "message": "Speak"
+  },
+  "selection_delete": {
+    "message": "Delete"
+  },
+  "note_placeholder": {
+    "message": "Type your note here..."
+  },
+  "ai_assistant_title": {
+    "message": "AI Reading Assistant"
+  },
+  "chapter_label": {
+    "message": "Chapter $num$",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
+  "tts_play": {
+    "message": "Play"
+  },
+  "tts_pause": {
+    "message": "Pause"
+  },
+  "tts_stop": {
+    "message": "Stop"
+  },
+  "tts_prev": {
+    "message": "Previous Sentence"
+  },
+  "tts_next": {
+    "message": "Next Sentence"
+  },
+  "loading_book": {
+    "message": "Loading Book..."
+  },
+  "loading_page": {
+    "message": "Loading Page $page$...",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "ai_thinking": {
+    "message": "AI is thinking..."
+  },
+  "error_prefix": {
+    "message": "Error"
+  },
+  "failed_load_book": {
+    "message": "Failed to load book"
+  },
+  "failed_init_db": {
+    "message": "Failed to initialize database"
+  },
+  "delete_book_title": {
+    "message": "Delete Book"
+  },
+  "confirm_delete_book": {
+    "message": "Are you sure you want to delete this book?"
+  },
+  "unknown_author": {
+    "message": "Unknown"
+  },
+  "paper_texture": {
+    "message": "Paper Texture"
+  },
+  "texture_none": {
+    "message": "None"
+  },
+  "texture_classic": {
+    "message": "Classic Paper"
+  },
+  "texture_parchment": {
+    "message": "Parchment"
+  },
+  "texture_linen": {
+    "message": "Linen Weave"
+  },
+  "texture_aged": {
+    "message": "Aged Paper"
+  },
+  "texture_wove": {
+    "message": "Wove Paper"
+  },
+  "transition_effect": {
+    "message": "Page Transition"
+  },
+  "transition_slide": {
+    "message": "Slide"
+  },
+  "transition_flip": {
+    "message": "3D Flip"
+  },
+  "transition_none": {
+    "message": "None"
+  },
+  "tts_filter_edge": {
+    "message": "Show Edge Natural Voices Only"
+  },
+  "notes_chapter_title": {
+    "message": "Notes/Appendix"
+  },
+  "export_book_title": {
+    "message": "Export Book"
+  },
+  "cover_size_tooltip": {
+    "message": "Adjust Cover Size"
+  },
+  "stats_title": {
+    "message": "Stats"
+  },
+  "stats_btn_tooltip": {
+    "message": "View Reading Statistics"
+  },
+  "stats_modal_title": {
+    "message": "Reading Statistics"
+  },
+  "stats_tab_overview": {
+    "message": "Overview"
+  },
+  "stats_tab_books": {
+    "message": "By Book"
+  },
+  "stats_total_time": {
+    "message": "Total Reading Time"
+  },
+  "stats_total_books": {
+    "message": "Books Read"
+  },
+  "stats_total_days": {
+    "message": "Active Days"
+  },
+  "stats_hourly_dist_title": {
+    "message": "Hourly Reading Distribution"
+  },
+  "stats_select_book": {
+    "message": "Select Book:"
+  },
+  "stats_book_time": {
+    "message": "Reading Time"
+  },
+  "stats_book_days": {
+    "message": "Reading Days"
+  },
+  "stats_book_daily_avg": {
+    "message": "Daily Average"
+  },
+  "stats_book_hourly_title": {
+    "message": "Hourly Reading Distribution"
+  },
+  "stats_reading_history_title": {
+    "message": "Reading Days History"
+  },
+  "stats_no_time": {
+    "message": "Not started"
+  },
+  "about_title": {
+    "message": "About"
+  },
+  "about_dialog_title": {
+    "message": "About Reader"
+  },
+  "about_dialog_desc": {
+    "message": "A modern e-book reader designed for web, browsers, and mobile devices, featuring multi-format parsing, high-quality Edge neural TTS, smart AI companions, and deep reading statistics."
+  },
+  "about_features_title": {
+    "message": "Core Features:"
+  },
+  "about_feature_1": {
+    "message": "Format support: EPUB, AZW3, MOBI, TXT, MD, FB2, CBZ, etc."
+  },
+  "about_feature_2": {
+    "message": "Speech Engine: High-quality Microsoft Edge Neural TTS with gapless dual-player preloading and background keep-alive"
+  },
+  "about_feature_3": {
+    "message": "Typography: Continuous scroll & paginated layouts, custom fonts (LXGW, Noto Serif) and texture overlays"
+  },
+  "about_feature_4": {
+    "message": "AI Assistant: Seamlessly connects to local Gemini Nano and cloud/local LLMs (OpenAI, DeepSeek, Ollama) for text analysis"
+  },
+  "about_feature_5": {
+    "message": "Data & Platforms: Analytics time distribution, calendar heatmap, zip backups; runs as Extension, PWA, or native Android App"
+  },
+  "about_usage_title": {
+    "message": "Basic Usage:"
+  },
+  "about_usage_1": {
+    "message": "Import: Click the 'Import Book' button or drag and drop book files onto the library bookshelf."
+  },
+  "about_usage_2": {
+    "message": "Reading & TTS: Click a book to read. Click the speaker icon to open the TTS controls; click any sentence to read from it."
+  },
+  "about_usage_3": {
+    "message": "Highlights: Select any text while reading to launch the annotation toolbar for highlights, notes, and AI features."
+  },
+  "about_usage_4": {
+    "message": "Backup: Click 'More' -> 'Backup' to export all books and progress into a single .zip file."
+  },
+  "about_tip_title": {
+    "message": "Important Tip"
+  },
+  "about_tip_content": {
+    "message": "We strongly recommend downloading the offline single-file HTML version! Running it locally by double-clicking bypasses CORS and server proxy restrictions, letting you fully leverage Microsoft Edge's high-quality online Natural TTS Engine."
+  },
+  "btn_close": {
+    "message": "Close"
+  },
+  "clear_all_stats": {
+    "message": "Clear Reading Records"
+  },
+  "clear_book_stats": {
+    "message": "Clear Reading Records"
+  },
+  "confirm_clear_all_stats": {
+    "message": "Are you sure you want to clear all reading statistics? This cannot be undone."
+  },
+  "confirm_clear_book_stats": {
+    "message": "Are you sure you want to clear statistics for this book? This cannot be undone."
+  },
+  "texture_kraft": {
+    "message": "Kraft Paper"
+  },
+  "texture_bamboo": {
+    "message": "Bamboo Fiber"
+  },
+  "texture_grid": {
+    "message": "Retro Grid"
+  },
+  "ai_profile": {
+    "message": "AI Profile"
+  },
+  "ai_profile_name": {
+    "message": "Profile Name"
+  },
+  "ai_profile_add": {
+    "message": "Add Profile"
+  },
+  "ai_profile_delete": {
+    "message": "Delete Profile"
+  },
+  "ai_profile_default_custom_name": {
+    "message": "New Custom AI"
+  },
+  "ai_profile_migrated": {
+    "message": "Migrated Profile"
+  },
+  "ai_profile_builtin": {
+    "message": "Built-in AI (Gemini Nano)"
+  },
+  "ai_profile_openai": {
+    "message": "OpenAI (Official)"
+  },
+  "ai_profile_deepseek": {
+    "message": "DeepSeek"
+  },
+  "ai_profile_gemini": {
+    "message": "Google Gemini API"
+  },
+  "ai_profile_siliconflow": {
+    "message": "SiliconFlow (DeepSeek)"
+  },
+  "ai_profile_ollama": {
+    "message": "Ollama (Local)"
+  },
+  "ai_profile_lmstudio": {
+    "message": "LM Studio"
+  },
+  "confirm_delete_profile": {
+    "message": "Are you sure you want to delete this AI profile?"
+  },
+  "ai_builtin_not_supported": {
+    "message": "Built-in AI (Gemini Nano) is not supported in this browser. Please configure a custom AI provider (e.g. DeepSeek, OpenAI, Ollama) in the Global Settings dialog."
+  },
+  "ai_provider": {
+    "message": "AI Provider"
+  },
+  "ai_provider_builtin": {
+    "message": "Built-in AI (Gemini Nano)"
+  },
+  "ai_provider_openai": {
+    "message": "OpenAI Compatible API"
+  },
+  "ai_provider_ollama": {
+    "message": "Ollama (Local LLM)"
+  },
+  "ai_add_prompt": {
+    "message": "Add"
+  },
+  "ai_api_key": {
+    "message": "API Key"
+  },
+  "ai_endpoint": {
+    "message": "API Endpoint"
+  },
+  "ai_model": {
+    "message": "Model Name"
+  },
+  "ai_input_placeholder": {
+    "message": "Ask AI anything..."
+  },
+  "ai_save_settings": {
+    "message": "Save"
+  },
+  "ai_settings_saved": {
+    "message": "Saved"
+  },
+  "ai_test_settings": {
+    "message": "Test Connection"
+  },
+  "ai_test_testing": {
+    "message": "Testing..."
+  },
+  "ai_test_success": {
+    "message": "Success!"
+  },
+  "ai_test_fail": {
+    "message": "Failed"
+  },
+  "ai_assistant": {
+    "message": "AI Assistant"
+  },
+  "ai_summary_label": {
+    "message": "AI Summary"
+  },
+  "ai_explain_label": {
+    "message": "AI Explain"
+  },
+  "ai_translate_label": {
+    "message": "AI Translate"
+  },
+  "global_settings_title": {
+    "message": "Global Settings"
+  },
+  "library_settings_section": {
+    "message": "Library Settings"
+  },
+  "ai_settings_section": {
+    "message": "AI Settings"
+  },
+  "tts_settings_section": {
+    "message": "TTS Settings"
+  },
+  "tts_provider": {
+    "message": "TTS Provider"
+  },
+  "tts_provider_edge": {
+    "message": "Microsoft Edge Online"
+  },
+  "tts_provider_system": {
+    "message": "System WebSpeech API"
+  },
+  "tts_provider_openai": {
+    "message": "OpenAI TTS API"
+  },
+  "tts_provider_local": {
+    "message": "Local TTS API (OpenAI-compatible)"
+  },
+  "tts_api_key": {
+    "message": "API Key"
+  },
+  "tts_endpoint": {
+    "message": "API Endpoint"
+  },
+  "tts_model": {
+    "message": "Model Name"
+  },
+  "tts_fetch_models": {
+    "message": "Get Models"
+  },
+  "tts_api_key_optional": {
+    "message": "Optional (e.g. for proxy auth)"
+  },
+  "tts_language": {
+    "message": "Speech Language"
+  },
+  "tts_lang_auto": {
+    "message": "Auto Detect"
+  },
+  "tts_lang_zh_cn": {
+    "message": "Simplified Chinese"
+  },
+  "tts_lang_zh_tw": {
+    "message": "Traditional Chinese"
+  },
+  "tts_lang_en": {
+    "message": "English"
+  },
+  "tts_lang_ja": {
+    "message": "Japanese"
+  },
+  "tts_lang_ko": {
+    "message": "Korean"
+  },
+  "tts_voice_label": {
+    "message": "Voice Name"
+  },
+  "tts_lang_multilingual": {
+    "message": "Multilingual"
+  },
+  "cover_width_setting": {
+    "message": "Cover Width"
+  },
+  "ai_welcome_msg": {
+    "message": "Hi! I am your AI Reading Assistant. How can I help you today?"
+  },
+  "ai_system_prompt_summarize": {
+    "message": "You are a helpful reading assistant. Summarize the following text concisely. Respond in English."
+  },
+  "ai_system_prompt_explain": {
+    "message": "You are a helpful dictionary assistant. Explain the meaning of the selected word based on its context. Keep it concise. Respond in English."
+  },
+  "ai_system_prompt_translate": {
+    "message": "You are a professional translator. Translate the text into {target}. Output only the translation, no explanation."
+  },
+  "ai_target_lang": {
+    "message": "English"
+  },
+  "ai_fetch_models": {
+    "message": "Get Models"
+  },
+  "ai_fetching_models": {
+    "message": "Fetching..."
+  },
+  "ai_fetch_models_success": {
+    "message": "Models loaded successfully!"
+  },
+  "ai_fetch_models_fail": {
+    "message": "Failed to load models"
+  },
+  "ai_api_key_optional": {
+    "message": "Optional (e.g. for proxy auth)"
+  },
+  "ai_ask": {
+    "message": "Ask AI"
+  },
+  "ai_focus": {
+    "message": "Focus on:"
+  },
+  "ai_clear_history_title": {
+    "message": "Clear all chat history"
+  },
+  "ai_delete_chat_title": {
+    "message": "Delete this conversation"
+  },
+  "confirm_delete_all_chats": {
+    "message": "Are you sure you want to clear all AI chat history for this book? This action cannot be undone."
+  },
+  "confirm_delete_single_chat": {
+    "message": "Are you sure you want to delete this conversation turn?"
+  },
+  "ai_suggest_sum_chapter_lbl": {
+    "message": "Summarize Chapter"
+  },
+  "ai_suggest_sum_chapter_prt": {
+    "message": "Help me summarize the core arguments and main contents of the current chapter."
+  },
+  "ai_suggest_chapter_map_lbl": {
+    "message": "Chapter Mind Map"
+  },
+  "ai_suggest_chapter_map_prt": {
+    "message": "Please structure the content of the current chapter and output a Mermaid mindmap diagram. Adjust your focus based on the book's genre (for fiction/stories, focus on timeline and plot; for non-fiction/academic, focus on core arguments and logical derivation). Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Keep node text extremely brief (recommended 2-5 words/characters, maximum 10) and avoid long sentences to prevent node overlapping; 6) Reference format: mindmap\n  root(Topic)\n    Branch 1\n      Point A\n      Point B\n    Branch 2\n      Point C"
+  },
+  "ai_suggest_book_map_lbl": {
+    "message": "Book Mind Map"
+  },
+  "ai_suggest_book_map_prt": {
+    "message": "Please combine the context retrieved from the entire book to structure the overall framework and core chapter logic, and output a Mermaid mindmap diagram. Adjust your focus based on the book's genre (for fiction/stories, focus on timeline and plot; for non-fiction/academic, focus on core arguments and logical derivation). Strict rules: 1) Must be wrapped in a ```mermaid code block; 2) First line must be 'mindmap'; 3) Use ONLY indentation for hierarchy, do NOT use arrows -->, ::icon(), subgraph, or any other syntax; 4) Keep node text simple without parentheses or special symbols; 5) Keep node text extremely brief (recommended 2-5 words/characters, maximum 10) and avoid long sentences to prevent node overlapping; 6) Reference format: mindmap\n  root(Book Title)\n    Part 1\n      Key Point 1\n      Key Point 2\n    Part 2\n      Key Point 3"
+  },
+  "ai_suggest_takeaways_lbl": {
+    "message": "Key Takeaways"
+  },
+  "ai_suggest_takeaways_prt": {
+    "message": "Analyze the 3-5 most important key concepts and takeaways from the current chapter or the entire book."
+  },
+  "ai_suggest_characters_lbl": {
+    "message": "Character Relations"
+  },
+  "ai_suggest_characters_prt": {
+    "message": "Structure the main characters, character backgrounds, and the network of relationships between them in this book."
+  },
+  "ai_suggest_explain_concept_lbl": {
+    "message": "Explain Terminology"
+  },
+  "ai_suggest_explain_concept_prt": {
+    "message": "Explain the core professional terminology or deep concepts mentioned in the current context of this book."
+  },
+  "ai_suggest_quiz_lbl": {
+    "message": "Read Practice"
+  },
+  "ai_suggest_quiz_prt": {
+    "message": "Based on the content of the current chapter, design 3 reading comprehension or self-test thinking questions for me to help deepen my understanding."
+  },
+  "ai_toggle_suggestions_title": {
+    "message": "Toggle prompt suggestions"
+  },
+  "ai_prompts_section": {
+    "message": "AI Prompt Templates"
+  },
+  "ai_add_prompt": {
+    "message": "Add"
+  },
+  "ai_prompt_name_placeholder": {
+    "message": "Name"
+  },
+  "ai_prompt_content_placeholder": {
+    "message": "Prompt template content"
+  },
+  "ai_prompt_edit_title": {
+    "message": "Edit Prompt Template"
+  },
+  "ai_prompt_add_title": {
+    "message": "Add Prompt Template"
+  },
+  "ai_prompt_name_label": {
+    "message": "Template Name"
+  },
+  "ai_prompt_content_label": {
+    "message": "Prompt Content"
+  },
+  "confirm_delete_prompt": {
+    "message": "Are you sure you want to delete this prompt template?"
+  },
+  "btn_edit": {
+    "message": "Edit"
+  },
+  "btn_delete": {
+    "message": "Delete"
+  },
+  "zoom_in": {
+    "message": "Zoom In"
+  },
+  "zoom_out": {
+    "message": "Zoom Out"
+  },
+  "zoom_reset": {
+    "message": "Reset"
+  },
+  "ai_deep_analysis_title": {
+    "message": "Deep Book Analysis"
+  },
+  "ai_deep_analysis_trigger": {
+    "message": "Deep Book Analysis"
+  },
+  "confirm_reanalyze_book": {
+    "message": "This book already has a deep analysis report. Are you sure you want to regenerate it? This will consume more API Tokens."
+  },
+  "confirm_deep_analysis": {
+    "message": "Deep Book Analysis will scan the entire book and consume a significant amount of API Tokens. Do you want to continue?"
+  },
+  "search_book": {
+    "message": "Search"
+  },
+  "search_in_book_placeholder": {
+    "message": "Search in book..."
+  },
+  "searching": {
+    "message": "Searching..."
+  },
+  "search_no_results": {
+    "message": "No matches found."
+  },
+  "search_results_count": {
+    "message": "Found $count$ matches",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "indexing_book": {
+    "message": "Building search index..."
+  },
+  "duplicate_dialog_title": {
+    "message": "Duplicate Book Detected"
+  },
+  "duplicate_desc_hash": {
+    "message": "A book with the exact same content already exists in your library."
+  },
+  "duplicate_desc_name": {
+    "message": "A book with the same title already exists in your library, but the content is different."
+  },
+  "duplicate_new_file": {
+    "message": "New File:"
+  },
+  "duplicate_existing_book": {
+    "message": "Existing Book:"
+  },
+  "duplicate_apply_all": {
+    "message": "Apply to all remaining conflicts"
+  },
+  "duplicate_btn_replace": {
+    "message": "Replace & Retain Progress"
+  },
+  "duplicate_btn_keep_both": {
+    "message": "Keep Both"
+  },
+  "duplicate_btn_skip": {
+    "message": "Skip"
+  },
+  "load_sample_book": {
+    "message": "Try Sample Book"
+  },
+  "sample_book_title": {
+    "message": "The Little Prince (Selected)"
+  },
+  "sample_book_author": {
+    "message": "Antoine de Saint-Exupéry"
+  },
+  "btn_retry": {
+    "message": "Retry"
+  },
+  "backup_choose_mode_hint": {
+    "message": "Select backup mode. If your library has many books (>100MB), Lightweight Backup or iOS Native App is recommended."
+  },
+  "backup_mode_full_title": {
+    "message": "Full Backup (Includes Book Files)"
+  },
+  "backup_mode_full_desc": {
+    "message": "Packs all book source files, covers, reading progress, notes, bookmarks, and AI conversations."
+  },
+  "backup_mode_light_title": {
+    "message": "Lightweight Backup (Data Only)"
+  },
+  "backup_mode_light_desc": {
+    "message": "Backs up reading progress, highlights, notes, bookmarks, and AI chats only. Takes only seconds and prevents out-of-memory."
+  },
+  "btn_start_backup": {
+    "message": "Start Backup"
+  }
+}
