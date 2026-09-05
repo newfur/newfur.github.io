@@ -2508,26 +2508,25 @@ export class TTSEngine {
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
-    // 1. 初始化並在用戶手勢中解鎖靜音保活播放器 (僅網頁瀏覽器端需要，原生 Capacitor 由 Swift 原生層提供硬體保活)
-    if (!isCapacitorApp) {
-      if (!this.silenceAudio) {
-        this.silenceAudio = new Audio();
-        this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
-        this.silenceAudio.loop = true;
-        this.silenceAudio.volume = 0.01;
-      }
-      try {
-        const pSilence = this.silenceAudio.play();
-        if (pSilence && typeof pSilence.then === 'function') {
-          pSilence.then(() => {
-            // 若當前未在播放 TTS，解鎖成功後暫停靜音播放器，避免背景耗電
-            if (!this.isPlaying || this.isPaused) {
-              this.silenceAudio.pause();
-            }
-          }).catch(() => {});
-        }
-      } catch (e) {}
+    // 1. 初始化並在用戶手勢中解鎖靜音保活播放器 (維持 iOS WebKit WebContent 音訊管道活躍)
+    if (!this.silenceAudio) {
+      this.silenceAudio = new Audio();
+      this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.loop = true;
+      this.silenceAudio.volume = 0.001;
+      this.silenceAudio.preload = 'auto';
     }
+    try {
+      const pSilence = this.silenceAudio.play();
+      if (pSilence && typeof pSilence.then === 'function') {
+        pSilence.then(() => {
+          // 若當前未在播放 TTS，解鎖成功後暫停靜音播放器，避免背景耗電
+          if (!this.isPlaying || this.isPaused) {
+            this.silenceAudio.pause();
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {}
 
     // 2. 在用戶手勢中同步預熱音訊播放器，使其獲得 WebKit Autoplay 授權
     const SILENCE_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
@@ -2554,12 +2553,7 @@ export class TTSEngine {
 
   _startSilenceKeepAlive() {
     if (typeof Audio === 'undefined') return;
-    if (!this.isPlaying || this.isPaused) return; // 暫停或未播放時嚴禁啟動靜音音訊，防止干擾系統媒體會話
-    
-    // 原生 Capacitor 應用由 Swift 原生層 (AVAudioSession/MPNowPlayingInfoCenter) 提供硬體保活，
-    // 在 WKWebView 內啟動 silenceAudio 會干擾 iOS 鎖屏封面與播放控制，因此僅在純 Web 環境運行。
-    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-    if (isCapacitorApp) return;
+    if (!this.isPlaying) return; // 僅在播放管線啟動後運作（stop 停止狀態不保活）
     
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
@@ -2831,7 +2825,6 @@ export class TTSEngine {
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
     this.isPlaying = false;
     this.isPaused = false;
-    this._startSilenceKeepAlive(); // 在用戶手勢中同步啟動靜音保活，維持 iOS 音訊會話
     this._stopPolling();
     
     if (this.synth) {
@@ -2853,6 +2846,7 @@ export class TTSEngine {
     this.currentAudio = null;
     
     this.isPlaying = true;
+    this._startSilenceKeepAlive(); // 在用戶手勢中同步啟動靜音保活，維持 iOS 音訊會話
     this.currentlyPlayingIndex = -1;
     
     let absoluteIndex = index;
@@ -3128,14 +3122,22 @@ export class TTSEngine {
     this._stopPlaybackWatchdog();
     if (!this.isPlaying) return;
 
-    // 1. 無條件立即標記為暫停，嚴格停止看門狗與靜音保活，防止異步競態
+    // 1. 無條件立即標記為暫停，嚴格停止看門狗，啟動靜音保活維持 WebContent 活躍
     this.isPaused = true;
     this._stopPlaybackWatchdog();
-    this._stopSilenceKeepAlive();
+    // 關鍵保活：在 WKWebView 內啟動靜音音訊，維持 com.apple.WebKit.WebContent 進程活躍
+    // 防止 iOS 在鎖屏 10-15 秒後掛起 WebContent 進程導致遠程恢復信號被截流
+    this._startSilenceKeepAlive();
     if (this._silencePauseTimeout) {
       clearTimeout(this._silencePauseTimeout);
       this._silencePauseTimeout = null;
     }
+    // 暫停超過 30 分鐘後自動停止保活以節省電量
+    this._silencePauseTimeout = setTimeout(() => {
+      if (this.isPaused) {
+        this._stopSilenceKeepAlive();
+      }
+    }, 30 * 60 * 1000);
 
     // 2. 清空待處理的預加載隊列，並在 Capacitor 原生環境中立即取消在途的 Edge TTS WebSocket 任務與原生超時定時器
     this.prefetchQueue = [];
