@@ -1485,6 +1485,7 @@ function initUIEventBindings() {
       } else {
         tts.pause();
       }
+      updatePlayPauseButtonIcon();
     } else {
       // 從進度保存的句子索引或當前頁面第一個可見句子開始朗讀
       let savedIndex = 0;

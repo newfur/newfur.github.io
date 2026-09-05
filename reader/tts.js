@@ -229,12 +229,82 @@ export class TTSEngine {
               break;
           }
         });
+
+        // Listen for Route B Native Audio Engine sentence events
+        window.Capacitor.Plugins.NativeTTS.addListener('sentenceStarted', (data) => {
+          appLog("TTS_JS", `Received sentenceStarted: index=${data.index}, duration=${data.duration}`);
+          const index = data.index;
+          this._lastPlaybackProgressTime = Date.now();
+          this.playbackStarted = true;
+          this.isPaused = false;
+          this.currentIndex = index;
+          this.currentlyPlayingIndex = index;
+          const currentSentence = this.sentences[index];
+          if (currentSentence) {
+            const doHighlight = () => {
+              const sent = this.sentences[index] || currentSentence;
+              this._highlightSentence(sent);
+              if (this.onSentenceStart) {
+                this.onSentenceStart(index);
+              }
+              this._updateMediaSession(sent);
+              this._fillPreFetchBuffer();
+              this._prewarmNextPlayer();
+            };
+
+            if (currentSentence.chapterIndex !== this.currentChapterIndex) {
+              this.currentChapterIndex = currentSentence.chapterIndex;
+              this.prefetchedChapterIndex = null;
+              if (this.onChapterTransition) {
+                const p = this.onChapterTransition(currentSentence.chapterIndex);
+                if (p && typeof p.then === 'function') {
+                  p.then(doHighlight);
+                } else {
+                  doHighlight();
+                }
+              } else {
+                doHighlight();
+              }
+              this._prefetchNextChapter();
+            } else {
+              doHighlight();
+            }
+          } else {
+            this._fillPreFetchBuffer();
+            this._prewarmNextPlayer();
+          }
+        });
+
+        window.Capacitor.Plugins.NativeTTS.addListener('sentenceEnded', (data) => {
+          appLog("TTS_JS", `Received sentenceEnded: index=${data.index}`);
+          const endedIndex = data.index;
+          // If native engine did not have next sentence pre-warmed, trigger playback now
+          if (this.isPlaying && !this.isPaused && this.currentIndex === endedIndex) {
+            this.currentIndex = endedIndex + 1;
+            this._playActiveSentence();
+          }
+        });
       } catch (e) {
-        console.warn("Failed to register NativeTTS mediaAction listener:", e);
+        console.warn("Failed to register NativeTTS listeners:", e);
       }
     }
 
     this._initVoices();
+  }
+
+  _isNativeEngineAvailable() {
+    return typeof window !== 'undefined' &&
+      window.Capacitor &&
+      window.Capacitor.Plugins &&
+      window.Capacitor.Plugins.NativeTTS &&
+      typeof window.Capacitor.Plugins.NativeTTS.playNativeSentence === 'function';
+  }
+
+  _setMediaSessionPlaybackState(state) {
+    if (this._isNativeEngineAvailable()) return;
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = state;
+    }
   }
 
   // 設置配置項
@@ -1361,6 +1431,8 @@ export class TTSEngine {
                 return new Blob([byteArray], { type: mimeType });
               };
               const blob = base64ToBlob(result.audioBase64, 'audio/mpeg');
+              blob.filePath = result.filePath || null;
+              blob.audioBase64 = result.audioBase64 || null;
               resolve(blob);
               return;
             }
@@ -1723,11 +1795,15 @@ export class TTSEngine {
     }
 
     const blob = blobOrFileResult;
+    const filePath = (blob && blob.filePath) ? blob.filePath : null;
+    const audioBase64 = (blob && blob.audioBase64) ? blob.audioBase64 : null;
     if (window.location.protocol === 'file:') {
       const reader = new FileReader();
       reader.onloadend = () => {
         this.audioCache.set(index, {
           blobUrl: reader.result,
+          filePath: filePath,
+          audioBase64: audioBase64,
           isReady: true,
           isGroup: false
         });
@@ -1739,6 +1815,8 @@ export class TTSEngine {
       const blobUrl = URL.createObjectURL(blob);
       this.audioCache.set(index, {
         blobUrl,
+        filePath: filePath,
+        audioBase64: audioBase64,
         isReady: true,
         isGroup: false
       });
@@ -1983,6 +2061,87 @@ export class TTSEngine {
       this._speakNativeSentence(index);
       return;
     }
+
+    // Route B: Native Audio Engine on iOS (Swift AVAudioPlayer with twin-player gapless pre-warming)
+    if (this._isNativeEngineAvailable()) {
+      const cached = this.audioCache.get(index);
+      if (!cached || !cached.isReady) {
+        this._fetchSentence(index);
+        return;
+      }
+
+      this.currentlyPlayingIndex = index;
+      this.playbackStarted = true;
+      this._markPlaybackProgress();
+
+      const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
+      const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
+      const remainingSentences = Math.max(1, totalSentences - currentSentIdx);
+      const currentElapsed = currentSentIdx * 5.0;
+      const chapterDuration = Math.max(60.0, currentElapsed + remainingSentences * 5.0);
+      const bookTitle = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
+      const bookArtist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
+      const coverBase64 = this.currentBookCover || '';
+
+      const payload = {
+        filePath: cached.filePath || '',
+        audioBase64: cached.audioBase64 || '',
+        index: index,
+        text: sentence ? sentence.text : '',
+        title: bookTitle,
+        artist: bookArtist,
+        cover: coverBase64,
+        duration: chapterDuration,
+        currentTime: currentElapsed,
+        rate: this.rate || 1.0,
+        volume: (typeof this.volume === 'number' && this.volume >= 0) ? this.volume : 1.0
+      };
+
+      const doNativePlay = () => {
+        window.Capacitor.Plugins.NativeTTS.playNativeSentence(payload).then(() => {
+          if (!this.isPlaying || this.isPaused) return;
+          const sent = this.sentences[index] || sentence;
+          this._highlightSentence(sent);
+          if (this.onSentenceStart) {
+            this.onSentenceStart(index);
+          }
+          this._updateMediaSession(sent);
+          this._fillPreFetchBuffer();
+          this._prefetchNextChapter();
+          this._prewarmNextPlayer();
+        }).catch(err => {
+          console.error("playNativeSentence error:", err);
+          if (this.isPlaying && !this.isPaused) {
+            setTimeout(() => {
+              this.currentIndex = index + 1;
+              this._playActiveSentence();
+            }, 300);
+          }
+        });
+      };
+
+      if (sentence.chapterIndex !== this.currentChapterIndex) {
+        this.currentChapterIndex = sentence.chapterIndex;
+        this.prefetchedChapterIndex = null;
+        if (this.onChapterTransition) {
+          const p = this.onChapterTransition(sentence.chapterIndex);
+          if (p && typeof p.then === 'function') {
+            p.then(() => {
+              if (!this.isPlaying || this.isPaused) return;
+              doNativePlay();
+            });
+          } else {
+            doNativePlay();
+          }
+        } else {
+          doNativePlay();
+        }
+        this._prefetchNextChapter();
+      } else {
+        doNativePlay();
+      }
+      return;
+    }
     
     const cached = this.audioCache.get(index);
     if (!cached || !cached.isReady) {
@@ -1990,9 +2149,7 @@ export class TTSEngine {
       
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (this.isPlaying && !this.isPaused) {
-        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-          navigator.mediaSession.playbackState = 'playing';
-        }
+        this._setMediaSessionPlaybackState('playing');
         if (isCapacitorApp) {
           window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
             isPlaying: true
@@ -2112,9 +2269,7 @@ export class TTSEngine {
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
     audio.onplay = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-      }
+      this._setMediaSessionPlaybackState('playing');
       if (this.isPlaying && !this.isPaused && isCapacitorApp) {
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
           isPlaying: true
@@ -2122,13 +2277,11 @@ export class TTSEngine {
       }
     };
     audio.onpause = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-        if (this.isPaused) {
-          navigator.mediaSession.playbackState = 'paused';
-        } else if (this.isPlaying) {
-          // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
-          navigator.mediaSession.playbackState = 'playing';
-        }
+      if (this.isPaused) {
+        this._setMediaSessionPlaybackState('paused');
+      } else if (this.isPlaying) {
+        // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
+        this._setMediaSessionPlaybackState('playing');
       }
       // 換句過渡期間當前句子音訊暫停，WebKit底層會誤將鎖屏翻轉為三角形(▶)。立即通知原生層維持播放中(⏸)！
       if (this.isPlaying && !this.isPaused) {
@@ -2235,9 +2388,7 @@ export class TTSEngine {
         }
         
         if (this.isPlaying && !this.isPaused) {
-          if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'playing';
-          }
+          this._setMediaSessionPlaybackState('playing');
           if (isCapacitorApp) {
             window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
               isPlaying: true
@@ -2292,9 +2443,7 @@ export class TTSEngine {
         }
         
         if (this.isPlaying && !this.isPaused) {
-          if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'playing';
-          }
+          this._setMediaSessionPlaybackState('playing');
           if (isCapacitorApp) {
             window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
               isPlaying: true
@@ -2317,9 +2466,7 @@ export class TTSEngine {
     const startPlay = () => {
       if (!this.isPlaying || this.isPaused) return;
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-      }
+      this._setMediaSessionPlaybackState('playing');
       if (isCapacitorApp) {
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
           isPlaying: true
@@ -2347,9 +2494,7 @@ export class TTSEngine {
           try { audio.pause(); } catch (e) {}
           return;
         }
-        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-          navigator.mediaSession.playbackState = 'playing';
-        }
+        this._setMediaSessionPlaybackState('playing');
         if (isCapacitorApp) {
           window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
             isPlaying: true
@@ -2619,8 +2764,9 @@ export class TTSEngine {
   }
 
   _startSilenceKeepAlive() {
+    if (this._isNativeEngineAvailable()) return;
     if (typeof Audio === 'undefined') return;
-    if (!this.isPlaying) return; // 僅在播放管線啟動後運作（stop 停止狀態不保活）
+    if (!this.isPlaying || this.isPaused) return; // 暫停或未播放時嚴禁啟動靜音音訊
     
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
@@ -2671,6 +2817,19 @@ export class TTSEngine {
       }
       
       const now = Date.now();
+
+      // If Route B Native Audio Engine is active, audio is managed by native AVAudioPlayer
+      if (this._isNativeEngineAvailable()) {
+        const timeSinceProgress = now - this._lastPlaybackProgressTime;
+        if (timeSinceProgress > 15000) {
+          if (this.isPlaying && !this.isPaused) {
+            appLog("TTS Watchdog", `Native playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery`);
+            this._lastPlaybackProgressTime = now;
+            this._playActiveSentence();
+          }
+        }
+        return;
+      }
 
       // 1. 如果當前音訊或任何播放器正在正常發聲播放（非暫停、非結尾、且非靜音保活軌道），且時間指針正在前進，視為健康播放中
       const activeAudio = (this.currentAudio && !this.currentAudio.paused && !this.currentAudio.ended && this.currentAudio !== this.silenceAudio)
@@ -2778,9 +2937,7 @@ export class TTSEngine {
   }
 
   async _updateMediaSession(sentence) {
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
-    }
+    this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
 
     const text = sentence ? sentence.text : (this.currentBookTitle || 'TTS Reading');
     const title = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
@@ -2793,11 +2950,10 @@ export class TTSEngine {
     // 計算章節維度的整體進度與時長，防止單句時長（2~3秒）走完時被 iOS 系統誤判為音訊播放完畢而自動翻轉為播放（▶）圖標
     const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
     const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
+    const remainingSentences = Math.max(1, totalSentences - currentSentIdx);
     const sentenceAudioTime = (this.currentAudio && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0;
-    
-    // 估算章節總時長（每句約 5 秒，至少 60 秒）與當前章節累計播放進度
-    const chapterDuration = Math.max(60, totalSentences * 5);
-    const currentElapsed = Math.min(chapterDuration - 1, currentSentIdx * 5 + sentenceAudioTime);
+    const currentElapsed = currentSentIdx * 5.0 + sentenceAudioTime;
+    const chapterDuration = Math.max(60.0, currentElapsed + remainingSentences * 5.0);
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -2841,7 +2997,7 @@ export class TTSEngine {
         }
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
-        navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
+        this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
 
         if ('setPositionState' in navigator.mediaSession && chapterDuration > 0) {
           try {
@@ -2989,9 +3145,7 @@ export class TTSEngine {
       })();
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'playing';
-    }
+    this._setMediaSessionPlaybackState('playing');
     this._startSilenceKeepAlive();
     this._startPlaybackWatchdog();
     this._playActiveSentence();
@@ -3193,17 +3347,12 @@ export class TTSEngine {
     this._stopPlaybackWatchdog();
     if (!this.isPlaying) return;
 
-    // 1. 無條件立即標記為暫停，嚴格停止看門狗，啟動靜音保活維持 WebContent 活躍
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+
+    // 1. 無條件立即標記為暫停，嚴格停止看門狗，停止靜音保活
     this.isPaused = true;
     this._stopPlaybackWatchdog();
-    // 關鍵保活：在 WKWebView 內啟動靜音音訊，維持 com.apple.WebKit.WebContent 進程活躍
-    // 防止 iOS 在鎖屏 10-15 秒後掛起 WebContent 進程導致遠程恢復信號被截流
-    // 注意：如果是通話打斷等原生緊急打斷（_isInterrupted），絕不可播放靜音保活，避免與系統通話音訊競爭
-    if (!this._isInterrupted) {
-      this._startSilenceKeepAlive();
-    } else {
-      this._stopSilenceKeepAlive();
-    }
+    this._stopSilenceKeepAlive();
     if (this._silencePauseTimeout) {
       clearTimeout(this._silencePauseTimeout);
       this._silencePauseTimeout = null;
@@ -3216,10 +3365,19 @@ export class TTSEngine {
     }, 30 * 60 * 1000);
 
     // 2. 清空待處理的預加載隊列，並在 Capacitor 原生環境中立即取消在途的 Edge TTS WebSocket 任務與原生超時定時器
-    this.prefetchQueue = [];
-    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-    if (isCapacitorApp && typeof window.Capacitor.Plugins.NativeTTS.cancelAllTTS === 'function') {
-      window.Capacitor.Plugins.NativeTTS.cancelAllTTS().catch(() => {});
+    // 注意：在 Route B 原生引擎模式下，暫停時保留預加載隊列與在途音訊，避免電話打斷或暫停恢復時管道被掏空
+    if (!this._isNativeEngineAvailable()) {
+      this.prefetchQueue = [];
+      if (isCapacitorApp && typeof window.Capacitor.Plugins.NativeTTS.cancelAllTTS === 'function') {
+        window.Capacitor.Plugins.NativeTTS.cancelAllTTS().catch(() => {});
+      }
+    }
+
+    // Route B: Native Audio Engine pause
+    if (this._isNativeEngineAvailable()) {
+      if (!this._pauseFromNative) {
+        window.Capacitor.Plugins.NativeTTS.pauseNative().catch(() => {});
+      }
     }
 
     // 3. 立即實體暫停所有音訊播放器，消除聲音輸出
@@ -3239,23 +3397,18 @@ export class TTSEngine {
     }
     this._stopPolling();
 
-    // 4. 防抖保護：防止 200ms 內原生端雙重派發導致狀態震盪
+    // 4. 防抖時間戳更新
     const now = Date.now();
-    if (now - this._lastPauseResumeTime < 200) {
-      return;
-    }
     this._lastPauseResumeTime = now;
 
-    if (isCapacitorApp && !this._pauseFromNative) {
+    if (isCapacitorApp && !this._pauseFromNative && !this._isNativeEngineAvailable()) {
       // 只有非原生端觸發的暫停才需要通知原生端（原生端 Remote Command 已自行處理完畢）
       window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
         isPlaying: false
       }).catch(e => console.error("Error updating native playback state:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'paused';
-    }
+    this._setMediaSessionPlaybackState('paused');
 
     if (this.onStateChange) this.onStateChange();
   }
@@ -3270,13 +3423,31 @@ export class TTSEngine {
     }
     if (this.isPaused) {
       const now = Date.now();
-      if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
       this._lastPauseResumeTime = now;
       this.isPaused = false;
       this._startPlaybackWatchdog();
       if (this._silencePauseTimeout) {
         clearTimeout(this._silencePauseTimeout);
         this._silencePauseTimeout = null;
+      }
+
+      // Route B: Native Audio Engine resume
+      if (this._isNativeEngineAvailable()) {
+        if (!this._resumeFromNative) {
+          window.Capacitor.Plugins.NativeTTS.resumeNative().then(res => {
+            if (res && res.resumed === false) {
+              console.warn("[TTS Resume] Native resume reported resumed=false, falling back to _playActiveSentence()");
+              this._playActiveSentence();
+            }
+          }).catch(err => {
+            console.warn("[TTS Resume] resumeNative error, falling back to _playActiveSentence()", err);
+            this._playActiveSentence();
+          });
+        }
+        this._setMediaSessionPlaybackState('playing');
+        this._fillPreFetchBuffer();
+        if (this.onStateChange) this.onStateChange();
+        return;
       }
       
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
@@ -3287,9 +3458,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-      }
+      this._setMediaSessionPlaybackState('playing');
 
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
@@ -3382,13 +3551,14 @@ export class TTSEngine {
       if (typeof window.Capacitor.Plugins.NativeTTS.cleanupTTSFiles === 'function') {
         window.Capacitor.Plugins.NativeTTS.cleanupTTSFiles().catch(() => {});
       }
+      if (typeof window.Capacitor.Plugins.NativeTTS.stopNative === 'function') {
+        window.Capacitor.Plugins.NativeTTS.stopNative().catch(() => {});
+      }
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
     this._isInterrupted = false;
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'none';
-    }
+    this._setMediaSessionPlaybackState('none');
 
     if (this.synth) {
       this.synth.cancel();
@@ -3452,6 +3622,9 @@ export class TTSEngine {
 
   setRate(rate) {
     this.rate = rate;
+    if (this._isNativeEngineAvailable()) {
+      window.Capacitor.Plugins.NativeTTS.setRateNative({ rate: this.rate }).catch(() => {});
+    }
     this.players.forEach(p => {
       try {
         p.playbackRate = this.rate;
@@ -3462,7 +3635,7 @@ export class TTSEngine {
 
 
   _prewarmNextPlayer() {
-    if (!this.isPlaying || !this.players || this.players.length <= 1) return;
+    if (!this.isPlaying || this.isPaused) return;
     
     // 找出下一個「需要使用不同音訊源」的目標句子索引
     let nextAudioIndex = this.currentIndex + 1;
@@ -3473,6 +3646,25 @@ export class TTSEngine {
     }
 
     if (nextAudioIndex >= this.sentences.length) return;
+
+    // Route B: If Native Audio Engine is active, pre-warm next sentence on preparedPlayer!
+    if (this._isNativeEngineAvailable()) {
+      const nextCached = this.audioCache.get(nextAudioIndex);
+      if (nextCached && nextCached.isReady && (nextCached.filePath || nextCached.audioBase64)) {
+        window.Capacitor.Plugins.NativeTTS.prepareNextSentence({
+          filePath: nextCached.filePath || '',
+          audioBase64: nextCached.audioBase64 || '',
+          index: nextAudioIndex,
+          rate: this.rate || 1.0,
+          volume: (typeof this.volume === 'number' && this.volume >= 0) ? this.volume : 1.0
+        }).catch(err => {
+          console.warn("prepareNextSentence failed:", err);
+        });
+      }
+      return;
+    }
+
+    if (!this.players || this.players.length <= 1) return;
 
     const cached = this.audioCache.get(nextAudioIndex);
     if (cached && cached.isReady) {

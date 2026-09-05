@@ -2,7 +2,6 @@ import UIKit
 import Capacitor
 import AVFoundation
 import MediaPlayer
-import CallKit
 
 // Unified App Logger for deep tracing
 func writeAppLog(_ tag: String, _ message: String) {
@@ -33,7 +32,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        application.beginReceivingRemoteControlEvents()
         // Configure audio session for background TTS playback (.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP)
         do {
             let audioSession = AVAudioSession.sharedInstance()
@@ -81,33 +79,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
-    override func remoteControlReceived(with event: UIEvent?) {
-        guard let event = event, event.type == .remoteControl else { return }
-        guard let tts = NativeTTS.shared else { return }
-        // If MPRemoteCommandCenter already received a command recently, ignore the duplicate UIEvent from UIKit
-        if Date().timeIntervalSince1970 - tts.lastMPRemoteCommandTime < 1.0 {
-            writeAppLog("AppDelegate", "Ignoring duplicate UIEvent \(event.subtype.rawValue) (already handled via MPRemoteCommandCenter)")
-            return
-        }
-        writeAppLog("AppDelegate", "remoteControlReceived: subtype=\(event.subtype.rawValue)")
-        switch event.subtype {
-        case .remoteControlPlay:
-            tts.handleRemotePlay()
-        case .remoteControlPause:
-            tts.handleRemotePause()
-        case .remoteControlTogglePlayPause:
-            tts.handleRemoteTogglePlayPause()
-        case .remoteControlNextTrack:
-            tts.handleRemoteNext()
-        case .remoteControlPreviousTrack:
-            tts.handleRemotePrevious()
-        case .remoteControlStop:
-            tts.handleRemoteStop()
-        default:
-            break
-        }
-    }
-
 }
 
 class ViewController: CAPBridgeViewController {
@@ -121,33 +92,6 @@ class ViewController: CAPBridgeViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         becomeFirstResponder()
-    }
-
-    override func remoteControlReceived(with event: UIEvent?) {
-        guard let event = event, event.type == .remoteControl else { return }
-        guard let tts = NativeTTS.shared else { return }
-        // If MPRemoteCommandCenter already received a command recently, ignore the duplicate UIEvent from UIKit
-        if Date().timeIntervalSince1970 - tts.lastMPRemoteCommandTime < 1.0 {
-            writeAppLog("ViewController", "Ignoring duplicate UIEvent \(event.subtype.rawValue) (already handled via MPRemoteCommandCenter)")
-            return
-        }
-        writeAppLog("ViewController", "remoteControlReceived: subtype=\(event.subtype.rawValue)")
-        switch event.subtype {
-        case .remoteControlPlay:
-            tts.handleRemotePlay()
-        case .remoteControlPause:
-            tts.handleRemotePause()
-        case .remoteControlTogglePlayPause:
-            tts.handleRemoteTogglePlayPause()
-        case .remoteControlNextTrack:
-            tts.handleRemoteNext()
-        case .remoteControlPreviousTrack:
-            tts.handleRemotePrevious()
-        case .remoteControlStop:
-            tts.handleRemoteStop()
-        default:
-            break
-        }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -191,7 +135,7 @@ class ViewController: CAPBridgeViewController {
 }
 
 @objc(NativeTTS)
-public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
+public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate {
     public let identifier = "NativeTTS"
     public let jsName = "NativeTTS"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -212,7 +156,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         CAPPluginMethod(name: "copyFileToDownloads", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPlaybackSyncState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "simulateRemoteCommand", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "writeLog", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "writeLog", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "playNativeSentence", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepareNextSentence", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pauseNative", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeNative", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopNative", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRateNative", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setVolumeNative", returnType: CAPPluginReturnPromise)
     ]
 
     public static weak var shared: NativeTTS?
@@ -239,17 +190,54 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         call.resolve()
     }
 
+    // MARK: - Route B: Native Audio Engine (Twin-Player AVAudioPlayer)
+    private var playerA: AVAudioPlayer?
+    private var playerB: AVAudioPlayer?
+    private var activePlayerTag: Int = 0 // 0 = playerA, 1 = playerB
+    private var preparedPlayerTag: Int = 1
+    private var currentPlayingSentenceIndex: Int = -1
+    private var preparedSentenceIndex: Int = -1
+    private var currentPlaybackRate: Float = 1.0
+    private var currentPlaybackVolume: Float = 1.0
+    private var isNativeEngineActive: Bool = false
+    private var activePlayerFilePath: String = ""
+    private var preparedPlayerFilePath: String = ""
+    private var currentChapterTotalDuration: Double = 60.0
+    private var currentChapterProgressBase: Double = 0.0
+    private var currentChapterTitle: String = ""
+    private var currentChapterArtist: String = ""
+    private var currentSentenceText: String = ""
+
+    private var activePlayer: AVAudioPlayer? {
+        get { return activePlayerTag == 0 ? playerA : playerB }
+        set {
+            if activePlayerTag == 0 {
+                playerA = newValue
+            } else {
+                playerB = newValue
+            }
+        }
+    }
+
+    private var preparedPlayer: AVAudioPlayer? {
+        get { return preparedPlayerTag == 0 ? playerA : playerB }
+        set {
+            if preparedPlayerTag == 0 {
+                playerA = newValue
+            } else {
+                playerB = newValue
+            }
+        }
+    }
+
     private var activeTasks = [String: URLSessionWebSocketTask]()
     private var timeoutWorkItems = [String: DispatchWorkItem]()
     private let taskLock = NSLock()
     private var currentArtwork: MPMediaItemArtwork?
     private var wasPlayingBeforeInterruption: Bool = false
-    private var wasPlayingBeforeCall: Bool = false
-    private var hasActiveCall: Bool = false
     private var isAudioSessionInterrupted: Bool = false
     private var isCurrentlyPlaying: Bool = false
     private var authoritativeNowPlayingInfo: [String: Any] = [:]
-    private var callObserver: CXCallObserver?
     private var silencePlayer: AVAudioPlayer?
     private var silencePauseTimer: Timer?
     private var nowPlayingGuardianTimer: Timer?
@@ -329,6 +317,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func startSilencePlayer() {
+        if self.isNativeEngineActive {
+            return
+        }
         self.activateAudioSession()
         cancelSilencePauseTimer()
         ensureSilencePlayer()
@@ -347,6 +338,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     func scheduleSilencePauseTimer() {
         cancelSilencePauseTimer()
+        if self.isNativeEngineActive {
+            // Route B uses native AVAudioPlayer directly.
+            // Playing silence during pause in Route B causes iOS CoreAudio to detect active audio output,
+            // which forces the lock screen / Control Center to show ⏸ (playing) instead of ▶ (paused).
+            stopSilencePlayer()
+            return
+        }
         startSilencePlayer()
         DispatchQueue.main.async { [weak self] in
             // Keep silence player alive for 30 minutes after pause, preventing iOS from freezing WKWebView
@@ -459,6 +457,12 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.lastRemotePauseTime = Date().timeIntervalSince1970
         self.isCurrentlyPlaying = false
         self.stopNowPlayingGuardian()
+
+        if self.isNativeEngineActive {
+            self.activePlayer?.pause()
+            self.preparedPlayer?.pause()
+        }
+
         // Immediately pause silence player to prevent any audio hardware output
         self.silencePlayer?.pause()
         self.syncNowPlaying(isPlaying: false)
@@ -477,7 +481,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         if Thread.isMainThread {
             updateWebViewBlock()
         } else {
-            DispatchQueue.main.sync {
+            DispatchQueue.main.async {
                 updateWebViewBlock()
             }
         }
@@ -496,139 +500,17 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
-    func resumeAfterInterruptionOrCall() {
-        writeAppLog("NativeTTS", "resumeAfterInterruptionOrCall triggered. wasPlayingBeforeCall=\(self.wasPlayingBeforeCall), wasPlayingBeforeInterruption=\(self.wasPlayingBeforeInterruption), isCurrentlyPlaying=\(self.isCurrentlyPlaying), hasActiveCall=\(self.hasActiveCall)")
-        guard (self.wasPlayingBeforeCall || self.wasPlayingBeforeInterruption) && !self.isCurrentlyPlaying && !self.hasActiveCall else {
-            writeAppLog("NativeTTS", "resumeAfterInterruptionOrCall skipped: already resumed, was not playing, or call still active")
-            if !self.hasActiveCall && !self.isCurrentlyPlaying {
-                self.wasPlayingBeforeCall = false
-                self.wasPlayingBeforeInterruption = false
-                self.isAudioSessionInterrupted = false
-            }
-            return
-        }
-        self.wasPlayingBeforeCall = false
-        self.wasPlayingBeforeInterruption = false
-        self.isAudioSessionInterrupted = false
-        writeAppLog("NativeTTS", "Resuming playback after interruption/call")
-        let activated = self.activateAudioSession()
-        if !activated {
-            writeAppLog("NativeTTS", "Initial activateAudioSession failed after call, scheduling retry in 500ms")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.activateAudioSession()
-            }
-        }
-
-        self.isCurrentlyPlaying = true
-        // Keep silencePlayer running as a safety net until JS actually starts audible playback!
-        self.startSilencePlayer()
-        self.startNowPlayingGuardian()
-        self.syncNowPlaying(isPlaying: true)
-
-        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackInterruption") {
-            if bgTaskId != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTaskId)
-                bgTaskId = .invalid
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
-            if bgTaskId != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTaskId)
-                bgTaskId = .invalid
-            }
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-                return
-            }
-            writeAppLog("NativeTTS", "resumeAfterInterruptionOrCall: evaluating JS resume in webView...")
-            self.bridge?.webView?.evaluateJavaScript(
-                "if (window.tts) { window.tts._resumeFromNative = true; window.tts._isInterrupted = false; window.tts.resume(); window.tts._resumeFromNative = false; 'RESUMED_INTERRUPT_SUCCESS'; }",
-                completionHandler: { res, err in
-                    if let err = err {
-                        writeAppLog("NativeTTS", "resumeAfterInterruptionOrCall evaluateJS ERROR: \(err.localizedDescription)")
-                    } else {
-                        writeAppLog("NativeTTS", "resumeAfterInterruptionOrCall evaluateJS RESULT: \(res ?? "nil")")
-                    }
-                }
-            )
-            self.notifyListeners("mediaAction", data: ["action": "play"])
-        }
+    // MARK: - Interruption Handlers
+    func endInterruptionResumeBgTask() {
+        // Kept for backward compatibility
     }
 
-    // MARK: - Interruption Background Task Management
-    private var interruptionResumeBgTaskId: UIBackgroundTaskIdentifier = .invalid
-    private var interruptionResumeTimer: Timer?
-
-    private func beginInterruptionResumeBgTask() {
-        endInterruptionResumeBgTask()
-        interruptionResumeBgTaskId = UIApplication.shared.beginBackgroundTask(withName: "InterruptionResume") { [weak self] in
-            writeAppLog("NativeTTS", "InterruptionResume background task expired by iOS")
-            self?.endInterruptionResumeBgTask()
-        }
-        writeAppLog("NativeTTS", "beginInterruptionResumeBgTask: id=\(interruptionResumeBgTaskId.rawValue)")
-        DispatchQueue.main.async { [weak self] in
-            self?.interruptionResumeTimer?.invalidate()
-            self?.interruptionResumeTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
-                writeAppLog("NativeTTS", "InterruptionResume background task 15s timeout reached")
-                self?.endInterruptionResumeBgTask()
-            }
-        }
+    func triggerResumeAfterInterruption() {
+        self.handleRemotePlay(isDirect: true)
     }
 
-    private func endInterruptionResumeBgTask() {
-        interruptionResumeTimer?.invalidate()
-        interruptionResumeTimer = nil
-        if interruptionResumeBgTaskId != .invalid {
-            let id = interruptionResumeBgTaskId
-            interruptionResumeBgTaskId = .invalid
-            UIApplication.shared.endBackgroundTask(id)
-            writeAppLog("NativeTTS", "endInterruptionResumeBgTask: id=\(id.rawValue)")
-        }
-    }
-
-    // MARK: - CXCallObserverDelegate (Incoming & Active Call Detection)
-    private func setupCallObserver() {
-        callObserver = CXCallObserver()
-        callObserver?.setDelegate(self, queue: DispatchQueue.main)
-    }
-
-    public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-        let anyCallActive = callObserver.calls.contains(where: { !$0.hasEnded })
-        writeAppLog("NativeTTS", "callObserver callChanged: hasEnded=\(call.hasEnded), hasConnected=\(call.hasConnected), outgoing=\(call.isOutgoing), isOnHold=\(call.isOnHold), anyCallActive=\(anyCallActive)")
-        if !call.hasEnded {
-            // Incoming ringing call, dialing, or connected call
-            self.hasActiveCall = true
-            if self.isCurrentlyPlaying {
-                writeAppLog("NativeTTS", "Call active while playing -> setting wasPlayingBeforeCall=true and triggering emergencyPause")
-                self.wasPlayingBeforeCall = true
-                self.wasPlayingBeforeInterruption = true
-                self.emergencyPause(reason: "Phone Call (Ringing/Active)")
-            }
-        } else {
-            // Call ended
-            if !anyCallActive {
-                self.hasActiveCall = false
-                writeAppLog("NativeTTS", "All calls ended. wasPlayingBeforeCall=\(self.wasPlayingBeforeCall), wasPlayingBeforeInterruption=\(self.wasPlayingBeforeInterruption)")
-                if self.wasPlayingBeforeCall || self.wasPlayingBeforeInterruption {
-                    self.beginInterruptionResumeBgTask()
-                    self.activateAudioSession()
-                    self.startSilencePlayer()
-                    // Delay 0.35s allows iOS audio hardware route to switch back to headphones/speaker before resuming
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                        self?.resumeAfterInterruptionOrCall()
-                    }
-                }
-            } else {
-                writeAppLog("NativeTTS", "A call ended but another call is still active")
-            }
-        }
+    func resumeAfterInterruption() {
+        self.handleRemotePlay(isDirect: true)
     }
 
     @objc func setStatusBarStyle(_ call: CAPPluginCall) {
@@ -647,7 +529,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         NativeTTS.shared = self
         setupRemoteCommands()
         setupAudioSessionObserver()
-        setupCallObserver()
     }
 
     deinit {
@@ -655,11 +536,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             NativeTTS.shared = nil
         }
         NotificationCenter.default.removeObserver(self)
-        callObserver?.setDelegate(nil, queue: nil)
-        callObserver = nil
         endInterruptionResumeBgTask()
         stopSilencePlayer()
         stopNowPlayingGuardian()
+        playerA?.stop()
+        playerA = nil
+        playerB?.stop()
+        playerB = nil
         taskLock.lock()
         for (_, workItem) in timeoutWorkItems {
             workItem.cancel()
@@ -897,10 +780,367 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         receiveNext()
     }
 
+    // MARK: - Route B: Native Audio Engine Methods
+    @objc func playNativeSentence(_ call: CAPPluginCall) {
+        guard let index = call.getInt("index") else {
+            call.reject("Missing index")
+            return
+        }
+
+        let filePathOpt = call.getString("filePath")
+        let base64Opt = call.getString("audioBase64")
+        let text = call.getString("text") ?? ""
+        let title = call.getString("title") ?? self.currentChapterTitle
+        let artist = call.getString("artist") ?? self.currentChapterArtist
+        let coverBase64 = call.getString("cover")
+        let duration = call.getDouble("duration") ?? self.currentChapterTotalDuration
+        let currentTime = call.getDouble("currentTime") ?? 0.0
+        let rate = Float(call.getDouble("rate") ?? Double(self.currentPlaybackRate))
+        let volume = Float(call.getDouble("volume") ?? Double(self.currentPlaybackVolume))
+
+        self.currentChapterTitle = title
+        self.currentChapterArtist = artist
+        self.currentSentenceText = text
+        self.currentChapterTotalDuration = duration
+        self.currentChapterProgressBase = currentTime
+        self.currentPlaybackRate = (rate > 0) ? rate : 1.0
+        self.currentPlaybackVolume = (volume >= 0) ? volume : 1.0
+
+        writeAppLog("NativeTTS", "playNativeSentence: index=\(index), file=\(filePathOpt ?? "base64"), rate=\(self.currentPlaybackRate)")
+
+        self.activateAudioSession()
+        self.isNativeEngineActive = true
+        self.isCurrentlyPlaying = true
+        self.wasPlayingBeforeInterruption = false
+        self.isAudioSessionInterrupted = false
+        self.stopSilencePlayer()
+        self.endInterruptionResumeBgTask()
+        self.startNowPlayingGuardian()
+
+        // Check if preparedPlayer is already pre-warmed for this exact sentence
+        if self.preparedSentenceIndex == index, let prep = self.preparedPlayer {
+            writeAppLog("NativeTTS", "playNativeSentence: using pre-warmed preparedPlayer for index=\(index)")
+            self.activePlayer?.stop()
+            self.activePlayer = nil
+
+            // Swap player roles
+            self.activePlayerTag = self.preparedPlayerTag
+            self.preparedPlayerTag = 1 - self.activePlayerTag
+            self.preparedSentenceIndex = -1
+            self.currentPlayingSentenceIndex = index
+            self.activePlayerFilePath = self.preparedPlayerFilePath
+            self.preparedPlayerFilePath = ""
+
+            prep.rate = self.currentPlaybackRate
+            prep.volume = self.currentPlaybackVolume
+            prep.play()
+        } else {
+            // Need to initialize a new player
+            self.activePlayer?.stop()
+            self.activePlayer = nil
+
+            do {
+                let player: AVAudioPlayer
+                if let filePath = filePathOpt, !filePath.isEmpty, FileManager.default.fileExists(atPath: filePath) {
+                    player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: filePath))
+                    self.activePlayerFilePath = filePath
+                } else if let base64 = base64Opt, let data = Data(base64Encoded: base64) {
+                    player = try AVAudioPlayer(data: data)
+                    self.activePlayerFilePath = ""
+                } else {
+                    call.reject("No valid audio file or base64 data for index \(index)")
+                    return
+                }
+
+                player.delegate = self
+                player.enableRate = true
+                player.rate = self.currentPlaybackRate
+                player.volume = self.currentPlaybackVolume
+                player.prepareToPlay()
+                player.play()
+
+                self.activePlayer = player
+                self.currentPlayingSentenceIndex = index
+                writeAppLog("NativeTTS", "playNativeSentence: started activePlayer for sentence \(index), duration=\(player.duration)")
+            } catch {
+                writeAppLog("NativeTTS", "playNativeSentence ERROR initializing AVAudioPlayer: \(error.localizedDescription)")
+                call.reject("Failed to initialize AVAudioPlayer: \(error.localizedDescription)")
+                return
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.updateNowPlaying(
+                title: title,
+                artist: artist,
+                text: text,
+                isPlaying: true,
+                coverBase64: coverBase64,
+                duration: duration,
+                currentTime: currentTime
+            )
+        }
+
+        call.resolve([
+            "success": true,
+            "index": index,
+            "duration": self.activePlayer?.duration ?? 0
+        ])
+    }
+
+    @objc func prepareNextSentence(_ call: CAPPluginCall) {
+        guard let index = call.getInt("index") else {
+            call.reject("Missing index")
+            return
+        }
+
+        let filePathOpt = call.getString("filePath")
+        let base64Opt = call.getString("audioBase64")
+        let rate = Float(call.getDouble("rate") ?? Double(self.currentPlaybackRate))
+        let volume = Float(call.getDouble("volume") ?? Double(self.currentPlaybackVolume))
+
+        writeAppLog("NativeTTS", "prepareNextSentence: index=\(index)")
+
+        do {
+            let player: AVAudioPlayer
+            if let filePath = filePathOpt, !filePath.isEmpty, FileManager.default.fileExists(atPath: filePath) {
+                player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: filePath))
+                self.preparedPlayerFilePath = filePath
+            } else if let base64 = base64Opt, let data = Data(base64Encoded: base64) {
+                player = try AVAudioPlayer(data: data)
+                self.preparedPlayerFilePath = ""
+            } else {
+                call.reject("No valid audio file or base64 data for prepared index \(index)")
+                return
+            }
+
+            player.delegate = self
+            player.enableRate = true
+            player.rate = (rate > 0) ? rate : self.currentPlaybackRate
+            player.volume = (volume >= 0) ? volume : self.currentPlaybackVolume
+            let prepared = player.prepareToPlay() // Pre-allocates hardware CoreAudio buffers
+
+            self.preparedPlayer?.stop()
+            self.preparedPlayer = player
+            self.preparedSentenceIndex = index
+
+            writeAppLog("NativeTTS", "prepareNextSentence: successfully primed hardware buffer for sentence \(index), duration=\(player.duration)")
+            call.resolve(["success": true, "index": index, "prepared": prepared])
+        } catch {
+            writeAppLog("NativeTTS", "prepareNextSentence ERROR: \(error.localizedDescription)")
+            call.reject("Failed to prepare AVAudioPlayer: \(error.localizedDescription)")
+        }
+    }
+
+    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: successfully=\(flag), currentPlayingIndex=\(self.currentPlayingSentenceIndex), preparedIndex=\(self.preparedSentenceIndex)")
+
+        guard self.isNativeEngineActive else { return }
+
+        let finishedIndex = self.currentPlayingSentenceIndex
+
+        // If preparedPlayer is pre-warmed for next sentence, switch instantly (0ms latency)!
+        if self.isCurrentlyPlaying,
+           let nextPlayer = self.preparedPlayer,
+           self.preparedSentenceIndex == finishedIndex + 1 {
+
+            nextPlayer.rate = self.currentPlaybackRate
+            nextPlayer.volume = self.currentPlaybackVolume
+            nextPlayer.play()
+
+            let newIndex = self.preparedSentenceIndex
+            self.activePlayerTag = self.preparedPlayerTag
+            self.preparedPlayerTag = 1 - self.activePlayerTag
+            self.currentPlayingSentenceIndex = newIndex
+            self.preparedSentenceIndex = -1
+            self.activePlayerFilePath = self.preparedPlayerFilePath
+            self.preparedPlayerFilePath = ""
+            self.preparedPlayer?.stop()
+            self.preparedPlayer = nil
+
+            writeAppLog("NativeTTS", "Gapless switch: started pre-warmed sentence \(newIndex)")
+
+            // Update chapter progress on lock screen safely without exceeding total duration
+            let updatedCurrentTime = Double(newIndex) * 5.0
+            if updatedCurrentTime >= self.currentChapterTotalDuration - 5.0 {
+                self.currentChapterTotalDuration = updatedCurrentTime + 30.0
+                self.authoritativeNowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = self.currentChapterTotalDuration
+            }
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = updatedCurrentTime
+            self.syncNowPlaying(isPlaying: true)
+
+            self.notifyListeners("sentenceStarted", data: [
+                "index": newIndex,
+                "duration": nextPlayer.duration
+            ])
+            self.notifyListeners("sentenceEnded", data: [
+                "index": finishedIndex
+            ])
+        } else {
+            writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: next sentence \(finishedIndex + 1) not prepared yet, notifying JS")
+            self.notifyListeners("sentenceEnded", data: [
+                "index": finishedIndex
+            ])
+        }
+    }
+
+    @objc func pauseNative(_ call: CAPPluginCall) {
+        writeAppLog("NativeTTS", "pauseNative called from JS")
+        self.isCurrentlyPlaying = false
+        self.stopNowPlayingGuardian()
+        self.activePlayer?.pause()
+        self.preparedPlayer?.pause()
+        self.stopSilencePlayer()
+        self.syncNowPlaying(isPlaying: false)
+        call.resolve()
+    }
+
+    @objc func resumeNative(_ call: CAPPluginCall) {
+        writeAppLog("NativeTTS", "resumeNative called from JS (isNativeEngineActive=\(self.isNativeEngineActive))")
+        self.activateAudioSession()
+        self.cancelSilencePauseTimer()
+        self.stopSilencePlayer()
+        self.isCurrentlyPlaying = true
+        self.wasPlayingBeforeInterruption = false
+        self.isAudioSessionInterrupted = false
+
+        // Route B: Direct native resumption with CoreAudio re-creation fallback
+        if let player = self.activePlayer {
+            player.rate = self.currentPlaybackRate
+            player.prepareToPlay()
+            var played = player.play()
+            if !played && !self.activePlayerFilePath.isEmpty && FileManager.default.fileExists(atPath: self.activePlayerFilePath) {
+                let savedTime = player.currentTime
+                writeAppLog("NativeTTS", "resumeNative: play() returned false, re-creating AVAudioPlayer from \(self.activePlayerFilePath) at time \(savedTime)")
+                do {
+                    let newPlayer = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: self.activePlayerFilePath))
+                    newPlayer.delegate = self
+                    newPlayer.enableRate = true
+                    newPlayer.rate = self.currentPlaybackRate
+                    newPlayer.volume = self.currentPlaybackVolume
+                    newPlayer.currentTime = max(0, savedTime)
+                    newPlayer.prepareToPlay()
+                    played = newPlayer.play()
+                    self.activePlayer = newPlayer
+                    writeAppLog("NativeTTS", "resumeNative: re-instantiated activePlayer.play() returned \(played)")
+                } catch {
+                    writeAppLog("NativeTTS", "resumeNative: failed to re-instantiate activePlayer: \(error.localizedDescription)")
+                }
+            }
+            if played {
+                self.preparedPlayer?.prepareToPlay()
+                self.startNowPlayingGuardian()
+                self.syncNowPlaying(isPlaying: true)
+                call.resolve(["resumed": true, "index": self.currentPlayingSentenceIndex])
+                return
+            }
+        }
+
+        if let prep = self.preparedPlayer, self.preparedSentenceIndex >= 0 {
+            prep.rate = self.currentPlaybackRate
+            prep.prepareToPlay()
+            let played = prep.play()
+            self.activePlayerTag = self.preparedPlayerTag
+            self.preparedPlayerTag = 1 - self.activePlayerTag
+            self.currentPlayingSentenceIndex = self.preparedSentenceIndex
+            self.preparedSentenceIndex = -1
+            self.activePlayerFilePath = self.preparedPlayerFilePath
+            self.preparedPlayerFilePath = ""
+            if played {
+                self.startNowPlayingGuardian()
+                self.syncNowPlaying(isPlaying: true)
+                call.resolve(["resumed": true, "index": self.currentPlayingSentenceIndex])
+                return
+            }
+        }
+
+        if !self.activePlayerFilePath.isEmpty && FileManager.default.fileExists(atPath: self.activePlayerFilePath) {
+            do {
+                let newPlayer = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: self.activePlayerFilePath))
+                newPlayer.delegate = self
+                newPlayer.enableRate = true
+                newPlayer.rate = self.currentPlaybackRate
+                newPlayer.volume = self.currentPlaybackVolume
+                newPlayer.prepareToPlay()
+                let played = newPlayer.play()
+                self.activePlayer = newPlayer
+                if played {
+                    self.startNowPlayingGuardian()
+                    self.syncNowPlaying(isPlaying: true)
+                    call.resolve(["resumed": true, "index": self.currentPlayingSentenceIndex])
+                    return
+                }
+            } catch {
+                writeAppLog("NativeTTS", "resumeNative: failed to restore from activePlayerFilePath: \(error.localizedDescription)")
+            }
+        }
+
+        self.startSilencePlayer()
+        self.syncNowPlaying(isPlaying: true)
+        call.resolve(["resumed": false, "message": "No player ready"])
+    }
+
+    @objc func stopNative(_ call: CAPPluginCall) {
+        writeAppLog("NativeTTS", "stopNative called from JS")
+        self.isNativeEngineActive = false
+        self.isCurrentlyPlaying = false
+        self.wasPlayingBeforeInterruption = false
+        self.isAudioSessionInterrupted = false
+        self.currentPlayingSentenceIndex = -1
+        self.preparedSentenceIndex = -1
+        self.activePlayerFilePath = ""
+        self.preparedPlayerFilePath = ""
+
+        self.playerA?.stop()
+        self.playerA = nil
+        self.playerB?.stop()
+        self.playerB = nil
+
+        self.stopSilencePlayer()
+        self.endInterruptionResumeBgTask()
+        self.stopNowPlayingGuardian()
+        self.updateRemoteCommandsState(isPlaying: false)
+        self.authoritativeNowPlayingInfo = [:]
+
+        DispatchQueue.main.async {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            if #available(iOS 13.0, *) {
+                MPNowPlayingInfoCenter.default().playbackState = .stopped
+            }
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        call.resolve()
+    }
+
+    @objc func setRateNative(_ call: CAPPluginCall) {
+        let rate = Float(call.getDouble("rate") ?? 1.0)
+        self.currentPlaybackRate = (rate > 0) ? rate : 1.0
+        self.activePlayer?.rate = self.currentPlaybackRate
+        self.preparedPlayer?.rate = self.currentPlaybackRate
+        if self.isCurrentlyPlaying {
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = Double(self.currentPlaybackRate)
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = Double(self.currentPlaybackRate)
+            self.syncNowPlaying(isPlaying: true)
+        }
+        call.resolve()
+    }
+
+    @objc func setVolumeNative(_ call: CAPPluginCall) {
+        let volume = Float(call.getDouble("volume") ?? 1.0)
+        self.currentPlaybackVolume = (volume >= 0) ? volume : 1.0
+        self.activePlayer?.volume = self.currentPlaybackVolume
+        self.preparedPlayer?.volume = self.currentPlaybackVolume
+        call.resolve()
+    }
+
     @objc func deleteTTSFile(_ call: CAPPluginCall) {
         if let filePath = call.getString("filePath") {
-            let fileURL = URL(fileURLWithPath: filePath)
-            try? FileManager.default.removeItem(at: fileURL)
+            if filePath != self.activePlayerFilePath && filePath != self.preparedPlayerFilePath {
+                let fileURL = URL(fileURLWithPath: filePath)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
         }
         call.resolve()
     }
@@ -954,15 +1194,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             if isPlaying {
                 self.activateAudioSession()
                 self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
                 self.isAudioSessionInterrupted = false
                 self.stopSilencePlayer()
                 self.endInterruptionResumeBgTask()
                 self.startNowPlayingGuardian()
             } else {
-                if !self.hasActiveCall && !self.isAudioSessionInterrupted && !self.wasPlayingBeforeCall && !self.wasPlayingBeforeInterruption {
+                if !self.isAudioSessionInterrupted && !self.wasPlayingBeforeInterruption {
                     self.wasPlayingBeforeInterruption = false
-                    self.wasPlayingBeforeCall = false
                     self.isAudioSessionInterrupted = false
                 }
                 self.stopNowPlayingGuardian()
@@ -988,15 +1226,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             if isPlaying {
                 self.activateAudioSession()
                 self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
                 self.isAudioSessionInterrupted = false
                 self.stopSilencePlayer()
                 self.endInterruptionResumeBgTask()
                 self.startNowPlayingGuardian()
             } else {
-                if !self.hasActiveCall && !self.isAudioSessionInterrupted && !self.wasPlayingBeforeCall && !self.wasPlayingBeforeInterruption {
+                if !self.isAudioSessionInterrupted && !self.wasPlayingBeforeInterruption {
                     self.wasPlayingBeforeInterruption = false
-                    self.wasPlayingBeforeCall = false
                     self.isAudioSessionInterrupted = false
                 }
                 self.stopNowPlayingGuardian()
@@ -1023,15 +1259,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 if callIsPlaying {
                     self.activateAudioSession()
                     self.wasPlayingBeforeInterruption = false
-                    self.wasPlayingBeforeCall = false
                     self.isAudioSessionInterrupted = false
                     self.stopSilencePlayer()
                     self.endInterruptionResumeBgTask()
                     self.startNowPlayingGuardian()
                 } else {
-                    if !self.hasActiveCall && !self.isAudioSessionInterrupted && !self.wasPlayingBeforeCall && !self.wasPlayingBeforeInterruption {
+                    if !self.isAudioSessionInterrupted && !self.wasPlayingBeforeInterruption {
                         self.wasPlayingBeforeInterruption = false
-                        self.wasPlayingBeforeCall = false
                         self.isAudioSessionInterrupted = false
                     }
                     self.stopNowPlayingGuardian()
@@ -1048,7 +1282,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     @objc func stopForegroundService(_ call: CAPPluginCall) {
         self.wasPlayingBeforeInterruption = false
-        self.wasPlayingBeforeCall = false
         self.isCurrentlyPlaying = false
         self.currentArtwork = nil
         self.authoritativeNowPlayingInfo = [:]
@@ -1087,6 +1320,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
         call.resolve([
             "isCurrentlyPlaying": self.isCurrentlyPlaying,
+            "isNativeEngineActive": self.isNativeEngineActive,
+            "currentPlayingSentenceIndex": self.currentPlayingSentenceIndex,
+            "preparedSentenceIndex": self.preparedSentenceIndex,
+            "nativePlayerPlaying": (self.activePlayer?.isPlaying ?? false),
             "silencePlayerRunning": (self.silencePlayer?.isPlaying ?? false),
             "playbackState": stateStr,
             "playbackRate": rate,
@@ -1199,12 +1436,16 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
 
-        let validDuration = (duration != nil && duration! > 0) ? duration! : (nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double ?? 15.0)
-        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = validDuration
-        
+        let validDuration = (duration != nil && duration! > 0) ? duration! : (nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double ?? 60.0)
         let validCurrentTime = (currentTime != nil && currentTime! >= 0) ? currentTime! : 0.0
+        let safeDuration = max(validDuration, validCurrentTime + 5.0)
+
+        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = safeDuration
         nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = validCurrentTime
         
+        self.currentChapterTotalDuration = safeDuration
+        self.currentChapterProgressBase = validCurrentTime
+
         if let artwork = self.currentArtwork {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
         }
@@ -1253,19 +1494,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
             return
         }
+        writeAppLog("NativeTTS", "Audio route changed: reason=\(reason.rawValue)")
+
+        // 遵循 iOS 官方防扰民规范：拔出耳机或断开蓝牙耳机时，立即执行暂停
         if reason == .oldDeviceUnavailable {
-            print("[NativeTTS] Audio route changed: old device unavailable (headphone unplugged)")
+            writeAppLog("NativeTTS", "Audio route changed: old device unavailable (headphone disconnected)")
             DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.isCurrentlyPlaying = false
-                self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
-                self.isAudioSessionInterrupted = false
-                self.stopNowPlayingGuardian()
-                self.scheduleSilencePauseTimer()
-                self.syncNowPlaying(isPlaying: false)
-                self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.pause(); }", completionHandler: nil)
-                self.notifyListeners("mediaAction", data: ["action": "pause"])
+                self?.handleRemotePause(isDirect: true)
             }
         }
     }
@@ -1279,41 +1514,38 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
         switch type {
         case .began:
-            writeAppLog("NativeTTS", "Audio session interruption began (external app / call / Siri). isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
+            writeAppLog("NativeTTS", "Audio session interruption began. isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
             self.isAudioSessionInterrupted = true
-            if self.isCurrentlyPlaying {
-                self.wasPlayingBeforeInterruption = true
-                self.wasPlayingBeforeCall = true
-            }
+            self.wasPlayingBeforeInterruption = self.isCurrentlyPlaying
             self.emergencyPause(reason: "AVAudioSession Interruption Began")
 
         case .ended:
-            writeAppLog("NativeTTS", "Audio session interruption ended. isInterrupted=\(self.isAudioSessionInterrupted), wasPlayingBeforeInterruption=\(self.wasPlayingBeforeInterruption), wasPlayingBeforeCall=\(self.wasPlayingBeforeCall), hasActiveCall=\(self.hasActiveCall)")
-            guard self.isAudioSessionInterrupted || self.wasPlayingBeforeInterruption || self.wasPlayingBeforeCall else {
-                writeAppLog("NativeTTS", "Audio session interruption ended ignored: no active interruption was recorded")
-                return
-            }
+            writeAppLog("NativeTTS", "Audio session interruption ended. wasPlayingBeforeInterruption=\(self.wasPlayingBeforeInterruption)")
             self.isAudioSessionInterrupted = false
+            let shouldResumePlayback = self.wasPlayingBeforeInterruption
+            self.wasPlayingBeforeInterruption = false
 
-            guard self.wasPlayingBeforeInterruption || self.wasPlayingBeforeCall else {
-                writeAppLog("NativeTTS", "Audio session interruption ended ignored: was not playing or paused by user")
+            guard shouldResumePlayback else {
+                writeAppLog("NativeTTS", "Audio session interruption ended ignored: was not playing before interruption")
                 return
             }
 
-            // If a phone call is still active according to CXCallObserver, do not resume yet;
-            // let callObserver handle resume when the call actually disconnects.
-            if self.hasActiveCall {
-                writeAppLog("NativeTTS", "Audio session interruption ended but phone call is still active; deferring resume to callObserver")
-                return
+            var shouldResumeFlag = false
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                shouldResumeFlag = options.contains(.shouldResume)
             }
+            writeAppLog("NativeTTS", "Interruption ended options: shouldResume=\(shouldResumeFlag)")
 
-            // Always resume if we were playing before interruption, regardless of whether
-            // iOS included .shouldResume (cellular calls on iOS regularly omit .shouldResume)
-            self.beginInterruptionResumeBgTask()
-            self.activateAudioSession()
-            self.startSilencePlayer()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.resumeAfterInterruptionOrCall()
+            if shouldResumeFlag {
+                // 仅当 iOS 系统明确指示 shouldResume 时（如短暂的导航语音提示播报完毕），才自动恢复播放
+                writeAppLog("NativeTTS", "Transient interruption ended with shouldResume=true. Resuming playback.")
+                self.handleRemotePlay(isDirect: true)
+            } else {
+                // 遵循 iOS 官方防扰民规范（电话通话打断等）：通话结束后保持暂停就绪状态，
+                // 锁屏控制中心呈现 ▶ 图标，用户轻按耳机或点击锁屏 ▶ 即可毫秒级无缝继续发声。
+                writeAppLog("NativeTTS", "Call interruption ended with shouldResume=false. Maintaining paused state as per iOS HIG.")
+                self.syncNowPlaying(isPlaying: false)
             }
 
         @unknown default:
@@ -1324,9 +1556,74 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     // MARK: - Remote Control Handlers (Handles both MPRemoteCommandCenter and Bluetooth UIEvent)
     func handleRemotePlay(isDirect: Bool = false) {
         if !isDirect && shouldThrottleRemoteCommand(type: "play") { return }
-        writeAppLog("NativeTTS", "handleRemotePlay BEGIN")
+        writeAppLog("NativeTTS", "handleRemotePlay BEGIN (isNativeEngineActive=\(self.isNativeEngineActive))")
         self.activateAudioSession()
+        self.cancelSilencePauseTimer()
+        self.stopSilencePlayer()
         self.isCurrentlyPlaying = true
+        self.wasPlayingBeforeInterruption = false
+        self.isAudioSessionInterrupted = false
+        self.endInterruptionResumeBgTask()
+
+        // Route B: Direct native resumption within 0ms
+        if self.isNativeEngineActive, let player = self.activePlayer {
+            player.rate = self.currentPlaybackRate
+            player.prepareToPlay()
+            var played = player.play()
+            if !played && !self.activePlayerFilePath.isEmpty && FileManager.default.fileExists(atPath: self.activePlayerFilePath) {
+                let savedTime = player.currentTime
+                writeAppLog("NativeTTS", "handleRemotePlay: play() failed, re-creating AVAudioPlayer from \(self.activePlayerFilePath) at time \(savedTime)")
+                do {
+                    let newPlayer = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: self.activePlayerFilePath))
+                    newPlayer.delegate = self
+                    newPlayer.enableRate = true
+                    newPlayer.rate = self.currentPlaybackRate
+                    newPlayer.volume = self.currentPlaybackVolume
+                    newPlayer.currentTime = max(0, savedTime)
+                    newPlayer.prepareToPlay()
+                    played = newPlayer.play()
+                    self.activePlayer = newPlayer
+                    writeAppLog("NativeTTS", "handleRemotePlay: re-instantiated activePlayer.play() returned \(played)")
+                } catch {
+                    writeAppLog("NativeTTS", "handleRemotePlay: failed to re-instantiate activePlayer: \(error.localizedDescription)")
+                }
+            }
+            self.preparedPlayer?.prepareToPlay()
+            writeAppLog("NativeTTS", "handleRemotePlay: native activePlayer.play() returned \(played)")
+            self.startNowPlayingGuardian()
+            self.syncNowPlaying(isPlaying: true)
+            self.notifyListeners("mediaAction", data: ["action": "play"])
+            DispatchQueue.main.async { [weak self] in
+                self?.bridge?.webView?.evaluateJavaScript(
+                    "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
+                    completionHandler: nil
+                )
+            }
+            return
+        } else if self.isNativeEngineActive, let prep = self.preparedPlayer, self.preparedSentenceIndex >= 0 {
+            prep.rate = self.currentPlaybackRate
+            prep.prepareToPlay()
+            let played = prep.play()
+            self.activePlayerTag = self.preparedPlayerTag
+            self.preparedPlayerTag = 1 - self.activePlayerTag
+            self.currentPlayingSentenceIndex = self.preparedSentenceIndex
+            self.preparedSentenceIndex = -1
+            self.activePlayerFilePath = self.preparedPlayerFilePath
+            self.preparedPlayerFilePath = ""
+            writeAppLog("NativeTTS", "handleRemotePlay: native preparedPlayer.play() returned \(played)")
+            self.startNowPlayingGuardian()
+            self.syncNowPlaying(isPlaying: true)
+            self.notifyListeners("mediaAction", data: ["action": "play"])
+            DispatchQueue.main.async { [weak self] in
+                self?.bridge?.webView?.evaluateJavaScript(
+                    "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
+                    completionHandler: nil
+                )
+            }
+            return
+        }
+
+        // Fallback for HTML5 / WebKit audio path
         self.startSilencePlayer()
         self.startNowPlayingGuardian()
         self.syncNowPlaying(isPlaying: true)
@@ -1371,12 +1668,29 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     func handleRemotePause(isDirect: Bool = false) {
         if !isDirect && shouldThrottleRemoteCommand(type: "pause") { return }
         self.lastRemotePauseTime = Date().timeIntervalSince1970
-        writeAppLog("NativeTTS", "handleRemotePause BEGIN, was isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
+        writeAppLog("NativeTTS", "handleRemotePause BEGIN, was isCurrentlyPlaying=\(self.isCurrentlyPlaying), isNativeEngineActive=\(self.isNativeEngineActive)")
         self.isCurrentlyPlaying = false
         self.wasPlayingBeforeInterruption = false
-        self.wasPlayingBeforeCall = false
         self.isAudioSessionInterrupted = false
         self.stopNowPlayingGuardian()
+
+        // Route B: Direct native pause within 0ms
+        if self.isNativeEngineActive {
+            self.activePlayer?.pause()
+            self.preparedPlayer?.pause()
+            self.stopSilencePlayer()
+            self.syncNowPlaying(isPlaying: false)
+            self.notifyListeners("mediaAction", data: ["action": "pause"])
+            DispatchQueue.main.async { [weak self] in
+                self?.bridge?.webView?.evaluateJavaScript(
+                    "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; }",
+                    completionHandler: nil
+                )
+            }
+            return
+        }
+
+        // Fallback for HTML5 / WebKit audio path
         self.scheduleSilencePauseTimer()
         self.syncNowPlaying(isPlaying: false)
 
@@ -1492,7 +1806,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         writeAppLog("NativeTTS", "handleRemoteStop BEGIN")
         self.isCurrentlyPlaying = false
         self.wasPlayingBeforeInterruption = false
-        self.wasPlayingBeforeCall = false
         self.isAudioSessionInterrupted = false
         self.stopSilencePlayer()
         self.endInterruptionResumeBgTask()
