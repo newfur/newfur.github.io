@@ -11,10 +11,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         application.beginReceivingRemoteControlEvents()
-        // Configure audio session for background TTS playback (.allowAirPlay, .allowBluetoothA2DP)
+        // Configure audio session for background TTS playback (.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP)
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
             try audioSession.setActive(true)
         } catch {
             print("[NativeTTS] Failed to configure AVAudioSession at launch: \(error)")
@@ -201,6 +201,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     private var wasPlayingBeforeCall: Bool = false
     private var isAudioSessionInterrupted: Bool = false
     private var isCurrentlyPlaying: Bool = false
+    private var authoritativeNowPlayingInfo: [String: Any] = [:]
     private var callObserver: CXCallObserver?
     private var silencePlayer: AVAudioPlayer?
     private var silencePauseTimer: Timer?
@@ -333,6 +334,26 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
+    // MARK: - Authoritative Unified NowPlaying State Sync
+    func syncNowPlaying(isPlaying: Bool) {
+        self.isCurrentlyPlaying = isPlaying
+        self.updateRemoteCommandsState(isPlaying: isPlaying)
+
+        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+        if let artwork = self.currentArtwork {
+            self.authoritativeNowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        let info = self.authoritativeNowPlayingInfo
+        DispatchQueue.main.async {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            if #available(iOS 13.0, *) {
+                MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+            }
+        }
+    }
+
     // MARK: - NowPlaying State Guardian
     // Prevents WebKit's asynchronous audio pause IPC from knocking iOS lock screen/notification center into paused state
     func startNowPlayingGuardian() {
@@ -340,14 +361,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.updateRemoteCommandsState(isPlaying: true)
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isCurrentlyPlaying else { return }
-            // Run at 0.2s intervals for rapid lock screen state recovery after WebKit audio transitions
-            let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            // Run at 0.25s intervals for rapid lock screen state recovery after WebKit audio transitions
+            let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 guard self.isCurrentlyPlaying else {
                     self.stopNowPlayingGuardian()
                     return
                 }
-                
+
                 var needsRestore = false
                 if #available(iOS 13.0, *) {
                     if MPNowPlayingInfoCenter.default().playbackState != .playing {
@@ -358,19 +379,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 if currentRate < 0.5 {
                     needsRestore = true
                 }
-                
+
                 if needsRestore {
-                    print("[NativeTTS] Guardian: Restoring NowPlaying to playing (was overwritten by WebKit)")
-                    var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [String: Any]()
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                    info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-                    if let artwork = self.currentArtwork {
-                        info[MPMediaItemPropertyArtwork] = artwork
-                    }
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    if #available(iOS 13.0, *) {
-                        MPNowPlayingInfoCenter.default().playbackState = .playing
-                    }
+                    print("[NativeTTS] Guardian: Restoring NowPlaying from authoritative state (was overwritten by WebKit)")
+                    self.syncNowPlaying(isPlaying: true)
                 }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -390,45 +402,34 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         print("[NativeTTS] Emergency pause triggered: \(reason)")
         self.isCurrentlyPlaying = false
         self.stopNowPlayingGuardian()
-        self.updateRemoteCommandsState(isPlaying: false)
         // Immediately pause silence player to prevent any audio hardware output
         self.silencePlayer?.pause()
+        self.syncNowPlaying(isPlaying: false)
 
-        let updateNowPlayingBlock = { [weak self] in
+        let updateWebViewBlock = { [weak self] in
             guard let self = self else { return }
-            // 1. Immediately update MPNowPlayingInfoCenter to paused (▶ play button on lock screen)
-            if #available(iOS 13.0, *) {
-                MPNowPlayingInfoCenter.default().playbackState = .paused
-            }
-            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
-            // 2. Force emergency pause on WKWebView AudioElements and window.tts
+            // Force emergency pause on WKWebView AudioElements and window.tts
             self.bridge?.webView?.evaluateJavaScript(
                 "if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
                 completionHandler: nil
             )
-            // 3. Notify listeners
+            // Notify listeners
             self.notifyListeners("mediaAction", data: ["action": "pause"])
         }
 
         if Thread.isMainThread {
-            updateNowPlayingBlock()
+            updateWebViewBlock()
         } else {
             DispatchQueue.main.sync {
-                updateNowPlayingBlock()
+                updateWebViewBlock()
             }
         }
-        // NOTE: We deliberately DO NOT deactivate AVAudioSession (setActive(false)) during an interruption/call!
-        // According to Apple AVFoundation documentation, iOS automatically manages and silences audio routing during calls.
-        // Calling setActive(false) causes iOS to discard MPNowPlayingInfoCenter updates, leaving lock screen in playing state.
     }
 
-    private func activateAudioSession() {
+    func activateAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             print("[NativeTTS] Failed to activate AVAudioSession: \(error)")
@@ -447,8 +448,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
         self.isCurrentlyPlaying = true
         self.stopSilencePlayer()
-        self.updateRemoteCommandsState(isPlaying: true)
         self.startNowPlayingGuardian()
+        self.syncNowPlaying(isPlaying: true)
 
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackInterruption") {
@@ -466,16 +467,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                if let artwork = self.currentArtwork {
-                    info[MPMediaItemPropertyArtwork] = artwork
-                }
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
-            if #available(iOS 13.0, *) {
-                MPNowPlayingInfoCenter.default().playbackState = .playing
-            }
             self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.resume(); }", completionHandler: nil)
             self.notifyListeners("mediaAction", data: ["action": "play"])
         }
@@ -826,8 +817,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     @objc func updatePlaybackState(_ call: CAPPluginCall) {
         let isPlaying = call.getBool("isPlaying") ?? false
         self.isCurrentlyPlaying = isPlaying
-        self.updateRemoteCommandsState(isPlaying: isPlaying)
         if isPlaying {
+            self.activateAudioSession()
             self.wasPlayingBeforeInterruption = false
             self.wasPlayingBeforeCall = false
             self.stopSilencePlayer()
@@ -837,18 +828,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
         }
-        DispatchQueue.main.async {
-            var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [String: Any]()
-            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-            info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-            if let artwork = self.currentArtwork {
-                info[MPMediaItemPropertyArtwork] = artwork
-            }
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            if #available(iOS 13.0, *) {
-                MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-            }
-        }
+        self.syncNowPlaying(isPlaying: isPlaying)
         call.resolve()
     }
 
@@ -862,6 +842,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         if let callIsPlaying = call.getBool("isPlaying") {
             self.isCurrentlyPlaying = callIsPlaying
             if callIsPlaying {
+                self.activateAudioSession()
                 self.stopSilencePlayer()
                 self.startNowPlayingGuardian()
             } else {
@@ -869,7 +850,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             }
         }
         let isPlaying = self.isCurrentlyPlaying
-        self.updateRemoteCommandsState(isPlaying: isPlaying)
         DispatchQueue.main.async {
             self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
         }
@@ -881,6 +861,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.wasPlayingBeforeCall = false
         self.isCurrentlyPlaying = false
         self.currentArtwork = nil
+        self.authoritativeNowPlayingInfo = [:]
         self.stopSilencePlayer()
         self.stopNowPlayingGuardian()
         self.updateRemoteCommandsState(isPlaying: false)
@@ -1004,7 +985,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
         }
         
-        var nowPlayingInfo = [String: Any]()
+        var nowPlayingInfo = self.authoritativeNowPlayingInfo
         let displayTitle = (text != nil && !text!.isEmpty) ? text! : (title.isEmpty ? "TTS Reading" : title)
         nowPlayingInfo[MPMediaItemPropertyTitle] = displayTitle
         if !title.isEmpty && displayTitle != title {
@@ -1014,7 +995,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
 
-        let validDuration = (duration != nil && duration! > 0) ? duration! : 15.0
+        let validDuration = (duration != nil && duration! > 0) ? duration! : (nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double ?? 15.0)
         nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = validDuration
         
         let validCurrentTime = (currentTime != nil && currentTime! >= 0) ? currentTime! : 0.0
@@ -1024,10 +1005,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
         }
         
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-        if #available(iOS 13.0, *) {
-            MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-        }
+        self.authoritativeNowPlayingInfo = nowPlayingInfo
+        self.syncNowPlaying(isPlaying: isPlaying)
     }
 
     private func setupAudioSessionObserver() {
@@ -1057,15 +1036,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     @objc private func handleApplicationDidEnterBackground() {
         if !self.isCurrentlyPlaying {
-            DispatchQueue.main.async {
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .paused
-                }
-            }
+            self.syncNowPlaying(isPlaying: false)
+        } else {
+            self.syncNowPlaying(isPlaying: true)
         }
     }
 
@@ -1082,13 +1055,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.isCurrentlyPlaying = false
                 self.stopNowPlayingGuardian()
                 self.scheduleSilencePauseTimer()
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .paused
-                }
+                self.syncNowPlaying(isPlaying: false)
                 self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.pause(); }", completionHandler: nil)
                 self.notifyListeners("mediaAction", data: ["action": "pause"])
             }
@@ -1137,16 +1104,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             } else {
                 self.wasPlayingBeforeInterruption = false
                 self.wasPlayingBeforeCall = false
-                DispatchQueue.main.async { [weak self] in
-                    guard self != nil else { return }
-                    if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                    if #available(iOS 13.0, *) {
-                        MPNowPlayingInfoCenter.default().playbackState = .paused
-                    }
-                }
+                self.syncNowPlaying(isPlaying: false)
             }
 
         @unknown default:
@@ -1161,8 +1119,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.activateAudioSession()
         self.isCurrentlyPlaying = true
         self.stopSilencePlayer()
-        self.updateRemoteCommandsState(isPlaying: true)
         self.startNowPlayingGuardian()
+        self.syncNowPlaying(isPlaying: true)
 
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlayback") {
@@ -1180,13 +1138,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
-            if #available(iOS 13.0, *) {
-                MPNowPlayingInfoCenter.default().playbackState = .playing
-            }
             self.bridge?.webView?.evaluateJavaScript(
                 "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
                 completionHandler: nil
@@ -1203,18 +1154,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.wasPlayingBeforeCall = false
         self.isAudioSessionInterrupted = false
         self.stopNowPlayingGuardian()
-        self.updateRemoteCommandsState(isPlaying: false)
         self.scheduleSilencePauseTimer()
+        self.syncNowPlaying(isPlaying: false)
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
-            if #available(iOS 13.0, *) {
-                MPNowPlayingInfoCenter.default().playbackState = .paused
-            }
             self.bridge?.webView?.evaluateJavaScript(
                 "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
                 completionHandler: nil
@@ -1231,8 +1175,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.activateAudioSession()
             self.isCurrentlyPlaying = true
             self.stopSilencePlayer()
-            self.updateRemoteCommandsState(isPlaying: true)
             self.startNowPlayingGuardian()
+            self.syncNowPlaying(isPlaying: true)
 
             var bgTaskId: UIBackgroundTaskIdentifier = .invalid
             bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackToggle") {
@@ -1250,13 +1194,6 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .playing
-                }
                 self.bridge?.webView?.evaluateJavaScript(
                     "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
                     completionHandler: nil
@@ -1269,18 +1206,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.wasPlayingBeforeCall = false
             self.isAudioSessionInterrupted = false
             self.stopNowPlayingGuardian()
-            self.updateRemoteCommandsState(isPlaying: false)
             self.scheduleSilencePauseTimer()
+            self.syncNowPlaying(isPlaying: false)
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                    info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                }
-                if #available(iOS 13.0, *) {
-                    MPNowPlayingInfoCenter.default().playbackState = .paused
-                }
                 self.bridge?.webView?.evaluateJavaScript(
                     "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
                     completionHandler: nil
@@ -1343,13 +1273,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.stopSilencePlayer()
         self.stopNowPlayingGuardian()
         self.updateRemoteCommandsState(isPlaying: false)
+        self.authoritativeNowPlayingInfo = [:]
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             if #available(iOS 13.0, *) {
                 MPNowPlayingInfoCenter.default().playbackState = .stopped
             }

@@ -2058,31 +2058,21 @@ export class TTSEngine {
       audio.playbackRate = this.rate;
       setupGroupSeeking();
     }
-    audio.volume = this.volume;
+    audio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
+    audio.muted = false; // 關鍵修復：防止 WebKit 底層因自動播放或後台切源隱式設置 muted=true 導致有進度無聲音
     audio.playbackRate = this.rate;
 
-    // 綁定原生媒體事件，確保 WebKit 與 iOS 鎖屏狀態嚴格同步
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+
+    // 綁定原生媒體事件（僅在純 Web / PWA 環境使用，原生 Capacitor 由 Swift/Java 原生層統一管理）
     audio.onplay = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     };
     audio.onpause = () => {
-      if (this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
-      }
-      // When TTS is still actively playing (sentence transition), WebKit fires onpause
-      // which flips the lock screen to the play (▶) button. Immediately restore to playing state.
-      if (this.isPlaying && !this.isPaused) {
-        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-          navigator.mediaSession.playbackState = 'playing';
-        }
-        const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-        if (isCapacitorApp) {
-          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
-            isPlaying: true
-          }).catch(() => {});
-        }
       }
     };
     
@@ -2255,6 +2245,8 @@ export class TTSEngine {
         });
       }
 
+      audio.muted = false;
+      audio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
       audio.play().then(() => {
         if (!this.isPlaying || this.isPaused) {
           try { audio.pause(); } catch (e) {}
@@ -2304,12 +2296,15 @@ export class TTSEngine {
         // 若已停止或暫停，不修改索引避免狀態污染
         if (!this.isPlaying || this.isPaused) return;
         
-        // 若播放失敗，跳過該句子
+        // 若播放失敗，等待 300ms 緩衝後再跳轉下一句，防止播放器異常拋錯時陷入無聲極速跳句
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
-          this.activePlayerIdx = nextPlayerIdx;
-          this.currentIndex = isGroupPlay ? (groupStartIndex + groupSentences.length) : (index + 1);
-          this._playActiveSentence();
+          setTimeout(() => {
+            if (!this.isPlaying || this.isPaused) return;
+            this.activePlayerIdx = nextPlayerIdx;
+            this.currentIndex = isGroupPlay ? (groupStartIndex + groupSentences.length) : (index + 1);
+            this._playActiveSentence();
+          }, 300);
         }
       });
     };
@@ -2693,7 +2688,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -2861,7 +2856,7 @@ export class TTSEngine {
       })();
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'playing';
     }
 
@@ -3088,7 +3083,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
 
@@ -3135,7 +3130,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
 
@@ -3233,7 +3228,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }
 
