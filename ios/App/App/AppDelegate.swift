@@ -222,7 +222,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     private var lastRemoteCommandType: String = ""
     private func shouldThrottleRemoteCommand(type: String = "") -> Bool {
         let now = Date().timeIntervalSince1970
-        if now - lastRemoteCommandTime < 0.8 {
+        if now - lastRemoteCommandTime < 0.35 {
             writeAppLog("NativeTTS", "Throttling duplicated remote command '\(type)' (<\(String(format: "%.3f", now - lastRemoteCommandTime))s since '\(lastRemoteCommandType)')")
             return true
         }
@@ -407,28 +407,25 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.updateRemoteCommandsState(isPlaying: true)
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isCurrentlyPlaying else { return }
-            // Run at 0.5s intervals for lock screen state recovery after WebKit audio transitions
-            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            // Run at 2.0s intervals for lock screen state recovery without spamming CoreAudio metadata
+            let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 guard self.isCurrentlyPlaying else {
                     self.stopNowPlayingGuardian()
                     return
                 }
 
-                var needsRestore = false
                 if #available(iOS 13.0, *) {
                     if MPNowPlayingInfoCenter.default().playbackState != .playing {
-                        needsRestore = true
+                        MPNowPlayingInfoCenter.default().playbackState = .playing
                     }
                 }
-                let currentRate = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0.0
-                if currentRate < 0.5 {
-                    needsRestore = true
-                }
-
-                if needsRestore {
-                    print("[NativeTTS] Guardian: Restoring NowPlaying from authoritative state (was overwritten by WebKit)")
-                    self.syncNowPlaying(isPlaying: true)
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    let currentRate = info[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0.0
+                    if currentRate < 0.5 {
+                        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                    }
                 }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -867,27 +864,31 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         let coverBase64 = call.getString("cover")
         let duration = call.getDouble("duration")
         let currentTime = call.getDouble("currentTime")
-        self.isCurrentlyPlaying = isPlaying
 
-        self.activateAudioSession()
-        self.updateRemoteCommandsState(isPlaying: isPlaying)
-
-        if isPlaying {
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopSilencePlayer()
-            self.startNowPlayingGuardian()
+        if !self.isCurrentlyPlaying && isPlaying {
+            writeAppLog("NativeTTS", "startForegroundService: dropped stale isPlaying=true while native is paused")
         } else {
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopNowPlayingGuardian()
-            self.scheduleSilencePauseTimer()
+            self.isCurrentlyPlaying = isPlaying
+            if isPlaying {
+                self.activateAudioSession()
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
+                self.stopSilencePlayer()
+                self.startNowPlayingGuardian()
+            } else {
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
+                self.stopNowPlayingGuardian()
+                self.scheduleSilencePauseTimer()
+            }
         }
+        self.updateRemoteCommandsState(isPlaying: self.isCurrentlyPlaying)
 
+        let effectivePlaying = self.isCurrentlyPlaying
         DispatchQueue.main.async {
-            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
+            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: effectivePlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
         }
         call.resolve()
     }
@@ -895,22 +896,26 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     @objc func updatePlaybackState(_ call: CAPPluginCall) {
         let isPlaying = call.getBool("isPlaying") ?? false
         writeAppLog("NativeTTS", "updatePlaybackState called from JS: isPlaying=\(isPlaying)")
-        self.isCurrentlyPlaying = isPlaying
-        if isPlaying {
-            self.activateAudioSession()
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopSilencePlayer()
-            self.startNowPlayingGuardian()
+        if !self.isCurrentlyPlaying && isPlaying {
+            writeAppLog("NativeTTS", "updatePlaybackState: dropped stale isPlaying=true while native is paused")
         } else {
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopNowPlayingGuardian()
-            self.scheduleSilencePauseTimer()
+            self.isCurrentlyPlaying = isPlaying
+            if isPlaying {
+                self.activateAudioSession()
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
+                self.stopSilencePlayer()
+                self.startNowPlayingGuardian()
+            } else {
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
+                self.stopNowPlayingGuardian()
+                self.scheduleSilencePauseTimer()
+            }
+            self.syncNowPlaying(isPlaying: isPlaying)
         }
-        self.syncNowPlaying(isPlaying: isPlaying)
         call.resolve()
     }
 
@@ -1212,8 +1217,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     // MARK: - Remote Control Handlers (Handles both MPRemoteCommandCenter and Bluetooth UIEvent)
-    func handleRemotePlay() {
-        if shouldThrottleRemoteCommand(type: "play") { return }
+    func handleRemotePlay(isDirect: Bool = false) {
+        if !isDirect && shouldThrottleRemoteCommand(type: "play") { return }
         writeAppLog("NativeTTS", "handleRemotePlay BEGIN")
         self.activateAudioSession()
         self.isCurrentlyPlaying = true
@@ -1258,8 +1263,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
-    func handleRemotePause() {
-        if shouldThrottleRemoteCommand(type: "pause") { return }
+    func handleRemotePause(isDirect: Bool = false) {
+        if !isDirect && shouldThrottleRemoteCommand(type: "pause") { return }
         writeAppLog("NativeTTS", "handleRemotePause BEGIN, was isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
         self.isCurrentlyPlaying = false
         self.wasPlayingBeforeInterruption = false
@@ -1324,9 +1329,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         writeAppLog("NativeTTS", "handleRemoteTogglePlayPause BEGIN, isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
         let shouldPlay = !self.isCurrentlyPlaying
         if shouldPlay {
-            self.handleRemotePlay()
+            self.handleRemotePlay(isDirect: true)
         } else {
-            self.handleRemotePause()
+            self.handleRemotePause(isDirect: true)
         }
     }
 

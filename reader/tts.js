@@ -2099,15 +2099,16 @@ export class TTSEngine {
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
-    // 綁定原生媒體事件（僅在純 Web / PWA 環境使用，原生 Capacitor 由 Swift/Java 原生層統一管理）
     audio.onplay = () => {
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     };
     audio.onpause = () => {
-      if (!isCapacitorApp && this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'paused';
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        if (this.isPaused) {
+          navigator.mediaSession.playbackState = 'paused';
+        }
       }
     };
     
@@ -2646,6 +2647,15 @@ export class TTSEngine {
         console.warn(`[TTS Watchdog] Playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery...`);
         this._lastPlaybackProgressTime = now; // 重置以防止連續觸發
         
+        // 核心保護：如果所有音訊實質已處於 paused 狀態，這說明音訊已被外部或系統（如鎖屏/藍牙）暫停，絕不能擅自喚醒重播！
+        const allPaused = Array.isArray(this.players) && this.players.every(p => !p || p.paused || p.ended);
+        if (allPaused) {
+          appLog("TTS Watchdog", "All players paused during stall check, syncing pause state and stopping watchdog");
+          console.log("[TTS Watchdog] All players paused during stall check, syncing pause state and stopping watchdog");
+          this.pause();
+          return;
+        }
+
         const idx = this.currentIndex;
         if (idx >= this.sentences.length) {
           // 已播完所有句子
@@ -2656,8 +2666,7 @@ export class TTSEngine {
         
         const cached = this.audioCache.get(idx);
         if (cached && cached.isReady) {
-          // 只有當音訊確實已暫停、已結束或未在發聲時，才允許嘗試恢復播放，防止打斷正在播放的聲音造成重播
-          if (!this.currentAudio || this.currentAudio.paused || this.currentAudio.ended) {
+          if (!this.currentAudio || this.currentAudio.ended) {
             console.warn('[TTS Watchdog] Audio stalled, attempting to resume playback...');
             this._playActiveSentence();
           }
@@ -2765,51 +2774,48 @@ export class TTSEngine {
         }
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
-        // 僅在純 Web 環境由瀏覽器接管播放狀態與控制回調；Capacitor 原生環境由 Swift/Java 原生層統一掌控
-        if (!isCapacitorApp) {
-          navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
+        navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
 
-          const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
-            ? this.currentAudio.duration
-            : Math.max(3, (text ? text.length : 10) * 0.35);
-          const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
-            ? this.currentAudio.currentTime
-            : 0;
+        const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
+          ? this.currentAudio.duration
+          : Math.max(3, (text ? text.length : 10) * 0.35);
+        const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
+          ? this.currentAudio.currentTime
+          : 0;
 
-          if ('setPositionState' in navigator.mediaSession && rawDuration > 0) {
-            try {
-              navigator.mediaSession.setPositionState({
-                duration: rawDuration,
-                playbackRate: this.rate || 1.0,
-                position: Math.min(rawCurrentTime, rawDuration)
-              });
-            } catch (posErr) {}
-          }
+        if ('setPositionState' in navigator.mediaSession && rawDuration > 0) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: rawDuration,
+              playbackRate: this.rate || 1.0,
+              position: Math.min(rawCurrentTime, rawDuration)
+            });
+          } catch (posErr) {}
+        }
 
-          navigator.mediaSession.setActionHandler('play', () => {
-            this.resume();
-          });
-          navigator.mediaSession.setActionHandler('pause', () => {
-            this.pause();
-          });
-          navigator.mediaSession.setActionHandler('stop', () => {
-            this.stop();
-          });
-          navigator.mediaSession.setActionHandler('previoustrack', () => {
+        navigator.mediaSession.setActionHandler('play', () => {
+          this.resume();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          this.pause();
+        });
+        navigator.mediaSession.setActionHandler('stop', () => {
+          this.stop();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          this.previous();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          this.next();
+        });
+        try {
+          navigator.mediaSession.setActionHandler('seekbackward', () => {
             this.previous();
           });
-          navigator.mediaSession.setActionHandler('nexttrack', () => {
+          navigator.mediaSession.setActionHandler('seekforward', () => {
             this.next();
           });
-          try {
-            navigator.mediaSession.setActionHandler('seekbackward', () => {
-              this.previous();
-            });
-            navigator.mediaSession.setActionHandler('seekforward', () => {
-              this.next();
-            });
-          } catch (seekErr) {}
-        }
+        } catch (seekErr) {}
       } catch (e) {
         console.warn("MediaSession update failed:", e);
       }
@@ -2917,7 +2923,7 @@ export class TTSEngine {
       })();
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'playing';
     }
 
@@ -3169,7 +3175,7 @@ export class TTSEngine {
       }).catch(e => console.error("Error updating native playback state:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'paused';
     }
 
@@ -3202,7 +3208,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
 
@@ -3300,7 +3306,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }
 
