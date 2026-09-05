@@ -44,7 +44,7 @@ import java.io.FileOutputStream;
 public class AudioPlayerService extends Service {
 
     private static final String TAG = "AudioPlayerService";
-    private static final String CHANNEL_ID = "tts_playback_channel";
+    private static final String CHANNEL_ID = "tts_playback_channel_v2";
     private static final int NOTIFICATION_ID = 9527;
 
     public static AudioPlayerService instance;
@@ -169,12 +169,18 @@ public class AudioPlayerService extends Service {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "TTS Playback",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
             );
             channel.setDescription("Shows media controls for text-to-speech reading");
             channel.setShowBadge(false);
+            channel.setSound(null, null);
+            channel.enableVibration(false);
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
+                try {
+                    manager.deleteNotificationChannel("tts_playback_channel");
+                } catch (Exception ignored) {}
                 manager.createNotificationChannel(channel);
             }
         }
@@ -458,7 +464,7 @@ public class AudioPlayerService extends Service {
                     applyPlaybackRate(prep, currentPlaybackRate);
                     prep.setVolume(currentPlaybackVolume, currentPlaybackVolume);
 
-                    updateNotification(currentTitle, currentArtist, currentText, true);
+                    startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, true);
                     updateMetadata(currentTitle, currentArtist, currentText);
                     updatePlaybackState(true);
 
@@ -505,7 +511,7 @@ public class AudioPlayerService extends Service {
                 currentPlayingSentenceIndex = index;
                 activePlayerFilePath = (filePath != null) ? filePath : "";
 
-                updateNotification(currentTitle, currentArtist, currentText, true);
+                startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, true);
                 updateMetadata(currentTitle, currentArtist, currentText);
                 updatePlaybackState(true);
 
@@ -1001,6 +1007,8 @@ public class AudioPlayerService extends Service {
                .setSmallIcon(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play)
                .setContentIntent(pendingIntent)
                .setVisibility(Notification.VISIBILITY_PUBLIC)
+               .setCategory(Notification.CATEGORY_TRANSPORT)
+               .setOnlyAlertOnce(true)
                .setOngoing(isPlaying);
 
         if (coverBitmap != null && !coverBitmap.isRecycled()) {
@@ -1067,7 +1075,9 @@ public class AudioPlayerService extends Service {
                 .setActions(actions);
 
         int state = isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
-        stateBuilder.setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, isPlaying ? currentPlaybackRate : 0.0f, android.os.SystemClock.elapsedRealtime());
+        long positionMs = (long)(currentChapterProgressBase * 1000);
+        if (positionMs < 0) positionMs = 0;
+        stateBuilder.setState(state, positionMs, isPlaying ? currentPlaybackRate : 0.0f, android.os.SystemClock.elapsedRealtime());
         mediaSession.setPlaybackState(stateBuilder.build());
 
         if (isPlaying) {
@@ -1137,10 +1147,13 @@ public class AudioPlayerService extends Service {
     private void updateMetadata(String title, String artist, String text) {
         if (mediaSession == null) return;
         try {
+            long durationMs = (long)(currentChapterTotalDuration * 1000);
+            if (durationMs <= 0) durationMs = 60000;
             MediaMetadata.Builder metadataBuilder = new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, (text != null && !text.isEmpty()) ? text : title)
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, (artist != null && !artist.isEmpty()) ? artist : "E-Book Reader")
-                    .putString(MediaMetadata.METADATA_KEY_ALBUM, (title != null && !title.isEmpty()) ? title : "TTS Reading");
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, (title != null && !title.isEmpty()) ? title : "TTS Reading")
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs);
             if (coverBitmap != null && !coverBitmap.isRecycled()) {
                 metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
             }
