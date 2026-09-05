@@ -28,6 +28,7 @@ const xcodeCmd = [
   'CODE_SIGNING_ALLOWED=NO',
   'CODE_SIGN_IDENTITY=""',
   'CODE_SIGNING_REQUIRED=NO',
+  'ENABLE_USER_SCRIPT_SANDBOXING=NO',
   'build'
 ].join(' ');
 

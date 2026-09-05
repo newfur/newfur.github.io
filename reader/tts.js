@@ -1988,6 +1988,18 @@ export class TTSEngine {
     if (!cached || !cached.isReady) {
       this._fetchSentence(index);
       
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (this.isPlaying && !this.isPaused) {
+        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        if (isCapacitorApp) {
+          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+            isPlaying: true
+          }).catch(() => {});
+        }
+      }
+
       // 如果當前沒有任何音訊在播放（或者當前音訊已暫停/播放結束），為防止 iOS 挂起 JavaScript，應立刻啟動靜音播放器保活
       if ((!this.currentAudio || this.currentAudio.paused || this.currentAudio.ended) && this.silenceAudio) {
         this.silenceAudio.play().catch(e => console.warn("Failed to resume silence on cache miss:", e));
@@ -2103,6 +2115,11 @@ export class TTSEngine {
       if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
+      if (this.isPlaying && !this.isPaused && isCapacitorApp) {
+        window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+          isPlaying: true
+        }).catch(() => {});
+      }
     };
     audio.onpause = () => {
       if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
@@ -2217,6 +2234,17 @@ export class TTSEngine {
           audio._cleanupResources = null;
         }
         
+        if (this.isPlaying && !this.isPaused) {
+          if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+          }
+          if (isCapacitorApp) {
+            window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+              isPlaying: true
+            }).catch(() => {});
+          }
+        }
+
         if (!this.isPlaying || this.isPaused) return;
         
         if (!hasTriggeredNext) {
@@ -2263,6 +2291,17 @@ export class TTSEngine {
           audio._cleanupResources = null;
         }
         
+        if (this.isPlaying && !this.isPaused) {
+          if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+          }
+          if (isCapacitorApp) {
+            window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+              isPlaying: true
+            }).catch(() => {});
+          }
+        }
+
         if (!this.isPlaying || this.isPaused) return;
         
         // 若下一句還沒有被觸發播放，則在此手動觸發
@@ -2277,6 +2316,15 @@ export class TTSEngine {
 
     const startPlay = () => {
       if (!this.isPlaying || this.isPaused) return;
+
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+      }
+      if (isCapacitorApp) {
+        window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+          isPlaying: true
+        }).catch(() => {});
+      }
       
       // 停止其它播放器的回調，避免事件競爭，但延後到新音訊成功播放後再執行 pause()
       // 消除新舊音訊切換時的「零音訊空窗期」，防止 iOS 鎖屏/通知欄判定為暫停而閃爍切換圖標
@@ -2298,6 +2346,14 @@ export class TTSEngine {
         if (!this.isPlaying || this.isPaused) {
           try { audio.pause(); } catch (e) {}
           return;
+        }
+        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        if (isCapacitorApp) {
+          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+            isPlaying: true
+          }).catch(() => {});
         }
         // 成功播放真實語音後暫停靜音保活播放器，避免雙重音訊競爭或音量衰減
         this._stopSilenceKeepAlive();
@@ -2722,6 +2778,10 @@ export class TTSEngine {
   }
 
   async _updateMediaSession(sentence) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
+    }
+
     const text = sentence ? sentence.text : (this.currentBookTitle || 'TTS Reading');
     const title = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
     const artist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
@@ -2730,21 +2790,23 @@ export class TTSEngine {
       this.currentBookCover = coverBase64;
     }
 
+    // 計算章節維度的整體進度與時長，防止單句時長（2~3秒）走完時被 iOS 系統誤判為音訊播放完畢而自動翻轉為播放（▶）圖標
+    const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
+    const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
+    const sentenceAudioTime = (this.currentAudio && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0;
+    
+    // 估算章節總時長（每句約 5 秒，至少 60 秒）與當前章節累計播放進度
+    const chapterDuration = Math.max(60, totalSentences * 5);
+    const currentElapsed = Math.min(chapterDuration - 1, currentSentIdx * 5 + sentenceAudioTime);
+
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
-      const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
-        ? this.currentAudio.duration
-        : Math.max(3, (text ? text.length : 10) * 0.35);
-      const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
-        ? this.currentAudio.currentTime
-        : 0;
-
       const nativePayload = {
         title: title,
         artist: artist,
         text: text,
-        duration: rawDuration,
-        currentTime: rawCurrentTime,
+        duration: chapterDuration,
+        currentTime: currentElapsed,
         isPlaying: this.isPlaying && !this.isPaused
       };
 
@@ -2781,19 +2843,12 @@ export class TTSEngine {
 
         navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
 
-        const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
-          ? this.currentAudio.duration
-          : Math.max(3, (text ? text.length : 10) * 0.35);
-        const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
-          ? this.currentAudio.currentTime
-          : 0;
-
-        if ('setPositionState' in navigator.mediaSession && rawDuration > 0) {
+        if ('setPositionState' in navigator.mediaSession && chapterDuration > 0) {
           try {
             navigator.mediaSession.setPositionState({
-              duration: rawDuration,
+              duration: chapterDuration,
               playbackRate: this.rate || 1.0,
-              position: Math.min(rawCurrentTime, rawDuration)
+              position: Math.min(currentElapsed, chapterDuration)
             });
           } catch (posErr) {}
         }
@@ -2918,11 +2973,17 @@ export class TTSEngine {
         if (coverBase64 && !this.currentBookCover) {
           this.currentBookCover = coverBase64;
         }
+        const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
+        const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
+        const chapterDuration = Math.max(60, totalSentences * 5);
+        const currentElapsed = Math.min(chapterDuration - 1, currentSentIdx * 5);
         window.Capacitor.Plugins.NativeTTS.startForegroundService({
           title: bookTitle,
           artist: bookArtist,
           text: sentence ? sentence.text : '',
           cover: coverBase64,
+          duration: chapterDuration,
+          currentTime: currentElapsed,
           isPlaying: this.isPlaying && !this.isPaused
         }).catch(e => console.error("Error starting native foreground service:", e));
       })();

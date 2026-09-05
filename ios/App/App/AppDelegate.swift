@@ -432,6 +432,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                         info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
                         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
                     }
+                } else if !self.authoritativeNowPlayingInfo.isEmpty {
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = self.authoritativeNowPlayingInfo
                 }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -518,7 +520,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
 
         self.isCurrentlyPlaying = true
-        self.stopSilencePlayer()
+        // Keep silencePlayer running as a safety net until JS actually starts audible playback!
+        self.startSilencePlayer()
         self.startNowPlayingGuardian()
         self.syncNowPlaying(isPlaying: true)
 
@@ -559,6 +562,37 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
     }
 
+    // MARK: - Interruption Background Task Management
+    private var interruptionResumeBgTaskId: UIBackgroundTaskIdentifier = .invalid
+    private var interruptionResumeTimer: Timer?
+
+    private func beginInterruptionResumeBgTask() {
+        endInterruptionResumeBgTask()
+        interruptionResumeBgTaskId = UIApplication.shared.beginBackgroundTask(withName: "InterruptionResume") { [weak self] in
+            writeAppLog("NativeTTS", "InterruptionResume background task expired by iOS")
+            self?.endInterruptionResumeBgTask()
+        }
+        writeAppLog("NativeTTS", "beginInterruptionResumeBgTask: id=\(interruptionResumeBgTaskId.rawValue)")
+        DispatchQueue.main.async { [weak self] in
+            self?.interruptionResumeTimer?.invalidate()
+            self?.interruptionResumeTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
+                writeAppLog("NativeTTS", "InterruptionResume background task 15s timeout reached")
+                self?.endInterruptionResumeBgTask()
+            }
+        }
+    }
+
+    private func endInterruptionResumeBgTask() {
+        interruptionResumeTimer?.invalidate()
+        interruptionResumeTimer = nil
+        if interruptionResumeBgTaskId != .invalid {
+            let id = interruptionResumeBgTaskId
+            interruptionResumeBgTaskId = .invalid
+            UIApplication.shared.endBackgroundTask(id)
+            writeAppLog("NativeTTS", "endInterruptionResumeBgTask: id=\(id.rawValue)")
+        }
+    }
+
     // MARK: - CXCallObserverDelegate (Incoming & Active Call Detection)
     private func setupCallObserver() {
         callObserver = CXCallObserver()
@@ -583,8 +617,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.hasActiveCall = false
                 writeAppLog("NativeTTS", "All calls ended. wasPlayingBeforeCall=\(self.wasPlayingBeforeCall), wasPlayingBeforeInterruption=\(self.wasPlayingBeforeInterruption)")
                 if self.wasPlayingBeforeCall || self.wasPlayingBeforeInterruption {
-                    // Delay 0.8s allows iOS audio hardware route to switch back to headphones/speaker before resuming
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    self.beginInterruptionResumeBgTask()
+                    self.activateAudioSession()
+                    self.startSilencePlayer()
+                    // Delay 0.35s allows iOS audio hardware route to switch back to headphones/speaker before resuming
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                         self?.resumeAfterInterruptionOrCall()
                     }
                 }
@@ -620,6 +657,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         NotificationCenter.default.removeObserver(self)
         callObserver?.setDelegate(nil, queue: nil)
         callObserver = nil
+        endInterruptionResumeBgTask()
         stopSilencePlayer()
         stopNowPlayingGuardian()
         taskLock.lock()
@@ -919,6 +957,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.wasPlayingBeforeCall = false
                 self.isAudioSessionInterrupted = false
                 self.stopSilencePlayer()
+                self.endInterruptionResumeBgTask()
                 self.startNowPlayingGuardian()
             } else {
                 if !self.hasActiveCall && !self.isAudioSessionInterrupted && !self.wasPlayingBeforeCall && !self.wasPlayingBeforeInterruption {
@@ -952,6 +991,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 self.wasPlayingBeforeCall = false
                 self.isAudioSessionInterrupted = false
                 self.stopSilencePlayer()
+                self.endInterruptionResumeBgTask()
                 self.startNowPlayingGuardian()
             } else {
                 if !self.hasActiveCall && !self.isAudioSessionInterrupted && !self.wasPlayingBeforeCall && !self.wasPlayingBeforeInterruption {
@@ -986,6 +1026,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                     self.wasPlayingBeforeCall = false
                     self.isAudioSessionInterrupted = false
                     self.stopSilencePlayer()
+                    self.endInterruptionResumeBgTask()
                     self.startNowPlayingGuardian()
                 } else {
                     if !self.hasActiveCall && !self.isAudioSessionInterrupted && !self.wasPlayingBeforeCall && !self.wasPlayingBeforeInterruption {
@@ -1012,6 +1053,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.currentArtwork = nil
         self.authoritativeNowPlayingInfo = [:]
         self.stopSilencePlayer()
+        self.endInterruptionResumeBgTask()
         self.stopNowPlayingGuardian()
         self.updateRemoteCommandsState(isPlaying: false)
         DispatchQueue.main.async {
@@ -1267,7 +1309,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
             // Always resume if we were playing before interruption, regardless of whether
             // iOS included .shouldResume (cellular calls on iOS regularly omit .shouldResume)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self.beginInterruptionResumeBgTask()
+            self.activateAudioSession()
+            self.startSilencePlayer()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 self?.resumeAfterInterruptionOrCall()
             }
 
@@ -1282,7 +1327,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         writeAppLog("NativeTTS", "handleRemotePlay BEGIN")
         self.activateAudioSession()
         self.isCurrentlyPlaying = true
-        self.stopSilencePlayer()
+        self.startSilencePlayer()
         self.startNowPlayingGuardian()
         self.syncNowPlaying(isPlaying: true)
 
@@ -1450,6 +1495,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.wasPlayingBeforeCall = false
         self.isAudioSessionInterrupted = false
         self.stopSilencePlayer()
+        self.endInterruptionResumeBgTask()
         self.stopNowPlayingGuardian()
         self.updateRemoteCommandsState(isPlaying: false)
         self.authoritativeNowPlayingInfo = [:]

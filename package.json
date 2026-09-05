@@ -1,6 +1,6 @@
 {
   "name": "raconteur-reader",
-  "version": "3.4.43",
+  "version": "3.4.44",
   "description": "",
   "main": "service-worker.js",
   "scripts": {
