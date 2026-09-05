@@ -130,9 +130,10 @@ export class TTSEngine {
     this.activeFetchCount = 0; // 當前並發抓取數
     this.maxConcurrentFetches = 3; // 最大並發下載數，兼顧首句極速啟動與後續分組吞吐量
     
-    // 建立持久的 Audio 播放器。使用單一音訊實例可完全消除 iOS WebKit 在多播放器交替切換時
-    // 因舊播放器 pause/ended 觸發的鎖屏與通知欄狀態循環閃爍問題，確保鎖屏狀態與封面文字始終如一
-    this.players = typeof Audio !== 'undefined' ? [new Audio()] : [];
+    // 建立持久的雙通道 Audio 播放器以進行無縫交替預熱播放，消除播放間隙。
+    // 在 Native 原生端（iOS/Android），播放路徑由 _isNativeEngineAvailable() 攔截由原生底層處理，不使用此處的 DOM Audio。
+    // 在 Chrome 插件版與網頁版，雙播放器配合 _prewarmNextPlayer 實現 0ms 物理無縫切換。
+    this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
     this.activePlayerIdx = 0;
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
@@ -140,7 +141,7 @@ export class TTSEngine {
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
-      audio.disableRemotePlayback = true; // 停用遠端播放，提高 iOS 穩定性
+      audio.disableRemotePlayback = true; // 停用遠端播放，提高穩定性
     });
 
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
@@ -3677,7 +3678,8 @@ export class TTSEngine {
         nextPlayer.dataset.srcUrl = targetBlobUrl;
         nextPlayer.load();
         nextPlayer.playbackRate = this.rate;
-        nextPlayer.volume = this.volume;
+        nextPlayer.muted = false;
+        nextPlayer.volume = (typeof this.volume === 'number' && this.volume >= 0) ? this.volume : 1.0;
         nextPlayer.onloadedmetadata = () => {
           nextPlayer.playbackRate = this.rate;
         };
