@@ -2616,6 +2616,23 @@ async function handleImportFiles(files) {
         }
       }
 
+      // 1.5 封面格式相容與高保真壓縮：
+      // 將提取出的 Blob 或原始大圖轉為 ~40KB 的 Base64 DataURL
+      // 優勢：1) 避免 Safari/WebKit IndexedDB 儲存 Blob 造成的失效問題；2) 消除 Object URL 生命週期開銷；3) 書櫃與鎖屏原生封面秒速載入
+      if (cover) {
+        try {
+          if (isBlobLike(cover)) {
+            const compressed = await compressCoverImage(cover, 512, 0.85);
+            cover = compressed || (await blobToDataUrl(cover));
+          } else if (typeof cover === 'string' && (cover.startsWith('blob:') || cover.length > 500000)) {
+            const compressed = await compressCoverImage(cover, 512, 0.85);
+            if (compressed) cover = compressed;
+          }
+        } catch (coverErr) {
+          console.warn('[handleImportFiles] Failed to compress cover to DataURL:', coverErr);
+        }
+      }
+
       // 2. 計算待導入檔案的 Hash 值
       const incomingHash = await computeFileHash(file);
       const incomingBookData = {
@@ -3075,24 +3092,30 @@ async function renderBookshelf(searchQuery = '') {
             } catch (e) {
               console.warn('[Bookshelf] Failed to create object URL for book cover:', e);
             }
-            if (!bookCoverCache.has(book.id) || typeof bookCoverCache.get(book.id) !== 'string') {
-              try {
-                const fr = new FileReader();
-                fr.onloadend = () => {
-                  if (typeof fr.result === 'string' && fr.result.startsWith('data:')) {
-                    bookCoverCache.set(book.id, fr.result);
-                  }
-                };
-                fr.readAsDataURL(effectiveCover);
-              } catch (e) {}
-            }
+            // 異步將 Blob 封面遷移為壓縮 DataURL 存儲，提升後續開啟速度並防止 Safari IndexedDB Blob 失效
+            try {
+              compressCoverImage(effectiveCover, 512, 0.85).then(async (compressed) => {
+                const finalData = compressed || (await blobToDataUrl(effectiveCover));
+                if (finalData && typeof finalData === 'string' && finalData.startsWith('data:')) {
+                  bookCoverCache.set(book.id, finalData);
+                  book.cover = finalData;
+                  library.updateBook(book).catch(() => {});
+                }
+              }).catch(() => {});
+            } catch (e) {}
           }
         }
       }
 
       if (coverUrl) {
         coverContainer.innerHTML = `
-          <img class="book-cover" src="${coverUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none';">
+          <img class="book-cover" src="${coverUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          <div class="book-cover-placeholder" style="display: none;">
+            <div class="book-cover-placeholder-icon">
+              <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            </div>
+            <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
+          </div>
           <span class="book-format-badge">${book.format}</span>
         `;
       } else {
@@ -3105,6 +3128,11 @@ async function renderBookshelf(searchQuery = '') {
           </div>
           <span class="book-format-badge">${book.format}</span>
         `;
+
+        // 如果該書籍無封面，但存在源文件且為支援格式（如歷史版本導入時遺留無封面的書籍），異步在後台嘗試重新提取封面並自動修復補全
+        if (book.file && ['epub', 'azw3', 'mobi', 'cbz'].includes(book.format)) {
+          repairMissingBookCover(book, coverContainer);
+        }
       }
 
       // 動態綁定刪除事件
@@ -3142,6 +3170,56 @@ async function renderBookshelf(searchQuery = '') {
       shelf.appendChild(card);
     }
   });
+}
+
+// 自動修復並補全書籍缺失的封面（例如歷史版本導入時遺留無封面的書籍）
+async function repairMissingBookCover(book, coverContainer) {
+  if (!book || !book.file || !coverContainer) return;
+  try {
+    let coverBlob = null;
+    if (book.format === 'epub') {
+      const parser = new EpubParser(book.file);
+      const res = await parser.parse();
+      coverBlob = res.metadata?.cover;
+    } else if (book.format === 'azw3' || book.format === 'mobi') {
+      const parser = new Azw3Parser(book.file);
+      const res = await parser.parse();
+      coverBlob = res.metadata?.cover;
+    } else if (book.format === 'cbz') {
+      const parser = new ComicParser(book.file);
+      const res = await parser.parse();
+      coverBlob = res.metadata?.cover;
+    }
+
+    if (coverBlob) {
+      let dataUrl = '';
+      if (isBlobLike(coverBlob)) {
+        dataUrl = await compressCoverImage(coverBlob, 512, 0.85);
+        if (!dataUrl) dataUrl = await blobToDataUrl(coverBlob);
+      } else if (typeof coverBlob === 'string' && (coverBlob.startsWith('data:') || coverBlob.startsWith('http'))) {
+        dataUrl = coverBlob;
+      }
+
+      if (dataUrl && coverContainer.isConnected) {
+        book.cover = dataUrl;
+        bookCoverCache.set(book.id, dataUrl);
+        coverContainer.innerHTML = `
+          <img class="book-cover" src="${dataUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          <div class="book-cover-placeholder" style="display: none;">
+            <div class="book-cover-placeholder-icon">
+              <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            </div>
+            <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
+          </div>
+          <span class="book-format-badge">${book.format}</span>
+        `;
+        await library.updateBook(book);
+        console.log(`[Bookshelf] Automatically repaired and saved cover for book: "${book.title}"`);
+      }
+    }
+  } catch (e) {
+    // 忽略自動修復中的異常（如臨時文件失效等），保持現有占位符
+  }
 }
 
 // 刪除書籍（全局函數，便於 HTML 觸發）

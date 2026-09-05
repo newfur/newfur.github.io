@@ -136,6 +136,7 @@ export class EpubParser {
       const properties = node.getAttribute('properties') || '';
       
       this.manifest[id] = {
+        id,
         href: this._resolvePath(this.opfDir, href),
         mediaType,
         properties
@@ -169,39 +170,168 @@ export class EpubParser {
     return hashPart !== undefined ? `${resolvedPath}#${hashPart}` : resolvedPath;
   }
 
-  // 獲取封面圖 URL
+  // 輔助方法：寬容尋找 ZIP 中的檔案（支援 URL 解碼、前綴路徑與大小寫容錯）
+  _findZipFile(filePath) {
+    if (!filePath || !this.zip) return null;
+    let clean = filePath.split('#')[0].replace(/^\/+/, '');
+    try { clean = decodeURIComponent(clean); } catch (e) {}
+
+    // 1. 直接精確匹配
+    let f = this.zip.file(clean);
+    if (f) return { file: f, path: clean };
+
+    // 2. 加上 opfDir 相對路徑前綴匹配
+    if (this.opfDir && !clean.startsWith(this.opfDir)) {
+      const withOpf = this._resolvePath(this.opfDir, clean);
+      f = this.zip.file(withOpf);
+      if (f) return { file: f, path: withOpf };
+    }
+
+    // 3. 不區分大小寫全路徑匹配
+    const lower = clean.toLowerCase();
+    const matchKey = Object.keys(this.zip.files).find(k => k.toLowerCase() === lower);
+    if (matchKey) return { file: this.zip.file(matchKey), path: matchKey };
+
+    // 4. 純檔名匹配（容忍目錄層級結構變動）
+    const basename = clean.split('/').pop().toLowerCase();
+    if (basename) {
+      const baseMatch = Object.keys(this.zip.files).find(
+        k => !this.zip.files[k].dir && k.split('/').pop().toLowerCase() === basename
+      );
+      if (baseMatch) return { file: this.zip.file(baseMatch), path: baseMatch };
+    }
+
+    return null;
+  }
+
+  // 輔助方法：根據魔數與副檔名精確偵測圖片 MIME
+  _detectMimeType(uint8, fallbackPath = '') {
+    if (!uint8 || uint8.length < 4) return 'image/jpeg';
+    if (uint8[0] === 0xFF && uint8[1] === 0xD8 && uint8[2] === 0xFF) return 'image/jpeg';
+    if (uint8[0] === 0x89 && uint8[1] === 0x50 && uint8[2] === 0x4E && uint8[3] === 0x47) return 'image/png';
+    if (uint8[0] === 0x47 && uint8[1] === 0x49 && uint8[2] === 0x46 && uint8[3] === 0x38) return 'image/gif';
+    if (uint8.length >= 12 && uint8[0] === 0x52 && uint8[1] === 0x49 && uint8[2] === 0x46 && uint8[3] === 0x46 &&
+        uint8[8] === 0x57 && uint8[9] === 0x45 && uint8[10] === 0x42 && uint8[11] === 0x50) return 'image/webp';
+    if (uint8[0] === 0x42 && uint8[1] === 0x4D) return 'image/bmp';
+    const lower = fallbackPath.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    return 'image/jpeg';
+  }
+
+  // 獲取封面圖 (Blob) - 具備多源候選與容錯回退機制
   async _getCoverUrl() {
     try {
-      // 方法 A：尋找 properties="cover-image" 的 item
-      let coverItemId = Object.keys(this.manifest).find(
-        id => this.manifest[id].properties.includes('cover-image')
-      );
+      const opfText = await this.zip.file(this.opfPath)?.async('string') || '';
+      const candidateHrefs = [];
 
-      // 方法 B：尋找 metadata 中的 name="cover" 的 meta 標籤
-      if (!coverItemId) {
-        // 在 OPF 中搜尋 meta
-        const opfText = await this.zip.file(this.opfPath).async('string');
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(opfText, 'text/xml');
-        const coverMeta = xmlDoc.querySelector('metadata > meta[name="cover"]');
-        if (coverMeta) {
-          coverItemId = coverMeta.getAttribute('content');
+      // 候選 1：EPUB 3 標準 properties="cover-image"
+      for (const item of Object.values(this.manifest)) {
+        if (item.properties && item.properties.includes('cover-image')) {
+          candidateHrefs.push({ href: item.href, mediaType: item.mediaType, source: 'properties:cover-image' });
         }
       }
 
-      // 方法 C：退而求其次尋找包含 cover 關鍵字且為圖片的 manifest item
-      if (!coverItemId) {
-        coverItemId = Object.keys(this.manifest).find(
-          id => id.toLowerCase().includes('cover') && this.manifest[id].mediaType.startsWith('image/')
-        );
+      // 候選 2：EPUB 2 / Calibre <meta name="cover" content="..."> (相容屬性順序與命名空間)
+      if (opfText) {
+        const metaCoverMatches = opfText.matchAll(/<meta\s+[^>]*(?:name=["']cover["'][^>]*content=["']([^"']+)["']|content=["']([^"']+)["'][^>]*name=["']cover["'])[^>]*>/gi);
+        for (const match of metaCoverMatches) {
+          const coverRef = match[1] || match[2];
+          if (coverRef) {
+            if (this.manifest[coverRef]) {
+              candidateHrefs.push({ href: this.manifest[coverRef].href, mediaType: this.manifest[coverRef].mediaType, source: 'meta:cover:id' });
+            } else {
+              candidateHrefs.push({ href: this._resolvePath(this.opfDir, coverRef), mediaType: '', source: 'meta:cover:path' });
+            }
+          }
+        }
+
+        // 候選 3：EPUB 2 標準 <guide><reference type="cover" href="...">
+        const guideCoverMatches = opfText.matchAll(/<reference\s+[^>]*type=["']cover["'][^>]*href=["']([^"']+)["']/gi);
+        for (const match of guideCoverMatches) {
+          const href = match[1];
+          if (href) {
+            candidateHrefs.push({ href: this._resolvePath(this.opfDir, href), mediaType: '', source: 'guide:reference:cover' });
+          }
+        }
       }
 
-      if (coverItemId && this.manifest[coverItemId]) {
-        const coverItem = this.manifest[coverItemId];
-        const coverFile = this.zip.file(coverItem.href);
-        if (coverFile) {
-          const blob = await coverFile.async('blob');
-          return blob;
+      // 候選 4：Manifest 清單中 ID 或 href 含有 cover 關鍵字的圖片項
+      for (const [id, item] of Object.entries(this.manifest)) {
+        const idLower = (id || item.id || '').toLowerCase();
+        const hrefLower = (item.href || '').toLowerCase();
+        const isCoverName = idLower.includes('cover') || hrefLower.includes('cover');
+        const isImage = (item.mediaType && item.mediaType.startsWith('image/')) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(item.href || '');
+        if (isCoverName && isImage) {
+          candidateHrefs.push({ href: item.href, mediaType: item.mediaType, source: 'manifest:cover-image' });
+        }
+      }
+
+      // 候選 5：直接在 zip 包中檢索含有 cover 的圖片檔案 (自然排序以優先獲取第 1 卷/主封面)
+      const zipCoverFiles = Object.keys(this.zip.files).filter(k => 
+        !this.zip.files[k].dir && 
+        !k.includes('__MACOSX') &&
+        k.toLowerCase().includes('cover') && 
+        /\.(jpe?g|png|webp|gif|bmp)$/i.test(k)
+      );
+      zipCoverFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      for (const zf of zipCoverFiles) {
+        candidateHrefs.push({ href: zf, mediaType: '', source: 'zip:cover-search' });
+      }
+
+      // 候選 6：兜底尋找 Manifest 中的第一張圖片
+      for (const item of Object.values(this.manifest)) {
+        if ((item.mediaType && item.mediaType.startsWith('image/')) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(item.href)) {
+          candidateHrefs.push({ href: item.href, mediaType: item.mediaType, source: 'manifest:first-image' });
+          break;
+        }
+      }
+
+      // 依序嘗試各候選源，直到成功解析出真正的圖片二進位數據
+      for (const cand of candidateHrefs) {
+        let zipRes = this._findZipFile(cand.href);
+        if (!zipRes) continue;
+
+        // 如果候選是 HTML/XHTML 頁面（例如 titlepage.xhtml / cover.xhtml），深入提取內部包含的 <img> 或 <image>
+        const isHtml = cand.mediaType === 'application/xhtml+xml' || 
+                       cand.mediaType === 'text/html' || 
+                       /\.(x?html?)$/i.test(zipRes.path);
+
+        if (isHtml) {
+          try {
+            const html = await zipRes.file.async('string');
+            const imgMatch = html.match(/<image\s+[^>]*(?:xlink:href|href)=["']([^"']+)["']/i) ||
+                             html.match(/<img\s+[^>]*src=["']([^"']+)["']/i);
+            if (imgMatch && imgMatch[1]) {
+              const htmlDir = this._getDirectory(zipRes.path);
+              const resolvedImg = this._resolvePath(htmlDir, imgMatch[1]);
+              const subRes = this._findZipFile(resolvedImg);
+              if (subRes) {
+                zipRes = subRes;
+              } else {
+                continue; // 內部引用的圖片在 zip 中不存在，嘗試下一個候選
+              }
+            } else {
+              continue; // HTML 包裝頁內未找到圖片標籤
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        // 讀取圖片數據並校驗有效性
+        try {
+          const uint8 = await zipRes.file.async('uint8array');
+          if (uint8 && uint8.length > 50) {
+            const mimeType = this._detectMimeType(uint8, zipRes.path);
+            const blob = new Blob([uint8], { type: mimeType });
+            console.log(`[EpubParser] Successfully extracted cover (${mimeType}, ${uint8.length} bytes) from [${cand.source}]: ${zipRes.path}`);
+            return blob;
+          }
+        } catch (e) {
+          // 繼續嘗試其他候選
         }
       }
     } catch (e) {

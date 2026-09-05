@@ -42,7 +42,16 @@ export class ComicParser {
     if (this.pages.length > 0) {
       try {
         const coverFile = this.zip.file(this.pages[0]);
-        coverBlob = await coverFile.async('blob');
+        if (coverFile) {
+          const uint8 = await coverFile.async('uint8array');
+          let mime = 'image/jpeg';
+          const pLower = this.pages[0].toLowerCase();
+          if (pLower.endsWith('.png')) mime = 'image/png';
+          else if (pLower.endsWith('.webp')) mime = 'image/webp';
+          else if (pLower.endsWith('.gif')) mime = 'image/gif';
+          else if (pLower.endsWith('.bmp')) mime = 'image/bmp';
+          coverBlob = new Blob([uint8], { type: mime });
+        }
       } catch (e) {
         console.warn('Failed to extract CBZ cover:', e);
       }

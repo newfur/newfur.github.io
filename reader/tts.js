@@ -3619,7 +3619,7 @@ export async function compressCoverImage(coverBlobOrUrl, maxDimension = 512, qua
     
     if (typeof coverBlobOrUrl === 'string') {
       url = coverBlobOrUrl;
-    } else if (typeof Blob !== 'undefined' && coverBlobOrUrl instanceof Blob) {
+    } else if (coverBlobOrUrl && (coverBlobOrUrl instanceof Blob || (typeof coverBlobOrUrl === 'object' && typeof coverBlobOrUrl.slice === 'function'))) {
       try {
         url = URL.createObjectURL(coverBlobOrUrl);
         needsRevoke = true;
