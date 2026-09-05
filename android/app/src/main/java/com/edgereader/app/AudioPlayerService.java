@@ -331,10 +331,16 @@ public class AudioPlayerService extends Service {
                 mp.setOnPreparedListener(null);
                 mp.setOnCompletionListener(null);
                 mp.setOnErrorListener(null);
+            } catch (Exception ignored) {}
+            try {
                 if (mp.isPlaying()) {
                     mp.stop();
                 }
+            } catch (Exception ignored) {}
+            try {
                 mp.reset();
+            } catch (Exception ignored) {}
+            try {
                 mp.release();
             } catch (Exception ignored) {}
         }
@@ -418,11 +424,26 @@ public class AudioPlayerService extends Service {
                 acquireLocks();
                 registerNoisyReceiver();
 
+                // Check if this sentence is ALREADY actively playing in activePlayer
+                if (currentPlayingSentenceIndex == index && getActivePlayer() != null) {
+                    try {
+                        if (getActivePlayer().isPlaying()) {
+                            Log.d(TAG, "playNativeSentence: sentence " + index + " is already actively playing, skipping duplicate play call");
+                            if (callback != null) {
+                                callback.onSuccess(getActivePlayer().getDuration());
+                            }
+                            return;
+                        }
+                    } catch (Exception ignored) {}
+                }
+
                 // Check if preparedPlayer is already pre-warmed for this exact sentence
                 if (preparedSentenceIndex == index && isPreparedReady && getPreparedPlayer() != null) {
                     Log.d(TAG, "playNativeSentence: using pre-warmed preparedPlayer for index=" + index);
                     MediaPlayer prep = getPreparedPlayer();
-                    safeReleasePlayer(getActivePlayer());
+                    MediaPlayer oldActive = getActivePlayer();
+                    setActivePlayer(null);
+                    safeReleasePlayer(oldActive);
 
                     activePlayerTag = preparedPlayerTag;
                     preparedPlayerTag = 1 - activePlayerTag;
@@ -431,10 +452,11 @@ public class AudioPlayerService extends Service {
                     isPreparedReady = false;
                     activePlayerFilePath = preparedPlayerFilePath;
                     preparedPlayerFilePath = "";
+                    setPreparedPlayer(null);
 
+                    prep.start();
                     applyPlaybackRate(prep, currentPlaybackRate);
                     prep.setVolume(currentPlaybackVolume, currentPlaybackVolume);
-                    prep.start();
 
                     updateNotification(currentTitle, currentArtist, currentText, true);
                     updateMetadata(currentTitle, currentArtist, currentText);
@@ -447,7 +469,10 @@ public class AudioPlayerService extends Service {
                 }
 
                 // Otherwise, initialize fresh active player
-                safeReleasePlayer(getActivePlayer());
+                MediaPlayer oldActive = getActivePlayer();
+                setActivePlayer(null);
+                safeReleasePlayer(oldActive);
+
                 MediaPlayer player = new MediaPlayer();
                 AudioAttributes audioAttributes = new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -467,13 +492,14 @@ public class AudioPlayerService extends Service {
                 player.setOnErrorListener((mp, what, extra) -> {
                     Log.e(TAG, "MediaPlayer error on active player: what=" + what + ", extra=" + extra);
                     safeReleasePlayer(mp);
+                    setActivePlayer(null);
                     return true;
                 });
 
                 player.prepare();
+                player.start();
                 applyPlaybackRate(player, currentPlaybackRate);
                 player.setVolume(currentPlaybackVolume, currentPlaybackVolume);
-                player.start();
 
                 setActivePlayer(player);
                 currentPlayingSentenceIndex = index;
@@ -498,7 +524,28 @@ public class AudioPlayerService extends Service {
         mainHandler.post(() -> {
             try {
                 Log.d(TAG, "prepareNextSentence: index=" + index);
-                safeReleasePlayer(getPreparedPlayer());
+
+                // If this index is currently playing, ignore prepare request
+                if (currentPlayingSentenceIndex == index && getActivePlayer() != null) {
+                    try {
+                        if (getActivePlayer().isPlaying()) {
+                            Log.d(TAG, "prepareNextSentence: index=" + index + " is currently playing, ignoring prepare request");
+                            if (callback != null) callback.onSuccess(false);
+                            return;
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                // If this index is already prepared and ready, skip duplicate prepare
+                if (preparedSentenceIndex == index && isPreparedReady && getPreparedPlayer() != null) {
+                    Log.d(TAG, "prepareNextSentence: index=" + index + " is already prepared, skipping duplicate prepare");
+                    if (callback != null) callback.onSuccess(true);
+                    return;
+                }
+
+                MediaPlayer oldPrep = getPreparedPlayer();
+                setPreparedPlayer(null);
+                safeReleasePlayer(oldPrep);
                 isPreparedReady = false;
                 preparedSentenceIndex = -1;
                 preparedPlayerFilePath = "";
@@ -523,6 +570,7 @@ public class AudioPlayerService extends Service {
                     Log.e(TAG, "MediaPlayer error on prepared player: what=" + what + ", extra=" + extra);
                     isPreparedReady = false;
                     safeReleasePlayer(mp);
+                    setPreparedPlayer(null);
                     return true;
                 });
 
@@ -530,9 +578,13 @@ public class AudioPlayerService extends Service {
                     isPreparedReady = true;
                     preparedSentenceIndex = index;
                     preparedPlayerFilePath = (filePath != null) ? filePath : "";
-                    applyPlaybackRate(mp, (rate > 0f) ? rate : currentPlaybackRate);
-                    mp.setVolume((volume >= 0f) ? volume : currentPlaybackVolume,
-                                 (volume >= 0f) ? volume : currentPlaybackVolume);
+                    // CRITICAL FIX: DO NOT call applyPlaybackRate here!
+                    // Calling setPlaybackParams on a prepared MediaPlayer will immediately start audio playback on Android!
+                    // Playback rate will be applied when player actually starts in playNativeSentence or handlePlayerCompletion.
+                    try {
+                        mp.setVolume((volume >= 0f) ? volume : currentPlaybackVolume,
+                                     (volume >= 0f) ? volume : currentPlaybackVolume);
+                    } catch (Exception ignored) {}
                     Log.d(TAG, "prepareNextSentence: pre-warmed and ready for sentence " + index + ", duration=" + mp.getDuration());
                     if (callback != null) {
                         callback.onSuccess(true);
@@ -557,9 +609,9 @@ public class AudioPlayerService extends Service {
 
         if (isPlaying && isPreparedReady && nextPlayer != null && preparedSentenceIndex == finishedIndex + 1) {
             // Gapless switch: start next pre-warmed player immediately (0ms gap!)
+            nextPlayer.start();
             applyPlaybackRate(nextPlayer, currentPlaybackRate);
             nextPlayer.setVolume(currentPlaybackVolume, currentPlaybackVolume);
-            nextPlayer.start();
 
             int newIndex = preparedSentenceIndex;
             activePlayerTag = preparedPlayerTag;
@@ -572,6 +624,7 @@ public class AudioPlayerService extends Service {
 
             // Safely reset completed player
             safeReleasePlayer(mp);
+            setPreparedPlayer(null);
 
             // Update progress in notification safely
             double updatedCurrentTime = newIndex * 5.0;
@@ -589,6 +642,7 @@ public class AudioPlayerService extends Service {
         } else {
             Log.d(TAG, "handlePlayerCompletion: next sentence " + (finishedIndex + 1) + " not prepared yet, notifying JS");
             safeReleasePlayer(mp);
+            setActivePlayer(null);
             currentPlayingSentenceIndex = -1;
             notifySentenceEnded(finishedIndex);
         }
@@ -621,11 +675,14 @@ public class AudioPlayerService extends Service {
         requestAudioFocus();
         isPlaying = true;
         wasPlayingBeforeTransientLoss = false;
+        cancelScheduledLockRelease();
+        acquireLocks();
+        registerNoisyReceiver();
         MediaPlayer active = getActivePlayer();
         if (active != null) {
             try {
-                applyPlaybackRate(active, currentPlaybackRate);
                 active.start();
+                applyPlaybackRate(active, currentPlaybackRate);
                 updatePlaybackState(true);
                 updateNotification(currentTitle, currentArtist, currentText, true);
                 return true;
@@ -639,7 +696,9 @@ public class AudioPlayerService extends Service {
             File f = new File(activePlayerFilePath);
             if (f.exists() && f.length() > 0) {
                 try {
-                    safeReleasePlayer(active);
+                    MediaPlayer oldActive = active;
+                    setActivePlayer(null);
+                    safeReleasePlayer(oldActive);
                     MediaPlayer newPlayer = new MediaPlayer();
                     AudioAttributes audioAttributes = new AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -653,12 +712,13 @@ public class AudioPlayerService extends Service {
                     newPlayer.setOnCompletionListener(this::handlePlayerCompletion);
                     newPlayer.setOnErrorListener((mp, what, extra) -> {
                         safeReleasePlayer(mp);
+                        setActivePlayer(null);
                         return true;
                     });
                     newPlayer.prepare();
+                    newPlayer.start();
                     applyPlaybackRate(newPlayer, currentPlaybackRate);
                     newPlayer.setVolume(currentPlaybackVolume, currentPlaybackVolume);
-                    newPlayer.start();
                     setActivePlayer(newPlayer);
                     updatePlaybackState(true);
                     updateNotification(currentTitle, currentArtist, currentText, true);
@@ -848,12 +908,28 @@ public class AudioPlayerService extends Service {
                         break;
                     case "ACTION_UPDATE_STATE":
                         boolean newPlaying = intent.getBooleanExtra("isPlaying", false);
-                        if (newPlaying != isPlaying) {
-                            if (newPlaying) {
-                                resumeNative();
-                            } else {
-                                pauseNative();
+                        isPlaying = newPlaying;
+                        if (!isPlaying) {
+                            MediaPlayer active = getActivePlayer();
+                            if (active != null) {
+                                try {
+                                    if (active.isPlaying()) active.pause();
+                                } catch (Exception ignored) {}
                             }
+                            MediaPlayer prep = getPreparedPlayer();
+                            if (prep != null) {
+                                try {
+                                    if (prep.isPlaying()) prep.pause();
+                                } catch (Exception ignored) {}
+                            }
+                            abandonAudioFocus();
+                            unregisterNoisyReceiver();
+                            scheduleLockRelease();
+                        } else {
+                            requestAudioFocus();
+                            cancelScheduledLockRelease();
+                            acquireLocks();
+                            registerNoisyReceiver();
                         }
                         updatePlaybackState(isPlaying);
                         updateNotification(currentTitle, currentArtist, currentText, isPlaying);
