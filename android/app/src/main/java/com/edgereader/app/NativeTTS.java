@@ -27,10 +27,14 @@ import android.app.Activity;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import android.os.Handler;
+import android.os.Looper;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -45,6 +49,8 @@ public class NativeTTS extends Plugin {
     private static final String TAG = "NativeTTS";
     public static NativeTTS instance;
     private String pendingSaveFileUri;
+    private final ConcurrentHashMap<String, WebSocket> activeSockets = new ConcurrentHashMap<>();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     public void load() {
@@ -72,6 +78,12 @@ public class NativeTTS extends Plugin {
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();
+        for (WebSocket ws : activeSockets.values()) {
+            try {
+                ws.cancel();
+            } catch (Exception ignored) {}
+        }
+        activeSockets.clear();
         if (instance == this) {
             instance = null;
         }
@@ -197,9 +209,54 @@ public class NativeTTS extends Plugin {
                 .build();
 
         ByteArrayOutputStream audioStream = new ByteArrayOutputStream();
+        AtomicBoolean isCompleted = new AtomicBoolean(false);
 
-        client.newWebSocket(request, new WebSocketListener() {
-            private boolean hasRejected = false;
+        Runnable timeoutRunnable = () -> {
+            if (isCompleted.compareAndSet(false, true)) {
+                Log.w(TAG, "TTS request timed out (10s): " + connectionId);
+                WebSocket ws = activeSockets.remove(connectionId);
+                if (ws != null) {
+                    try {
+                        ws.cancel();
+                    } catch (Exception ignored) {}
+                }
+                call.reject("Edge TTS request timed out in native (10s)");
+            }
+        };
+        mainHandler.postDelayed(timeoutRunnable, 10000);
+
+        WebSocketListener listener = new WebSocketListener() {
+            private void finishWithSuccess(WebSocket webSocket) {
+                if (!isCompleted.compareAndSet(false, true)) return;
+                mainHandler.removeCallbacks(timeoutRunnable);
+                activeSockets.remove(connectionId);
+                try {
+                    webSocket.cancel();
+                } catch (Exception ignored) {}
+
+                byte[] audioData = audioStream.toByteArray();
+                if (audioData.length > 0) {
+                    String base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP);
+                    JSObject ret = new JSObject();
+                    ret.put("audioBase64", base64Audio);
+                    call.resolve(ret);
+                } else {
+                    // 若伺服器正常結束但未返回音訊幀（例如僅含標點符號的句子），返回極短靜音 MP3 避免前端崩潰
+                    JSObject ret = new JSObject();
+                    ret.put("audioBase64", "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV");
+                    call.resolve(ret);
+                }
+            }
+
+            private void finishWithError(WebSocket webSocket, String errorMsg) {
+                if (!isCompleted.compareAndSet(false, true)) return;
+                mainHandler.removeCallbacks(timeoutRunnable);
+                activeSockets.remove(connectionId);
+                try {
+                    webSocket.cancel();
+                } catch (Exception ignored) {}
+                call.reject(errorMsg);
+            }
 
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
@@ -234,7 +291,7 @@ public class NativeTTS extends Plugin {
             @Override
             public void onMessage(WebSocket webSocket, String text) {
                 if (text.contains("Path:turn.end")) {
-                    webSocket.close(1000, "Finished");
+                    finishWithSuccess(webSocket);
                 }
             }
 
@@ -259,42 +316,46 @@ public class NativeTTS extends Plugin {
 
             @Override
             public void onClosing(WebSocket webSocket, int code, String reason) {
-                webSocket.close(1000, null);
+                finishWithSuccess(webSocket);
             }
 
             @Override
             public void onClosed(WebSocket webSocket, int code, String reason) {
-                if (hasRejected) return;
-                byte[] audioData = audioStream.toByteArray();
-                if (audioData.length > 0) {
-                    String base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP);
-                    JSObject ret = new JSObject();
-                    ret.put("audioBase64", base64Audio);
-                    call.resolve(ret);
-                } else {
-                    // 若伺服器正常結束但未返回音訊幀（例如僅含標點符號的句子），返回極短靜音 MP3 避免前端崩潰
-                    JSObject ret = new JSObject();
-                    ret.put("audioBase64", "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV");
-                    call.resolve(ret);
-                }
+                finishWithSuccess(webSocket);
             }
 
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                if (hasRejected) return;
-                hasRejected = true;
-                call.reject("WebSocket failure: " + t.getMessage());
+                finishWithError(webSocket, "WebSocket failure: " + t.getMessage());
             }
-        });
+        };
+
+        WebSocket ws = client.newWebSocket(request, listener);
+        activeSockets.put(connectionId, ws);
     }
 
     @PluginMethod
     public void cancelTTS(PluginCall call) {
+        String connectionId = call.getString("connectionId");
+        if (connectionId != null) {
+            WebSocket ws = activeSockets.remove(connectionId);
+            if (ws != null) {
+                try {
+                    ws.cancel();
+                } catch (Exception ignored) {}
+            }
+        }
         call.resolve();
     }
 
     @PluginMethod
     public void cancelAllTTS(PluginCall call) {
+        for (WebSocket ws : activeSockets.values()) {
+            try {
+                ws.cancel();
+            } catch (Exception ignored) {}
+        }
+        activeSockets.clear();
         call.resolve();
     }
 

@@ -58,14 +58,17 @@ public class AudioPlayerService extends Service {
                 Log.d(TAG, "onAudioFocusChange: " + focusChange);
                 switch (focusChange) {
                     case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                        // Incoming phone call, ringtone, alarm, Siri/Assistant, navigation instruction
-                        // For speech reading, we MUST pause immediately!
+                        // Incoming phone call or voice assistant
                         if (isPlaying) {
                             wasPlayingBeforeTransientLoss = true;
                             Log.d(TAG, "Audio focus lost transiently (e.g. phone call). Pausing playback.");
                             emergencyPause();
                         }
+                        break;
+                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                        // Ducking requested by system or by Chromium WebView in the same app.
+                        // DO NOT pause! Allow playback to continue.
+                        Log.d(TAG, "Audio focus LOSS_TRANSIENT_CAN_DUCK received. Ignoring to avoid pausing WebView playback.");
                         break;
                     case AudioManager.AUDIOFOCUS_LOSS:
                         // Permanent loss: another app started playing media
@@ -151,6 +154,7 @@ public class AudioPlayerService extends Service {
                 wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(true);
                 updateNotification(currentTitle, currentArtist, currentText, true);
+                evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
                 notifyJS("play");
             }
 
@@ -162,18 +166,21 @@ public class AudioPlayerService extends Service {
                 wasPlayingBeforeTransientLoss = false;
                 updatePlaybackState(false);
                 updateNotification(currentTitle, currentArtist, currentText, false);
+                evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
                 notifyJS("pause");
             }
 
             @Override
             public void onSkipToNext() {
                 Log.d(TAG, "MediaSession: onSkipToNext");
+                evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
                 notifyJS("next");
             }
 
             @Override
             public void onSkipToPrevious() {
                 Log.d(TAG, "MediaSession: onSkipToPrevious");
+                evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
                 notifyJS("previous");
             }
 
@@ -194,57 +201,16 @@ public class AudioPlayerService extends Service {
     }
 
     private boolean requestAudioFocus() {
-        if (audioManager == null) {
-            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        }
-        if (audioManager == null) return false;
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (audioFocusRequest == null) {
-                    AudioAttributes playbackAttributes = new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build();
-
-                    audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                            .setAudioAttributes(playbackAttributes)
-                            .setAcceptsDelayedFocusGain(true)
-                            .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                            .build();
-                }
-                int res = audioManager.requestAudioFocus(audioFocusRequest);
-                return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-            } else {
-                int res = audioManager.requestAudioFocus(
-                        audioFocusChangeListener,
-                        AudioManager.STREAM_MUSIC,
-                        AudioManager.AUDIOFOCUS_GAIN
-                );
-                return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to request audio focus: " + e.getMessage());
-            return false;
-        }
+        // Chromium WebView handles audio focus natively when playing HTML5 Audio elements.
+        // If AudioPlayerService also requests AUDIOFOCUS_GAIN, Android treats AudioPlayerService
+        // and Chromium as two competing clients within the same app, sending AUDIOFOCUS_LOSS (-1)
+        // to AudioPlayerService when Chromium plays audio, which prematurely paused playback.
+        Log.d(TAG, "requestAudioFocus: Delegated to Chromium WebView");
+        return true;
     }
 
     private void abandonAudioFocus() {
-        if (audioManager != null) {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    if (audioFocusRequest != null) {
-                        audioManager.abandonAudioFocusRequest(audioFocusRequest);
-                    }
-                } else {
-                    if (audioFocusChangeListener != null) {
-                        audioManager.abandonAudioFocus(audioFocusChangeListener);
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to abandon audio focus: " + e.getMessage());
-            }
-        }
+        Log.d(TAG, "abandonAudioFocus: Delegated to Chromium WebView");
     }
 
     private void emergencyPause() {
@@ -293,6 +259,7 @@ public class AudioPlayerService extends Service {
                             wasPlayingBeforeTransientLoss = false;
                             updatePlaybackState(false);
                             updateNotification(currentTitle, currentArtist, currentText, false);
+                            evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
                             notifyJS("pause");
                         } else {
                             requestAudioFocus();
@@ -300,13 +267,16 @@ public class AudioPlayerService extends Service {
                             wasPlayingBeforeTransientLoss = false;
                             updatePlaybackState(true);
                             updateNotification(currentTitle, currentArtist, currentText, true);
+                            evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
                             notifyJS("play");
                         }
                         break;
                     case "ACTION_NEXT":
+                        evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
                         notifyJS("next");
                         break;
                     case "ACTION_PREVIOUS":
+                        evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
                         notifyJS("previous");
                         break;
                     case "ACTION_STOP":
@@ -315,6 +285,7 @@ public class AudioPlayerService extends Service {
                         isPlaying = false;
                         wasPlayingBeforeTransientLoss = false;
                         updatePlaybackState(false);
+                        evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
                         notifyJS("stop");
                         stopForeground(true);
                         stopSelf();
