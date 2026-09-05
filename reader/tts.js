@@ -91,6 +91,14 @@ function isInterjectionShortSentence(text) {
   return false;
 }
 
+function appLog(tag, msg) {
+  try {
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS && typeof window.Capacitor.Plugins.NativeTTS.writeLog === 'function') {
+      window.Capacitor.Plugins.NativeTTS.writeLog({ tag, message: msg }).catch(() => {});
+    }
+  } catch (e) {}
+}
+
 export class TTSEngine {
   constructor() {
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
@@ -1366,6 +1374,9 @@ export class TTSEngine {
             }
           } catch (nativeErr) {
             console.error("Native Edge TTS failed, falling back to WebSocket in webview:", nativeErr);
+            if (!this.isPlaying || this.isPaused) {
+              return;
+            }
           }
         }
 
@@ -2588,6 +2599,7 @@ export class TTSEngine {
   _startPlaybackWatchdog() {
     this._stopPlaybackWatchdog();
     if (!this.isPlaying || this.isPaused) return; // 處於暫停或停止狀態時絕不啟動看門狗
+    appLog("TTS", "_startPlaybackWatchdog started");
     this._lastPlaybackProgressTime = Date.now();
     this._lastWatchedCurrentTime = null;
     this._playbackWatchdog = setInterval(() => {
@@ -2630,6 +2642,7 @@ export class TTSEngine {
           return;
         }
 
+        appLog("TTS Watchdog", `Playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, isPaused=${this.isPaused}`);
         console.warn(`[TTS Watchdog] Playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery...`);
         this._lastPlaybackProgressTime = now; // 重置以防止連續觸發
         
@@ -2672,6 +2685,7 @@ export class TTSEngine {
 
   _stopPlaybackWatchdog() {
     if (this._playbackWatchdog) {
+      appLog("TTS", "_stopPlaybackWatchdog called");
       clearInterval(this._playbackWatchdog);
       this._playbackWatchdog = null;
     }
@@ -2719,6 +2733,10 @@ export class TTSEngine {
         currentTime: rawCurrentTime,
         isPlaying: this.isPlaying && !this.isPaused
       };
+
+      if (this.isPaused || !this.isPlaying) {
+        nativePayload.isPlaying = false;
+      }
       
       // 發送壓縮後的輕量封面 (約 20KB~40KB)，保證原生端能始終保持或更新封面
       if (coverBase64) {
@@ -3100,6 +3118,7 @@ export class TTSEngine {
   }
 
   pause() {
+    appLog("TTS", "pause() called: isPlaying=" + this.isPlaying + ", isPaused=" + this.isPaused + ", _pauseFromNative=" + this._pauseFromNative);
     this._stopPlaybackWatchdog();
     if (!this.isPlaying) return;
 
@@ -3158,6 +3177,7 @@ export class TTSEngine {
   }
 
   resume() {
+    appLog("TTS", "resume() called: isPlaying=" + this.isPlaying + ", isPaused=" + this.isPaused + ", _resumeFromNative=" + this._resumeFromNative);
     console.log("[TTS Resume] resume() called");
     if (!this.isPlaying) {
       this.play(this.currentIndex);

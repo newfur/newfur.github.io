@@ -4,6 +4,29 @@ import AVFoundation
 import MediaPlayer
 import CallKit
 
+// Unified App Logger for deep tracing
+func writeAppLog(_ tag: String, _ message: String) {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "HH:mm:ss.SSS"
+    let timeStr = formatter.string(from: Date())
+    let line = "[\(timeStr)] [\(tag)] \(message)\n"
+    print(line, terminator: "")
+    if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+        let logFile = docs.appendingPathComponent("debug_execution.log")
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logFile.path) {
+                if let handle = try? FileHandle(forWritingTo: logFile) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    try? handle.close()
+                }
+            } else {
+                try? data.write(to: logFile)
+            }
+        }
+    }
+}
+
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
@@ -60,8 +83,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     override func remoteControlReceived(with event: UIEvent?) {
         guard let event = event, event.type == .remoteControl else { return }
-        print("[NativeTTS] AppDelegate remoteControlReceived: subtype=\(event.subtype.rawValue)")
         guard let tts = NativeTTS.shared else { return }
+        // If MPRemoteCommandCenter already received a command recently, ignore the duplicate UIEvent from UIKit
+        if Date().timeIntervalSince1970 - tts.lastMPRemoteCommandTime < 1.0 {
+            writeAppLog("AppDelegate", "Ignoring duplicate UIEvent \(event.subtype.rawValue) (already handled via MPRemoteCommandCenter)")
+            return
+        }
+        writeAppLog("AppDelegate", "remoteControlReceived: subtype=\(event.subtype.rawValue)")
         switch event.subtype {
         case .remoteControlPlay:
             tts.handleRemotePlay()
@@ -97,8 +125,13 @@ class ViewController: CAPBridgeViewController {
 
     override func remoteControlReceived(with event: UIEvent?) {
         guard let event = event, event.type == .remoteControl else { return }
-        print("[NativeTTS] ViewController remoteControlReceived: subtype=\(event.subtype.rawValue)")
         guard let tts = NativeTTS.shared else { return }
+        // If MPRemoteCommandCenter already received a command recently, ignore the duplicate UIEvent from UIKit
+        if Date().timeIntervalSince1970 - tts.lastMPRemoteCommandTime < 1.0 {
+            writeAppLog("ViewController", "Ignoring duplicate UIEvent \(event.subtype.rawValue) (already handled via MPRemoteCommandCenter)")
+            return
+        }
+        writeAppLog("ViewController", "remoteControlReceived: subtype=\(event.subtype.rawValue)")
         switch event.subtype {
         case .remoteControlPlay:
             tts.handleRemotePlay()
@@ -178,20 +211,31 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         CAPPluginMethod(name: "saveFileToSystem", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "copyFileToDownloads", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPlaybackSyncState", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "simulateRemoteCommand", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "simulateRemoteCommand", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "writeLog", returnType: CAPPluginReturnPromise)
     ]
 
     public static weak var shared: NativeTTS?
+    public var lastMPRemoteCommandTime: TimeInterval = 0
 
     private var lastRemoteCommandTime: TimeInterval = 0
-    private func shouldThrottleRemoteCommand() -> Bool {
+    private var lastRemoteCommandType: String = ""
+    private func shouldThrottleRemoteCommand(type: String = "") -> Bool {
         let now = Date().timeIntervalSince1970
-        if now - lastRemoteCommandTime < 0.25 {
-            print("[NativeTTS] Throttling duplicated remote command (<\(now - lastRemoteCommandTime)s)")
+        if now - lastRemoteCommandTime < 0.8 {
+            writeAppLog("NativeTTS", "Throttling duplicated remote command '\(type)' (<\(String(format: "%.3f", now - lastRemoteCommandTime))s since '\(lastRemoteCommandType)')")
             return true
         }
         lastRemoteCommandTime = now
+        lastRemoteCommandType = type
         return false
+    }
+
+    @objc func writeLog(_ call: CAPPluginCall) {
+        let tag = call.getString("tag") ?? "JS"
+        let msg = call.getString("message") ?? ""
+        writeAppLog(tag, msg)
+        call.resolve()
     }
 
     private var activeTasks = [String: URLSessionWebSocketTask]()
@@ -850,6 +894,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     @objc func updatePlaybackState(_ call: CAPPluginCall) {
         let isPlaying = call.getBool("isPlaying") ?? false
+        writeAppLog("NativeTTS", "updatePlaybackState called from JS: isPlaying=\(isPlaying)")
         self.isCurrentlyPlaying = isPlaying
         if isPlaying {
             self.activateAudioSession()
@@ -877,20 +922,25 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         let duration = call.getDouble("duration")
         let currentTime = call.getDouble("currentTime")
         if let callIsPlaying = call.getBool("isPlaying") {
-            self.isCurrentlyPlaying = callIsPlaying
-            if callIsPlaying {
-                self.activateAudioSession()
-                self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
-                self.isAudioSessionInterrupted = false
-                self.stopSilencePlayer()
-                self.startNowPlayingGuardian()
+            // Guard: If native is already paused, do not let an asynchronous in-flight metadata update revive playing state!
+            if !self.isCurrentlyPlaying && callIsPlaying {
+                writeAppLog("NativeTTS", "updateMetadata: dropped stale callIsPlaying=true while native is paused")
             } else {
-                self.wasPlayingBeforeInterruption = false
-                self.wasPlayingBeforeCall = false
-                self.isAudioSessionInterrupted = false
-                self.stopNowPlayingGuardian()
-                self.scheduleSilencePauseTimer()
+                self.isCurrentlyPlaying = callIsPlaying
+                if callIsPlaying {
+                    self.activateAudioSession()
+                    self.wasPlayingBeforeInterruption = false
+                    self.wasPlayingBeforeCall = false
+                    self.isAudioSessionInterrupted = false
+                    self.stopSilencePlayer()
+                    self.startNowPlayingGuardian()
+                } else {
+                    self.wasPlayingBeforeInterruption = false
+                    self.wasPlayingBeforeCall = false
+                    self.isAudioSessionInterrupted = false
+                    self.stopNowPlayingGuardian()
+                    self.scheduleSilencePauseTimer()
+                }
             }
         }
         let isPlaying = self.isCurrentlyPlaying
@@ -1163,8 +1213,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     // MARK: - Remote Control Handlers (Handles both MPRemoteCommandCenter and Bluetooth UIEvent)
     func handleRemotePlay() {
-        if shouldThrottleRemoteCommand() { return }
-        print("[NativeTTS] handleRemotePlay")
+        if shouldThrottleRemoteCommand(type: "play") { return }
+        writeAppLog("NativeTTS", "handleRemotePlay BEGIN")
         self.activateAudioSession()
         self.isCurrentlyPlaying = true
         self.stopSilencePlayer()
@@ -1186,18 +1236,31 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         }
 
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+                return
+            }
+            writeAppLog("NativeTTS", "handleRemotePlay: evaluating JS resume in webView...")
             self.bridge?.webView?.evaluateJavaScript(
-                "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
-                completionHandler: nil
+                "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; 'RESUMED_SUCCESS'; }",
+                completionHandler: { res, err in
+                    if let err = err {
+                        writeAppLog("NativeTTS", "handleRemotePlay evaluateJS ERROR: \(err.localizedDescription)")
+                    } else {
+                        writeAppLog("NativeTTS", "handleRemotePlay evaluateJS RESULT: \(res ?? "nil")")
+                    }
+                }
             )
             self.notifyListeners("mediaAction", data: ["action": "play"])
         }
     }
 
     func handleRemotePause() {
-        if shouldThrottleRemoteCommand() { return }
-        print("[NativeTTS] handleRemotePause")
+        if shouldThrottleRemoteCommand(type: "pause") { return }
+        writeAppLog("NativeTTS", "handleRemotePause BEGIN, was isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
         self.isCurrentlyPlaying = false
         self.wasPlayingBeforeInterruption = false
         self.wasPlayingBeforeCall = false
@@ -1206,71 +1269,70 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.scheduleSilencePauseTimer()
         self.syncNowPlaying(isPlaying: false)
 
+        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "RemotePausePlayback") {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.bridge?.webView?.evaluateJavaScript(
-                "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
-                completionHandler: nil
-            )
+            guard let self = self else {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+                return
+            }
+            writeAppLog("NativeTTS", "handleRemotePause: evaluating JS pause in webView...")
+            let jsCode = """
+            (function() {
+                if (window.tts) {
+                    window.tts._pauseFromNative = true;
+                    window.tts.pause();
+                    window.tts._pauseFromNative = false;
+                }
+                var audios = document.querySelectorAll('audio');
+                audios.forEach(function(a) { try { a.pause(); } catch(e) {} });
+                return 'PAUSED_COUNT_' + audios.length;
+            })();
+            """
+            self.bridge?.webView?.evaluateJavaScript(jsCode) { result, error in
+                if let error = error {
+                    writeAppLog("NativeTTS", "handleRemotePause evaluateJS ERROR: \(error.localizedDescription)")
+                } else {
+                    writeAppLog("NativeTTS", "handleRemotePause evaluateJS RESULT: \(result ?? "nil")")
+                }
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
             self.notifyListeners("mediaAction", data: ["action": "pause"])
         }
     }
 
     func handleRemoteTogglePlayPause() {
-        if shouldThrottleRemoteCommand() { return }
-        print("[NativeTTS] handleRemoteTogglePlayPause, current isPlaying=\(self.isCurrentlyPlaying)")
+        if shouldThrottleRemoteCommand(type: "toggle") { return }
+        writeAppLog("NativeTTS", "handleRemoteTogglePlayPause BEGIN, isCurrentlyPlaying=\(self.isCurrentlyPlaying)")
         let shouldPlay = !self.isCurrentlyPlaying
         if shouldPlay {
-            self.activateAudioSession()
-            self.isCurrentlyPlaying = true
-            self.stopSilencePlayer()
-            self.startNowPlayingGuardian()
-            self.syncNowPlaying(isPlaying: true)
-
-            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-            bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ResumePlaybackToggle") {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.bridge?.webView?.evaluateJavaScript(
-                    "if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }",
-                    completionHandler: nil
-                )
-                self.notifyListeners("mediaAction", data: ["action": "play"])
-            }
+            self.handleRemotePlay()
         } else {
-            self.isCurrentlyPlaying = false
-            self.wasPlayingBeforeInterruption = false
-            self.wasPlayingBeforeCall = false
-            self.isAudioSessionInterrupted = false
-            self.stopNowPlayingGuardian()
-            self.scheduleSilencePauseTimer()
-            self.syncNowPlaying(isPlaying: false)
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.bridge?.webView?.evaluateJavaScript(
-                    "if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }",
-                    completionHandler: nil
-                )
-                self.notifyListeners("mediaAction", data: ["action": "pause"])
-            }
+            self.handleRemotePause()
         }
     }
 
     func handleRemoteNext() {
-        print("[NativeTTS] handleRemoteNext")
+        if shouldThrottleRemoteCommand(type: "next") { return }
+        writeAppLog("NativeTTS", "handleRemoteNext BEGIN")
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "NextTrack") {
             if bgTaskId != .invalid {
@@ -1292,7 +1354,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func handleRemotePrevious() {
-        print("[NativeTTS] handleRemotePrevious")
+        if shouldThrottleRemoteCommand(type: "previous") { return }
+        writeAppLog("NativeTTS", "handleRemotePrevious BEGIN")
         var bgTaskId: UIBackgroundTaskIdentifier = .invalid
         bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "PreviousTrack") {
             if bgTaskId != .invalid {
@@ -1314,7 +1377,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func handleRemoteStop() {
-        print("[NativeTTS] handleRemoteStop")
+        if shouldThrottleRemoteCommand(type: "stop") { return }
+        writeAppLog("NativeTTS", "handleRemoteStop BEGIN")
         self.isCurrentlyPlaying = false
         self.wasPlayingBeforeInterruption = false
         self.wasPlayingBeforeCall = false
@@ -1353,31 +1417,43 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         commandCenter.previousTrackCommand.isEnabled = true
 
         commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.lastMPRemoteCommandTime = Date().timeIntervalSince1970
+            writeAppLog("MPRemoteCommandCenter", "playCommand triggered")
             self?.handleRemotePlay()
             return .success
         }
 
         commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.lastMPRemoteCommandTime = Date().timeIntervalSince1970
+            writeAppLog("MPRemoteCommandCenter", "pauseCommand triggered")
             self?.handleRemotePause()
             return .success
         }
 
         commandCenter.stopCommand.addTarget { [weak self] _ in
+            self?.lastMPRemoteCommandTime = Date().timeIntervalSince1970
+            writeAppLog("MPRemoteCommandCenter", "stopCommand triggered")
             self?.handleRemoteStop()
             return .success
         }
 
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.lastMPRemoteCommandTime = Date().timeIntervalSince1970
+            writeAppLog("MPRemoteCommandCenter", "togglePlayPauseCommand triggered")
             self?.handleRemoteTogglePlayPause()
             return .success
         }
 
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.lastMPRemoteCommandTime = Date().timeIntervalSince1970
+            writeAppLog("MPRemoteCommandCenter", "nextTrackCommand triggered")
             self?.handleRemoteNext()
             return .success
         }
 
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.lastMPRemoteCommandTime = Date().timeIntervalSince1970
+            writeAppLog("MPRemoteCommandCenter", "previousTrackCommand triggered")
             self?.handleRemotePrevious()
             return .success
         }
