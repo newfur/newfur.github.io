@@ -319,12 +319,16 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     // MARK: - Remote Commands State Sync
-    // Explicitly toggle playCommand and pauseCommand isEnabled to prevent iOS lock screen from showing the wrong button
+    // Keep both play and pause commands ALWAYS enabled for maximum Bluetooth headphone compatibility.
+    // Some BT headphones (AVRCP 1.3, older/budget models) send only playCommand or only pauseCommand
+    // rather than togglePlayPauseCommand. If the command is disabled, iOS silently drops the event.
+    // The correct playing/paused button on lock screen is driven by MPNowPlayingInfoCenter.playbackState
+    // and MPNowPlayingInfoPropertyPlaybackRate, NOT by command isEnabled state.
     func updateRemoteCommandsState(isPlaying: Bool) {
         DispatchQueue.main.async {
             let commandCenter = MPRemoteCommandCenter.shared()
-            commandCenter.playCommand.isEnabled = !isPlaying
-            commandCenter.pauseCommand.isEnabled = isPlaying
+            commandCenter.playCommand.isEnabled = true
+            commandCenter.pauseCommand.isEnabled = true
             commandCenter.togglePlayPauseCommand.isEnabled = true
         }
     }
@@ -336,7 +340,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.updateRemoteCommandsState(isPlaying: true)
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isCurrentlyPlaying else { return }
-            let timer = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
+            // Run at 0.2s intervals for rapid lock screen state recovery after WebKit audio transitions
+            let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 guard self.isCurrentlyPlaying else {
                     self.stopNowPlayingGuardian()
@@ -353,14 +358,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
                 if currentRate < 0.5 {
                     needsRestore = true
                 }
-                let commandCenter = MPRemoteCommandCenter.shared()
-                if commandCenter.playCommand.isEnabled || !commandCenter.pauseCommand.isEnabled {
-                    needsRestore = true
-                }
                 
                 if needsRestore {
                     print("[NativeTTS] Guardian: Restoring NowPlaying to playing (was overwritten by WebKit)")
-                    self.updateRemoteCommandsState(isPlaying: true)
                     var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [String: Any]()
                     info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
                     info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0

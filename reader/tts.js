@@ -2071,6 +2071,19 @@ export class TTSEngine {
       if (this.isPaused && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
+      // When TTS is still actively playing (sentence transition), WebKit fires onpause
+      // which flips the lock screen to the play (▶) button. Immediately restore to playing state.
+      if (this.isPlaying && !this.isPaused) {
+        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+        if (isCapacitorApp) {
+          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+            isPlaying: true
+          }).catch(() => {});
+        }
+      }
     };
     
     // 監聽時間更新事件：在當前句子即將結束前，提前預加載並播放下一句，實現完美無縫交替
