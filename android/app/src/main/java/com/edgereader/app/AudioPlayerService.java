@@ -5,37 +5,63 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaMetadata;
+import android.media.MediaPlayer;
+import android.media.PlaybackParams;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
+import android.util.Base64;
 import android.util.Log;
 
+import com.getcapacitor.JSObject;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+
+/**
+ * AudioPlayerService: Android Route B Native Audio Engine
+ * - Twin MediaPlayer architecture (playerA / playerB) for 0ms gapless sentence playback
+ * - AudioFocus management with automatic playback resumption after phone calls (AUDIOFOCUS_GAIN)
+ * - MediaSession & Notification.MediaStyle lock screen / notification / Bluetooth headphone controls
+ * - Foreground Service with CPU WakeLock & WifiLock to prevent Doze mode throttling
+ */
 public class AudioPlayerService extends Service {
 
     private static final String TAG = "AudioPlayerService";
     private static final String CHANNEL_ID = "tts_playback_channel";
     private static final int NOTIFICATION_ID = 9527;
 
+    public static AudioPlayerService instance;
+
+    public static AudioPlayerService getInstance() {
+        return instance;
+    }
+
     private MediaSession mediaSession;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
-    
+
     private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
     private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener;
     private boolean wasPlayingBeforeTransientLoss = false;
-    private android.content.BroadcastReceiver noisyReceiver;
+    private BroadcastReceiver noisyReceiver;
     private boolean isReceiverRegistered = false;
     private String lastCoverBase64 = null;
 
@@ -44,13 +70,41 @@ public class AudioPlayerService extends Service {
     private String currentArtist = "";
     private String currentText = "";
     private Bitmap coverBitmap = null;
+    private double currentChapterTotalDuration = 60.0;
+    private double currentChapterProgressBase = 0.0;
+
+    // Route B Twin-Player Engine
+    private MediaPlayer playerA;
+    private MediaPlayer playerB;
+    private int activePlayerTag = 0;   // 0 = playerA, 1 = playerB
+    private int preparedPlayerTag = 1; // 1 = playerB, 0 = playerA
+    private int currentPlayingSentenceIndex = -1;
+    private int preparedSentenceIndex = -1;
+    private boolean isPreparedReady = false;
+    private float currentPlaybackRate = 1.0f;
+    private float currentPlaybackVolume = 1.0f;
+    private String activePlayerFilePath = "";
+    private String preparedPlayerFilePath = "";
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    public interface PlayCallback {
+        void onSuccess(int durationMs);
+        void onError(String error);
+    }
+
+    public interface PrepareCallback {
+        void onSuccess(boolean prepared);
+        void onError(String error);
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.d(TAG, "onCreate");
+        instance = this;
+        Log.d(TAG, "onCreate: Initializing AudioPlayerService");
 
-        // Initialize AudioManager and AudioFocus listener
+        // Initialize AudioManager and AudioFocus listener with auto-resume on AUDIOFOCUS_GAIN
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
             @Override
@@ -62,28 +116,48 @@ public class AudioPlayerService extends Service {
                         if (isPlaying) {
                             wasPlayingBeforeTransientLoss = true;
                             Log.d(TAG, "Audio focus lost transiently (e.g. phone call). Pausing playback.");
-                            emergencyPause();
+                            pauseNative();
+                            notifyJS("pause");
+                            evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts._isInterrupted = true; window.tts.pause(); window.tts._pauseFromNative = false; }");
                         }
                         break;
                     case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                        // Ducking requested by system or by Chromium WebView in the same app.
-                        // DO NOT pause! Allow playback to continue.
-                        Log.d(TAG, "Audio focus LOSS_TRANSIENT_CAN_DUCK received. Ignoring to avoid pausing WebView playback.");
+                        // Transient ducking (notification ping, navigation chime)
+                        Log.d(TAG, "Audio focus LOSS_TRANSIENT_CAN_DUCK received. Ducking volume.");
+                        MediaPlayer active = getActivePlayer();
+                        if (active != null && isPlaying) {
+                            try {
+                                float duckVol = 0.2f * currentPlaybackVolume;
+                                active.setVolume(duckVol, duckVol);
+                            } catch (Exception ignored) {}
+                        }
                         break;
                     case AudioManager.AUDIOFOCUS_LOSS:
-                        // Permanent loss: another app started playing media
+                        // Permanent loss: another audio app started
                         wasPlayingBeforeTransientLoss = false;
                         Log.d(TAG, "Audio focus lost permanently. Pausing playback.");
                         if (isPlaying) {
-                            emergencyPause();
+                            pauseNative();
+                            notifyJS("pause");
+                            evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; }");
                         }
                         break;
                     case AudioManager.AUDIOFOCUS_GAIN:
                         Log.d(TAG, "Audio focus gained.");
                         if (wasPlayingBeforeTransientLoss) {
                             wasPlayingBeforeTransientLoss = false;
-                            Log.d(TAG, "Resuming playback after transient focus loss (phone call ended).");
-                            resumePlayback();
+                            Log.d(TAG, "Phone call ended / transient interruption over. Automatically resuming playback!");
+                            resumeNative();
+                            notifyJS("play");
+                            evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
+                        } else if (isPlaying) {
+                            // Restore unducked volume
+                            MediaPlayer player = getActivePlayer();
+                            if (player != null) {
+                                try {
+                                    player.setVolume(currentPlaybackVolume, currentPlaybackVolume);
+                                } catch (Exception ignored) {}
+                            }
                         }
                         break;
                 }
@@ -149,84 +223,549 @@ public class AudioPlayerService extends Service {
             @Override
             public void onPlay() {
                 Log.d(TAG, "MediaSession: onPlay");
-                requestAudioFocus();
-                isPlaying = true;
-                wasPlayingBeforeTransientLoss = false;
-                updatePlaybackState(true);
-                updateNotification(currentTitle, currentArtist, currentText, true);
-                evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
+                resumeNative();
                 notifyJS("play");
+                evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
             }
 
             @Override
             public void onPause() {
                 Log.d(TAG, "MediaSession: onPause");
-                abandonAudioFocus();
-                isPlaying = false;
-                wasPlayingBeforeTransientLoss = false;
-                updatePlaybackState(false);
-                updateNotification(currentTitle, currentArtist, currentText, false);
-                evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
+                pauseNative();
                 notifyJS("pause");
+                evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
             }
 
             @Override
             public void onSkipToNext() {
                 Log.d(TAG, "MediaSession: onSkipToNext");
-                evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
                 notifyJS("next");
+                evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
             }
 
             @Override
             public void onSkipToPrevious() {
                 Log.d(TAG, "MediaSession: onSkipToPrevious");
-                evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
                 notifyJS("previous");
+                evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
             }
 
             @Override
             public void onStop() {
                 Log.d(TAG, "MediaSession: onStop");
-                abandonAudioFocus();
-                isPlaying = false;
-                wasPlayingBeforeTransientLoss = false;
-                updatePlaybackState(false);
+                stopNative();
                 notifyJS("stop");
-                stopForeground(true);
-                stopSelf();
+                evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
             }
         });
-        
+
         mediaSession.setActive(true);
     }
 
+    // AudioFocus Management
     private boolean requestAudioFocus() {
-        // Chromium WebView handles audio focus natively when playing HTML5 Audio elements.
-        // If AudioPlayerService also requests AUDIOFOCUS_GAIN, Android treats AudioPlayerService
-        // and Chromium as two competing clients within the same app, sending AUDIOFOCUS_LOSS (-1)
-        // to AudioPlayerService when Chromium plays audio, which prematurely paused playback.
-        Log.d(TAG, "requestAudioFocus: Delegated to Chromium WebView");
-        return true;
+        if (audioManager == null) {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        }
+        if (audioManager == null) return false;
+
+        int res;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (audioFocusRequest == null) {
+                AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build();
+                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(playbackAttributes)
+                        .setAcceptsDelayedFocusGain(true)
+                        .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
+                        .build();
+            }
+            res = audioManager.requestAudioFocus(audioFocusRequest);
+        } else {
+            res = audioManager.requestAudioFocus(audioFocusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        }
+        Log.d(TAG, "requestAudioFocus result: " + res);
+        return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
     }
 
     private void abandonAudioFocus() {
-        Log.d(TAG, "abandonAudioFocus: Delegated to Chromium WebView");
+        if (audioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (audioFocusRequest != null) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                }
+            } else {
+                audioManager.abandonAudioFocus(audioFocusChangeListener);
+            }
+            Log.d(TAG, "abandonAudioFocus completed");
+        } catch (Exception e) {
+            Log.w(TAG, "abandonAudioFocus error: " + e.getMessage());
+        }
     }
 
-    private void emergencyPause() {
+    // Route B Twin-Player Helpers
+    private MediaPlayer getActivePlayer() {
+        return activePlayerTag == 0 ? playerA : playerB;
+    }
+
+    private void setActivePlayer(MediaPlayer p) {
+        if (activePlayerTag == 0) playerA = p;
+        else playerB = p;
+    }
+
+    private MediaPlayer getPreparedPlayer() {
+        return preparedPlayerTag == 0 ? playerA : playerB;
+    }
+
+    private void setPreparedPlayer(MediaPlayer p) {
+        if (preparedPlayerTag == 0) playerA = p;
+        else playerB = p;
+    }
+
+    private void safeReleasePlayer(MediaPlayer mp) {
+        if (mp != null) {
+            try {
+                mp.setOnPreparedListener(null);
+                mp.setOnCompletionListener(null);
+                mp.setOnErrorListener(null);
+                if (mp.isPlaying()) {
+                    mp.stop();
+                }
+                mp.reset();
+                mp.release();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private void applyPlaybackRate(MediaPlayer player, float rate) {
+        if (player == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                PlaybackParams params = player.getPlaybackParams();
+                if (params == null) {
+                    params = new PlaybackParams();
+                }
+                float speed = (rate > 0f) ? rate : 1.0f;
+                params.setSpeed(speed);
+                player.setPlaybackParams(params);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to setPlaybackParams: " + e.getMessage());
+            }
+        }
+    }
+
+    private boolean setupDataSource(MediaPlayer player, String filePath, String audioBase64) {
+        try {
+            if (filePath != null && !filePath.isEmpty()) {
+                File f = new File(filePath);
+                if (f.exists() && f.length() > 0) {
+                    try (FileInputStream fis = new FileInputStream(f)) {
+                        player.setDataSource(fis.getFD());
+                    }
+                    return true;
+                }
+            }
+            if (audioBase64 != null && !audioBase64.isEmpty()) {
+                String clean = audioBase64;
+                if (clean.startsWith("data:")) {
+                    int commaIdx = clean.indexOf(",");
+                    if (commaIdx != -1) {
+                        clean = clean.substring(commaIdx + 1);
+                    }
+                }
+                byte[] bytes = Base64.decode(clean, Base64.DEFAULT);
+                File fallbackFile = new File(getCacheDir(), "tts_active_fallback.mp3");
+                try (FileOutputStream fos = new FileOutputStream(fallbackFile)) {
+                    fos.write(bytes);
+                }
+                try (FileInputStream fis = new FileInputStream(fallbackFile)) {
+                    player.setDataSource(fis.getFD());
+                }
+                return true;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error setting data source on MediaPlayer: " + e.getMessage(), e);
+        }
+        return false;
+    }
+
+    // Route B Native Engine Execution Methods
+    public void playNativeSentence(String filePath, String audioBase64, int index, String text,
+                                   String title, String artist, String coverBase64,
+                                   double duration, double currentTime, float rate, float volume,
+                                   PlayCallback callback) {
+        mainHandler.post(() -> {
+            try {
+                if (title != null && !title.isEmpty()) currentTitle = title;
+                if (artist != null && !artist.isEmpty()) currentArtist = artist;
+                if (text != null) currentText = text;
+                if (duration > 0) currentChapterTotalDuration = duration;
+                if (currentTime >= 0) currentChapterProgressBase = currentTime;
+                currentPlaybackRate = (rate > 0f) ? rate : 1.0f;
+                currentPlaybackVolume = (volume >= 0f) ? volume : 1.0f;
+
+                if (coverBase64 != null && !coverBase64.isEmpty()) {
+                    coverBitmap = decodeBase64ToBitmap(coverBase64);
+                }
+
+                requestAudioFocus();
+                isPlaying = true;
+                wasPlayingBeforeTransientLoss = false;
+                cancelScheduledLockRelease();
+                acquireLocks();
+                registerNoisyReceiver();
+
+                // Check if preparedPlayer is already pre-warmed for this exact sentence
+                if (preparedSentenceIndex == index && isPreparedReady && getPreparedPlayer() != null) {
+                    Log.d(TAG, "playNativeSentence: using pre-warmed preparedPlayer for index=" + index);
+                    MediaPlayer prep = getPreparedPlayer();
+                    safeReleasePlayer(getActivePlayer());
+
+                    activePlayerTag = preparedPlayerTag;
+                    preparedPlayerTag = 1 - activePlayerTag;
+                    currentPlayingSentenceIndex = index;
+                    preparedSentenceIndex = -1;
+                    isPreparedReady = false;
+                    activePlayerFilePath = preparedPlayerFilePath;
+                    preparedPlayerFilePath = "";
+
+                    applyPlaybackRate(prep, currentPlaybackRate);
+                    prep.setVolume(currentPlaybackVolume, currentPlaybackVolume);
+                    prep.start();
+
+                    updateNotification(currentTitle, currentArtist, currentText, true);
+                    updateMetadata(currentTitle, currentArtist, currentText);
+                    updatePlaybackState(true);
+
+                    if (callback != null) {
+                        callback.onSuccess(prep.getDuration());
+                    }
+                    return;
+                }
+
+                // Otherwise, initialize fresh active player
+                safeReleasePlayer(getActivePlayer());
+                MediaPlayer player = new MediaPlayer();
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build();
+                player.setAudioAttributes(audioAttributes);
+                player.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+
+                boolean srcOk = setupDataSource(player, filePath, audioBase64);
+                if (!srcOk) {
+                    safeReleasePlayer(player);
+                    if (callback != null) callback.onError("Failed to set data source for sentence " + index);
+                    return;
+                }
+
+                player.setOnCompletionListener(this::handlePlayerCompletion);
+                player.setOnErrorListener((mp, what, extra) -> {
+                    Log.e(TAG, "MediaPlayer error on active player: what=" + what + ", extra=" + extra);
+                    safeReleasePlayer(mp);
+                    return true;
+                });
+
+                player.prepare();
+                applyPlaybackRate(player, currentPlaybackRate);
+                player.setVolume(currentPlaybackVolume, currentPlaybackVolume);
+                player.start();
+
+                setActivePlayer(player);
+                currentPlayingSentenceIndex = index;
+                activePlayerFilePath = (filePath != null) ? filePath : "";
+
+                updateNotification(currentTitle, currentArtist, currentText, true);
+                updateMetadata(currentTitle, currentArtist, currentText);
+                updatePlaybackState(true);
+
+                if (callback != null) {
+                    callback.onSuccess(player.getDuration());
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "playNativeSentence ERROR: " + e.getMessage(), e);
+                if (callback != null) callback.onError("Error playing sentence: " + e.getMessage());
+            }
+        });
+    }
+
+    public void prepareNextSentence(String filePath, String audioBase64, int index,
+                                    float rate, float volume, PrepareCallback callback) {
+        mainHandler.post(() -> {
+            try {
+                Log.d(TAG, "prepareNextSentence: index=" + index);
+                safeReleasePlayer(getPreparedPlayer());
+                isPreparedReady = false;
+                preparedSentenceIndex = -1;
+                preparedPlayerFilePath = "";
+
+                MediaPlayer prep = new MediaPlayer();
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build();
+                prep.setAudioAttributes(audioAttributes);
+                prep.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+
+                boolean srcOk = setupDataSource(prep, filePath, audioBase64);
+                if (!srcOk) {
+                    safeReleasePlayer(prep);
+                    if (callback != null) callback.onError("Failed to set data source for prepared sentence " + index);
+                    return;
+                }
+
+                prep.setOnCompletionListener(this::handlePlayerCompletion);
+                prep.setOnErrorListener((mp, what, extra) -> {
+                    Log.e(TAG, "MediaPlayer error on prepared player: what=" + what + ", extra=" + extra);
+                    isPreparedReady = false;
+                    safeReleasePlayer(mp);
+                    return true;
+                });
+
+                prep.setOnPreparedListener(mp -> {
+                    isPreparedReady = true;
+                    preparedSentenceIndex = index;
+                    preparedPlayerFilePath = (filePath != null) ? filePath : "";
+                    applyPlaybackRate(mp, (rate > 0f) ? rate : currentPlaybackRate);
+                    mp.setVolume((volume >= 0f) ? volume : currentPlaybackVolume,
+                                 (volume >= 0f) ? volume : currentPlaybackVolume);
+                    Log.d(TAG, "prepareNextSentence: pre-warmed and ready for sentence " + index + ", duration=" + mp.getDuration());
+                    if (callback != null) {
+                        callback.onSuccess(true);
+                    }
+                });
+
+                setPreparedPlayer(prep);
+                prep.prepareAsync();
+            } catch (Exception e) {
+                Log.e(TAG, "prepareNextSentence ERROR: " + e.getMessage(), e);
+                if (callback != null) callback.onError("Failed to prepare next sentence: " + e.getMessage());
+            }
+        });
+    }
+
+    private void handlePlayerCompletion(MediaPlayer mp) {
+        Log.d(TAG, "handlePlayerCompletion: currentPlayingIndex=" + currentPlayingSentenceIndex +
+                   ", preparedIndex=" + preparedSentenceIndex + ", isPreparedReady=" + isPreparedReady);
+
+        int finishedIndex = currentPlayingSentenceIndex;
+        MediaPlayer nextPlayer = getPreparedPlayer();
+
+        if (isPlaying && isPreparedReady && nextPlayer != null && preparedSentenceIndex == finishedIndex + 1) {
+            // Gapless switch: start next pre-warmed player immediately (0ms gap!)
+            applyPlaybackRate(nextPlayer, currentPlaybackRate);
+            nextPlayer.setVolume(currentPlaybackVolume, currentPlaybackVolume);
+            nextPlayer.start();
+
+            int newIndex = preparedSentenceIndex;
+            activePlayerTag = preparedPlayerTag;
+            preparedPlayerTag = 1 - activePlayerTag;
+            currentPlayingSentenceIndex = newIndex;
+            preparedSentenceIndex = -1;
+            isPreparedReady = false;
+            activePlayerFilePath = preparedPlayerFilePath;
+            preparedPlayerFilePath = "";
+
+            // Safely reset completed player
+            safeReleasePlayer(mp);
+
+            // Update progress in notification safely
+            double updatedCurrentTime = newIndex * 5.0;
+            if (updatedCurrentTime >= currentChapterTotalDuration - 5.0) {
+                currentChapterTotalDuration = updatedCurrentTime + 30.0;
+            }
+            currentChapterProgressBase = updatedCurrentTime;
+
+            updateNotification(currentTitle, currentArtist, currentText, true);
+            updatePlaybackState(true);
+
+            Log.d(TAG, "Gapless switch: started pre-warmed sentence " + newIndex);
+            notifySentenceStarted(newIndex, nextPlayer.getDuration());
+            notifySentenceEnded(finishedIndex);
+        } else {
+            Log.d(TAG, "handlePlayerCompletion: next sentence " + (finishedIndex + 1) + " not prepared yet, notifying JS");
+            safeReleasePlayer(mp);
+            currentPlayingSentenceIndex = -1;
+            notifySentenceEnded(finishedIndex);
+        }
+    }
+
+    public void pauseNative() {
         isPlaying = false;
+        MediaPlayer active = getActivePlayer();
+        if (active != null) {
+            try {
+                if (active.isPlaying()) {
+                    active.pause();
+                }
+            } catch (Exception ignored) {}
+        }
+        MediaPlayer prep = getPreparedPlayer();
+        if (prep != null) {
+            try {
+                if (prep.isPlaying()) {
+                    prep.pause();
+                }
+            } catch (Exception ignored) {}
+        }
+        abandonAudioFocus();
         updatePlaybackState(false);
         updateNotification(currentTitle, currentArtist, currentText, false);
-        evaluateJSInWebView("if (window.tts) { window.tts.pause(); } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
-        notifyJS("pause");
     }
 
-    private void resumePlayback() {
+    public boolean resumeNative() {
         requestAudioFocus();
         isPlaying = true;
+        wasPlayingBeforeTransientLoss = false;
+        MediaPlayer active = getActivePlayer();
+        if (active != null) {
+            try {
+                applyPlaybackRate(active, currentPlaybackRate);
+                active.start();
+                updatePlaybackState(true);
+                updateNotification(currentTitle, currentArtist, currentText, true);
+                return true;
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to start activePlayer on resume: " + e.getMessage());
+            }
+        }
+
+        // Fallback: If activePlayer failed but we have activePlayerFilePath, re-create from file
+        if (activePlayerFilePath != null && !activePlayerFilePath.isEmpty()) {
+            File f = new File(activePlayerFilePath);
+            if (f.exists() && f.length() > 0) {
+                try {
+                    safeReleasePlayer(active);
+                    MediaPlayer newPlayer = new MediaPlayer();
+                    AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+                    newPlayer.setAudioAttributes(audioAttributes);
+                    newPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                    try (FileInputStream fis = new FileInputStream(f)) {
+                        newPlayer.setDataSource(fis.getFD());
+                    }
+                    newPlayer.setOnCompletionListener(this::handlePlayerCompletion);
+                    newPlayer.setOnErrorListener((mp, what, extra) -> {
+                        safeReleasePlayer(mp);
+                        return true;
+                    });
+                    newPlayer.prepare();
+                    applyPlaybackRate(newPlayer, currentPlaybackRate);
+                    newPlayer.setVolume(currentPlaybackVolume, currentPlaybackVolume);
+                    newPlayer.start();
+                    setActivePlayer(newPlayer);
+                    updatePlaybackState(true);
+                    updateNotification(currentTitle, currentArtist, currentText, true);
+                    return true;
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to re-create activePlayer from file: " + e.getMessage());
+                }
+            }
+        }
         updatePlaybackState(true);
         updateNotification(currentTitle, currentArtist, currentText, true);
-        notifyJS("play");
+        return false;
+    }
+
+    public void stopNative() {
+        isPlaying = false;
+        wasPlayingBeforeTransientLoss = false;
+        currentPlayingSentenceIndex = -1;
+        preparedSentenceIndex = -1;
+        isPreparedReady = false;
+        activePlayerFilePath = "";
+        preparedPlayerFilePath = "";
+
+        safeReleasePlayer(playerA);
+        playerA = null;
+        safeReleasePlayer(playerB);
+        playerB = null;
+
+        abandonAudioFocus();
+        cancelScheduledLockRelease();
+        releaseLocks();
+        unregisterNoisyReceiver();
+        updatePlaybackState(false);
+        stopForeground(true);
+        stopSelf();
+    }
+
+    public void setRateNative(float rate) {
+        this.currentPlaybackRate = (rate > 0f) ? rate : 1.0f;
+        applyPlaybackRate(getActivePlayer(), currentPlaybackRate);
+        applyPlaybackRate(getPreparedPlayer(), currentPlaybackRate);
+    }
+
+    public void setVolumeNative(float volume) {
+        this.currentPlaybackVolume = (volume >= 0f) ? volume : 1.0f;
+        MediaPlayer active = getActivePlayer();
+        if (active != null) {
+            try { active.setVolume(currentPlaybackVolume, currentPlaybackVolume); } catch (Exception ignored) {}
+        }
+        MediaPlayer prep = getPreparedPlayer();
+        if (prep != null) {
+            try { prep.setVolume(currentPlaybackVolume, currentPlaybackVolume); } catch (Exception ignored) {}
+        }
+    }
+
+    public void simulateAudioFocusChange(int focusChange) {
+        if (audioFocusChangeListener != null) {
+            audioFocusChangeListener.onAudioFocusChange(focusChange);
+        }
+    }
+
+    public boolean isPlaying() {
+        return isPlaying;
+    }
+
+    public int getCurrentPlayingSentenceIndex() {
+        return currentPlayingSentenceIndex;
+    }
+
+    public int getPreparedSentenceIndex() {
+        return preparedSentenceIndex;
+    }
+
+    public boolean isPreparedReady() {
+        return isPreparedReady;
+    }
+
+    public String getActivePlayerFilePath() {
+        return activePlayerFilePath;
+    }
+
+    public String getPreparedPlayerFilePath() {
+        return preparedPlayerFilePath;
+    }
+
+    public float getCurrentPlaybackRate() {
+        return currentPlaybackRate;
+    }
+
+    private void notifySentenceStarted(int index, int durationMs) {
+        if (NativeTTS.instance != null) {
+            NativeTTS.instance.sendSentenceStarted(index, durationMs / 1000.0);
+        }
+    }
+
+    private void notifySentenceEnded(int index) {
+        if (NativeTTS.instance != null) {
+            NativeTTS.instance.sendSentenceEnded(index);
+        }
+    }
+
+    private void notifyJS(String action) {
+        if (NativeTTS.instance != null) {
+            NativeTTS.instance.sendMediaAction(action);
+        } else {
+            Log.w(TAG, "Cannot notifyJS, NativeTTS.instance is null");
+        }
     }
 
     private void evaluateJSInWebView(String jsCode) {
@@ -252,43 +791,32 @@ public class AudioPlayerService extends Service {
             Log.d(TAG, "onStartCommand: action = " + action);
             if (action != null) {
                 switch (action) {
+                    case "ACTION_INIT":
+                        startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
+                        break;
                     case "ACTION_PLAY_PAUSE":
                         if (isPlaying) {
-                            abandonAudioFocus();
-                            isPlaying = false;
-                            wasPlayingBeforeTransientLoss = false;
-                            updatePlaybackState(false);
-                            updateNotification(currentTitle, currentArtist, currentText, false);
-                            evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
+                            pauseNative();
                             notifyJS("pause");
+                            evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
                         } else {
-                            requestAudioFocus();
-                            isPlaying = true;
-                            wasPlayingBeforeTransientLoss = false;
-                            updatePlaybackState(true);
-                            updateNotification(currentTitle, currentArtist, currentText, true);
-                            evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
+                            resumeNative();
                             notifyJS("play");
+                            evaluateJSInWebView("if (window.tts) { window.tts._resumeFromNative = true; window.tts.resume(); window.tts._resumeFromNative = false; }");
                         }
                         break;
                     case "ACTION_NEXT":
-                        evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
                         notifyJS("next");
+                        evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
                         break;
                     case "ACTION_PREVIOUS":
-                        evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
                         notifyJS("previous");
+                        evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
                         break;
                     case "ACTION_STOP":
-                        abandonAudioFocus();
-                        cancelScheduledLockRelease();
-                        isPlaying = false;
-                        wasPlayingBeforeTransientLoss = false;
-                        updatePlaybackState(false);
-                        evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
+                        stopNative();
                         notifyJS("stop");
-                        stopForeground(true);
-                        stopSelf();
+                        evaluateJSInWebView("if (window.tts) { window.tts.stop(); }");
                         break;
                     case "ACTION_START":
                         currentTitle = intent.getStringExtra("title");
@@ -296,7 +824,7 @@ public class AudioPlayerService extends Service {
                         currentText = intent.getStringExtra("text");
                         String coverBase64 = intent.getStringExtra("cover");
                         isPlaying = intent.getBooleanExtra("isPlaying", false);
-                        
+
                         if (coverBase64 != null && !coverBase64.isEmpty()) {
                             coverBitmap = decodeBase64ToBitmap(coverBase64);
                         } else {
@@ -305,20 +833,27 @@ public class AudioPlayerService extends Service {
 
                         if (isPlaying) {
                             requestAudioFocus();
+                            cancelScheduledLockRelease();
+                            acquireLocks();
+                            registerNoisyReceiver();
                         } else {
                             abandonAudioFocus();
+                            unregisterNoisyReceiver();
+                            scheduleLockRelease();
                         }
-                        
+
                         updateMetadata(currentTitle, currentArtist, currentText);
                         updatePlaybackState(isPlaying);
                         startForegroundServiceWithNotification(currentTitle, currentArtist, currentText, isPlaying);
                         break;
                     case "ACTION_UPDATE_STATE":
-                        isPlaying = intent.getBooleanExtra("isPlaying", false);
-                        if (isPlaying) {
-                            requestAudioFocus();
-                        } else {
-                            abandonAudioFocus();
+                        boolean newPlaying = intent.getBooleanExtra("isPlaying", false);
+                        if (newPlaying != isPlaying) {
+                            if (newPlaying) {
+                                resumeNative();
+                            } else {
+                                pauseNative();
+                            }
                         }
                         updatePlaybackState(isPlaying);
                         updateNotification(currentTitle, currentArtist, currentText, isPlaying);
@@ -380,15 +915,19 @@ public class AudioPlayerService extends Service {
             builder = new Notification.Builder(this);
         }
 
-        builder.setContentTitle(text != null && !text.isEmpty() ? text : "Reading...")
-               .setContentText(title != null && !title.isEmpty() ? title : "E-Book Reader")
-               .setSubText(artist != null && !artist.isEmpty() ? artist : "TTS")
+        String displayTitle = (text != null && !text.isEmpty()) ? text : (title != null && !title.isEmpty() ? title : "Reading...");
+        String displaySubtitle = (title != null && !title.isEmpty()) ? title : "E-Book Reader";
+        String displayArtist = (artist != null && !artist.isEmpty()) ? artist : "TTS";
+
+        builder.setContentTitle(displayTitle)
+               .setContentText(displaySubtitle)
+               .setSubText(displayArtist)
                .setSmallIcon(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play)
                .setContentIntent(pendingIntent)
                .setVisibility(Notification.VISIBILITY_PUBLIC)
                .setOngoing(isPlaying);
 
-        if (coverBitmap != null) {
+        if (coverBitmap != null && !coverBitmap.isRecycled()) {
             builder.setLargeIcon(coverBitmap);
         }
 
@@ -425,7 +964,7 @@ public class AudioPlayerService extends Service {
 
         builder.setStyle(mediaStyle);
 
-        // Add Delete (dismiss) action when paused
+        // Dismiss action
         Intent deleteIntent = new Intent(this, AudioPlayerService.class).setAction("ACTION_STOP");
         PendingIntent deletePending = PendingIntent.getService(this, 5, deleteIntent, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
         builder.setDeleteIntent(deletePending);
@@ -435,6 +974,8 @@ public class AudioPlayerService extends Service {
 
     private void updatePlaybackState(boolean isPlaying) {
         this.isPlaying = isPlaying;
+        if (mediaSession == null) return;
+
         long actions = PlaybackState.ACTION_PLAY_PAUSE |
                        PlaybackState.ACTION_SKIP_TO_NEXT |
                        PlaybackState.ACTION_SKIP_TO_PREVIOUS |
@@ -450,7 +991,7 @@ public class AudioPlayerService extends Service {
                 .setActions(actions);
 
         int state = isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
-        stateBuilder.setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, isPlaying ? 1.0f : 0.0f, android.os.SystemClock.elapsedRealtime());
+        stateBuilder.setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, isPlaying ? currentPlaybackRate : 0.0f, android.os.SystemClock.elapsedRealtime());
         mediaSession.setPlaybackState(stateBuilder.build());
 
         if (isPlaying) {
@@ -463,29 +1004,25 @@ public class AudioPlayerService extends Service {
         }
     }
 
-
     private void registerNoisyReceiver() {
         if (!isReceiverRegistered) {
             if (noisyReceiver == null) {
-                noisyReceiver = new android.content.BroadcastReceiver() {
+                noisyReceiver = new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
                         if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
                             Log.d(TAG, "Audio becoming noisy (headphones unplugged), pausing...");
                             if (isPlaying) {
-                                abandonAudioFocus();
-                                isPlaying = false;
-                                wasPlayingBeforeTransientLoss = false;
-                                updatePlaybackState(false);
-                                updateNotification(currentTitle, currentArtist, currentText, false);
+                                pauseNative();
                                 notifyJS("pause");
+                                evaluateJSInWebView("if (window.tts) { window.tts._pauseFromNative = true; window.tts.pause(); window.tts._pauseFromNative = false; } else { document.querySelectorAll('audio').forEach(function(a) { a.pause(); }); }");
                             }
                         }
                     }
                 };
             }
             try {
-                registerReceiver(noisyReceiver, new android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+                registerReceiver(noisyReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
                 isReceiverRegistered = true;
             } catch (Exception e) {
                 Log.w(TAG, "Failed to register noisy receiver: " + e.getMessage());
@@ -503,7 +1040,7 @@ public class AudioPlayerService extends Service {
     }
 
     private Runnable lockReleaseRunnable = null;
-    private final android.os.Handler lockHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Handler lockHandler = new Handler(Looper.getMainLooper());
 
     private void scheduleLockRelease() {
         cancelScheduledLockRelease();
@@ -522,14 +1059,19 @@ public class AudioPlayerService extends Service {
     }
 
     private void updateMetadata(String title, String artist, String text) {
-        MediaMetadata.Builder metadataBuilder = new MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, text)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, title);
-        if (coverBitmap != null && !coverBitmap.isRecycled()) {
-            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
+        if (mediaSession == null) return;
+        try {
+            MediaMetadata.Builder metadataBuilder = new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, (text != null && !text.isEmpty()) ? text : title)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, (artist != null && !artist.isEmpty()) ? artist : "E-Book Reader")
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, (title != null && !title.isEmpty()) ? title : "TTS Reading");
+            if (coverBitmap != null && !coverBitmap.isRecycled()) {
+                metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
+            }
+            mediaSession.setMetadata(metadataBuilder.build());
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to update MediaMetadata: " + e.getMessage());
         }
-        mediaSession.setMetadata(metadataBuilder.build());
     }
 
     private Bitmap decodeBase64ToBitmap(String base64Str) {
@@ -545,7 +1087,7 @@ public class AudioPlayerService extends Service {
                     clean = clean.substring(commaIdx + 1);
                 }
             }
-            byte[] decodedBytes = android.util.Base64.decode(clean, android.util.Base64.DEFAULT);
+            byte[] decodedBytes = Base64.decode(clean, Base64.DEFAULT);
             Bitmap newBmp = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
             if (newBmp != null) {
                 if (coverBitmap != null && coverBitmap != newBmp && !coverBitmap.isRecycled()) {
@@ -607,14 +1149,6 @@ public class AudioPlayerService extends Service {
         }
     }
 
-    private void notifyJS(String action) {
-        if (NativeTTS.instance != null) {
-            NativeTTS.instance.sendMediaAction(action);
-        } else {
-            Log.w(TAG, "Cannot notifyJS, NativeTTS.instance is null");
-        }
-    }
-
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         super.onTaskRemoved(rootIntent);
@@ -634,6 +1168,10 @@ public class AudioPlayerService extends Service {
         cancelScheduledLockRelease();
         unregisterNoisyReceiver();
         releaseLocks();
+        safeReleasePlayer(playerA);
+        playerA = null;
+        safeReleasePlayer(playerB);
+        playerB = null;
         if (coverBitmap != null) {
             coverBitmap.recycle();
             coverBitmap = null;
@@ -644,6 +1182,9 @@ public class AudioPlayerService extends Service {
             mediaSession.release();
         }
         stopForeground(true);
+        if (instance == this) {
+            instance = null;
+        }
         super.onDestroy();
     }
 }

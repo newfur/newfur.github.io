@@ -1,40 +1,43 @@
 package com.edgereader.app;
 
+import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
+import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
-import android.content.ContentValues;
-import android.net.Uri;
-import android.os.Environment;
-import android.provider.MediaStore;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.OutputStream;
-import java.io.InputStream;
-import java.io.FileInputStream;
+
+import androidx.activity.result.ActivityResult;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
-import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.ActivityCallback;
-import androidx.activity.result.ActivityResult;
-import android.app.Activity;
+import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import android.os.Handler;
-import android.os.Looper;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -75,6 +78,19 @@ public class NativeTTS extends Plugin {
         notifyListeners("mediaAction", data);
     }
 
+    public void sendSentenceStarted(int index, double duration) {
+        JSObject data = new JSObject();
+        data.put("index", index);
+        data.put("duration", duration);
+        notifyListeners("sentenceStarted", data);
+    }
+
+    public void sendSentenceEnded(int index) {
+        JSObject data = new JSObject();
+        data.put("index", index);
+        notifyListeners("sentenceEnded", data);
+    }
+
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();
@@ -89,6 +105,26 @@ public class NativeTTS extends Plugin {
         }
     }
 
+    private void ensureAudioServiceStarted(Context context) {
+        if (AudioPlayerService.getInstance() == null) {
+            Intent intent = new Intent(context, AudioPlayerService.class);
+            intent.setAction("ACTION_INIT");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        }
+    }
+
+    @PluginMethod
+    public void writeLog(PluginCall call) {
+        String tag = call.getString("tag", "EdgeReader");
+        String message = call.getString("message", "");
+        Log.d(tag, message);
+        call.resolve();
+    }
+
     @PluginMethod
     public void requestIgnoreBatteryOptimizations(PluginCall call) {
         try {
@@ -97,7 +133,7 @@ public class NativeTTS extends Plugin {
                 PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
                 if (pm != null && !pm.isIgnoringBatteryOptimizations(context.getPackageName())) {
                     Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(android.net.Uri.parse("package:" + context.getPackageName()));
+                    intent.setData(Uri.parse("package:" + context.getPackageName()));
                     if (getActivity() != null) {
                         getActivity().startActivity(intent);
                     }
@@ -239,9 +275,22 @@ public class NativeTTS extends Plugin {
                     String base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP);
                     JSObject ret = new JSObject();
                     ret.put("audioBase64", base64Audio);
+
+                    // Cache audio bytes directly to local storage for Route B instant playback
+                    try {
+                        File cacheDir = getContext().getCacheDir();
+                        File ttsFile = new File(cacheDir, "tts_" + connectionId + ".mp3");
+                        try (FileOutputStream fos = new FileOutputStream(ttsFile)) {
+                            fos.write(audioData);
+                        }
+                        ret.put("filePath", ttsFile.getAbsolutePath());
+                    } catch (Exception e) {
+                        Log.w(TAG, "Failed to cache TTS audio file: " + e.getMessage());
+                    }
+
                     call.resolve(ret);
                 } else {
-                    // 若伺服器正常結束但未返回音訊幀（例如僅含標點符號的句子），返回極短靜音 MP3 避免前端崩潰
+                    // Return short silence MP3 fallback if turn.end occurred without audio
                     JSObject ret = new JSObject();
                     ret.put("audioBase64", "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV");
                     call.resolve(ret);
@@ -384,6 +433,287 @@ public class NativeTTS extends Plugin {
                 call.resolve(ret);
             }
         }).start();
+    }
+
+    private float getFloat(PluginCall call, String key, float defaultValue) {
+        Double d = call.getDouble(key);
+        return (d != null) ? d.floatValue() : defaultValue;
+    }
+
+    private double getDouble(PluginCall call, String key, double defaultValue) {
+        Double d = call.getDouble(key);
+        return (d != null) ? d : defaultValue;
+    }
+
+    // Route B Native Audio Engine Methods
+    @PluginMethod
+    public void playNativeSentence(PluginCall call) {
+        int index = call.getInt("index", -1);
+        if (index < 0) {
+            call.reject("Missing index");
+            return;
+        }
+
+        String filePath = call.getString("filePath", "");
+        String audioBase64 = call.getString("audioBase64", "");
+        String text = call.getString("text", "");
+        String title = call.getString("title", "");
+        String artist = call.getString("artist", "");
+        String cover = call.getString("cover", "");
+        double duration = getDouble(call, "duration", 60.0);
+        double currentTime = getDouble(call, "currentTime", 0.0);
+        float rate = getFloat(call, "rate", 1.0f);
+        float volume = getFloat(call, "volume", 1.0f);
+
+        ensureAudioServiceStarted(getContext());
+
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            service.playNativeSentence(filePath, audioBase64, index, text, title, artist, cover, duration, currentTime, rate, volume, new AudioPlayerService.PlayCallback() {
+                @Override
+                public void onSuccess(int durationMs) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("index", index);
+                    ret.put("duration", durationMs / 1000.0);
+                    call.resolve(ret);
+                }
+
+                @Override
+                public void onError(String error) {
+                    call.reject(error);
+                }
+            });
+        } else {
+            // Service is booting, retry on main handler
+            mainHandler.postDelayed(() -> {
+                AudioPlayerService retryService = AudioPlayerService.getInstance();
+                if (retryService != null) {
+                    retryService.playNativeSentence(filePath, audioBase64, index, text, title, artist, cover, duration, currentTime, rate, volume, new AudioPlayerService.PlayCallback() {
+                        @Override
+                        public void onSuccess(int durationMs) {
+                            JSObject ret = new JSObject();
+                            ret.put("success", true);
+                            ret.put("index", index);
+                            ret.put("duration", durationMs / 1000.0);
+                            call.resolve(ret);
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                            call.reject(error);
+                        }
+                    });
+                } else {
+                    call.reject("AudioPlayerService not available");
+                }
+            }, 150);
+        }
+    }
+
+    @PluginMethod
+    public void prepareNextSentence(PluginCall call) {
+        int index = call.getInt("index", -1);
+        if (index < 0) {
+            call.reject("Missing index");
+            return;
+        }
+
+        String filePath = call.getString("filePath", "");
+        String audioBase64 = call.getString("audioBase64", "");
+        float rate = getFloat(call, "rate", 1.0f);
+        float volume = getFloat(call, "volume", 1.0f);
+
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            service.prepareNextSentence(filePath, audioBase64, index, rate, volume, new AudioPlayerService.PrepareCallback() {
+                @Override
+                public void onSuccess(boolean prepared) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("index", index);
+                    ret.put("prepared", prepared);
+                    call.resolve(ret);
+                }
+
+                @Override
+                public void onError(String error) {
+                    call.reject(error);
+                }
+            });
+        } else {
+            call.reject("AudioPlayerService not running");
+        }
+    }
+
+    @PluginMethod
+    public void pauseNative(PluginCall call) {
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            service.pauseNative();
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void resumeNative(PluginCall call) {
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            boolean resumed = service.resumeNative();
+            JSObject ret = new JSObject();
+            ret.put("resumed", resumed);
+            ret.put("index", service.getCurrentPlayingSentenceIndex());
+            call.resolve(ret);
+        } else {
+            JSObject ret = new JSObject();
+            ret.put("resumed", false);
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void stopNative(PluginCall call) {
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            service.stopNative();
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setRateNative(PluginCall call) {
+        float rate = getFloat(call, "rate", 1.0f);
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            service.setRateNative(rate);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setVolumeNative(PluginCall call) {
+        float volume = getFloat(call, "volume", 1.0f);
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        if (service != null) {
+            service.setVolumeNative(volume);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void deleteTTSFile(PluginCall call) {
+        String filePath = call.getString("filePath");
+        if (filePath != null && !filePath.isEmpty()) {
+            AudioPlayerService service = AudioPlayerService.getInstance();
+            boolean inUse = false;
+            if (service != null) {
+                inUse = filePath.equals(service.getActivePlayerFilePath()) || filePath.equals(service.getPreparedPlayerFilePath());
+            }
+            if (!inUse) {
+                File f = new File(filePath);
+                if (f.exists()) {
+                    f.delete();
+                }
+            }
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void cleanupTTSFiles(PluginCall call) {
+        try {
+            File cacheDir = getContext().getCacheDir();
+            File[] files = cacheDir.listFiles();
+            if (files != null) {
+                AudioPlayerService service = AudioPlayerService.getInstance();
+                String activeFile = service != null ? service.getActivePlayerFilePath() : null;
+                String prepFile = service != null ? service.getPreparedPlayerFilePath() : null;
+                for (File f : files) {
+                    if (f.isFile() && f.getName().startsWith("tts_") && f.getName().endsWith(".mp3")) {
+                        String abs = f.getAbsolutePath();
+                        if (!abs.equals(activeFile) && !abs.equals(prepFile)) {
+                            f.delete();
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getPlaybackSyncState(PluginCall call) {
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        JSObject ret = new JSObject();
+        if (service != null) {
+            ret.put("isCurrentlyPlaying", service.isPlaying());
+            ret.put("isNativeEngineActive", true);
+            ret.put("currentPlayingSentenceIndex", service.getCurrentPlayingSentenceIndex());
+            ret.put("preparedSentenceIndex", service.getPreparedSentenceIndex());
+            ret.put("isPreparedReady", service.isPreparedReady());
+            ret.put("activePlayerFilePath", service.getActivePlayerFilePath());
+        } else {
+            ret.put("isCurrentlyPlaying", false);
+            ret.put("isNativeEngineActive", false);
+            ret.put("currentPlayingSentenceIndex", -1);
+            ret.put("preparedSentenceIndex", -1);
+        }
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void simulateRemoteCommand(PluginCall call) {
+        String action = call.getString("action");
+        if (action == null) {
+            call.reject("Missing action");
+            return;
+        }
+        AudioPlayerService service = AudioPlayerService.getInstance();
+        switch (action.toLowerCase()) {
+            case "play":
+                if (service != null) service.resumeNative();
+                sendMediaAction("play");
+                break;
+            case "pause":
+                if (service != null) service.pauseNative();
+                sendMediaAction("pause");
+                break;
+            case "toggle":
+                if (service != null) {
+                    if (service.isPlaying()) {
+                        service.pauseNative();
+                        sendMediaAction("pause");
+                    } else {
+                        service.resumeNative();
+                        sendMediaAction("play");
+                    }
+                }
+                break;
+            case "next":
+                sendMediaAction("next");
+                break;
+            case "previous":
+                sendMediaAction("previous");
+                break;
+            case "stop":
+                if (service != null) service.stopNative();
+                sendMediaAction("stop");
+                break;
+            case "call_incoming":
+                if (service != null) {
+                    service.simulateAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);
+                }
+                break;
+            case "call_ended":
+                if (service != null) {
+                    service.simulateAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN);
+                }
+                break;
+            default:
+                call.reject("Unknown action: " + action);
+                return;
+        }
+        call.resolve();
     }
 
     @PluginMethod
@@ -561,7 +891,6 @@ public class NativeTTS extends Plugin {
             }
 
             try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputFile))) {
-                // Use STORED-equivalent: DEFLATED with no compression (avoids needing CRC pre-computation)
                 zos.setLevel(Deflater.NO_COMPRESSION);
                 addDirectoryToZip(zos, sourceDir, "");
             }
