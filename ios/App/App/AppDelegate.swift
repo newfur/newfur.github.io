@@ -318,7 +318,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             do {
                 silencePlayer = try AVAudioPlayer(data: silentData)
                 silencePlayer?.numberOfLoops = -1
-                silencePlayer?.volume = 0.1
+                silencePlayer?.volume = 0.001
                 silencePlayer?.prepareToPlay()
             } catch {
                 print("[NativeTTS] Failed to initialize silencePlayer: \(error)")
@@ -329,14 +329,18 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     func startSilencePlayer() {
         self.activateAudioSession()
         cancelSilencePauseTimer()
-        print("[NativeTTS] AudioSession kept active for WebKit keep-alive")
+        ensureSilencePlayer()
+        if silencePlayer?.isPlaying == false {
+            silencePlayer?.play()
+            writeAppLog("NativeTTS", "Silence keep-alive player running (keeps WebKit process alive)")
+        }
     }
 
     func stopSilencePlayer() {
         cancelSilencePauseTimer()
         silencePlayer?.stop()
         silencePlayer = nil
-        print("[NativeTTS] Silence keep-alive player stopped")
+        writeAppLog("NativeTTS", "Silence keep-alive player stopped")
     }
 
     func scheduleSilencePauseTimer() {
