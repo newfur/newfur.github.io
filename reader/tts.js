@@ -2100,14 +2100,17 @@ export class TTSEngine {
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
     audio.onplay = () => {
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     };
     audio.onpause = () => {
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         if (this.isPaused) {
           navigator.mediaSession.playbackState = 'paused';
+        } else if (this.isPlaying) {
+          // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
+          navigator.mediaSession.playbackState = 'playing';
         }
       }
       // 換句過渡期間當前句子音訊暫停，WebKit底層會誤將鎖屏翻轉為三角形(▶)。立即通知原生層維持播放中(⏸)！
@@ -2757,7 +2760,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -2854,6 +2857,7 @@ export class TTSEngine {
     this.currentAudio = null;
     
     this.isPlaying = true;
+    this._startSilenceKeepAlive(); // 在用戶手勢中同步啟動靜音保活，維持 iOS 音訊會話
     this.currentlyPlayingIndex = -1;
     
     let absoluteIndex = index;
@@ -2924,9 +2928,10 @@ export class TTSEngine {
       })();
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'playing';
     }
+    this._startSilenceKeepAlive();
     this._startPlaybackWatchdog();
     this._playActiveSentence();
     this._prefetchNextChapter();
@@ -3132,7 +3137,12 @@ export class TTSEngine {
     this._stopPlaybackWatchdog();
     // 關鍵保活：在 WKWebView 內啟動靜音音訊，維持 com.apple.WebKit.WebContent 進程活躍
     // 防止 iOS 在鎖屏 10-15 秒後掛起 WebContent 進程導致遠程恢復信號被截流
-    this._startSilenceKeepAlive();
+    // 注意：如果是通話打斷等原生緊急打斷（_isInterrupted），絕不可播放靜音保活，避免與系統通話音訊競爭
+    if (!this._isInterrupted) {
+      this._startSilenceKeepAlive();
+    } else {
+      this._stopSilenceKeepAlive();
+    }
     if (this._silencePauseTimeout) {
       clearTimeout(this._silencePauseTimeout);
       this._silencePauseTimeout = null;
@@ -3182,7 +3192,7 @@ export class TTSEngine {
       }).catch(e => console.error("Error updating native playback state:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'paused';
     }
 
@@ -3192,6 +3202,7 @@ export class TTSEngine {
   resume() {
     appLog("TTS", "resume() called: isPlaying=" + this.isPlaying + ", isPaused=" + this.isPaused + ", _resumeFromNative=" + this._resumeFromNative);
     console.log("[TTS Resume] resume() called");
+    this._isInterrupted = false;
     if (!this.isPlaying) {
       this.play(this.currentIndex);
       return;
@@ -3215,7 +3226,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
 
@@ -3313,7 +3324,8 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    this._isInterrupted = false;
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }
 
