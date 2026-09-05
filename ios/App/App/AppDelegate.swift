@@ -195,6 +195,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     private var activeTasks = [String: URLSessionWebSocketTask]()
+    private var timeoutWorkItems = [String: DispatchWorkItem]()
     private let taskLock = NSLock()
     private var currentArtwork: MPMediaItemArtwork?
     private var wasPlayingBeforeInterruption: Bool = false
@@ -537,6 +538,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         stopSilencePlayer()
         stopNowPlayingGuardian()
         taskLock.lock()
+        for (_, workItem) in timeoutWorkItems {
+            workItem.cancel()
+        }
+        timeoutWorkItems.removeAll()
         for (_, task) in activeTasks {
             task.cancel(with: .goingAway, reason: nil)
         }
@@ -547,6 +552,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     @objc func cancelTTS(_ call: CAPPluginCall) {
         if let connectionId = call.getString("connectionId") {
             taskLock.lock()
+            if let workItem = timeoutWorkItems.removeValue(forKey: connectionId) {
+                workItem.cancel()
+            }
             if let task = activeTasks.removeValue(forKey: connectionId) {
                 task.cancel(with: .goingAway, reason: nil)
             }
@@ -557,6 +565,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     @objc func cancelAllTTS(_ call: CAPPluginCall) {
         taskLock.lock()
+        for (_, workItem) in timeoutWorkItems {
+            workItem.cancel()
+        }
+        timeoutWorkItems.removeAll()
         for (_, task) in activeTasks {
             task.cancel(with: .goingAway, reason: nil)
         }
@@ -635,6 +647,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             webSocketTask?.cancel(with: .goingAway, reason: nil)
             if let self = self {
                 self.taskLock.lock()
+                self.timeoutWorkItems.removeValue(forKey: connectionId)
                 self.activeTasks.removeValue(forKey: connectionId)
                 self.taskLock.unlock()
             }
@@ -644,6 +657,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             }
         }
         if let workItem = timeoutWorkItem {
+            self.taskLock.lock()
+            self.timeoutWorkItems[connectionId] = workItem
+            self.taskLock.unlock()
             DispatchQueue.global().asyncAfter(deadline: .now() + 10.0, execute: workItem)
         }
 
@@ -653,6 +669,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             timeoutWorkItem?.cancel()
             timeoutWorkItem = nil
             self.taskLock.lock()
+            self.timeoutWorkItems.removeValue(forKey: connectionId)
             self.activeTasks.removeValue(forKey: connectionId)
             self.taskLock.unlock()
             webSocketTask.cancel(with: .normalClosure, reason: nil)
@@ -680,6 +697,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             timeoutWorkItem?.cancel()
             timeoutWorkItem = nil
             self.taskLock.lock()
+            self.timeoutWorkItems.removeValue(forKey: connectionId)
             self.activeTasks.removeValue(forKey: connectionId)
             self.taskLock.unlock()
             webSocketTask.cancel(with: .goingAway, reason: nil)

@@ -2542,6 +2542,12 @@ export class TTSEngine {
 
   _startSilenceKeepAlive() {
     if (typeof Audio === 'undefined') return;
+    if (!this.isPlaying || this.isPaused) return; // 暫停或未播放時嚴禁啟動靜音音訊，防止干擾系統媒體會話
+    
+    // 原生 Capacitor 應用由 Swift 原生層 (AVAudioSession/MPNowPlayingInfoCenter) 提供硬體保活，
+    // 在 WKWebView 內啟動 silenceAudio 會干擾 iOS 鎖屏封面與播放控制，因此僅在純 Web 環境運行。
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    if (isCapacitorApp) return;
     
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
@@ -2573,6 +2579,7 @@ export class TTSEngine {
     if (this.silenceAudio) {
       try {
         this.silenceAudio.pause();
+        this.silenceAudio.currentTime = 0;
       } catch (e) {}
     }
   }
@@ -2580,6 +2587,7 @@ export class TTSEngine {
   // 播放看門狗：定期偵測播放是否異常中斷停滯，若停滯則自動恢復
   _startPlaybackWatchdog() {
     this._stopPlaybackWatchdog();
+    if (!this.isPlaying || this.isPaused) return; // 處於暫停或停止狀態時絕不啟動看門狗
     this._lastPlaybackProgressTime = Date.now();
     this._lastWatchedCurrentTime = null;
     this._playbackWatchdog = setInterval(() => {
@@ -2610,6 +2618,11 @@ export class TTSEngine {
       
       // 若超過 8 秒完全無發聲且無進展（排除了正常的網絡緩衝時間），判定為停滯
       if (timeSinceProgress > 8000) {
+        if (!this.isPlaying || this.isPaused) {
+          this._stopPlaybackWatchdog();
+          return;
+        }
+
         // 如果此時有任何播放器仍在發聲，絕不可干涉
         const anyPlayerPlaying = Array.isArray(this.players) && this.players.some(p => p && !p.paused && !p.ended && p !== this.silenceAudio);
         if (anyPlayerPlaying) {
@@ -2645,8 +2658,8 @@ export class TTSEngine {
             this.fetchingIndices.delete(groupInfo.groupStartIndex);
           }
           this._fetchSentence(idx);
-          // 同時確保靜音保活仍在運行
-          if (this.silenceAudio && this.silenceAudio.paused) {
+          // 只有在未暫停且播放中時才保活
+          if (this.isPlaying && !this.isPaused && this.silenceAudio && this.silenceAudio.paused) {
             this.silenceAudio.play().catch(() => {});
           }
         }
@@ -3088,57 +3101,64 @@ export class TTSEngine {
 
   pause() {
     this._stopPlaybackWatchdog();
-    if (this.isPlaying && !this.isPaused) {
-      const now = Date.now();
-      if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
-      this._lastPauseResumeTime = now;
-      this.isPaused = true;
-      this._stopPlaybackWatchdog();
-      if (this._silencePauseTimeout) {
-        clearTimeout(this._silencePauseTimeout);
-        this._silencePauseTimeout = null;
-      }
-      this._startSilenceKeepAlive(); // 暫停時啟動 WebKit 靜音音訊保活，維持 WebContent 進程活躍，防止 iOS 20秒後凍結進程
-      // 暫停 30 分鐘後自動停止保活以節省電量
-      this._silencePauseTimeout = setTimeout(() => {
-        if (this.isPaused) {
-          console.log("[TTS] 30min pause timeout reached, stopping silence keep-alive");
-          this.stop();
-        }
-      }, 30 * 60 * 1000);
+    if (!this.isPlaying) return;
 
-      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
-      if (isCapacitorApp && !this._pauseFromNative) {
-        // 只有非原生端觸發的暫停才需要通知原生端（原生端 Remote Command 已自行處理完畢）
-        window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
-          isPlaying: false
-        }).catch(e => console.error("Error updating native playback state:", e));
-      }
-
-      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'paused';
-      }
-
-      const voice = this.selectedVoice;
-      const useNativeSynth = (voice && voice.type === 'speechSynthesis');
-      if (useNativeSynth && this.synth) {
-        this.synth.pause();
-      } else {
-        if (this.currentAudio) {
-          this.currentAudio.pause();
-        }
-        if (this.players && this.players.length > 0) {
-          this.players.forEach(p => {
-            try { p.pause(); } catch(e) {}
-          });
-        }
-      }
-      this._stopPolling();
-      if (this.onStateChange) this.onStateChange();
+    // 1. 無條件立即標記為暫停，嚴格停止看門狗與靜音保活，防止異步競態
+    this.isPaused = true;
+    this._stopPlaybackWatchdog();
+    this._stopSilenceKeepAlive();
+    if (this._silencePauseTimeout) {
+      clearTimeout(this._silencePauseTimeout);
+      this._silencePauseTimeout = null;
     }
+
+    // 2. 清空待處理的預加載隊列，並在 Capacitor 原生環境中立即取消在途的 Edge TTS WebSocket 任務與原生超時定時器
+    this.prefetchQueue = [];
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    if (isCapacitorApp && typeof window.Capacitor.Plugins.NativeTTS.cancelAllTTS === 'function') {
+      window.Capacitor.Plugins.NativeTTS.cancelAllTTS().catch(() => {});
+    }
+
+    // 3. 立即實體暫停所有音訊播放器，消除聲音輸出
+    const voice = this.selectedVoice;
+    const useNativeSynth = (voice && voice.type === 'speechSynthesis');
+    if (useNativeSynth && this.synth) {
+      try { this.synth.pause(); } catch (e) {}
+    } else {
+      if (this.currentAudio) {
+        try { this.currentAudio.pause(); } catch (e) {}
+      }
+      if (this.players && this.players.length > 0) {
+        this.players.forEach(p => {
+          try { p.pause(); } catch (e) {}
+        });
+      }
+    }
+    this._stopPolling();
+
+    // 4. 防抖保護：防止 200ms 內原生端雙重派發導致狀態震盪
+    const now = Date.now();
+    if (now - this._lastPauseResumeTime < 200) {
+      return;
+    }
+    this._lastPauseResumeTime = now;
+
+    if (isCapacitorApp && !this._pauseFromNative) {
+      // 只有非原生端觸發的暫停才需要通知原生端（原生端 Remote Command 已自行處理完畢）
+      window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+        isPlaying: false
+      }).catch(e => console.error("Error updating native playback state:", e));
+    }
+
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'paused';
+    }
+
+    if (this.onStateChange) this.onStateChange();
   }
 
   resume() {
+    console.log("[TTS Resume] resume() called");
     if (!this.isPlaying) {
       this.play(this.currentIndex);
       return;
@@ -3153,7 +3173,6 @@ export class TTSEngine {
         clearTimeout(this._silencePauseTimeout);
         this._silencePauseTimeout = null;
       }
-      this._startSilenceKeepAlive();
       
       const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
       if (isCapacitorApp && !this._resumeFromNative) {

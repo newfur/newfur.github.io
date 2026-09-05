@@ -122,5 +122,23 @@ const splitResult = splitTextIntoSentences(longWithCommas);
 assert.strictEqual(splitResult.length, 1, 'sentence with commas must NOT be split at commas');
 assert.strictEqual(splitResult[0], longWithCommas, 'entire grammatical sentence must be preserved as one complete sentence');
 
+// Pause watchdog and silence keepalive guards
+assert.match(
+  ttsSource,
+  /if \(!this\.isPlaying \|\| this\.isPaused\) return; \/\/ 暫停或未播放時嚴禁啟動靜音音訊/,
+  '_startSilenceKeepAlive must have strict pause/play guard'
+);
+assert.match(
+  ttsSource,
+  /if \(!this\.isPlaying \|\| this\.isPaused\) return; \/\/ 處於暫停或停止狀態時絕不啟動看門狗/,
+  '_startPlaybackWatchdog must have strict pause/play guard'
+);
+assert.match(
+  ttsSource,
+  /this\.isPaused = true;\s+this\._stopPlaybackWatchdog\(\);\s+this\._stopSilenceKeepAlive\(\);/,
+  'pause() must unconditionally set isPaused and stop watchdog and silence keep-alive'
+);
+
 console.log('TTS review regression tests passed');
+
 
