@@ -2100,14 +2100,22 @@ export class TTSEngine {
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
     audio.onplay = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     };
     audio.onpause = () => {
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         if (this.isPaused) {
           navigator.mediaSession.playbackState = 'paused';
+        }
+      }
+      // 換句過渡期間當前句子音訊暫停，WebKit底層會誤將鎖屏翻轉為三角形(▶)。立即通知原生層維持播放中(⏸)！
+      if (this.isPlaying && !this.isPaused) {
+        if (isCapacitorApp) {
+          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+            isPlaying: true
+          }).catch(() => {});
         }
       }
     };
@@ -2749,7 +2757,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -2846,7 +2854,6 @@ export class TTSEngine {
     this.currentAudio = null;
     
     this.isPlaying = true;
-    this._startSilenceKeepAlive(); // 在用戶手勢中同步啟動靜音保活，維持 iOS 音訊會話
     this.currentlyPlayingIndex = -1;
     
     let absoluteIndex = index;
@@ -2917,11 +2924,9 @@ export class TTSEngine {
       })();
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'playing';
     }
-
-    this._startSilenceKeepAlive();
     this._startPlaybackWatchdog();
     this._playActiveSentence();
     this._prefetchNextChapter();
@@ -3177,7 +3182,7 @@ export class TTSEngine {
       }).catch(e => console.error("Error updating native playback state:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'paused';
     }
 
@@ -3210,7 +3215,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
-      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+      if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
 
@@ -3308,7 +3313,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.stopForegroundService().catch(e => console.error("Error stopping native foreground service:", e));
     }
 
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
     }
 

@@ -411,8 +411,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.updateRemoteCommandsState(isPlaying: true)
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isCurrentlyPlaying else { return }
-            // Run at 2.0s intervals for lock screen state recovery without spamming CoreAudio metadata
-            let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            // Run at 0.5s intervals for lock screen state recovery without spamming CoreAudio metadata
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 guard self.isCurrentlyPlaying else {
                     self.stopNowPlayingGuardian()
