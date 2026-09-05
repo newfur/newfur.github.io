@@ -357,12 +357,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     // MARK: - NowPlaying State Guardian
     // Prevents WebKit's asynchronous audio pause IPC from knocking iOS lock screen/notification center into paused state
     func startNowPlayingGuardian() {
+        guard self.isCurrentlyPlaying else { return }
         stopNowPlayingGuardian()
         self.updateRemoteCommandsState(isPlaying: true)
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isCurrentlyPlaying else { return }
-            // Run at 0.25s intervals for rapid lock screen state recovery after WebKit audio transitions
-            let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            // Run at 0.5s intervals for lock screen state recovery after WebKit audio transitions
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 guard self.isCurrentlyPlaying else {
                     self.stopNowPlayingGuardian()
@@ -391,9 +392,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func stopNowPlayingGuardian() {
-        DispatchQueue.main.async { [weak self] in
-            self?.nowPlayingGuardianTimer?.invalidate()
-            self?.nowPlayingGuardianTimer = nil
+        if Thread.isMainThread {
+            self.nowPlayingGuardianTimer?.invalidate()
+            self.nowPlayingGuardianTimer = nil
+        } else {
+            DispatchQueue.main.sync { [weak self] in
+                self?.nowPlayingGuardianTimer?.invalidate()
+                self?.nowPlayingGuardianTimer = nil
+            }
         }
     }
 
@@ -437,12 +443,16 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
     }
 
     func resumeAfterInterruptionOrCall() {
-        guard self.wasPlayingBeforeCall || self.wasPlayingBeforeInterruption else {
+        guard (self.wasPlayingBeforeCall || self.wasPlayingBeforeInterruption) && !self.isCurrentlyPlaying else {
             print("[NativeTTS] resumeAfterInterruptionOrCall skipped: already resumed or was not playing")
+            self.wasPlayingBeforeCall = false
+            self.wasPlayingBeforeInterruption = false
+            self.isAudioSessionInterrupted = false
             return
         }
         self.wasPlayingBeforeCall = false
         self.wasPlayingBeforeInterruption = false
+        self.isAudioSessionInterrupted = false
         print("[NativeTTS] Resuming playback after interruption/call")
         self.activateAudioSession()
 
@@ -801,9 +811,15 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
         self.updateRemoteCommandsState(isPlaying: isPlaying)
 
         if isPlaying {
+            self.wasPlayingBeforeInterruption = false
+            self.wasPlayingBeforeCall = false
+            self.isAudioSessionInterrupted = false
             self.stopSilencePlayer()
             self.startNowPlayingGuardian()
         } else {
+            self.wasPlayingBeforeInterruption = false
+            self.wasPlayingBeforeCall = false
+            self.isAudioSessionInterrupted = false
             self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
         }
@@ -821,10 +837,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.activateAudioSession()
             self.wasPlayingBeforeInterruption = false
             self.wasPlayingBeforeCall = false
+            self.isAudioSessionInterrupted = false
             self.stopSilencePlayer()
             self.startNowPlayingGuardian()
         } else {
             self.wasPlayingBeforeInterruption = false
+            self.wasPlayingBeforeCall = false
+            self.isAudioSessionInterrupted = false
             self.stopNowPlayingGuardian()
             self.scheduleSilencePauseTimer()
         }
@@ -843,10 +862,17 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             self.isCurrentlyPlaying = callIsPlaying
             if callIsPlaying {
                 self.activateAudioSession()
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
                 self.stopSilencePlayer()
                 self.startNowPlayingGuardian()
             } else {
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
                 self.stopNowPlayingGuardian()
+                self.scheduleSilencePauseTimer()
             }
         }
         let isPlaying = self.isCurrentlyPlaying
@@ -973,15 +999,16 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     private func getCoverData(from base64String: String?) -> Data? {
         guard let base64String = base64String, !base64String.isEmpty else { return nil }
-        var cleanBase64 = base64String
+        var cleanBase64 = base64String.trimmingCharacters(in: .whitespacesAndNewlines)
         if let commaIndex = cleanBase64.firstIndex(of: ",") {
             cleanBase64 = String(cleanBase64[cleanBase64.index(after: commaIndex)...])
         }
+        cleanBase64 = cleanBase64.trimmingCharacters(in: .whitespacesAndNewlines)
         return Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters)
     }
 
     private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil, duration: Double? = nil, currentTime: Double? = nil) {
-        if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData) {
+        if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData), image.size.width > 0 && image.size.height > 0 {
             self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
         }
         
@@ -1036,6 +1063,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
 
     @objc private func handleApplicationDidEnterBackground() {
         if !self.isCurrentlyPlaying {
+            self.stopNowPlayingGuardian()
             self.syncNowPlaying(isPlaying: false)
         } else {
             self.syncNowPlaying(isPlaying: true)
@@ -1053,6 +1081,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, CXCallObserverDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.isCurrentlyPlaying = false
+                self.wasPlayingBeforeInterruption = false
+                self.wasPlayingBeforeCall = false
+                self.isAudioSessionInterrupted = false
                 self.stopNowPlayingGuardian()
                 self.scheduleSilencePauseTimer()
                 self.syncNowPlaying(isPlaying: false)

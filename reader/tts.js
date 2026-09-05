@@ -1007,7 +1007,31 @@ export class TTSEngine {
 
   // 設置全局壓縮版封面
   setCover(cover) {
-    if (cover) this.currentBookCover = cover;
+    if (cover) {
+      this.currentBookCover = cover;
+      const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+      if (isCapacitorApp) {
+        window.Capacitor.Plugins.NativeTTS.updateMetadata({
+          title: this.currentBookTitle || 'TTS Reading',
+          artist: this.currentBookAuthor || 'E-Book Reader',
+          cover: cover,
+          isPlaying: this.isPlaying && !this.isPaused
+        }).catch(() => {});
+      }
+      if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+          let mimeType = 'image/jpeg';
+          if (cover.startsWith('data:image/png')) mimeType = 'image/png';
+          else if (cover.startsWith('data:image/webp')) mimeType = 'image/webp';
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: this.currentBookTitle || 'TTS Reading',
+            artist: this.currentBookAuthor || 'E-Book Reader',
+            album: this.currentBookTitle || '',
+            artwork: [{ src: cover, sizes: '512x512', type: mimeType }]
+          });
+        } catch (e) {}
+      }
+    }
   }
 
   // 3. Edge 語音下載輔助方法
@@ -2229,7 +2253,7 @@ export class TTSEngine {
     }
 
     const startPlay = () => {
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || this.isPaused) return;
       
       // 停止其它播放器的回調，避免事件競爭，但延後到新音訊成功播放後再執行 pause()
       // 消除新舊音訊切換時的「零音訊空窗期」，防止 iOS 鎖屏/通知欄判定為暫停而閃爍切換圖標
@@ -2347,7 +2371,7 @@ export class TTSEngine {
   }
 
   _speakNativeSentence(index) {
-    if (!this.isPlaying) return;
+    if (!this.isPlaying || this.isPaused) return;
     if (index >= this.sentences.length) {
       this.stop();
       if (this.onPlaybackEnd) this.onPlaybackEnd();
@@ -2433,7 +2457,7 @@ export class TTSEngine {
 
     utterance.onend = () => {
       this.nativeQueue.delete(index);
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || this.isPaused) return;
       
       // 若下一句已在隊列中準備播放，則交由瀏覽器原生隊列切換，防止重複觸發
       if (this.nativeQueue.has(index + 1)) {
@@ -2450,7 +2474,7 @@ export class TTSEngine {
     utterance.onerror = (err) => {
       console.error("SpeechSynthesis utterance error:", err);
       this.nativeQueue.delete(index);
-      if (!this.isPlaying) return;
+      if (!this.isPlaying || this.isPaused) return;
       
       if (this.nativeQueue.has(index + 1)) {
         return;
@@ -2559,7 +2583,10 @@ export class TTSEngine {
     this._lastPlaybackProgressTime = Date.now();
     this._lastWatchedCurrentTime = null;
     this._playbackWatchdog = setInterval(() => {
-      if (!this.isPlaying || this.isPaused) return;
+      if (!this.isPlaying || this.isPaused) {
+        this._stopPlaybackWatchdog();
+        return;
+      }
       
       const now = Date.now();
 
@@ -2688,7 +2715,7 @@ export class TTSEngine {
       window.Capacitor.Plugins.NativeTTS.updateMetadata(nativePayload).catch(e => console.error("Error updating native metadata:", e));
     }
 
-    if (!isCapacitorApp && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
       try {
         const metadataOpts = {
           title: text,
@@ -2707,48 +2734,51 @@ export class TTSEngine {
         }
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
-        navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
+        // 僅在純 Web 環境由瀏覽器接管播放狀態與控制回調；Capacitor 原生環境由 Swift/Java 原生層統一掌控
+        if (!isCapacitorApp) {
+          navigator.mediaSession.playbackState = (this.isPlaying && !this.isPaused) ? 'playing' : 'paused';
 
-        const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
-          ? this.currentAudio.duration
-          : Math.max(3, (text ? text.length : 10) * 0.35);
-        const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
-          ? this.currentAudio.currentTime
-          : 0;
+          const rawDuration = (this.currentAudio && this.currentAudio.duration && !isNaN(this.currentAudio.duration) && this.currentAudio.duration > 0)
+            ? this.currentAudio.duration
+            : Math.max(3, (text ? text.length : 10) * 0.35);
+          const rawCurrentTime = (this.currentAudio && this.currentAudio.currentTime && !isNaN(this.currentAudio.currentTime))
+            ? this.currentAudio.currentTime
+            : 0;
 
-        if ('setPositionState' in navigator.mediaSession && rawDuration > 0) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: rawDuration,
-              playbackRate: this.rate || 1.0,
-              position: Math.min(rawCurrentTime, rawDuration)
-            });
-          } catch (posErr) {}
-        }
+          if ('setPositionState' in navigator.mediaSession && rawDuration > 0) {
+            try {
+              navigator.mediaSession.setPositionState({
+                duration: rawDuration,
+                playbackRate: this.rate || 1.0,
+                position: Math.min(rawCurrentTime, rawDuration)
+              });
+            } catch (posErr) {}
+          }
 
-        navigator.mediaSession.setActionHandler('play', () => {
-          this.resume();
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-          this.pause();
-        });
-        navigator.mediaSession.setActionHandler('stop', () => {
-          this.stop();
-        });
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-          this.previous();
-        });
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-          this.next();
-        });
-        try {
-          navigator.mediaSession.setActionHandler('seekbackward', () => {
+          navigator.mediaSession.setActionHandler('play', () => {
+            this.resume();
+          });
+          navigator.mediaSession.setActionHandler('pause', () => {
+            this.pause();
+          });
+          navigator.mediaSession.setActionHandler('stop', () => {
+            this.stop();
+          });
+          navigator.mediaSession.setActionHandler('previoustrack', () => {
             this.previous();
           });
-          navigator.mediaSession.setActionHandler('seekforward', () => {
+          navigator.mediaSession.setActionHandler('nexttrack', () => {
             this.next();
           });
-        } catch (seekErr) {}
+          try {
+            navigator.mediaSession.setActionHandler('seekbackward', () => {
+              this.previous();
+            });
+            navigator.mediaSession.setActionHandler('seekforward', () => {
+              this.next();
+            });
+          } catch (seekErr) {}
+        }
       } catch (e) {
         console.warn("MediaSession update failed:", e);
       }
@@ -2851,7 +2881,7 @@ export class TTSEngine {
           artist: bookArtist,
           text: sentence ? sentence.text : '',
           cover: coverBase64,
-          isPlaying: true
+          isPlaying: this.isPlaying && !this.isPaused
         }).catch(e => console.error("Error starting native foreground service:", e));
       })();
     }
@@ -3057,11 +3087,13 @@ export class TTSEngine {
   }
 
   pause() {
+    this._stopPlaybackWatchdog();
     if (this.isPlaying && !this.isPaused) {
       const now = Date.now();
       if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
       this._lastPauseResumeTime = now;
       this.isPaused = true;
+      this._stopPlaybackWatchdog();
       if (this._silencePauseTimeout) {
         clearTimeout(this._silencePauseTimeout);
         this._silencePauseTimeout = null;
@@ -3116,6 +3148,7 @@ export class TTSEngine {
       if (now - this._lastPauseResumeTime < 200) return; // 防抖：防止原生端雙重派發導致 pause/resume 互相覆蓋
       this._lastPauseResumeTime = now;
       this.isPaused = false;
+      this._startPlaybackWatchdog();
       if (this._silencePauseTimeout) {
         clearTimeout(this._silencePauseTimeout);
         this._silencePauseTimeout = null;
