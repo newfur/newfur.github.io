@@ -355,24 +355,43 @@ export class BookLibrary {
     });
   }
 
-  // 更新閱讀進度
+  // 更新閱讀進度 (帶排隊保護，防止多個高頻寫入併發導致事務中斷或 SQLite 鎖死)
   async updateProgress(id, progressUpdate) {
-    await this._ensureOpen();
-    const book = await this.getBook(id);
-    if (!book) throw new Error('Book not found');
+    if (!this._progressQueue) {
+      this._progressQueue = Promise.resolve();
+    }
 
-    book.progress = { ...book.progress, ...progressUpdate };
-    book.lastReadAt = Date.now();
+    const task = async () => {
+      await this._ensureOpen();
+      const book = await this.getBook(id);
+      if (!book) return null;
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
+      book.progress = { ...book.progress, ...progressUpdate };
+      book.lastReadAt = Date.now();
 
-      transaction.oncomplete = () => resolve(book);
-      transaction.onerror = () => reject(transaction.error || request.error);
-      transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+      return new Promise((resolve) => {
+        const transaction = this.db.transaction(['books'], 'readwrite');
+        const store = transaction.objectStore('books');
+        const request = store.put(this._cleanBookForStorage(book));
+
+        transaction.oncomplete = () => resolve(book);
+        transaction.onerror = () => {
+          console.warn('[BookLibrary] updateProgress transaction error:', transaction.error || request.error);
+          resolve(book);
+        };
+        transaction.onabort = () => {
+          console.warn('[BookLibrary] updateProgress transaction aborted');
+          resolve(book);
+        };
+      });
+    };
+
+    this._progressQueue = this._progressQueue.then(task).catch(err => {
+      console.warn('[BookLibrary] updateProgress queue error:', err);
+      return null;
     });
+
+    return this._progressQueue;
   }
 
   // 更新書籍封面

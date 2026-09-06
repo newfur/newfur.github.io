@@ -1490,6 +1490,12 @@ function initUIEventBindings() {
       // 從進度保存的句子索引或當前頁面第一個可見句子開始朗讀
       let savedIndex = 0;
       let isAbsolute = false;
+      if (currentBook) {
+        const localProg = getProgressFromLocalStorage(currentBook.id);
+        if (localProg) {
+          currentBook.progress = { ...currentBook.progress, ...localProg };
+        }
+      }
       if (currentBook && currentBook.progress) {
         const savedTTSChapter = currentBook.progress.ttsChapterIndex;
         if (savedTTSChapter === currentChapterIndex) {
@@ -1664,9 +1670,12 @@ function initUIEventBindings() {
           ttsActiveSentenceIndex: relativeIdx,
           ttsChapterIndex: sentenceChapter
         };
-        // 立即寫入 IndexedDB（非防抖），確保 app 被殺時有最新位置
-        library.updateProgress(currentBook.id, progressUpdate).catch(e => console.warn('[TTS] Progress save failed:', e));
+        // 1. 同步即時寫入 localStorage（微秒級完成，保證即使被殺也不丟失進度）
+        saveProgressToLocalStorage(currentBook.id, progressUpdate);
         currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+
+        // 2. 防抖寫入 IndexedDB（每 4 秒最多寫入一次），避免對大書 (如 50MB+) 頻繁序列化導致記憶體爆發或事務中斷
+        scheduleDebouncedIndexedDBProgress(currentBook.id, progressUpdate);
       }
     }
 
@@ -3378,6 +3387,12 @@ async function openBook(id) {
     });
   }
 
+  // 檢查 localStorage 中是否有更新的即時進度（免疫閃退或未完成 IndexedDB 事務的情況）
+  const localProg = getProgressFromLocalStorage(book.id);
+  if (localProg) {
+    book.progress = { ...book.progress, ...localProg };
+  }
+
   // 優先使用 TTS 朗讀章節位置（如果比視覺進度更新），確保重新打開書籍時定位到最近朗讀的位置
   const visualChapter = book.progress?.chapterIndex || 0;
   const ttsChapter = book.progress?.ttsChapterIndex;
@@ -4195,7 +4210,12 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
     }
     
     if (!isSeamless) {
-      tts.currentIndex = Math.max(0, Math.min(targetSentenceIdx, tts.sentences.length - 1));
+      let targetAbsoluteIdx = targetSentenceIdx;
+      const match = tts.sentences.find(s => s.chapterIndex === finalIdx && s.relativeIndex === targetSentenceIdx);
+      if (match) {
+        targetAbsoluteIdx = match.index;
+      }
+      tts.currentIndex = Math.max(0, Math.min(targetAbsoluteIdx, tts.sentences.length - 1));
     }
 
     // 處理內部跳轉鏈接 (EPUB)
@@ -4494,12 +4514,19 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       const progressUpdate = { 
         chapterIndex: index, 
         percent, 
-        activeSentenceIndex: 0,
         currentPageIndex: document.body.classList.contains('layout-paginated') ? currentPageIndex : 0
       };
+      // 保留當前已有的 TTS 進度，絕不能在加載章節時抹除
+      if (currentBook.progress?.ttsChapterIndex !== undefined) {
+        progressUpdate.ttsChapterIndex = currentBook.progress.ttsChapterIndex;
+      }
+      if (currentBook.progress?.ttsActiveSentenceIndex !== undefined) {
+        progressUpdate.ttsActiveSentenceIndex = currentBook.progress.ttsActiveSentenceIndex;
+      }
       currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+      saveProgressToLocalStorage(currentBook.id, progressUpdate);
       updateReaderTitle();
-      library.updateProgress(currentBook.id, progressUpdate);
+      scheduleDebouncedIndexedDBProgress(currentBook.id, progressUpdate);
     }
 
     return waitForStylesheets(contentEl).then(() => {
@@ -5227,13 +5254,77 @@ function navigatePage(direction) {
 }
 
 // 防抖保存進度
+// 本地高速進度持久化（基於 localStorage，0ms 無鎖即時同步寫入，免疫崩潰與後台被殺）
+function saveProgressToLocalStorage(bookId, progressUpdate) {
+  if (!bookId || !progressUpdate) return;
+  try {
+    const key = `edgereader_progress_${bookId}`;
+    let existing = {};
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) existing = JSON.parse(raw);
+    } catch (e) {}
+    const merged = {
+      ...existing,
+      ...progressUpdate,
+      lastUpdated: Date.now()
+    };
+    localStorage.setItem(key, JSON.stringify(merged));
+  } catch (e) {
+    console.warn('[Progress] localStorage save failed:', e);
+  }
+}
+
+function getProgressFromLocalStorage(bookId) {
+  if (!bookId) return null;
+  try {
+    const raw = localStorage.getItem(`edgereader_progress_${bookId}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return null;
+}
+
+let debouncedIndexedDBTimeout = null;
+let pendingIndexedDBUpdates = new Map();
+
+function scheduleDebouncedIndexedDBProgress(bookId, progressUpdate) {
+  if (!bookId || !progressUpdate) return;
+  const current = pendingIndexedDBUpdates.get(bookId) || {};
+  pendingIndexedDBUpdates.set(bookId, { ...current, ...progressUpdate });
+
+  if (debouncedIndexedDBTimeout) return;
+  debouncedIndexedDBTimeout = setTimeout(async () => {
+    debouncedIndexedDBTimeout = null;
+    await flushDebouncedIndexedDBProgress();
+  }, 4000); // 4秒防抖寫入 IndexedDB，避免大書 (如 50MB+) 頻繁序列化導致記憶體爆發
+}
+
+async function flushDebouncedIndexedDBProgress() {
+  if (debouncedIndexedDBTimeout) {
+    clearTimeout(debouncedIndexedDBTimeout);
+    debouncedIndexedDBTimeout = null;
+  }
+  if (pendingIndexedDBUpdates.size === 0) return;
+  const entries = Array.from(pendingIndexedDBUpdates.entries());
+  pendingIndexedDBUpdates.clear();
+
+  for (const [bookId, update] of entries) {
+    try {
+      await library.updateProgress(bookId, update);
+    } catch (e) {
+      console.warn('[Progress] flushDebouncedIndexedDBProgress failed for', bookId, e);
+    }
+  }
+}
+
 let saveTimeout = null;
 function saveProgressDebounced(update) {
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(async () => {
     try {
       if (currentBook) {
-        await library.updateProgress(currentBook.id, update);
+        saveProgressToLocalStorage(currentBook.id, update);
+        scheduleDebouncedIndexedDBProgress(currentBook.id, update);
         // 更新內存狀態
         currentBook.progress = { ...currentBook.progress, ...update };
       }
@@ -5243,7 +5334,7 @@ function saveProgressDebounced(update) {
   }, 1000);
 }
 
-// 立即保存 TTS 進度（無防抖，安全過渡校驗）
+// 立即保存 TTS 進度（即時寫入 localStorage + 排隊防抖寫入 IndexedDB）
 // 優先使用 currentlyPlayingIndex（實際正在播放的句子），而非 currentIndex（指向下一句的指標）
 function saveTTSProgressImmediately() {
   if (currentBook) {
@@ -5273,8 +5364,9 @@ function saveTTSProgressImmediately() {
       ttsChapterIndex: sentenceChapter
     };
     
-    library.updateProgress(currentBook.id, progressUpdate).catch(e => console.warn('[TTS] Immediate save failed:', e));
+    saveProgressToLocalStorage(currentBook.id, progressUpdate);
     currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+    scheduleDebouncedIndexedDBProgress(currentBook.id, progressUpdate);
   }
 }
 
@@ -5322,6 +5414,8 @@ async function forceSaveCurrentProgress() {
       update.percent = calculateCurrentProgressPercent();
     }
     
+    saveProgressToLocalStorage(currentBook.id, update);
+    await flushDebouncedIndexedDBProgress();
     await library.updateProgress(currentBook.id, update);
     isSavingProgress = false;
   }

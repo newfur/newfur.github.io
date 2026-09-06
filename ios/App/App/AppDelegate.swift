@@ -5,24 +5,45 @@ import MediaPlayer
 import CallKit
 
 // Unified App Logger for deep tracing
+private let logQueue = DispatchQueue(label: "com.edgereader.applog", qos: .utility)
+private let logDateFormatter: DateFormatter = {
+    let df = DateFormatter()
+    df.dateFormat = "HH:mm:ss.SSS"
+    return df
+}()
+
 func writeAppLog(_ tag: String, _ message: String) {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss.SSS"
-    let timeStr = formatter.string(from: Date())
+    let timeStr = logDateFormatter.string(from: Date())
     let line = "[\(timeStr)] [\(tag)] \(message)\n"
     print(line, terminator: "")
-    if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+
+    logQueue.async {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let logFile = docs.appendingPathComponent("debug_execution.log")
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logFile.path) {
-                if let handle = try? FileHandle(forWritingTo: logFile) {
+        guard let data = line.data(using: .utf8) else { return }
+
+        if FileManager.default.fileExists(atPath: logFile.path) {
+            // Cap log file size to 2MB to prevent unbounded disk growth
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path),
+               let size = attrs[.size] as? UInt64, size > 2 * 1024 * 1024 {
+                try? FileManager.default.removeItem(at: logFile)
+            }
+        }
+
+        if FileManager.default.fileExists(atPath: logFile.path) {
+            if let handle = try? FileHandle(forWritingTo: logFile) {
+                if #available(iOS 13.4, *) {
+                    try? handle.seekToEnd()
+                    try? handle.write(contentsOf: data)
+                    try? handle.close()
+                } else {
                     handle.seekToEndOfFile()
                     handle.write(data)
-                    try? handle.close()
+                    handle.closeFile()
                 }
-            } else {
-                try? data.write(to: logFile)
             }
+        } else {
+            try? data.write(to: logFile, options: .atomic)
         }
     }
 }
@@ -396,21 +417,28 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
 
     // MARK: - Authoritative Unified NowPlaying State Sync
     func syncNowPlaying(isPlaying: Bool) {
-        self.isCurrentlyPlaying = isPlaying
-        self.updateRemoteCommandsState(isPlaying: isPlaying)
+        let block = { [weak self] in
+            guard let self = self else { return }
+            self.isCurrentlyPlaying = isPlaying
+            self.updateRemoteCommandsState(isPlaying: isPlaying)
 
-        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-        if let artwork = self.currentArtwork {
-            self.authoritativeNowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
-        }
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+            if let artwork = self.currentArtwork {
+                self.authoritativeNowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+            }
 
-        let info = self.authoritativeNowPlayingInfo
-        DispatchQueue.main.async {
+            let info = self.authoritativeNowPlayingInfo
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             if #available(iOS 13.0, *) {
                 MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
             }
+        }
+
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
         }
     }
 
@@ -429,6 +457,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                     self.stopNowPlayingGuardian()
                     return
                 }
+
+                // Only assert .playing if audio hardware is actually rendering audio (activePlayer or silencePlayer)
+                // Asserting .playing when 0 audio players are active can cause iOS mediaserverd watchdog termination
+                let isHardwareAudioActive = (self.activePlayer?.isPlaying == true) || (self.silencePlayer?.isPlaying == true)
+                guard isHardwareAudioActive else { return }
 
                 if #available(iOS 13.0, *) {
                     if MPNowPlayingInfoCenter.default().playbackState != .playing {
@@ -1013,11 +1046,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         // Check if preparedPlayer is already pre-warmed for this exact sentence
         if self.preparedSentenceIndex == index, let prep = self.preparedPlayer {
             writeAppLog("NativeTTS", "playNativeSentence: using pre-warmed preparedPlayer for index=\(index)")
-            self.activePlayer?.delegate = nil
-            self.activePlayer?.stop()
-            self.activePlayer = nil
+            let oldActive = self.activePlayer
+            oldActive?.delegate = nil
+            oldActive?.stop()
 
             // Swap player roles
+            self.activePlayer = prep
+            self.preparedPlayer = nil
             self.activePlayerTag = self.preparedPlayerTag
             self.preparedPlayerTag = 1 - self.activePlayerTag
             self.preparedSentenceIndex = -1
@@ -1171,6 +1206,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             nextPlayer.play()
 
             let newIndex = self.preparedSentenceIndex
+            let oldActive = self.activePlayer
+            oldActive?.delegate = nil
+
+            self.activePlayer = nextPlayer
+            self.preparedPlayer = nil
             self.activePlayerTag = self.preparedPlayerTag
             self.preparedPlayerTag = 1 - self.activePlayerTag
             self.currentPlayingSentenceIndex = newIndex
@@ -1178,20 +1218,24 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.activePlayerFilePath = self.preparedPlayerFilePath
             self.preparedPlayerFilePath = ""
 
-            // NOTE: Do NOT nil or reset the completed player synchronously inside audioPlayerDidFinishPlaying.
-            // Deallocating AVAudioPlayer on its own delegate stack causes an immediate EXC_BAD_ACCESS in CoreAudio runtime.
-            // The finished player in playerA/playerB will be safely overwritten when prepareNextSentence runs.
+            // Keep oldActive alive across this delegate callback stack frame to prevent EXC_BAD_ACCESS in CoreAudio runtime
+            DispatchQueue.main.async {
+                _ = oldActive
+            }
 
             writeAppLog("NativeTTS", "Gapless switch: started pre-warmed sentence \(newIndex)")
 
             // Update chapter progress on lock screen safely without exceeding total duration
             let updatedCurrentTime = Double(newIndex) * 5.0
-            if updatedCurrentTime >= self.currentChapterTotalDuration - 5.0 {
-                self.currentChapterTotalDuration = updatedCurrentTime + 30.0
-                self.authoritativeNowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = self.currentChapterTotalDuration
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if updatedCurrentTime >= self.currentChapterTotalDuration - 5.0 {
+                    self.currentChapterTotalDuration = updatedCurrentTime + 30.0
+                    self.authoritativeNowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = self.currentChapterTotalDuration
+                }
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = updatedCurrentTime
+                self.syncNowPlaying(isPlaying: true)
             }
-            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = updatedCurrentTime
-            self.syncNowPlaying(isPlaying: true)
 
             self.notifyListeners("sentenceStarted", data: [
                 "index": newIndex,

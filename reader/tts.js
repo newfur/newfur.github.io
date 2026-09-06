@@ -2086,7 +2086,10 @@ export class TTSEngine {
       const chapterDuration = Math.max(60.0, currentElapsed + remainingSentences * 5.0);
       const bookTitle = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
       const bookArtist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
-      const coverBase64 = this.currentBookCover || '';
+      let coverBase64 = this.currentBookCover || '';
+      if (coverBase64 && coverBase64.length > 250000) {
+        coverBase64 = '';
+      }
 
       const payload = {
         filePath: cached.filePath || '',
@@ -3125,7 +3128,10 @@ export class TTSEngine {
         const bookTitle = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
         const bookArtist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
         const sentence = this.sentences[this.currentIndex];
-        const coverBase64 = this.currentBookCover || await getBookCoverBase64();
+        let coverBase64 = this.currentBookCover || await getBookCoverBase64();
+        if (coverBase64 && coverBase64.length > 250000) {
+          coverBase64 = '';
+        }
         if (coverBase64 && !this.currentBookCover) {
           this.currentBookCover = coverBase64;
         }
@@ -3862,8 +3868,8 @@ export class TTSEngine {
   }
 }
 
-// 壓縮書籍封面圖片為適合鎖屏與控制中心通知欄的小體積 JPEG (最大寬高 512px，約 20KB~40KB)
-export async function compressCoverImage(coverBlobOrUrl, maxDimension = 512, quality = 0.8) {
+// 壓縮書籍封面圖片為適合鎖屏與控制中心通知欄的小體積 JPEG (最大寬高 360px，約 15KB~30KB)
+export async function compressCoverImage(coverBlobOrUrl, maxDimension = 360, quality = 0.7) {
   if (!coverBlobOrUrl) return '';
   if (typeof window === 'undefined' || typeof document === 'undefined') return '';
   
