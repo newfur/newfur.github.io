@@ -3448,7 +3448,7 @@ async function writeBlobToCache(Filesystem, path, blob) {
   }
 }
 
-// 匯出書籍（全局函數，支援移動端原生分享與 Web 下載）
+// 匯出書籍（全局函數，支援移動端原生分享與 Web 下載，使用書庫中讀取的書籍名命名）
 async function exportBookHandler(id) {
   try {
     const book = await library.getBook(id);
@@ -3460,22 +3460,33 @@ async function exportBookHandler(id) {
     const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
     const hasFilesystemAndShare = isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share;
 
-    const ext = book.format ? book.format.toLowerCase() : 'epub';
-    const safeTitle = (book.title || 'book').replace(/[/\\?%*:|"<>]/g, '_');
+    // 取得書籍格式副檔名
+    const ext = book.format ? book.format.toLowerCase().replace(/^\./, '') : 'epub';
+
+    // 取書庫中讀取的書籍標題，清理末尾重複副檔名與系統不允許字元
+    let rawTitle = (book.title || '').trim();
+    if (!rawTitle) {
+      rawTitle = 'Book';
+    }
+    if (rawTitle.toLowerCase().endsWith(`.${ext}`)) {
+      rawTitle = rawTitle.slice(0, -(ext.length + 1)).trim();
+    }
+    const safeTitle = rawTitle.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'Book';
     const filename = `${safeTitle}.${ext}`;
 
     if (hasFilesystemAndShare) {
       const { Filesystem, Share } = window.Capacitor.Plugins;
-      const cachePath = `export_${Date.now()}_${filename}`;
+      // 直接以書庫書籍名命名快取檔案，確保 iOS/Android 分享面板、AirDrop、儲存至檔案均顯示真實書名
+      const cachePath = filename;
       await writeBlobToCache(Filesystem, cachePath, book.file);
       const uriResult = await Filesystem.getUri({
         path: cachePath,
         directory: 'CACHE'
       });
       await Share.share({
-        title: book.title,
+        title: safeTitle,
         url: uriResult.uri,
-        dialogTitle: getMsg('export_book_title') || 'Export Book'
+        dialogTitle: `${getMsg('export_book_title') || 'Export Book'}: ${safeTitle}`
       });
       setTimeout(() => {
         Filesystem.deleteFile({ path: cachePath, directory: 'CACHE' }).catch(() => {});
