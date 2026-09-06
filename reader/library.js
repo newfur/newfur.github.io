@@ -114,6 +114,21 @@ export class BookLibrary {
             for (const book of legacyBooks) {
               const fileBlob = book.file;
               const cleanMeta = this._cleanBookForStorage(book);
+              if (cleanMeta && cleanMeta.stats) {
+                if (typeof cleanMeta.stats !== 'object') {
+                  cleanMeta.stats = { totalTime: Number(cleanMeta.stats) || 0, readingDays: {}, hourlyDist: {} };
+                }
+                if (!cleanMeta.stats.readingDays) cleanMeta.stats.readingDays = {};
+                if (!cleanMeta.stats.hourlyDist) cleanMeta.stats.hourlyDist = {};
+                const sum = Object.values(cleanMeta.stats.readingDays).reduce((s, v) => s + (Number(v) || 0), 0);
+                if (cleanMeta.stats.totalTime > 0 && sum === 0) {
+                  const now = new Date();
+                  const dateStr = now.getFullYear() + '-' + 
+                                  String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                                  String(now.getDate()).padStart(2, '0');
+                  cleanMeta.stats.readingDays[dateStr] = cleanMeta.stats.totalTime;
+                }
+              }
 
               await new Promise((res, rej) => {
                 const tx = this.db.transaction(['books', 'book_files'], 'readwrite');
@@ -264,16 +279,13 @@ export class BookLibrary {
     });
   }
 
-  // 更新書籍記錄（元數據更新，不碰檔案）
+  // 更新書籍記錄（元數據更新，帶排隊保護，不碰檔案）
   async updateBook(book) {
-    await this._ensureOpen();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+    if (!book || !book.id) return null;
+    return this._mutateBook(book.id, (existing) => {
+      const clean = this._cleanBookForStorage(book);
+      Object.assign(existing, clean);
+      return existing;
     });
   }
 
@@ -510,8 +522,8 @@ export class BookLibrary {
     });
   }
 
-  // 更新閱讀進度 (帶排隊保護，僅更新元數據，絕不重寫 50MB 檔案本體)
-  async updateProgress(id, progressUpdate) {
+  // 核心安全元數據變更器 (帶排隊保護，保證在併發寫入時讀取最新元數據，防止進度與統計互相覆蓋)
+  async _mutateBook(id, mutatorFn) {
     if (!this._progressQueue) {
       this._progressQueue = Promise.resolve();
     }
@@ -521,7 +533,7 @@ export class BookLibrary {
       const book = await this.getBookMetadata(id);
       if (!book) return null;
 
-      book.progress = { ...book.progress, ...progressUpdate };
+      const result = await mutatorFn(book);
       book.lastReadAt = Date.now();
 
       return new Promise((resolve) => {
@@ -529,217 +541,149 @@ export class BookLibrary {
         const store = transaction.objectStore('books');
         const request = store.put(this._cleanBookForStorage(book));
 
-        transaction.oncomplete = () => resolve(book);
+        transaction.oncomplete = () => resolve(result !== undefined ? result : book);
         transaction.onerror = () => {
-          console.warn('[BookLibrary] updateProgress transaction error:', transaction.error || request.error);
-          resolve(book);
+          console.warn('[BookLibrary] _mutateBook transaction error:', transaction.error || request.error);
+          resolve(result !== undefined ? result : book);
         };
         transaction.onabort = () => {
-          console.warn('[BookLibrary] updateProgress transaction aborted');
-          resolve(book);
+          console.warn('[BookLibrary] _mutateBook transaction aborted');
+          resolve(result !== undefined ? result : book);
         };
       });
     };
 
     this._progressQueue = this._progressQueue.then(task).catch(err => {
-      console.warn('[BookLibrary] updateProgress queue error:', err);
+      console.warn('[BookLibrary] _mutateBook queue error:', err);
       return null;
     });
 
     return this._progressQueue;
   }
 
+  // 更新閱讀進度 (帶排隊保護，僅更新元數據，絕不重寫 50MB 檔案本體)
+  async updateProgress(id, progressUpdate) {
+    return this._mutateBook(id, (book) => {
+      book.progress = { ...book.progress, ...progressUpdate };
+      return book.progress;
+    });
+  }
+
   // 更新書籍封面 (僅更新元數據)
   async updateBookCover(id, cover) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    book.cover = cover;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      book.cover = cover;
+      return book;
     });
   }
 
   // 更新書籍資料夾 (僅更新元數據)
   async updateBookFolder(id, folder) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    book.folder = folder;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      book.folder = folder;
+      return book;
     });
   }
 
   // 保存或更新高亮筆記 (僅更新元數據)
   async saveNote(id, note) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.notes) book.notes = [];
-    
-    const existingIndex = book.notes.findIndex(n => n.noteId === note.noteId);
-    if (existingIndex > -1) {
-      book.notes[existingIndex] = { ...book.notes[existingIndex], ...note };
-    } else {
-      book.notes.push({
-        noteId: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-        createdAt: Date.now(),
-        ...note
-      });
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.notes);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      if (!book.notes) book.notes = [];
+      const existingIndex = book.notes.findIndex(n => n.noteId === note.noteId);
+      if (existingIndex > -1) {
+        book.notes[existingIndex] = { ...book.notes[existingIndex], ...note };
+      } else {
+        book.notes.push({
+          noteId: note.noteId || 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          createdAt: Date.now(),
+          ...note
+        });
+      }
+      return book.notes;
     });
   }
 
   // 刪除高亮筆記 (僅更新元數據)
   async deleteNote(id, noteId) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (book.notes) {
-      book.notes = book.notes.filter(n => n.noteId !== noteId);
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.notes);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      if (book.notes) {
+        book.notes = book.notes.filter(n => n.noteId !== noteId);
+      }
+      return book.notes || [];
     });
   }
 
   // 保存書籤 (僅更新元數據)
   async saveBookmark(id, bookmark) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.bookmarks) book.bookmarks = [];
-    
-    const existingIndex = book.bookmarks.findIndex(b => b.chapterIndex === bookmark.chapterIndex && b.elementIndex === bookmark.elementIndex && b.pdfPage === bookmark.pdfPage);
-    if (existingIndex === -1) {
-      book.bookmarks.push({
-        bookmarkId: 'bookmark_' + Date.now(),
-        createdAt: Date.now(),
-        title: bookmark.title || 'Bookmark',
-        chapterIndex: bookmark.chapterIndex || 0,
-        elementIndex: bookmark.elementIndex || 0,
-        currentPageIndex: bookmark.currentPageIndex || 0,
-        pdfPage: bookmark.pdfPage || 1
-      });
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.bookmarks);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      if (!book.bookmarks) book.bookmarks = [];
+      const existingIndex = book.bookmarks.findIndex(b => b.chapterIndex === bookmark.chapterIndex && b.elementIndex === bookmark.elementIndex && b.pdfPage === bookmark.pdfPage);
+      if (existingIndex === -1) {
+        book.bookmarks.push({
+          bookmarkId: 'bookmark_' + Date.now(),
+          createdAt: Date.now(),
+          title: bookmark.title || 'Bookmark',
+          chapterIndex: bookmark.chapterIndex || 0,
+          elementIndex: bookmark.elementIndex || 0,
+          currentPageIndex: bookmark.currentPageIndex || 0,
+          pdfPage: bookmark.pdfPage || 1
+        });
+      }
+      return book.bookmarks;
     });
   }
 
   // 刪除書籤 (僅更新元數據)
   async deleteBookmark(id, bookmarkId) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (book.bookmarks) {
-      book.bookmarks = book.bookmarks.filter(b => b.bookmarkId !== bookmarkId);
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.bookmarks);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      if (book.bookmarks) {
+        book.bookmarks = book.bookmarks.filter(b => b.bookmarkId !== bookmarkId);
+      }
+      return book.bookmarks || [];
     });
   }
 
-  // 累加閱讀統計資訊 (僅更新元數據)
+  // 累加閱讀統計資訊 (帶排隊保護，防禦性欄位校驗，保證統計永久可靠)
   async addReadingDuration(id, seconds) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
+    if (!seconds || seconds <= 0) return null;
+    return this._mutateBook(id, (book) => {
+      if (!book.stats || typeof book.stats !== 'object') {
+        book.stats = {
+          totalTime: 0,
+          readingDays: {},
+          hourlyDist: {}
+        };
+      }
+      if (!book.stats.readingDays || typeof book.stats.readingDays !== 'object') {
+        book.stats.readingDays = {};
+      }
+      if (!book.stats.hourlyDist || typeof book.stats.hourlyDist !== 'object') {
+        book.stats.hourlyDist = {};
+      }
 
-    if (!book.stats) {
+      const now = new Date();
+      const dateStr = now.getFullYear() + '-' + 
+                      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                      String(now.getDate()).padStart(2, '0');
+      const hour = now.getHours();
+
+      book.stats.totalTime = (Number(book.stats.totalTime) || 0) + seconds;
+      book.stats.readingDays[dateStr] = (Number(book.stats.readingDays[dateStr]) || 0) + seconds;
+      book.stats.hourlyDist[hour] = (Number(book.stats.hourlyDist[hour]) || 0) + seconds;
+
+      return book;
+    });
+  }
+
+  // 清理單本書籍的閱讀統計 (帶排隊保護)
+  async clearBookStats(id) {
+    return this._mutateBook(id, (book) => {
       book.stats = {
         totalTime: 0,
         readingDays: {},
         hourlyDist: {}
       };
-    }
-
-    const now = new Date();
-    const dateStr = now.getFullYear() + '-' + 
-                    String(now.getMonth() + 1).padStart(2, '0') + '-' + 
-                    String(now.getDate()).padStart(2, '0');
-    const hour = now.getHours();
-
-    book.stats.totalTime = (book.stats.totalTime || 0) + seconds;
-    book.stats.readingDays[dateStr] = (book.stats.readingDays[dateStr] || 0) + seconds;
-    book.stats.hourlyDist[hour] = (book.stats.hourlyDist[hour] || 0) + seconds;
-    book.lastReadAt = Date.now();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      transaction.oncomplete = () => resolve(book);
-      transaction.onerror = () => reject(transaction.error || request.error);
-      transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
-    });
-  }
-
-  // 清理單本書籍的閱讀統計
-  async clearBookStats(id) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    book.stats = {
-      totalTime: 0,
-      readingDays: {},
-      hourlyDist: {}
-    };
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+      return book;
     });
   }
 
@@ -747,139 +691,60 @@ export class BookLibrary {
   async clearAllStats() {
     await this._ensureOpen();
     const books = await this.getAllBooks();
+    if (!books || books.length === 0) return true;
 
-    return new Promise((resolve, reject) => {
-      if (books.length === 0) {
-        resolve(true);
-        return;
-      }
-
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-
-      let completed = 0;
-      let hasError = false;
-
-      books.forEach(book => {
-        book.stats = {
-          totalTime: 0,
-          readingDays: {},
-          hourlyDist: {}
-        };
-        const request = store.put(this._cleanBookForStorage(book));
-        request.onsuccess = () => {
-          completed++;
-          if (completed === books.length && !hasError) {
-            resolve(true);
-          }
-        };
-        request.onerror = () => {
-          if (!hasError) {
-            hasError = true;
-            reject(request.error);
-          }
-        };
-      });
-    });
-  }
-
-  // 保存 AI 溝通記錄
-  async saveAIChat(id, chat) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.aiChats) book.aiChats = [];
-    
-    book.aiChats.push({
-      chatId: chat.chatId || 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      createdAt: Date.now(),
-      query: chat.query,
-      reply: chat.reply
-    });
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.aiChats);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // 刪除單一 AI 溝通記錄
-  async deleteAIChat(id, chatId) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (book.aiChats) {
-      book.aiChats = book.aiChats.filter(c => c.chatId !== chatId);
+    for (const book of books) {
+      await this.clearBookStats(book.id);
     }
+    return true;
+  }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.aiChats);
-      request.onerror = () => reject(request.error);
+  // 保存 AI 溝通記錄 (帶排隊保護)
+  async saveAIChat(id, chat) {
+    return this._mutateBook(id, (book) => {
+      if (!book.aiChats) book.aiChats = [];
+      book.aiChats.push({
+        chatId: chat.chatId || 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        createdAt: Date.now(),
+        query: chat.query,
+        reply: chat.reply
+      });
+      return book.aiChats;
     });
   }
 
-  // 清除全部 AI 溝通記錄
+  // 刪除單一 AI 溝通記錄 (帶排隊保護)
+  async deleteAIChat(id, chatId) {
+    return this._mutateBook(id, (book) => {
+      if (book.aiChats) {
+        book.aiChats = book.aiChats.filter(c => c.chatId !== chatId);
+      }
+      return book.aiChats || [];
+    });
+  }
+
+  // 清除全部 AI 溝通記錄 (帶排隊保護)
   async clearAllAIChats(id) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    book.aiChats = [];
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.aiChats);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      book.aiChats = [];
+      return book.aiChats;
     });
   }
 
-  // 保存全書深度分析摘要
+  // 保存全書深度分析摘要 (帶排隊保護)
   async saveBookSummary(id, summary) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    book.bookSummary = summary;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.bookSummary);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      book.bookSummary = summary;
+      return book.bookSummary;
     });
   }
 
-  // 保存單個章節的摘要
+  // 保存單個章節的摘要 (帶排隊保護)
   async saveChapterSummary(id, index, summary) {
-    await this._ensureOpen();
-    const book = await this.getBookMetadata(id);
-    if (!book) throw new Error('Book not found');
-
-    if (!book.chapterSummaries) book.chapterSummaries = {};
-    book.chapterSummaries[index] = summary;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
-
-      request.onsuccess = () => resolve(book.chapterSummaries);
-      request.onerror = () => reject(request.error);
+    return this._mutateBook(id, (book) => {
+      if (!book.chapterSummaries) book.chapterSummaries = {};
+      book.chapterSummaries[index] = summary;
+      return book.chapterSummaries;
     });
   }
 }

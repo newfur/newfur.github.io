@@ -64,6 +64,7 @@ const library = new BookLibrary();
 const tts = new TTSEngine();
 if (typeof window !== 'undefined') {
   window.tts = tts;
+  window.library = library;
 }
 const ai = new AIEngine();
 
@@ -135,7 +136,8 @@ const AI_SUGGESTION_ICONS = {
 let readingSessionTimer = null;
 let lastReadingHeartbeat = 0;
 let lastUserActivityTime = 0;
-const IDLE_TIMEOUT_MS = 60000; // 60秒無操作視為閒置
+let ttsBackgroundStartTime = null;
+const IDLE_TIMEOUT_MS = 180000; // 180秒(3分鐘)無操作視為閒置
 
 // 書庫資料夾與批量管理狀態
 let currentFolder = null;
@@ -394,11 +396,9 @@ function initUIEventBindings() {
   const recordActivity = () => {
     lastUserActivityTime = Date.now();
   };
-  window.addEventListener('mousemove', recordActivity, { capture: true, passive: true });
-  window.addEventListener('keydown', recordActivity, { capture: true, passive: true });
-  window.addEventListener('mousedown', recordActivity, { capture: true, passive: true });
-  window.addEventListener('touchstart', recordActivity, { capture: true, passive: true });
-  window.addEventListener('scroll', recordActivity, { capture: true, passive: true });
+  ['mousemove', 'keydown', 'mousedown', 'touchstart', 'touchend', 'pointerdown', 'pointermove', 'click', 'wheel', 'scroll'].forEach(evt => {
+    window.addEventListener(evt, recordActivity, { capture: true, passive: true });
+  });
 
   // 移動端音訊自動播放權限預解鎖：在用戶首次觸摸或點擊任意區域時同步解鎖音訊上下文
   const initAudioUnlockOnce = () => {
@@ -614,6 +614,10 @@ function initUIEventBindings() {
       if (confirm(getMsg('confirm_clear_all_stats') || '確定要清除所有書籍的閱讀統計數據嗎？此操作無法撤銷。')) {
         try {
           await library.clearAllStats();
+          if (currentBook && currentBook.stats) {
+            currentBook.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} };
+          }
+          await renderBookshelf();
           await openGlobalStatsModal();
         } catch (e) {
           console.error('Failed to clear all stats:', e);
@@ -635,6 +639,10 @@ function initUIEventBindings() {
       if (confirm(getMsg('confirm_clear_book_stats') || '確定要清除本書的閱讀統計數據吗？此操作無法撤銷。')) {
         try {
           await library.clearBookStats(selectedBookId);
+          if (currentBook && currentBook.id === selectedBookId && currentBook.stats) {
+            currentBook.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} };
+          }
+          await renderBookshelf();
           // 重新整理當前書籍統計
           await renderBookStats(selectedBookId);
           
@@ -647,7 +655,7 @@ function initUIEventBindings() {
 
           books.forEach(b => {
             const stats = b.stats || { readingDays: {}, hourlyDist: {} };
-            const bookTotal = Object.values(stats.readingDays || {}).reduce((s, v) => s + v, 0);
+            const bookTotal = getBookTotalReadingTime(stats);
             totalSeconds += bookTotal;
             if (bookTotal > 0) {
               readBooksCount++;
@@ -657,7 +665,7 @@ function initUIEventBindings() {
             }
             if (stats.hourlyDist) {
               for (let h = 0; h < 24; h++) {
-                globalHourly[h] += (stats.hourlyDist[h] || 0);
+                globalHourly[h] += (Number(stats.hourlyDist[h]) || 0);
               }
             }
           });
@@ -1612,11 +1620,24 @@ function initUIEventBindings() {
     updatePlayPauseButtonIcon();
     updateEdgeFilterButtonVisibility();
     
-    // 當暫停或停止時，立即強制保存最新朗讀位置，不使用防抖，確保在後台或藍牙暫停時進度被即時寫入資料庫
+    // 當暫停或停止時，立即結算後台 TTS 朗讀時長並強制保存最新朗讀位置
     if (!tts.isPlaying || tts.isPaused) {
+      if (ttsBackgroundStartTime) {
+        const elapsed = Math.min(Math.round((Date.now() - ttsBackgroundStartTime) / 1000), 7200);
+        ttsBackgroundStartTime = null;
+        if (elapsed > 0 && currentBook) {
+          library.addReadingDuration(currentBook.id, elapsed).then(res => {
+            if (res && currentBook && currentBook.id === res.id) currentBook.stats = res.stats;
+          }).catch(console.warn);
+        }
+      }
       saveTTSProgressImmediately();
       stopTTSProgressHeartbeat();
     } else {
+      // 播放中：若處於後台且尚未記錄起點，則標記後台起點
+      if (document.visibilityState === 'hidden' && !ttsBackgroundStartTime) {
+        ttsBackgroundStartTime = Date.now();
+      }
       // 播放中：啟動心跳保存
       startTTSProgressHeartbeat();
     }
@@ -1948,6 +1969,19 @@ function initUIEventBindings() {
         if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
         if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
         globalSettingsDialog.showModal();
+      });
+    }
+
+    const readerStatsBtn = document.getElementById('reader-stats-btn');
+    if (readerStatsBtn) {
+      readerStatsBtn.addEventListener('click', async () => {
+        const settingsPanel = document.getElementById('settings-panel');
+        if (settingsPanel) settingsPanel.classList.remove('active');
+        if (currentBook) {
+          await openSingleBookStatsModal(currentBook.id);
+        } else {
+          await openGlobalStatsModal();
+        }
       });
     }
 
@@ -2333,7 +2367,23 @@ function initUIEventBindings() {
       saveReadingTime();
       saveTTSProgressImmediately();
       forceSaveCurrentProgress();
+      if (tts && tts.isPlaying && !tts.isPaused) {
+        ttsBackgroundStartTime = Date.now();
+      } else {
+        ttsBackgroundStartTime = null;
+      }
     } else {
+      // 切回前台：結算後台 TTS 朗讀時長
+      if (ttsBackgroundStartTime) {
+        const elapsed = Math.min(Math.round((Date.now() - ttsBackgroundStartTime) / 1000), 7200);
+        ttsBackgroundStartTime = null;
+        if (elapsed > 0 && currentBook) {
+          library.addReadingDuration(currentBook.id, elapsed).then(res => {
+            if (res && currentBook && currentBook.id === res.id) currentBook.stats = res.stats;
+          }).catch(console.warn);
+        }
+      }
+
       // 返回頁面時重置計時起點，防止將後台掛起時間計入
       lastReadingHeartbeat = Date.now();
       lastUserActivityTime = Date.now();
@@ -2392,6 +2442,11 @@ function initUIEventBindings() {
     }
   });
   window.addEventListener('beforeunload', () => {
+    saveReadingTime();
+    saveTTSProgressImmediately();
+    forceSaveCurrentProgress();
+  });
+  window.addEventListener('pagehide', () => {
     saveReadingTime();
     saveTTSProgressImmediately();
     forceSaveCurrentProgress();
@@ -3031,7 +3086,7 @@ async function renderBookshelf(searchQuery = '') {
       
       // 計算進度
       const percent = Math.round(book.progress?.percent || 0);
-      const bookTotalTime = Object.values(book.stats?.readingDays || {}).reduce((s, v) => s + v, 0);
+      const bookTotalTime = getBookTotalReadingTime(book.stats);
 
       card.innerHTML = `
         <div class="book-card-checkbox-overlay">
@@ -3272,6 +3327,7 @@ function startReadingTracker(bookId) {
 
   lastReadingHeartbeat = Date.now();
   lastUserActivityTime = Date.now();
+  ttsBackgroundStartTime = null;
 
   readingSessionTimer = setInterval(async () => {
     if (!currentBook) {
@@ -3287,7 +3343,10 @@ function startReadingTracker(bookId) {
       const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
         try {
-          await library.addReadingDuration(bookId, elapsedSeconds);
+          const res = await library.addReadingDuration(bookId, elapsedSeconds);
+          if (res && currentBook && currentBook.id === res.id) {
+            currentBook.stats = res.stats;
+          }
         } catch (e) {
           console.warn('[ReadingTracker] Failed to save reading stats:', e);
         }
@@ -3306,13 +3365,30 @@ function stopReadingTracker() {
 
 async function saveReadingTime() {
   if (currentBook) {
+    if (ttsBackgroundStartTime) {
+      const elapsed = Math.min(Math.round((Date.now() - ttsBackgroundStartTime) / 1000), 7200);
+      ttsBackgroundStartTime = null;
+      if (elapsed > 0) {
+        try {
+          const res = await library.addReadingDuration(currentBook.id, elapsed);
+          if (res && currentBook && currentBook.id === res.id) {
+            currentBook.stats = res.stats;
+          }
+        } catch (e) {
+          console.warn('[ReadingTracker] Failed to save background TTS stats:', e);
+        }
+      }
+    }
     const now = Date.now();
     const isUserActive = isReadingTimeActive(now);
     if (isUserActive) {
       const elapsedSeconds = Math.min(Math.round((now - lastReadingHeartbeat) / 1000), 15);
       if (elapsedSeconds > 0) {
         try {
-          await library.addReadingDuration(currentBook.id, elapsedSeconds);
+          const res = await library.addReadingDuration(currentBook.id, elapsedSeconds);
+          if (res && currentBook && currentBook.id === res.id) {
+            currentBook.stats = res.stats;
+          }
         } catch (e) {
           console.warn('[ReadingTracker] Failed to save final stats:', e);
         }
@@ -3324,7 +3400,7 @@ async function saveReadingTime() {
 
 function isReadingTimeActive(now = Date.now()) {
   const isVisibleReading = document.visibilityState === 'visible' && (now - lastUserActivityTime < IDLE_TIMEOUT_MS);
-  const isTTSReading = tts && tts.isPlaying;
+  const isTTSReading = tts && tts.isPlaying && !tts.isPaused;
   return isVisibleReading || isTTSReading;
 }
 
@@ -11112,6 +11188,14 @@ function formatDuration(seconds) {
   return `${seconds}s`;
 }
 
+// 獲取書籍的有效累計閱讀秒數（相容歷史舊版 totalTime 與每日分佈）
+function getBookTotalReadingTime(stats) {
+  if (!stats) return 0;
+  const daysTotal = Object.values(stats.readingDays || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  const legacyTotal = Number(stats.totalTime) || 0;
+  return Math.max(daysTotal, legacyTotal);
+}
+
 // 渲染柱狀圖
 function renderHourlyChart(containerId, hourlyData) {
   const chart = document.getElementById(containerId);
@@ -11209,7 +11293,7 @@ async function openGlobalStatsModal() {
 
   books.forEach(b => {
     const stats = b.stats || { readingDays: {}, hourlyDist: {} };
-    const bookTotal = Object.values(stats.readingDays || {}).reduce((s, v) => s + v, 0);
+    const bookTotal = getBookTotalReadingTime(stats);
     totalSeconds += bookTotal;
     if (bookTotal > 0) {
       readBooksCount++;
@@ -11223,7 +11307,7 @@ async function openGlobalStatsModal() {
     // 累加小時分佈
     if (stats.hourlyDist) {
       for (let h = 0; h < 24; h++) {
-        globalHourly[h] += (stats.hourlyDist[h] || 0);
+        globalHourly[h] += (Number(stats.hourlyDist[h]) || 0);
       }
     }
   });
@@ -11267,13 +11351,13 @@ function closeStatsModal() {
 
 // 渲染單本書籍統計
 async function renderBookStats(bookId) {
-  const book = await library.getBook(bookId);
+  const book = await library.getBookMetadata(bookId);
   if (!book) return;
 
   const stats = book.stats || { readingDays: {}, hourlyDist: {} };
   const readingDays = stats.readingDays || {};
   const hourlyDist = stats.hourlyDist || {};
-  const totalTime = Object.values(readingDays).reduce((s, v) => s + v, 0);
+  const totalTime = getBookTotalReadingTime(stats);
 
   const daysCount = Object.keys(readingDays).length;
   const dailyAvg = daysCount > 0 ? Math.round(totalTime / daysCount) : 0;
@@ -11286,7 +11370,7 @@ async function renderBookStats(bookId) {
   // 繪製單本圖表
   const hourlyData = Array(24).fill(0);
   for (let h = 0; h < 24; h++) {
-    hourlyData[h] = hourlyDist[h] || 0;
+    hourlyData[h] = Number(hourlyDist[h]) || 0;
   }
   renderHourlyChart('book-hourly-chart', hourlyData);
 
@@ -11304,7 +11388,7 @@ async function renderBookStats(bookId) {
         item.className = 'history-item';
         item.innerHTML = `
           <span class="history-date">${day}</span>
-          <span class="history-duration">${formatDuration(readingDays[day])}</span>
+          <span class="history-duration">${formatDuration(Number(readingDays[day]) || 0)}</span>
         `;
         historyList.appendChild(item);
       });

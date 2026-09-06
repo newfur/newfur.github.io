@@ -3438,6 +3438,14 @@ html.transition-none .page-texture-slide {
   }
 }
 
+@media (hover: none) {
+  .book-card .book-stats-btn,
+  .book-card .book-delete-btn,
+  .book-card .book-export-btn {
+    opacity: 0.85;
+  }
+}
+
 .book-stats-btn:hover {
   transform: scale(1.1);
   background-color: rgba(48, 209, 88, 1);
