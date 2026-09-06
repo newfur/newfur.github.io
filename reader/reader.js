@@ -3238,15 +3238,21 @@ async function renderBookshelf(searchQuery = '') {
       if (moreBtn) {
         moreBtn.addEventListener('click', (event) => {
           event.stopPropagation();
-          showBookActionSheet(book.id);
+          showBookActionSheet(book.id, book);
         });
       }
 
-      // 右鍵 / ContextMenu 事件綁定（桌面端呼出 Action Sheet）
+      // 右鍵 / ContextMenu 事件綁定（桌面端與 WebKit 長按呼出 Action Sheet）
       card.addEventListener('contextmenu', (event) => {
         if (!isSelectMode) {
           event.preventDefault();
-          showBookActionSheet(book.id);
+          isLongPressTriggered = true;
+          lastLongPressTime = Date.now();
+          if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+          showBookActionSheet(book.id, book);
         }
       });
 
@@ -3255,6 +3261,7 @@ async function renderBookshelf(searchQuery = '') {
       let touchStartX = 0;
       let touchStartY = 0;
       let isLongPressTriggered = false;
+      let lastLongPressTime = 0;
 
       card.addEventListener('touchstart', (e) => {
         if (isSelectMode) return;
@@ -3265,10 +3272,11 @@ async function renderBookshelf(searchQuery = '') {
 
         longPressTimer = setTimeout(() => {
           isLongPressTriggered = true;
+          lastLongPressTime = Date.now();
           if (navigator.vibrate) {
             try { navigator.vibrate(40); } catch (_) {}
           }
-          showBookActionSheet(book.id);
+          showBookActionSheet(book.id, book);
         }, 420);
       }, { passive: true });
 
@@ -3276,25 +3284,38 @@ async function renderBookshelf(searchQuery = '') {
         if (!longPressTimer) return;
         const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
         const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-        if (deltaX > 8 || deltaY > 8) {
+        if (deltaX > 10 || deltaY > 10) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
       }, { passive: true });
 
-      const cancelCardTouch = () => {
+      card.addEventListener('touchend', (e) => {
         if (longPressTimer) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
-      };
-
-      card.addEventListener('touchend', cancelCardTouch, { passive: true });
-      card.addEventListener('touchcancel', cancelCardTouch, { passive: true });
-
-      // 點擊事件：多選模式下為選中切換，正常模式下打開書籍（若觸發長按則忽略點擊）
-      card.addEventListener('click', () => {
         if (isLongPressTriggered) {
+          // 阻止移動端合成 click 事件穿透到卡片導致打開書籍
+          if (e.cancelable) {
+            e.preventDefault();
+          }
+        }
+      }, { passive: false });
+
+      card.addEventListener('touchcancel', () => {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }, { passive: true });
+
+      // 點擊事件：多選模式下為選中切換，正常模式下打開書籍（雙重長按防禦）
+      card.addEventListener('click', (e) => {
+        const timeSinceLongPress = Date.now() - lastLongPressTime;
+        if (isLongPressTriggered || timeSinceLongPress < 800) {
+          e.preventDefault();
+          e.stopPropagation();
           isLongPressTriggered = false;
           return;
         }
@@ -3481,56 +3502,65 @@ window.exportBookHandler = exportBookHandler;
 // ==================== 書籍快捷操作選單 (Action Sheet) 管理 ====================
 let currentActionSheetBookId = null;
 
-async function showBookActionSheet(bookId) {
+function showBookActionSheet(bookId, bookData = null) {
   try {
-    const book = await library.getBook(bookId);
-    if (!book) return;
+    const backdrop = document.getElementById('book-action-sheet-backdrop');
+    const sheet = document.getElementById('book-action-sheet');
+    if (!backdrop || !sheet) return;
 
     currentActionSheetBookId = bookId;
 
-    const backdrop = document.getElementById('book-action-sheet-backdrop');
-    const sheet = document.getElementById('book-action-sheet');
-    const coverContainer = document.getElementById('action-sheet-cover-container');
-    const titleEl = document.getElementById('action-sheet-title');
-    const authorEl = document.getElementById('action-sheet-author');
-    const badgeEl = document.getElementById('action-sheet-badge');
-
-    if (!backdrop || !sheet) return;
-
-    if (titleEl) titleEl.textContent = book.title || 'Untitled';
-    if (authorEl) authorEl.textContent = book.author || '';
-    if (badgeEl) badgeEl.textContent = (book.format || 'epub').toUpperCase();
-
-    // 封面預覽
-    if (coverContainer) {
-      const cachedCover = bookCoverCache.get(book.id);
-      const effectiveCover = book.cover || cachedCover;
-      let coverUrl = '';
-
-      if (effectiveCover) {
-        if (typeof effectiveCover === 'string' && effectiveCover.length > 0) {
-          coverUrl = effectiveCover;
-        } else if (isBlobLike(effectiveCover)) {
-          try {
-            coverUrl = URL.createObjectURL(effectiveCover);
-          } catch (_) {}
-        }
-      }
-
-      if (coverUrl) {
-        coverContainer.innerHTML = `<img src="${coverUrl}" alt="${book.title}" onerror="this.style.display='none';">`;
-      } else {
-        coverContainer.innerHTML = `
-          <div class="book-cover-placeholder">
-            <div class="book-cover-placeholder-icon">
-              <svg class="svg-icon svg-icon-sm" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-            </div>
-          </div>`;
-      }
-    }
-
+    // 立即同步呈現遮罩與抽屜，避免非同步延遲造成長按抬手事件穿透
+    backdrop.style.display = 'block';
+    void backdrop.offsetHeight; // 強制重繪
     backdrop.classList.add('active');
     sheet.classList.add('active');
+
+    const updateUI = (book) => {
+      if (!book) return;
+      const coverContainer = document.getElementById('action-sheet-cover-container');
+      const titleEl = document.getElementById('action-sheet-title');
+      const authorEl = document.getElementById('action-sheet-author');
+      const badgeEl = document.getElementById('action-sheet-badge');
+
+      if (titleEl) titleEl.textContent = book.title || 'Untitled';
+      if (authorEl) authorEl.textContent = book.author || '';
+      if (badgeEl) badgeEl.textContent = (book.format || 'epub').toUpperCase();
+
+      // 封面預覽
+      if (coverContainer) {
+        const cachedCover = bookCoverCache.get(book.id);
+        const effectiveCover = book.cover || cachedCover;
+        let coverUrl = '';
+
+        if (effectiveCover) {
+          if (typeof effectiveCover === 'string' && effectiveCover.length > 0) {
+            coverUrl = effectiveCover;
+          } else if (isBlobLike(effectiveCover)) {
+            try {
+              coverUrl = URL.createObjectURL(effectiveCover);
+            } catch (_) {}
+          }
+        }
+
+        if (coverUrl) {
+          coverContainer.innerHTML = `<img src="${coverUrl}" alt="${book.title}" onerror="this.style.display='none';">`;
+        } else {
+          coverContainer.innerHTML = `
+            <div class="book-cover-placeholder">
+              <div class="book-cover-placeholder-icon">
+                <svg class="svg-icon svg-icon-sm" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+              </div>
+            </div>`;
+        }
+      }
+    };
+
+    if (bookData) {
+      updateUI(bookData);
+    } else {
+      library.getBook(bookId).then(updateUI).catch(() => {});
+    }
   } catch (err) {
     console.error('[ActionSheet] Failed to show action sheet:', err);
   }
@@ -3539,8 +3569,13 @@ async function showBookActionSheet(bookId) {
 function hideBookActionSheet() {
   const backdrop = document.getElementById('book-action-sheet-backdrop');
   const sheet = document.getElementById('book-action-sheet');
-  if (backdrop) backdrop.classList.remove('active');
-  if (sheet) sheet.classList.remove('active');
+  if (backdrop) {
+    backdrop.classList.remove('active');
+    backdrop.style.display = 'none'; // 強制同步關閉，杜絕殘留樣式
+  }
+  if (sheet) {
+    sheet.classList.remove('active');
+  }
   currentActionSheetBookId = null;
 }
 
@@ -3553,12 +3588,29 @@ function initBookActionSheet() {
   const deleteBtn = document.getElementById('action-sheet-delete-btn');
   const handleBar = document.querySelector('.action-sheet-handle-bar');
 
-  if (backdrop) backdrop.addEventListener('click', hideBookActionSheet);
-  if (cancelBtn) cancelBtn.addEventListener('click', hideBookActionSheet);
-  if (handleBar) handleBar.addEventListener('click', hideBookActionSheet);
+  const onDismiss = (e) => {
+    if (e) {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+    }
+    hideBookActionSheet();
+  };
+
+  if (backdrop) {
+    backdrop.addEventListener('click', onDismiss);
+    backdrop.addEventListener('touchend', onDismiss, { passive: false });
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', onDismiss);
+    cancelBtn.addEventListener('touchend', onDismiss, { passive: false });
+  }
+  if (handleBar) {
+    handleBar.addEventListener('click', onDismiss);
+  }
 
   if (statsBtn) {
-    statsBtn.addEventListener('click', async () => {
+    statsBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const bookId = currentActionSheetBookId;
       hideBookActionSheet();
       if (bookId) {
@@ -3568,7 +3620,8 @@ function initBookActionSheet() {
   }
 
   if (exportBtn) {
-    exportBtn.addEventListener('click', async () => {
+    exportBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const bookId = currentActionSheetBookId;
       hideBookActionSheet();
       if (bookId) {
@@ -3578,7 +3631,8 @@ function initBookActionSheet() {
   }
 
   if (moveBtn) {
-    moveBtn.addEventListener('click', () => {
+    moveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const bookId = currentActionSheetBookId;
       hideBookActionSheet();
       if (bookId) {
@@ -3591,7 +3645,8 @@ function initBookActionSheet() {
   }
 
   if (deleteBtn) {
-    deleteBtn.addEventListener('click', async () => {
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const bookId = currentActionSheetBookId;
       hideBookActionSheet();
       if (bookId) {
@@ -3691,6 +3746,8 @@ function isReadingTimeActive(now = Date.now()) {
 
 // 打開書籍
 async function openBook(id) {
+  hideBookActionSheet();
+  closeStatsModal();
   const readerView = document.getElementById('reader-view');
   if (openingBookId || (currentBook && currentBook.id === id && readerView && readerView.classList.contains('view-active'))) {
     return;
@@ -3942,6 +3999,8 @@ async function closeCurrentBook(triggerBack = true) {
   document.getElementById('selection-menu').style.display = 'none';
   document.getElementById('note-dialog').style.display = 'none';
   document.getElementById('ai-panel').style.display = 'none';
+  hideBookActionSheet();
+  closeStatsModal();
   
   // 關閉側邊欄並重置為目錄標籤，清理 DOM 防止殘留內容
   const sidebar = document.getElementById('reader-sidebar');

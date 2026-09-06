@@ -3,7 +3,7 @@
 Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en.md)
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.4.67-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.4.67)
+[![Version](https://img.shields.io/badge/version-3.4.68-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.4.68)
 [![Build & Deploy](https://github.com/newfur/newfur.github.io/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/newfur/newfur.github.io/actions)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
