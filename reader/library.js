@@ -1,20 +1,25 @@
 // reader/library.js
 // 基於 IndexedDB 的書庫管理模組，提供書籍儲存、刪除、歷史記錄與進度更新功能
+// V2 架構：將 1KB 的書籍元數據/進度 (books) 與 50MB+ 的檔案本體 (book_files) 徹底分離解耦
+// 徹底根治因頻繁保存進度導致的重複寫入與 130GB 磁碟膨脹
 
-const DB_NAME = 'EdgeReaderDB';
+const DB_NAME = 'EdgeReaderDB_V2';
 const DB_VERSION = 1;
+const LEGACY_DB_NAME = 'EdgeReaderDB';
 
 export class BookLibrary {
   constructor() {
     this.db = null;
+    this._progressQueue = null;
+    this._cleanupTriggered = false;
   }
 
   // 打開資料庫
   async open() {
     if (this.db) return this.db;
 
-    // 請求瀏覽器持久化儲存保護，防止因硬碟空間不足被自動清除
-    if (navigator.storage && navigator.storage.persist) {
+    // 請求瀏覽器持久化儲存保護
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
       navigator.storage.persist().then(persisted => {
         console.log('[BookLibrary] Storage persisted status:', persisted);
       }).catch(err => {
@@ -22,23 +27,27 @@ export class BookLibrary {
       });
     }
 
-    return new Promise((resolve, reject) => {
+    this.db = await new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         
-        // 建立書籍儲存空間
+        // 建立書籍元數據儲存空間 (不存大型檔案，僅存 1KB 元數據與進度)
         if (!db.objectStoreNames.contains('books')) {
           const bookStore = db.createObjectStore('books', { keyPath: 'id' });
           bookStore.createIndex('addedAt', 'addedAt', { unique: false });
           bookStore.createIndex('lastReadAt', 'lastReadAt', { unique: false });
         }
+
+        // 建立獨立的書籍二進制檔案儲存空間 (僅在導入時寫入一次，後續進度更新絕不觸碰)
+        if (!db.objectStoreNames.contains('book_files')) {
+          db.createObjectStore('book_files', { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = (event) => {
-        this.db = event.target.result;
-        resolve(this.db);
+        resolve(event.target.result);
       };
 
       request.onerror = (event) => {
@@ -46,6 +55,14 @@ export class BookLibrary {
         reject(event.target.error);
       };
     });
+
+    // 檢查並執行舊版資料庫遷移與 130GB 瘦身清理
+    if (!this._cleanupTriggered) {
+      this._cleanupTriggered = true;
+      this._triggerLegacyCleanup().catch(e => console.warn('[BookLibrary] Legacy cleanup error:', e));
+    }
+
+    return this.db;
   }
 
   // 確保 DB 處於開啟狀態
@@ -55,13 +72,97 @@ export class BookLibrary {
     }
   }
 
-  // 輔助函數：將 File 物件轉回純 Blob 以保證 Safari IndexedDB 儲存時的穩定性，防止出現 NotFoundError ("The object can not be found here.")
+  // 檢查並執行舊版資料庫瘦身遷移 (將龐大舊庫轉移到 V2 並徹底物理刪除舊庫，釋放 130GB 空間)
+  async _triggerLegacyCleanup() {
+    if (typeof window === 'undefined' || typeof indexedDB === 'undefined') return;
+    try {
+      if (localStorage.getItem('edgereader_v2_migrated') === 'done') {
+        try { indexedDB.deleteDatabase(LEGACY_DB_NAME); } catch (e) {}
+        return;
+      }
+
+      console.log('[BookLibrary] Checking for legacy EdgeReaderDB to reclaim space...');
+      const checkReq = indexedDB.open(LEGACY_DB_NAME);
+
+      checkReq.onupgradeneeded = (e) => {
+        // 舊庫不存在，新建立的空庫，直接關閉並刪除
+        const tempDb = e.target.result;
+        tempDb.close();
+        indexedDB.deleteDatabase(LEGACY_DB_NAME);
+        localStorage.setItem('edgereader_v2_migrated', 'done');
+      };
+
+      checkReq.onsuccess = async (e) => {
+        const legacyDb = e.target.result;
+        if (!legacyDb.objectStoreNames.contains('books')) {
+          legacyDb.close();
+          indexedDB.deleteDatabase(LEGACY_DB_NAME);
+          localStorage.setItem('edgereader_v2_migrated', 'done');
+          return;
+        }
+
+        try {
+          // 讀取舊庫的所有書籍
+          const legacyBooks = await new Promise((res, rej) => {
+            const tx = legacyDb.transaction(['books'], 'readonly');
+            const req = tx.objectStore('books').getAll();
+            req.onsuccess = () => res(req.result || []);
+            req.onerror = () => rej(req.error);
+          });
+
+          if (legacyBooks && legacyBooks.length > 0) {
+            console.log(`[BookLibrary] Migrating ${legacyBooks.length} books from legacy EdgeReaderDB to V2...`);
+            for (const book of legacyBooks) {
+              const fileBlob = book.file;
+              const cleanMeta = this._cleanBookForStorage(book);
+
+              await new Promise((res, rej) => {
+                const tx = this.db.transaction(['books', 'book_files'], 'readwrite');
+                tx.objectStore('books').put(cleanMeta);
+                if (fileBlob) {
+                  let f = fileBlob;
+                  if (typeof File !== 'undefined' && f instanceof File) {
+                    f = new Blob([f], { type: f.type });
+                  }
+                  tx.objectStore('book_files').put({ id: book.id, file: f });
+                }
+                tx.oncomplete = () => res();
+                tx.onerror = () => rej(tx.error);
+              });
+            }
+            console.log('[BookLibrary] Successfully migrated all books to EdgeReaderDB_V2!');
+          }
+
+          legacyDb.close();
+          // ★★★ 核心：物理刪除膨脹了 130GB 的舊資料庫，系統底層立刻釋放所有 orphaned blob 檔案 ★★★
+          const delReq = indexedDB.deleteDatabase(LEGACY_DB_NAME);
+          delReq.onsuccess = () => {
+            console.log('[BookLibrary] Legacy EdgeReaderDB DELETED successfully! Reclaimed disk space.');
+            localStorage.setItem('edgereader_v2_migrated', 'done');
+          };
+          delReq.onerror = (err) => {
+            console.warn('[BookLibrary] Failed to delete legacy database:', err);
+            localStorage.setItem('edgereader_v2_migrated', 'done');
+          };
+        } catch (err) {
+          console.error('[BookLibrary] Migration error:', err);
+          try { legacyDb.close(); } catch (e) {}
+        }
+      };
+
+      checkReq.onerror = () => {
+        localStorage.setItem('edgereader_v2_migrated', 'done');
+      };
+    } catch (e) {
+      console.warn('[BookLibrary] _triggerLegacyCleanup failed:', e);
+    }
+  }
+
+  // 輔助函數：清理 metadata，確保 metadata 中絕不包含大型 file Blob
   _cleanBookForStorage(book) {
     if (!book) return book;
     const clean = { ...book };
-    if (clean.file && typeof File !== 'undefined' && clean.file instanceof File) {
-      clean.file = new Blob([clean.file], { type: clean.file.type });
-    }
+    delete clean.file; // 絕對不將大型 file 放入 books store
     if (clean.cover && typeof File !== 'undefined' && clean.cover instanceof File) {
       clean.cover = new Blob([clean.cover], { type: clean.cover.type || 'image/jpeg' });
     }
@@ -71,12 +172,12 @@ export class BookLibrary {
   // 添加書籍
   async addBook({ id, title, author, format, file, cover, size, fileHash }) {
     await this._ensureOpen();
+    const bookId = id || 'book_' + Date.now();
     const book = {
-      id: id || 'book_' + Date.now(),
+      id: bookId,
       title: title || 'Unknown Title',
       author: author || 'Unknown Author',
       format: format.toLowerCase(),
-      file,         // Blob
       cover,        // string (DataURL) or Blob
       size: size || 0,
       fileHash: fileHash || '',
@@ -97,27 +198,35 @@ export class BookLibrary {
       notes: [] // 保存劃線高亮與筆記
     };
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.add(this._cleanBookForStorage(book));
+    let cleanFile = file;
+    if (cleanFile && typeof File !== 'undefined' && cleanFile instanceof File) {
+      cleanFile = new Blob([cleanFile], { type: cleanFile.type });
+    }
 
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books', 'book_files'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const fileStore = transaction.objectStore('book_files');
+
+      store.add(this._cleanBookForStorage(book));
+      if (cleanFile) {
+        fileStore.put({ id: bookId, file: cleanFile });
+      }
+
+      transaction.oncomplete = () => resolve({ ...book, file: cleanFile });
+      transaction.onerror = () => reject(transaction.error);
     });
   }
 
-  // 覆蓋書籍檔案內容與元數據，但完整保留原有書籤、劃線筆記、統計資訊與資料夾
-  // 注意：進度索引（章節、句子位置）在文件替換後可能無效，需重置
+  // 覆蓋書籍檔案內容與元數據
   async replaceBookContent(id, { title, author, format, file, cover, size, fileHash }) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     book.title = title || book.title;
     book.author = author || book.author;
     book.format = format ? format.toLowerCase() : book.format;
-    book.file = file;
     book.cover = cover || book.cover;
     book.size = size || book.size;
     book.fileHash = fileHash || book.fileHash;
@@ -136,17 +245,27 @@ export class BookLibrary {
       book.progress.percent = 0;
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(book));
+    let cleanFile = file;
+    if (cleanFile && typeof File !== 'undefined' && cleanFile instanceof File) {
+      cleanFile = new Blob([cleanFile], { type: cleanFile.type });
+    }
 
-      request.onsuccess = () => resolve(book);
-      request.onerror = () => reject(request.error);
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books', 'book_files'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const fileStore = transaction.objectStore('book_files');
+
+      store.put(this._cleanBookForStorage(book));
+      if (cleanFile) {
+        fileStore.put({ id, file: cleanFile });
+      }
+
+      transaction.oncomplete = () => resolve({ ...book, file: cleanFile });
+      transaction.onerror = () => reject(transaction.error);
     });
   }
 
-  // 更新書籍記錄（完整儲存）
+  // 更新書籍記錄（元數據更新，不碰檔案）
   async updateBook(book) {
     await this._ensureOpen();
     return new Promise((resolve, reject) => {
@@ -177,13 +296,11 @@ export class BookLibrary {
     let mergedBook;
     if (existingBook) {
       // 合併記錄
-      // 進度合併 (以 lastReadAt 較新者為準覆寫閱讀位置)
       const mergedProgress = { ...existingBook.progress, ...backupBook.progress };
       const existingLastRead = existingBook.lastReadAt || 0;
       const backupLastRead = backupBook.lastReadAt || 0;
 
       if (existingLastRead > backupLastRead) {
-        // 保留現有書庫的位置
         if (existingBook.progress) {
           mergedProgress.chapterIndex = existingBook.progress.chapterIndex ?? mergedProgress.chapterIndex;
           mergedProgress.elementIndex = existingBook.progress.elementIndex ?? mergedProgress.elementIndex;
@@ -197,7 +314,6 @@ export class BookLibrary {
         }
       }
 
-      // 合併書籤 (避免重複)
       const mergedBookmarks = [...(existingBook.bookmarks || [])];
       if (backupBook.bookmarks) {
         for (const b of backupBook.bookmarks) {
@@ -214,7 +330,6 @@ export class BookLibrary {
         }
       }
 
-      // 合併劃線筆記 (避免重複)
       const mergedNotes = [...(existingBook.notes || [])];
       if (backupBook.notes) {
         for (const n of backupBook.notes) {
@@ -233,7 +348,6 @@ export class BookLibrary {
         }
       }
 
-      // 合併 AI 溝通記錄 (避免重複)
       const mergedAIChats = [...(existingBook.aiChats || [])];
       if (backupBook.aiChats) {
         for (const c of backupBook.aiChats) {
@@ -244,93 +358,122 @@ export class BookLibrary {
         }
       }
 
-      // 合併閱讀統計資訊
-      // 策略：同一天的閱讀時間取兩份資料中的「最大值」而非直接相加，
-      //       以防備份-還原後同一段閱讀時間被重複累計（例如同設備備份後還原）。
-      //       hourlyDist 同理，同一個小時取最大值。
-      //       totalTime 最後從合併後的 readingDays 重新加總，確保與明細一致。
-      const mergedReadingDays = { ...(existingBook.stats?.readingDays || {}) };
-      if (backupBook.stats?.readingDays) {
-        for (const [date, sec] of Object.entries(backupBook.stats.readingDays)) {
-          mergedReadingDays[date] = Math.max(mergedReadingDays[date] || 0, sec);
+      let mergedStats = null;
+      if (existingBook.stats || backupBook.stats) {
+        const eStats = existingBook.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
+        const bStats = backupBook.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
+        const allDays = new Set([...Object.keys(eStats.readingDays || {}), ...Object.keys(bStats.readingDays || {})]);
+        const mergedReadingDays = {};
+        for (const day of allDays) {
+          mergedReadingDays[day] = Math.max(eStats.readingDays?.[day] || 0, bStats.readingDays?.[day] || 0);
         }
-      }
 
-      const mergedHourlyDist = { ...(existingBook.stats?.hourlyDist || {}) };
-      if (backupBook.stats?.hourlyDist) {
-        for (const [hour, sec] of Object.entries(backupBook.stats.hourlyDist)) {
-          mergedHourlyDist[hour] = Math.max(mergedHourlyDist[hour] || 0, sec);
+        const mergedHourlyDist = {};
+        for (let h = 0; h < 24; h++) {
+          mergedHourlyDist[h] = Math.max(eStats.hourlyDist?.[h] || 0, bStats.hourlyDist?.[h] || 0);
         }
+
+        mergedStats = {
+          totalTime: Math.max(eStats.totalTime || 0, bStats.totalTime || 0),
+          readingDays: mergedReadingDays,
+          hourlyDist: mergedHourlyDist
+        };
       }
-
-      // totalTime 從合併後的每日資料重新彙總，確保不出現因直接相加導致的虛報時間
-      const recalculatedTotalTime = Object.values(mergedReadingDays).reduce((sum, sec) => sum + sec, 0);
-
-      const mergedStats = {
-        totalTime: recalculatedTotalTime,
-        readingDays: mergedReadingDays,
-        hourlyDist: mergedHourlyDist
-      };
 
       mergedBook = {
-        id: existingBook.id, // 使用現有書籍的 ID 以免重複
-        title: existingBook.title,
-        author: existingBook.author,
-        format: existingBook.format,
-        file: existingBook.file || backupBook.file, // 優先使用現有檔案
-        cover: existingBook.cover || backupBook.cover,
-        folder: existingBook.folder || backupBook.folder, // 優先使用現有資料夾
-        size: existingBook.size || backupBook.size,
-        addedAt: Math.min(existingBook.addedAt || Date.now(), backupBook.addedAt || Date.now()),
-        lastReadAt: Math.max(existingLastRead, backupLastRead),
+        ...existingBook,
+        file: backupBook.file || existingBook.file,
+        cover: backupBook.cover || existingBook.cover,
+        size: backupBook.size || existingBook.size,
         progress: mergedProgress,
         bookmarks: mergedBookmarks,
         notes: mergedNotes,
         aiChats: mergedAIChats,
+        lastReadAt: Math.max(existingLastRead, backupLastRead),
         stats: mergedStats,
         bookSummary: existingBook.bookSummary || backupBook.bookSummary || '',
         chapterSummaries: { ...(existingBook.chapterSummaries || {}), ...(backupBook.chapterSummaries || {}) }
       };
     } else {
-      // 沒找到相同的書籍，直接使用導入的書籍
       mergedBook = backupBook;
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.put(this._cleanBookForStorage(mergedBook));
+    let cleanFile = mergedBook.file;
+    if (cleanFile && typeof File !== 'undefined' && cleanFile instanceof File) {
+      cleanFile = new Blob([cleanFile], { type: cleanFile.type });
+    }
 
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books', 'book_files'], 'readwrite');
+      const store = transaction.objectStore('books');
+      const fileStore = transaction.objectStore('book_files');
+
+      store.put(this._cleanBookForStorage(mergedBook));
+      if (cleanFile) {
+        fileStore.put({ id: mergedBook.id, file: cleanFile });
+      }
+
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error);
     });
   }
 
   // 獲取所有書籍 (按最後閱讀時間，再按新增時間排序)
-  async getAllBooks() {
+  // options.includeFiles: true 時加載檔案 Blob（備份導出時使用）；預設 false 不加載大文件以節省內存
+  async getAllBooks(options = {}) {
     await this._ensureOpen();
+    const includeFiles = options && options.includeFiles === true;
+
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readonly');
+      const transaction = includeFiles 
+        ? this.db.transaction(['books', 'book_files'], 'readonly')
+        : this.db.transaction(['books'], 'readonly');
       const store = transaction.objectStore('books');
       const request = store.getAll();
 
-      request.onsuccess = () => {
-        const books = request.result;
-        // 排序：有閱讀過的排在前面（按最後閱讀時間降序），其次按添加時間降序
+      request.onsuccess = async () => {
+        const books = request.result || [];
         books.sort((a, b) => {
           if (b.lastReadAt !== a.lastReadAt) {
             return b.lastReadAt - a.lastReadAt;
           }
           return b.addedAt - a.addedAt;
         });
+
+        if (includeFiles) {
+          const fileStore = transaction.objectStore('book_files');
+          const fileRecords = await new Promise(res => {
+            const fReq = fileStore.getAll();
+            fReq.onsuccess = () => res(fReq.result || []);
+            fReq.onerror = () => res([]);
+          });
+          const fileMap = new Map(fileRecords.map(f => [f.id, f.file]));
+          books.forEach(b => {
+            b.file = fileMap.get(b.id) || null;
+          });
+        }
+
         resolve(books);
       };
       request.onerror = () => reject(request.error);
     });
   }
 
-  // 獲取單本書籍
+  // 獲取單本書籍（包含檔案與元數據，供閱讀器打開閱讀）
   async getBook(id) {
+    await this._ensureOpen();
+    const meta = await this.getBookMetadata(id);
+    if (!meta) return null;
+
+    const fileRecord = await this.getBookFile(id);
+    return {
+      ...meta,
+      file: fileRecord ? fileRecord.file : null
+    };
+  }
+
+  // 獲取單本書籍純元數據（極速，不載入大文件）
+  async getBookMetadata(id) {
     await this._ensureOpen();
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['books'], 'readonly');
@@ -342,20 +485,33 @@ export class BookLibrary {
     });
   }
 
-  // 刪除書籍
-  async deleteBook(id) {
+  // 獲取單本書籍原始二進制檔案
+  async getBookFile(id) {
     await this._ensureOpen();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readwrite');
-      const store = transaction.objectStore('books');
-      const request = store.delete(id);
+      const transaction = this.db.transaction(['book_files'], 'readonly');
+      const store = transaction.objectStore('book_files');
+      const request = store.get(id);
 
-      request.onsuccess = () => resolve(true);
+      request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
   }
 
-  // 更新閱讀進度 (帶排隊保護，防止多個高頻寫入併發導致事務中斷或 SQLite 鎖死)
+  // 刪除書籍 (同時刪除元數據與實體檔案)
+  async deleteBook(id) {
+    await this._ensureOpen();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['books', 'book_files'], 'readwrite');
+      transaction.objectStore('books').delete(id);
+      transaction.objectStore('book_files').delete(id);
+
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  // 更新閱讀進度 (帶排隊保護，僅更新元數據，絕不重寫 50MB 檔案本體)
   async updateProgress(id, progressUpdate) {
     if (!this._progressQueue) {
       this._progressQueue = Promise.resolve();
@@ -363,7 +519,7 @@ export class BookLibrary {
 
     const task = async () => {
       await this._ensureOpen();
-      const book = await this.getBook(id);
+      const book = await this.getBookMetadata(id);
       if (!book) return null;
 
       book.progress = { ...book.progress, ...progressUpdate };
@@ -394,10 +550,10 @@ export class BookLibrary {
     return this._progressQueue;
   }
 
-  // 更新書籍封面
+  // 更新書籍封面 (僅更新元數據)
   async updateBookCover(id, cover) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     book.cover = cover;
@@ -412,10 +568,10 @@ export class BookLibrary {
     });
   }
 
-  // 更新書籍資料夾
+  // 更新書籍資料夾 (僅更新元數據)
   async updateBookFolder(id, folder) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     book.folder = folder;
@@ -430,15 +586,14 @@ export class BookLibrary {
     });
   }
 
-  // 保存或更新高亮筆記
+  // 保存或更新高亮筆記 (僅更新元數據)
   async saveNote(id, note) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (!book.notes) book.notes = [];
     
-    // 檢查是否已存在同一個高亮 (基於選取字元範圍或 selector)
     const existingIndex = book.notes.findIndex(n => n.noteId === note.noteId);
     if (existingIndex > -1) {
       book.notes[existingIndex] = { ...book.notes[existingIndex], ...note };
@@ -460,10 +615,10 @@ export class BookLibrary {
     });
   }
 
-  // 刪除高亮筆記
+  // 刪除高亮筆記 (僅更新元數據)
   async deleteNote(id, noteId) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (book.notes) {
@@ -480,15 +635,14 @@ export class BookLibrary {
     });
   }
 
-  // 保存書籤
+  // 保存書籤 (僅更新元數據)
   async saveBookmark(id, bookmark) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (!book.bookmarks) book.bookmarks = [];
     
-    // 檢查是否已存在該書籤
     const existingIndex = book.bookmarks.findIndex(b => b.chapterIndex === bookmark.chapterIndex && b.elementIndex === bookmark.elementIndex && b.pdfPage === bookmark.pdfPage);
     if (existingIndex === -1) {
       book.bookmarks.push({
@@ -512,10 +666,10 @@ export class BookLibrary {
     });
   }
 
-  // 刪除書籤
+  // 刪除書籤 (僅更新元數據)
   async deleteBookmark(id, bookmarkId) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (book.bookmarks) {
@@ -532,10 +686,10 @@ export class BookLibrary {
     });
   }
 
-  // 累加閱讀統計資訊
+  // 累加閱讀統計資訊 (僅更新元數據)
   async addReadingDuration(id, seconds) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (!book.stats) {
@@ -571,7 +725,7 @@ export class BookLibrary {
   // 清理單本書籍的閱讀統計
   async clearBookStats(id) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     book.stats = {
@@ -630,12 +784,10 @@ export class BookLibrary {
     });
   }
 
-
-
   // 保存 AI 溝通記錄
   async saveAIChat(id, chat) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (!book.aiChats) book.aiChats = [];
@@ -660,7 +812,7 @@ export class BookLibrary {
   // 刪除單一 AI 溝通記錄
   async deleteAIChat(id, chatId) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (book.aiChats) {
@@ -680,7 +832,7 @@ export class BookLibrary {
   // 清除全部 AI 溝通記錄
   async clearAllAIChats(id) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     book.aiChats = [];
@@ -698,7 +850,7 @@ export class BookLibrary {
   // 保存全書深度分析摘要
   async saveBookSummary(id, summary) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     book.bookSummary = summary;
@@ -716,7 +868,7 @@ export class BookLibrary {
   // 保存單個章節的摘要
   async saveChapterSummary(id, index, summary) {
     await this._ensureOpen();
-    const book = await this.getBook(id);
+    const book = await this.getBookMetadata(id);
     if (!book) throw new Error('Book not found');
 
     if (!book.chapterSummaries) book.chapterSummaries = {};

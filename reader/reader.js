@@ -10411,8 +10411,9 @@ async function handleExportBackup(backupMode = 'full') {
   };
   
   try {
-    // 1. 取得所有書籍
-    const books = await library.getAllBooks();
+    const isLightweight = backupMode === 'lightweight';
+    // 1. 取得所有書籍（若為完整備份，加載檔案 Blob；輕量備份則只加載元數據）
+    const books = await library.getAllBooks({ includeFiles: !isLightweight });
     if (books.length === 0) {
       alert(getMsg('no_books'));
       return;
@@ -10426,7 +10427,6 @@ async function handleExportBackup(backupMode = 'full') {
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
-    const isLightweight = backupMode === 'lightweight';
     const filenamePrefix = isLightweight ? 'edgereader_backup_light_' : 'edgereader_backup_';
     const filename = `${filenamePrefix}${YYYY}${MM}${DD}_${hh}${mm}${ss}.zip`;
 

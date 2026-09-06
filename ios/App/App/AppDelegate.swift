@@ -3,6 +3,7 @@ import Capacitor
 import AVFoundation
 import MediaPlayer
 import CallKit
+import WebKit
 
 // Unified App Logger for deep tracing
 private let logQueue = DispatchQueue(label: "com.edgereader.applog", qos: .utility)
@@ -62,7 +63,40 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("[NativeTTS] Failed to configure AVAudioSession at launch: \(error)")
         }
+
+        // Automatic storage maintenance: purge temporary files, capped debug logs, and WebKit disk cache
+        self.purgeTemporaryFilesAndCaches()
+
         return true
+    }
+
+    private func purgeTemporaryFilesAndCaches() {
+        DispatchQueue.global(qos: .utility).async {
+            // 1. Purge tmp directory
+            let tmpDir = FileManager.default.temporaryDirectory
+            if let files = try? FileManager.default.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: nil) {
+                for file in files {
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+
+            // 2. Cap debug log
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let logFile = docs.appendingPathComponent("debug_execution.log")
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path),
+                   let size = attrs[.size] as? UInt64, size > 2 * 1024 * 1024 {
+                    try? FileManager.default.removeItem(at: logFile)
+                }
+            }
+
+            // 3. Clear WebKit Disk & Memory Caches
+            DispatchQueue.main.async {
+                let types = Set([WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache])
+                WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: Date.distantPast) {
+                    print("[Storage] WebKit disk & memory cache cleared")
+                }
+            }
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
