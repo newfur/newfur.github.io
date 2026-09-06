@@ -3,215 +3,213 @@
 Language: [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **English**
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.4.23-orange)](javascript:;)
+[![Version](https://img.shields.io/badge/version-3.4.65-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.4.65)
+[![Build & Deploy](https://github.com/newfur/newfur.github.io/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/newfur/newfur.github.io/actions)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
-An immersive, high-performance, and deeply customizable cross-platform e-book reader crafted for modern web browsers and mobile devices. Engineered with a client-driven core and native bridge architecture, it integrates multi-format parsing, natural neural TTS powered by Microsoft Edge, on-device/cloud AI reading companions, dynamic mindmaps, and granular reading statistics.
+An immersive, high-performance, and deeply customizable cross-platform e-book reader engineered for modern desktop browsers and mobile devices (iOS / Android). Built upon a **client-driven decoupled architecture with a lightweight native bridge**, it seamlessly integrates multi-format parsing, Microsoft Edge neural natural voice text-to-speech (TTS), an adaptive dual-route audio playback engine, on-device/cloud AI companions, client-side asynchronous RAG search, and lockscreen media center controls.
 
-The project offers 5 tailored distribution formats: **Browser Extension**, **Single-File Offline Reader**, **Online Web / PWA**, **Android Native App**, and **iOS Native App**, providing a seamless reading experience across desktop and mobile devices.
+The project is distributed in **5 form factors**: **Browser Extension**, **Single-File Offline Reader**, **Online Web / PWA**, **Android Native App**, and **iOS Native App**, delivering a fluid, uninterrupted reading and listening experience across desktops, smartphones, and tablets.
+
+---
+
+## 🌟 Highlights of the Multi-Platform Refactor (v3.4.6x)
+
+To conquer the challenges of mobile background audio freezing, sentence-to-sentence latency, and device storage inflation, the core architecture underwent major optimizations:
+
+### 1. 🎧 Adaptive Dual-Engine TTS Architecture
+- **Route A (Standard Web DOM Audio Engine)**: Tailored for desktop browser extensions, single-file offline builds, and Web browsers. Driven by standard HTML5 Audio APIs and in-memory Blob URLs for maximum agility and zero dependencies.
+- **Route B (Native Twin-Player Hardware Buffering Engine)**:
+  - **0ms Gapless Sentence Switching**: Mobile WebViews are often throttled or suspended in background/lockscreen states, causing pauses between sentences. On iOS (`AVAudioPlayer`) and Android (`MediaPlayer`), native twin-player hardware channels operate in a **ping-pong buffering cycle**. While sentence A is playing, sentence B is already synthesized and pre-warmed in the physical hardware buffer (`prepareToPlay`). At the exact millisecond sentence A finishes, playback switches seamlessly with zero delay.
+  - **Main-Thread RunLoop Dispatching**: On iOS, player instantiation, delegate registration, and event callbacks are strictly bound to `RunLoop.main`, eliminating delegate callback drops previously caused by background GCD worker threads.
+  - **Hardware Watchdog Fallback Timer**: The native layer features an authoritative watchdog timer calculated from sentence duration. In edge cases (incoming phone calls, rapid Bluetooth disconnections, audio focus preemptions), the watchdog autonomously detects audio hardware state and recovers playback progression, **guaranteeing that continuous reading never freezes**.
+
+### 2. 🗄️ Decoupled High-Performance Storage Engine
+- **Elimination of Storage Bloat**: Previous versions suffered from nested serialization where entire book texts were redundantly embedded into user settings or progress checkpoints, causing local storage to balloon into tens of gigabytes over time. The refactored storage strictly decouples book bodies, indices, and reading bookmarks into separate IndexedDB stores.
+- **Predictable Storage Health**: Even when importing hundreds of large illustrated e-books, the app storage footprint remains lean and steady in the tens of megabytes range.
+
+### 3. 🖼️ Dynamic 512px Cover Image Downsampling (`compressCoverImage`)
+- High-resolution e-book covers often span 3MB~10MB. Transmitting raw bitmaps across the JavaScript-to-Native bridge can congest IPC channels or trigger OOM crashes.
+- Covers are dynamically downsampled via Canvas to crisp 512×512 JPEG images (only 20KB~40KB). Artwork renders instantly on mobile lockscreens and notifications while slashing RAM overhead.
+
+### 4. 🧠 Client-Side Asynchronous RAG & Instant Full-Text Search
+- Engineered with a zero-dependency in-memory inverted index and TF-IDF search algorithm. The entire book is indexed asynchronously within milliseconds after opening, feeding relevant context to on-device models (Gemini Nano) and cloud APIs (OpenAI, DeepSeek, Claude, Ollama) for character relationship mapping and dynamic Mermaid mindmap generation.
 
 ---
 
 ## 📱 Five Editions: Capabilities & Comparison
 
-Choose the best form factor tailored to your workflow and device environment:
-
-| Feature | 🧩 Browser Extension | 💾 Single-File Offline | 🌐 Online Web / PWA | 🤖 Android Native App | 🍎 iOS Native App |
+| Feature Dimension | 🧩 Browser Extension | 💾 Single-File Offline | 🌐 Online Web / PWA | 🤖 Android Native App | 🍎 iOS Native App |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Environment** | Chrome/Edge/Brave Desktop | Any modern browser | Web browser or PWA install | Android 8.0+ Phone/Tablet | iOS 13.0+ (iPhone/iPad) |
-| **Installation** | Unpacked extension in Dev mode | Double-click single HTML file | Visit URL / Add to Home Screen | Install APK package | Install via Sideloadly |
-| **Offline Reading** | Full offline support (TTS requires net) | Full offline support (TTS requires net)| Cached via Service Worker | Full offline support (TTS requires net) | Full offline support (TTS requires net) |
-| **Multi-Format Parsing** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ Full support | ✅ Full support | ✅ Full support | ✅ Full support |
-| **Edge Neural TTS** | ✅ Direct via MV3 header modification | ✅ Direct via native WebSocket | ⚠️ Supported only in local Node mode; Public static hosts fall back to Web Speech | ✅ Native network stack | ✅ Native network stack |
-| **Background / Lockscreen TTS** | ❌ Active tab only | ❌ Frozen by mobile OS | ⚠️ Relies on silent keep-alive | ✅ Dedicated foreground service | ✅ AVAudioSession playback |
-| **Lockscreen Artwork & Controls**| ❌ Not supported | ❌ Not supported | ⚠️ Limited MediaSession support | ✅ Full MediaSession notification | ✅ Native MPNowPlaying integration |
-| **AI Companion & Mindmap** | ✅ On-device Gemini Nano + Cloud | ✅ Supports custom Cloud/Ollama API | ✅ Full support | ✅ Recommended Cloud / Ollama | ✅ Recommended Cloud / Ollama |
-| **Storage & Privacy** | Isolated extension IndexedDB | Origin/file-scoped IndexedDB | Domain IndexedDB (Exportable) | Native sandbox IndexedDB | Native sandbox IndexedDB |
+| **Target Platform** | Chrome/Edge/Brave Desktop | Any modern browser | Web browser or PWA install | Android 8.0+ Phone/Tablet | iOS 13.0+ (iPhone/iPad) |
+| **Package Size** | ~2.4 MB (ZIP) | ~2.3 MB (Single HTML) | 0 Bytes (Instant web load) | ~16 MB (APK) | Only **2.25 MB** (IPA) |
+| **Installation** | Load unpacked in Dev mode | Double-click local file | Visit URL / Add to Home Screen | Install APK file | Install via Sideloadly / TrollStore |
+| **Network Requirements**| Full offline (TTS needs net) | Full offline (TTS needs net) | Service Worker offline cache | Full offline (TTS needs net) | Full offline (TTS needs net) |
+| **Format Parsing** | ✅ EPUB, AZW3, MOBI, TXT, CBZ | ✅ Full support | ✅ Full support | ✅ Full support | ✅ Full support |
+| **Edge Neural TTS** | ✅ Full support (MV3 header rewrite) | ✅ Direct official WebSocket | ⚠️ Supported via local Node; static falls back | ✅ Native bypass | ✅ Native bypass |
+| **TTS Architecture** | Route A (DOM Audio) | Route A (DOM Audio) | Route A (DOM Audio) | **Route B (Hardware Twin-Player)** | **Route B (Hardware Twin-Player)** |
+| **0ms Gapless & Watchdog**| Browser event driven | Browser event driven | Browser event driven | ✅ Hardware twin-player buffering | ✅ Hardware twin-player + Watchdog |
+| **Background / Lockscreen**| ❌ Active tab only | ❌ Frozen by mobile OS | ⚠️ Relies on silent keep-alive | ✅ Foreground Service with WakeLock | ✅ AVAudioSession playback |
+| **Lockscreen Media Controls**| ❌ Not supported | ❌ Not supported | ⚠️ Limited MediaSession support | ✅ Full MediaSession controls | ✅ Native MPNowPlaying integration |
+| **AI Companion & Mindmap**| ✅ On-device Gemini Nano + Cloud | ✅ Supports custom Cloud/Ollama API| ✅ Full support | ✅ Recommended Cloud / Ollama | ✅ Recommended Cloud / Ollama |
+| **Storage & Privacy** | Isolated extension IndexedDB | File-origin IndexedDB | Domain IndexedDB | Sandboxed, supports ZIP backup | Sandboxed, supports ZIP backup |
 
 ---
 
 ### 1. 🧩 Browser Extension (Chrome / Edge MV3)
-* **What it can do**:
-  - Complete reading typography, book parsing, bookshelf management, and reading analytics.
-  - Utilizes Manifest V3 `declarativeNetRequest` to rewrite headers on the fly, **bypassing Microsoft Edge cloud TTS CORS restrictions and Origin checks**, delivering natural human-like voice synthesis directly in the browser.
-  - Supports Chrome/Edge on-device **Gemini Nano** AI model for offline translation, definitions, and chapter summarization.
-* **What is missing / Limitations**:
-  - Limited to Chromium desktop browsers (Chrome, Edge, Brave, etc.). Mobile browsers generally do not support MV3 extensions.
-  - TTS playback terminates when the browser is closed.
-* **How to install**:
-  1. Download `Raconteur-Chrome-*.zip` from [Releases](https://github.com/newfur/newfur.github.io/releases) and extract it (or clone the source code).
-  2. Open `chrome://extensions/` or `edge://extensions/` in your browser.
-  3. Toggle **"Developer mode"** in the top-right corner.
-  4. Click **"Load unpacked"** and select the extracted directory.
+* **Key Advantages**:
+  - Leverages Manifest V3 `declarativeNetRequest` to dynamically alter request headers on the fly, **bypassing Microsoft Edge cloud TTS CORS restrictions and Origin checks** to stream dozens of lifelike neural human voices.
+  - Native integration with Chrome 128+ built-in **Gemini Nano** on-device AI model for offline translation, vocabulary lookups, and chapter summarization with zero network latency.
+* **Limitations**:
+  - Restricted to Chromium desktop browsers; playback ceases when the browser is closed.
+* **Installation**:
+  1. Download `Raconteur-Chrome-*.zip` from [Releases](https://github.com/newfur/newfur.github.io/releases) and extract it.
+  2. Navigate to `chrome://extensions/` or `edge://extensions/`.
+  3. Enable **"Developer mode"** in the upper-right corner.
+  4. Click **"Load unpacked"** and select the extracted folder.
 
 ---
 
-### 2. 💾 Single-File Offline Reader (HTML)
-* **What it can do**:
-  - **Zero dependencies, zero installation**: The entire reader is bundled into a single standalone `.html` file (~2.3MB). All JS engines, CSS themes, parsers (JSZip, etc.), mindmap renderers, and multilingual assets are inlined.
-  - **Direct Edge Neural TTS Support**: When opened locally under the `file:///` protocol, the reader connects directly to Microsoft's official voice service via WebSocket (`wss://speech.platform.bing.com/...`) combined with dynamic `Sec-MS-GEC` authentication tokens. **It is completely free from standard HTTP CORS restrictions and plays high-quality Microsoft Edge neural voices smoothly**! Automatically falls back to system voices (Web Speech API) if completely offline.
-  - Double-click to open in any modern browser on Windows, macOS, Linux, Android, or iOS.
-  - All books, reading progress, and highlights are stored securely in the browser's local IndexedDB.
-* **What is missing / Limitations**:
-  - On mobile browsers, JavaScript execution is often suspended when entering the background or locking the screen; lacks native lock screen media controls.
-* **How to install / use**:
+### 2. 💾 Single-File Offline Reader (Single HTML)
+* **Key Advantages**:
+  - **Zero-Dependency Single File**: All JavaScript logic, CSS themes, book parsers (JSZip, etc.), fonts, and multi-language localizations are bundled into a single `.html` file (~2.3MB).
+  - **Direct Edge TTS Connection**: When opened locally via the `file:///` protocol, the reader connects directly to Microsoft's official WebSocket (`wss://speech.platform.bing.com/...`) using dynamic `Sec-MS-GEC` authentication tokens. **It is unaffected by standard HTTP CORS barriers and delivers authentic neural speech out of the box**!
+  - No server or runtime needed. Runs effortlessly on Windows, macOS, Linux, and mobile browsers.
+* **Limitations**:
+  - Background audio on mobile browsers is subject to operating system tab suspension; lacks native lockscreen media controls.
+* **Installation & Usage**:
   1. Download the latest `Raconteur-Offline-*.html` from [Releases](https://github.com/newfur/newfur.github.io/releases).
-  2. Double-click to open in Chrome, Edge, Safari, or Firefox. Press `Ctrl+D` (or `Cmd+D`) to bookmark for instant future access.
+  2. Double-click to launch in any modern browser. Press `Ctrl+D` (or `Cmd+D`) to bookmark for future reading.
 
 ---
 
-### 3. 🌐 Online Web / PWA (Web Server & Progressive Web App)
-* **What it can do**:
-  - Instant access via any web URL across desktop and mobile devices.
-  - **Full PWA Experience**: Installable as a standalone app with no browser address bar, seamless full-screen layout, and Service Worker offline caching.
-  - Complete bookshelf, reader typography, notes/highlights, and AI features.
-  - **Self-Hosted Local Node.js Mode** (`npm start`): Includes an integrated WebSocket `/api/tts` proxy that relays Edge TTS traffic without CORS limitations.
-* **What is missing / Limitations**:
-  - **Edge TTS is unavailable on public static hosting**: Static website hosting platforms (e.g. GitHub Pages, Vercel) have no backend server to run the `/api/tts` proxy. Furthermore, public HTTP/HTTPS web origins are restricted by browser cross-origin policies and cannot forge headers to connect directly to Microsoft servers. Consequently, **Edge TTS cannot play directly on public static web/PWA deployments** (it automatically falls back to browser default Web Speech synthesis).
-  - To experience Edge voices on the web, we recommend: ① Using the **Single-File Offline Reader** locally; ② Installing the **Browser Extension**; or ③ Running the Node.js server locally (`npm start`).
-* **How to install / use**:
-  - **Online**: Visit the deployed URL.
-  - **PWA Installation**: In desktop Chrome/Edge, click the "Install" icon in the address bar; on iOS Safari, tap "Share" -> **"Add to Home Screen"**.
-  - **Self-Hosted Node Server (with full Edge TTS)**:
+### 3. 🌐 Online Web / PWA Edition (Web Server & PWA)
+* **Key Advantages**:
+  - Access anywhere with multi-device synchronization support.
+  - Installable as a Progressive Web App (PWA) on desktop or mobile home screens for an address-bar-free, fullscreen app experience.
+  - Local Node.js server mode (`npm start`) includes a dedicated `/api/tts` proxy for full Edge neural voice support.
+* **Limitations**:
+  - In public static hosting environments (such as GitHub Pages or Vercel), browser CORS prevents direct connections to Microsoft's Edge servers without a backend proxy. TTS automatically falls back to system Web Speech synthesis. For neural voices, use the extension, offline HTML, or native apps.
+* **Installation & Usage**:
+  - **Web Access**: Visit the deployed URL. On iOS Safari, tap "Share" -> **"Add to Home Screen"**.
+  - **Self-Hosted Node Server**:
     ```bash
     git clone https://github.com/newfur/newfur.github.io.git
     cd newfur.github.io
     npm install
     npm start
-    # Access http://localhost:3000
+    # Visit http://localhost:3000
     ```
 
 ---
 
-### 4. 🤖 Android Native App (APK)
-* **What it can do**:
-  - Lightweight Android application built with Ionic Capacitor (~15MB APK).
-  - Native network stack connects directly to Microsoft Edge cloud service without browser CORS barriers.
-  - **True Foreground Audio Service (`AudioPlayerService`)**: Runs a persistent foreground service with WakeLock/WifiLock, ensuring uninterrupted TTS playback when navigating apps, in background, or with screen locked.
-  - **System Lockscreen & Notification Media Controls**: Full Android `MediaSession` integration. Lockscreen and notification center display **the current sentence, book title, author, and dynamically generated 512px compressed book cover**, with native Previous, Next, and Play/Pause controls.
-  - **Native Back Button Interception**: Pressing the Android back button closes modals and dialogs first, and returns to the bookshelf from the reading view, preventing accidental app exit.
-* **What is missing / Limitations**:
-  - Sourced outside Google Play Store; requires enabling "Install unknown apps" permission on your device.
-* **How to install**:
-  1. Download `Raconteur-*.apk` from [Releases](https://github.com/newfur/newfur.github.io/releases).
-  2. Open the APK on your Android device and confirm installation.
+### 4. 🤖 Android Native App (Android APK)
+* **Key Advantages**:
+  - **Foreground Service with WakeLock (`AudioPlayerService`)**: Background audio playback runs as a prioritized Android Foreground Service backed by a CPU `PARTIAL_WAKE_LOCK`. Listen for hours with the screen turned off without process termination.
+  - **Route B Native Twin-Player**: Dual `MediaPlayer` instances alternate hardware buffers for gapless 0ms sentence switching.
+  - **Full Lockscreen & Notification Controls**: Deep integration with Android `MediaSession`. Displays the current reading sentence, book title, author, and dynamic 512px cover artwork with responsive media action buttons.
+  - **Physical Back Button Handling**: Intercepts device navigation to dismiss overlays and dialogs before returning to the bookshelf.
+* **Installation**:
+  1. Download the latest `Raconteur-*.apk` from [Releases](https://github.com/newfur/newfur.github.io/releases).
+  2. Transfer to your Android device and tap to install (allow unknown sources if prompted).
 
 ---
 
-### 5. 🍎 iOS Native App (IPA)
-* **What it can do**:
-  - Built with Capacitor and Swift, weighing only **2.25MB** — extremely fast and lightweight.
-  - Native network stack connects directly to Microsoft Edge TTS for pristine voice synthesis.
-  - **Lockscreen Audio Controls & Background Playback**: Integrated with iOS `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` under `AVAudioSession (.playback)`. Lockscreen showcases **the active sentence text, book title, author, and dynamic 512px compressed book cover**, supporting lockscreen skipping and Dynamic Island status.
-  - Fully adaptive to iPhone notch, Dynamic Island, and iPad layouts with safe-area handling.
-* **What is missing / Limitations**:
-  - Not available on the official App Store; requires sideloading tools.
-* **How to install**:
-  - **Recommended: Sideloadly**:
-    1. Download and launch [Sideloadly](https://sideloadly.io/) on your PC or Mac;
+### 5. 🍎 iOS Native App (iOS IPA)
+* **Key Advantages**:
+  - **Featherweight**: Built with Capacitor and native Swift, with an IPA package footprint of just **2.25MB**!
+  - **Route B Native Twin-Player Engine**: Twin `AVAudioPlayer` hardware channels cycle in a ping-pong buffer on `RunLoop.main`, delivering 0ms gapless switching and avoiding WebKit process lockscreen freezes.
+  - **Hardware Watchdog Fallback Timer**: Prevents playback stalls during interruptions like phone calls or audio session route changes with automatic state verification and resumption.
+  - **Lockscreen, Control Center & Dynamic Island Integration**: Connected to `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` with `AVAudioSession (.playback)` mode. Lockscreen shows artwork, sentence text, chapter progress, and supports remote headset commands.
+  - **Edge-to-Edge Display**: Natively adapts to notch and Dynamic Island safe area insets.
+* **Installation**:
+  - **Recommended via Sideloadly**:
+    1. Download and install [Sideloadly](https://sideloadly.io/) on your PC or Mac;
     2. Download the latest `EdgeReader-*.ipa` from [Releases](https://github.com/newfur/newfur.github.io/releases);
-    3. Drag and drop the `.ipa` into the Sideloadly window;
-    4. Enter your Apple ID;
-    5. Connect your iPhone / iPad via USB and click **Start** to sign and install;
-    6. On your iOS device, go to **Settings** -> **General** -> **VPN & Device Management** and trust the Apple ID certificate before launching.
-  - **Alternative Sideloading Tools**:
-    - Compatible with AltStore, SideStore, and TrollStore;
-    - Or build and install directly onto a connected device via Xcode on macOS.
+    3. Drag the `.ipa` file into Sideloadly and enter your Apple ID;
+    4. Connect your iPhone / iPad via USB and click **Start** to sign and install;
+    5. On your device, go to "Settings" -> "General" -> "VPN & Device Management" and trust the developer certificate.
+  - Also compatible with AltStore, SideStore, TrollStore, or local Xcode builds.
 
 ---
 
-## 🛠️ Architecture & Technical Design
+## 🛠️ System Architecture
 
-The project employs a **pure client-side core engine + lightweight native bridge** architecture:
+The application adopts a clean, layered architecture separating core reading logic from native platform capabilities:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       Edge Reader System Architecture                       │
+│                      Edge Reader Cross-Platform Architecture                │
 └─────────────────────────────────────────────────────────────────────────────┘
 
                   ┌─────────────────────────────────────────┐
-                  │        UI Typography & Presentation     │
+                  │          UI & Typography Layer          │
                   │   reader.html / reader.css / i18n.js    │
-                  │(Paginated/Scrolling/Themes/Fonts/Select)│
+                  │  (Pagination / Scrolling / Themes / FX) │
                   └────────────────────┬────────────────────┘
                                        │
                   ┌────────────────────┴────────────────────┐
                   │          Core Reader Controller         │
-                  │               reader.js                 │
+                  │                 reader.js               │
                   └─────────┬──────────┬──────────┬─────────┘
                             │          │          │
-   ┌────────────────────────┘          │          └─────────────────────────┐
-   ▼                                   ▼                                    ▼
+    ┌───────────────────────┘          │          └─────────────────────────┐
+    ▼                                  ▼                                    ▼
 ┌─────────────────────────┐ ┌─────────────────────────┐ ┌─────────────────────────┐
-│   Multi-Format Parsers  │ │    TTS Speech Engine    │ │   AI Companion & RAG    │
-│    parsers/ (Pure JS)   │ │          tts.js         │ │         ai.js           │
+│   Multi-Format Parsers  │ │  Adaptive Dual-Route TTS│ │  AI Companion & RAG     │
+│   parsers/ (Vanilla JS) │ │          tts.js         │ │         ai.js           │
 ├─────────────────────────┤ ├─────────────────────────┤ ├─────────────────────────┤
-│ • EPUB (EPUB 2/3 spec)  │ │ • Edge WebSocket Neural │ │ • Built-in Gemini Nano  │
-│ • AZW3 / MOBI (Kindle)  │ │ • Dual-Player Buffering │ │ • Cloud API (OpenAI/Deep│
-│ • TXT / Markdown (Splits│ │ • Smart sentence parser │ │ • Local Ollama/LM Studio│
-│ • CBZ (Comic waterfall)│ │ • Global 512px cover opt│ │ • Async TF-IDF Indexing │
-│ • FB2 (FictionBook)     │ │ • Seamless empty chapter│ │ • Mermaid Mindmap stream│
+│ • EPUB (EPUB 2/3 spec)  │ │ 【Route A - Web DOM】   │ │ • On-Device Gemini Nano │
+│ • AZW3 / MOBI (Kindle)  │ │   HTML5 Audio (Web/Ext) │ │ • Cloud APIs (OpenAI)   │
+│ • TXT (Chapter regex)   │ │ 【Route B - Native Twin】│ │ • Local LLMs (Ollama)  │
+│ • CBZ (Comic waterfall) │ │   0ms Gapless Buffer    │ │ • Client-Side RAG Index │
+│ • FB2 (FictionBook)     │ │   Hardware Watchdog     │ │ • Mermaid Mindmaps      │
 └─────────────────────────┘ └─────────────────────────┘ └─────────────────────────┘
                                        │
                   ┌────────────────────┴────────────────────┐
-                  │           Data Persistence Layer        │
-                  │             library.js                  │
-                  │   IndexedDB (Books, Progress, Notes)    │
-                  │   Backup Engine (ZIP import/export)     │
+                  │   Decoupled Storage & Persistence Layer │
+                  │                 library.js              │
+                  │  IndexedDB (Decoupled entity tables)    │
+                  │  512px Dynamic Canvas Cover Broadcast   │
                   └────────────────────┬────────────────────┘
                                        │
      ┌─────────────────────────────────┴─────────────────────────────────┐
      ▼                                                                   ▼
 ┌───────────────────────────────────────┐ ┌───────────────────────────────────────┐
-│        Web & Extension Runtime        │ │       Native Mobile Bridge (Capacitor)│
+│        Web & Extension Runtime        │ │       Mobile Native Bridge (Capacitor)│
 ├───────────────────────────────────────┤ ├───────────────────────────────────────┤
 │ • Chrome MV3 declarativeNetRequest    │ │ • NativeTTS Plugin                    │
-│ • Service Worker (Offline PWA Cache)  │ │ • Android: AudioPlayerService         │
-│ • Single-File Inline Compiler         │ │ • iOS: AVAudioSession + MPNowPlaying  │
-│ • Node.js Dev & WS Proxy Server       │ │ • SafeArea & Back Button Handlers     │
+│ • Service Worker (Offline asset cache)│ │ • Android: AudioPlayerService         │
+│ • Inlined Single-File (Offline HTML)  │ │ • iOS: AVAudioPlayer + MPNowPlaying   │
+│ • Node.js WebSocket Proxy Environment │ │ • Hardware Watchdog & RunLoop Binding │
 └───────────────────────────────────────┘ └───────────────────────────────────────┘
 ```
 
-### Key Subsystems & Workflows
-
-1. **Global Compressed Cover Mechanism (`compressCoverImage`)**:
-   - Original book covers frequently range from 3MB to 10MB in raw size. Passing high-resolution images repeatedly across JS bridges introduces IPC latency, memory pressure, and dropped lockscreen updates.
-   - **Solution**: Upon opening a book, a Canvas pipeline proportionally scales down and compresses the cover into a compact 512×512 JPEG DataURL (~20KB–40KB). This compressed thumbnail is cached globally and shared instantly across Web MediaSession, Android MediaSession, and iOS MPNowPlayingInfoCenter without memory spikes.
-
-2. **Seamless Cross-Chapter Audio Pipeline**:
-   - Features double-buffered audio playback: while the current sentence finishes its trailing silence, the next sentence is pre-fetched and pre-warmed in the background player.
-   - **Empty Chapter Skip**: When advancing to a chapter containing only illustrations or blank title pages, the TTS engine automatically recurses and pre-fetches the subsequent text chapter, preventing audio stalls.
-
-3. **Dual Progress Tracking**:
-   - Visual reading position and audio narration position are tracked independently yet synced. Opening a book restores the exact sentence position of the last TTS session, while tapping any sentence during visual reading starts playback from that exact point.
-
 ---
 
-## 💻 Development & Build Scripts
+## 💻 Developer Guide & Build Commands
+
+Automated scripts for compilation, packaging, and synchronization are provided in the repository:
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Launch local dev server with Edge TTS proxy (default: port 3000)
+# 2. Start local development server (port 3000, with built-in Edge TTS proxy)
 npm start
 
-# 3. Compile standalone offline reader (outputs reader_offline.html & index.html)
+# 3. Build single-file offline reader (outputs reader_offline.html and index.html)
 npm run build:offline
 
-# 4. Sync web assets to Android project
-npm run build:mobile
+# 4. Compile Web distribution and sync to Android / iOS projects
+npm run build:dist
+npx cap copy ios
+npx cap copy android
 
-# 5. Sync web assets to iOS project
-npm run build:ios
-
-# 6. Build iOS unsigned IPA (macOS + Xcode required)
+# 5. Compile native iOS IPA package (requires macOS + Xcode)
 npm run build:ipa
 
-# 7. Bump patch version and recompile all target assets
-npm run bump
-
-# 8. Run unit & regression tests
+# 6. Run automated test suite
 npm test
 ```
 
@@ -219,12 +217,12 @@ npm test
 
 ## ⚠️ Notes & Limitations
 
-1. **DRM Protected Books**: The parser is purely client-side and does not decrypt commercial DRM (Amazon Kindle DRM, Adobe DRM). Remove protection prior to importing.
-2. **On-Device Gemini Nano**: Requires Chrome/Edge 128+ Dev/Canary with experimental Prompt API flags enabled and adequate system VRAM/RAM.
-3. **Data Backup**: All data is stored locally in your browser/device's IndexedDB. Browsers may evict storage under extreme disk pressure. **Export regular `.zip` backups from the Bookshelf menu.**
+1. **DRM Protected Books**: Parsers run entirely client-side and do not support commercial DRM schemes (such as Amazon Kindle DRM or Adobe DRM). Remove DRM prior to importing.
+2. **On-Device AI (Gemini Nano)**: Requires Chrome/Edge 128+ Dev/Canary builds with Prompt API enabled in `chrome://flags`, alongside supported hardware resources.
+3. **Data Privacy & Backup**: All book files, notes, and reading progress reside exclusively in your local device's sandboxed IndexedDB storage. Before switching devices or clearing browser data, **export a `.zip` archive via the bookshelf's "Export Backup" button**.
 
 ---
 
 ## 📄 License
 
-Open-sourced under the [ISC License](LICENSE). Contributions, issues, and pull requests are welcome!
+Released under the open-source [ISC License](LICENSE). Contributions, bug reports, and pull requests are welcome!
