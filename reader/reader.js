@@ -2304,16 +2304,28 @@ function initUIEventBindings() {
     }
   }, { passive: true });
 
-  // 觸控手勢在最頂部/最底部時切換章節 (適用於移動端，附帶冷卻時間與水平滑動過濾)
+  // 觸控手勢在最頂部/最底部時切換章節 (適用於移動端，附帶冷卻時間、起始邊界過濾與重劃閾值)
+  // 控制參數：觸控切換章節所需最小滑動距離 (px)。預設 150px，需要明確「重劃」才切換，防止閱讀滾動時誤觸。
+  window.CHAPTER_TOUCH_SWIPE_THRESHOLD = 150;
+  const CHAPTER_TOUCH_SWIPE_THRESHOLD = window.CHAPTER_TOUCH_SWIPE_THRESHOLD;
   let touchStartY = 0;
   let touchStartX = 0;
+  let touchStartScrollTop = 0;
+  let touchStartScrollHeight = 0;
+  let touchStartClientHeight = 0;
+
   window.addEventListener('touchstart', (e) => {
     if (!document.getElementById('reader-view').classList.contains('view-active')) return;
     if (document.body.classList.contains('ai-active') || document.body.classList.contains('sidebar-active')) return;
     if (!currentBook || currentBook.format === 'cbz') return;
     if (document.body.classList.contains('layout-paginated')) return;
+    if (!e.touches || e.touches.length !== 1) return;
+
     touchStartY = e.touches[0].clientY;
     touchStartX = e.touches[0].clientX;
+    touchStartScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+    touchStartScrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
+    touchStartClientHeight = window.innerHeight;
   }, { passive: true });
 
   window.addEventListener('touchend', (e) => {
@@ -2323,18 +2335,25 @@ function initUIEventBindings() {
     if (document.body.classList.contains('layout-paginated')) return;
     if (isChangingChapter) return;
     if (Date.now() - lastChapterChangeTime < 800) return;
+    if (!e.changedTouches || e.changedTouches.length === 0) return;
 
     const touchEndY = e.changedTouches[0].clientY;
     const touchEndX = e.changedTouches[0].clientX;
     const diffY = touchEndY - touchStartY;
     const diffX = touchEndX - touchStartX;
 
-    // 如果水平滑動幅度大於垂直滑動，視為水平操作（如側滑選單或翻頁手勢），不觸發垂直過渡
+    // 如果水平滑動幅度大於垂直滑動，視為水平操作（如側滑選單），不觸發垂直過渡
     if (Math.abs(diffX) > Math.abs(diffY)) return;
 
-    const scrollTop = window.scrollY;
-    if (scrollTop <= 5 && diffY > 60) {
-      // 在最頂部向下拉（加載上一章物理文件）
+    const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+    const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
+    const clientHeight = window.innerHeight;
+
+    // 判斷向下拉切換上一章：
+    // 1. 手勢起始時必須已經位於最頂部 (touchStartScrollTop <= 15)
+    // 2. 手勢結束時依然處於頂部 (scrollTop <= 15)
+    // 3. 向下拉動距離必須超過重劃閾值 CHAPTER_TOUCH_SWIPE_THRESHOLD (150px)
+    if (touchStartScrollTop <= 15 && scrollTop <= 15 && diffY > CHAPTER_TOUCH_SWIPE_THRESHOLD) {
       if (currentChapterIndex > 0) {
         const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
         let prevIdx = currentChapterIndex - 1;
@@ -2346,10 +2365,14 @@ function initUIEventBindings() {
         }
       }
     } else {
-      const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
-      const clientHeight = window.innerHeight;
-      if (scrollTop + clientHeight >= scrollHeight - 5 && diffY < -60) {
-        // 在最底部向上拉（加載下一章物理文件）
+      // 判斷向上拉切換下一章：
+      // 1. 手勢起始時必須已經位於最底部 (touchStartScrollTop + touchStartClientHeight >= touchStartScrollHeight - 15)
+      // 2. 手勢結束時依然處於底部 (scrollTop + clientHeight >= scrollHeight - 15)
+      // 3. 向上拉動距離必須超過重劃閾值 CHAPTER_TOUCH_SWIPE_THRESHOLD (-150px)
+      const isStartAtBottom = (touchStartScrollTop + touchStartClientHeight) >= (touchStartScrollHeight - 15);
+      const isEndAtBottom = (scrollTop + clientHeight) >= (scrollHeight - 15);
+
+      if (isStartAtBottom && isEndAtBottom && diffY < -CHAPTER_TOUCH_SWIPE_THRESHOLD) {
         if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
           const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
           let nextIdx = currentChapterIndex + 1;
