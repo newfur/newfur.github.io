@@ -85,10 +85,15 @@ public class NativeTTS extends Plugin {
         notifyListeners("sentenceStarted", data);
     }
 
-    public void sendSentenceEnded(int index) {
+    public void sendSentenceEnded(int index, boolean gaplessHandled) {
         JSObject data = new JSObject();
         data.put("index", index);
+        data.put("gaplessHandled", gaplessHandled);
         notifyListeners("sentenceEnded", data);
+    }
+
+    public void sendSentenceEnded(int index) {
+        sendSentenceEnded(index, false);
     }
 
     @Override

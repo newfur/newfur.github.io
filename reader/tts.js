@@ -277,10 +277,14 @@ export class TTSEngine {
         });
 
         window.Capacitor.Plugins.NativeTTS.addListener('sentenceEnded', (data) => {
-          appLog("TTS_JS", `Received sentenceEnded: index=${data.index}`);
+          appLog("TTS_JS", `Received sentenceEnded: index=${data.index}, gaplessHandled=${data && data.gaplessHandled}`);
+          if (data && data.gaplessHandled) {
+            // Gapless switch already started next sentence natively, do not trigger duplicate playback
+            return;
+          }
           const endedIndex = data.index;
           // If native engine did not have next sentence pre-warmed, trigger playback now
-          if (this.isPlaying && !this.isPaused && this.currentIndex === endedIndex) {
+          if (this.isPlaying && !this.isPaused && this.currentIndex <= endedIndex) {
             this.currentIndex = endedIndex + 1;
             this._playActiveSentence();
           }

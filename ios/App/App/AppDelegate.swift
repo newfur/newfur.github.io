@@ -964,6 +964,28 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
 
         writeAppLog("NativeTTS", "playNativeSentence: index=\(index), file=\(filePathOpt ?? "base64"), rate=\(self.currentPlaybackRate)")
 
+        // Check if this sentence is ALREADY actively playing in activePlayer
+        if self.currentPlayingSentenceIndex == index, let active = self.activePlayer, active.isPlaying {
+            writeAppLog("NativeTTS", "playNativeSentence: sentence \(index) is already actively playing, skipping duplicate play call")
+            DispatchQueue.main.async {
+                self.updateNowPlaying(
+                    title: title,
+                    artist: artist,
+                    text: text,
+                    isPlaying: true,
+                    coverBase64: coverBase64,
+                    duration: duration,
+                    currentTime: currentTime
+                )
+            }
+            call.resolve([
+                "success": true,
+                "index": index,
+                "duration": active.duration
+            ])
+            return
+        }
+
         self.activateAudioSession()
         self.isNativeEngineActive = true
         self.isCurrentlyPlaying = true
@@ -976,6 +998,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         // Check if preparedPlayer is already pre-warmed for this exact sentence
         if self.preparedSentenceIndex == index, let prep = self.preparedPlayer {
             writeAppLog("NativeTTS", "playNativeSentence: using pre-warmed preparedPlayer for index=\(index)")
+            self.activePlayer?.delegate = nil
             self.activePlayer?.stop()
             self.activePlayer = nil
 
@@ -992,6 +1015,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             prep.play()
         } else {
             // Need to initialize a new player
+            self.activePlayer?.delegate = nil
             self.activePlayer?.stop()
             self.activePlayer = nil
 
@@ -1076,6 +1100,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             player.volume = (volume >= 0) ? volume : self.currentPlaybackVolume
             let prepared = player.prepareToPlay() // Pre-allocates hardware CoreAudio buffers
 
+            self.preparedPlayer?.delegate = nil
             self.preparedPlayer?.stop()
             self.preparedPlayer = player
             self.preparedSentenceIndex = index
@@ -1092,6 +1117,18 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: successfully=\(flag), currentPlayingIndex=\(self.currentPlayingSentenceIndex), preparedIndex=\(self.preparedSentenceIndex)")
 
         guard self.isNativeEngineActive else { return }
+
+        // Guard against callbacks from stale or non-active players
+        guard player === self.activePlayer else {
+            writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: ignoring completion from non-active/stale player")
+            return
+        }
+
+        // Guard against unsuccessful/interrupted playback
+        guard flag else {
+            writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: flag is false (interrupted/cancelled), ignoring")
+            return
+        }
 
         let finishedIndex = self.currentPlayingSentenceIndex
 
@@ -1111,6 +1148,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.preparedSentenceIndex = -1
             self.activePlayerFilePath = self.preparedPlayerFilePath
             self.preparedPlayerFilePath = ""
+
+            // Safely clear completed player delegate and reference
+            self.preparedPlayer?.delegate = nil
             self.preparedPlayer?.stop()
             self.preparedPlayer = nil
 
@@ -1130,12 +1170,14 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                 "duration": nextPlayer.duration
             ])
             self.notifyListeners("sentenceEnded", data: [
-                "index": finishedIndex
+                "index": finishedIndex,
+                "gaplessHandled": true
             ])
         } else {
             writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: next sentence \(finishedIndex + 1) not prepared yet, notifying JS")
             self.notifyListeners("sentenceEnded", data: [
-                "index": finishedIndex
+                "index": finishedIndex,
+                "gaplessHandled": false
             ])
         }
     }
@@ -1250,8 +1292,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         self.activePlayerFilePath = ""
         self.preparedPlayerFilePath = ""
 
+        self.playerA?.delegate = nil
         self.playerA?.stop()
         self.playerA = nil
+        self.playerB?.delegate = nil
         self.playerB?.stop()
         self.playerB = nil
 

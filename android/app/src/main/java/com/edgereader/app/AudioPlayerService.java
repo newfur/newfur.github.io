@@ -644,13 +644,13 @@ public class AudioPlayerService extends Service {
 
             Log.d(TAG, "Gapless switch: started pre-warmed sentence " + newIndex);
             notifySentenceStarted(newIndex, nextPlayer.getDuration());
-            notifySentenceEnded(finishedIndex);
+            notifySentenceEnded(finishedIndex, true);
         } else {
             Log.d(TAG, "handlePlayerCompletion: next sentence " + (finishedIndex + 1) + " not prepared yet, notifying JS");
             safeReleasePlayer(mp);
             setActivePlayer(null);
             currentPlayingSentenceIndex = -1;
-            notifySentenceEnded(finishedIndex);
+            notifySentenceEnded(finishedIndex, false);
         }
     }
 
@@ -820,10 +820,14 @@ public class AudioPlayerService extends Service {
         }
     }
 
-    private void notifySentenceEnded(int index) {
+    private void notifySentenceEnded(int index, boolean gaplessHandled) {
         if (NativeTTS.instance != null) {
-            NativeTTS.instance.sendSentenceEnded(index);
+            NativeTTS.instance.sendSentenceEnded(index, gaplessHandled);
         }
+    }
+
+    private void notifySentenceEnded(int index) {
+        notifySentenceEnded(index, false);
     }
 
     private void notifyJS(String action) {
