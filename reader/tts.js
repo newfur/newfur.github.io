@@ -148,6 +148,8 @@ export class TTSEngine {
     this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
     this._playbackWatchdog = null; // 播放看門狗計時器：偵測並恢復播放停滯
     this._lastPlaybackProgressTime = 0; // 上次播放進展的時間戳
+    this._nativeSentenceStartTime = 0; // 原生引擎當前句子開始播放的時間戳
+    this._nativeSentenceDuration = 0; // 原生引擎當前句子的預計音訊長度 (秒)
 
     // 跨章節無縫播放與數據預加載變量
     this.currentChapterIndex = 0;
@@ -235,6 +237,8 @@ export class TTSEngine {
         window.Capacitor.Plugins.NativeTTS.addListener('sentenceStarted', (data) => {
           appLog("TTS_JS", `Received sentenceStarted: index=${data.index}, duration=${data.duration}`);
           const index = data.index;
+          this._nativeSentenceStartTime = Date.now();
+          this._nativeSentenceDuration = (data && typeof data.duration === 'number' && data.duration > 0) ? data.duration : 5.0;
           this._lastPlaybackProgressTime = Date.now();
           this.playbackStarted = true;
           this.isPaused = false;
@@ -283,6 +287,8 @@ export class TTSEngine {
             return;
           }
           const endedIndex = data.index;
+          this.currentlyPlayingIndex = -1; // Reset to allow _onAudioCacheReady to trigger next sentence cleanly
+          this._nativeSentenceDuration = 0;
           // If native engine did not have next sentence pre-warmed, trigger playback now
           if (this.isPlaying && !this.isPaused && this.currentIndex <= endedIndex) {
             this.currentIndex = endedIndex + 1;
@@ -2012,12 +2018,12 @@ export class TTSEngine {
       }
     }
 
-    // 2. 嚴格遵循順序：如果緩存不足 3 句，強制並發為 1，確保最前序的句子獨佔網絡帶寬，以最快速度返回
-    if (cachedCount < 3) {
+    // 2. 嚴格遵循順序：如果最緊迫的下一句尚未快取，強制並發為 1，確保下一句獨佔網絡帶寬以最快返回
+    if (cachedCount < 1) {
       return 1;
     }
 
-    // 3. 已有 3 句以上緩存，有足夠時間，此時再放開並發加速填充 10 句緩衝區
+    // 3. 已有至少 1 句快取，放開並發為 2 加速預取填充後續緩衝區，杜絕第 3 句起緩存斷層
     // 統一所有平台（插件版、Android版、網頁版、iOS版）最大並發為 2，避免過多並發影響整體穩定性
     return Math.min(2, this.maxConcurrentFetches);
   }
@@ -2106,8 +2112,11 @@ export class TTSEngine {
       };
 
       const doNativePlay = () => {
-        window.Capacitor.Plugins.NativeTTS.playNativeSentence(payload).then(() => {
+        window.Capacitor.Plugins.NativeTTS.playNativeSentence(payload).then((res) => {
           if (!this.isPlaying || this.isPaused) return;
+          this._nativeSentenceStartTime = Date.now();
+          this._nativeSentenceDuration = (res && typeof res.duration === 'number' && res.duration > 0) ? res.duration : 5.0;
+          this._lastPlaybackProgressTime = Date.now();
           const sent = this.sentences[index] || sentence;
           this._highlightSentence(sent);
           if (this.onSentenceStart) {

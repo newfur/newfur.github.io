@@ -72,28 +72,27 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     private func purgeTemporaryFilesAndCaches() {
         DispatchQueue.global(qos: .utility).async {
-            // 1. Purge tmp directory
+            // 1. Purge stale tmp files older than 2 hours (preserves active and newly downloaded playback files)
             let tmpDir = FileManager.default.temporaryDirectory
-            if let files = try? FileManager.default.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: nil) {
+            let twoHoursAgo = Date().addingTimeInterval(-7200)
+            if let files = try? FileManager.default.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: [.contentModificationDateKey]) {
                 for file in files {
-                    try? FileManager.default.removeItem(at: file)
+                    if file.lastPathComponent.hasPrefix("tts_") && file.pathExtension == "mp3" {
+                        if let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
+                           let modDate = attrs.contentModificationDate,
+                           modDate < twoHoursAgo {
+                            try? FileManager.default.removeItem(at: file)
+                        }
+                    }
                 }
             }
 
-            // 2. Cap debug log
+            // 2. Cap debug log (max 2MB)
             if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
                 let logFile = docs.appendingPathComponent("debug_execution.log")
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path),
                    let size = attrs[.size] as? UInt64, size > 2 * 1024 * 1024 {
                     try? FileManager.default.removeItem(at: logFile)
-                }
-            }
-
-            // 3. Clear WebKit Disk & Memory Caches
-            DispatchQueue.main.async {
-                let types = Set([WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache])
-                WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: Date.distantPast) {
-                    print("[Storage] WebKit disk & memory cache cleared")
                 }
             }
         }
@@ -300,6 +299,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     private var callInterruptionTimer: Timer?
     private var interruptionResumeBgTaskId: UIBackgroundTaskIdentifier = .invalid
     private var interruptionResumeTimer: Timer?
+    private var sentenceGapBgTaskId: UIBackgroundTaskIdentifier = .invalid
+    private var sentenceGapTimer: Timer?
     private var isAudioSessionInterrupted: Bool = false
     private var isCurrentlyPlaying: Bool = false
     private var authoritativeNowPlayingInfo: [String: Any] = [:]
@@ -537,6 +538,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         self.lastRemotePauseTime = Date().timeIntervalSince1970
         self.isCurrentlyPlaying = false
         self.stopNowPlayingGuardian()
+        self.endSentenceGapBgTask()
 
         if self.isNativeEngineActive {
             self.activePlayer?.pause()
@@ -633,6 +635,33 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             interruptionResumeBgTaskId = .invalid
             UIApplication.shared.endBackgroundTask(id)
             writeAppLog("NativeTTS", "endInterruptionResumeBgTask: id=\(id.rawValue)")
+        }
+    }
+
+    private func beginSentenceGapBgTask() {
+        endSentenceGapBgTask()
+        sentenceGapBgTaskId = UIApplication.shared.beginBackgroundTask(withName: "SentenceGapBuffer") { [weak self] in
+            writeAppLog("NativeTTS", "SentenceGapBuffer background task expired by iOS")
+            self?.endSentenceGapBgTask()
+        }
+        writeAppLog("NativeTTS", "beginSentenceGapBgTask: id=\(sentenceGapBgTaskId.rawValue)")
+        DispatchQueue.main.async { [weak self] in
+            self?.sentenceGapTimer?.invalidate()
+            self?.sentenceGapTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: false) { [weak self] _ in
+                writeAppLog("NativeTTS", "SentenceGapBuffer background task 25s timeout reached")
+                self?.endSentenceGapBgTask()
+            }
+        }
+    }
+
+    func endSentenceGapBgTask() {
+        sentenceGapTimer?.invalidate()
+        sentenceGapTimer = nil
+        if sentenceGapBgTaskId != .invalid {
+            let id = sentenceGapBgTaskId
+            sentenceGapBgTaskId = .invalid
+            UIApplication.shared.endBackgroundTask(id)
+            writeAppLog("NativeTTS", "endSentenceGapBgTask: id=\(id.rawValue)")
         }
     }
 
@@ -1075,6 +1104,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         self.isAudioSessionInterrupted = false
         self.stopSilencePlayer()
         self.endInterruptionResumeBgTask()
+        self.endSentenceGapBgTask()
         self.startNowPlayingGuardian()
 
         // Check if preparedPlayer is already pre-warmed for this exact sentence
@@ -1283,6 +1313,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: next sentence \(finishedIndex + 1) not prepared yet, notifying JS")
             // Retain activePlayer until playNativeSentence prepares the new one to prevent deallocation crash
             self.currentPlayingSentenceIndex = -1
+            self.beginSentenceGapBgTask()
             self.notifyListeners("sentenceEnded", data: [
                 "index": finishedIndex,
                 "gaplessHandled": false
@@ -1296,6 +1327,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         self.pendingResumeWorkItem = nil
         self.isCurrentlyPlaying = false
         self.stopNowPlayingGuardian()
+        self.endSentenceGapBgTask()
         self.activePlayer?.pause()
         self.preparedPlayer?.pause()
         self.stopSilencePlayer()

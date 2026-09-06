@@ -77,7 +77,6 @@ export class BookLibrary {
     if (typeof window === 'undefined' || typeof indexedDB === 'undefined') return;
     try {
       if (localStorage.getItem('edgereader_v2_migrated') === 'done') {
-        try { indexedDB.deleteDatabase(LEGACY_DB_NAME); } catch (e) {}
         return;
       }
 
