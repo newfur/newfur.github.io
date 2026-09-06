@@ -235,6 +235,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     private var timeoutWorkItems = [String: DispatchWorkItem]()
     private let taskLock = NSLock()
     private var currentArtwork: MPMediaItemArtwork?
+    private var lastCoverBase64: String = ""
     private var wasPlayingBeforeInterruption: Bool = false
     private var wasPlayingBeforeCall: Bool = false
     private var hasActiveCall: Bool = false
@@ -454,7 +455,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.nowPlayingGuardianTimer?.invalidate()
             self.nowPlayingGuardianTimer = nil
         } else {
-            DispatchQueue.main.sync { [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.nowPlayingGuardianTimer?.invalidate()
                 self?.nowPlayingGuardianTimer = nil
             }
@@ -1177,10 +1178,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.activePlayerFilePath = self.preparedPlayerFilePath
             self.preparedPlayerFilePath = ""
 
-            // Safely clear completed player delegate and reference
-            self.preparedPlayer?.delegate = nil
-            self.preparedPlayer?.stop()
-            self.preparedPlayer = nil
+            // NOTE: Do NOT nil or reset the completed player synchronously inside audioPlayerDidFinishPlaying.
+            // Deallocating AVAudioPlayer on its own delegate stack causes an immediate EXC_BAD_ACCESS in CoreAudio runtime.
+            // The finished player in playerA/playerB will be safely overwritten when prepareNextSentence runs.
 
             writeAppLog("NativeTTS", "Gapless switch: started pre-warmed sentence \(newIndex)")
 
@@ -1203,8 +1203,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             ])
         } else {
             writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: next sentence \(finishedIndex + 1) not prepared yet, notifying JS")
-            self.activePlayer?.delegate = nil
-            self.activePlayer = nil
+            // Retain activePlayer until playNativeSentence prepares the new one to prevent deallocation crash
             self.currentPlayingSentenceIndex = -1
             self.notifyListeners("sentenceEnded", data: [
                 "index": finishedIndex,
@@ -1656,8 +1655,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     }
 
     private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil, duration: Double? = nil, currentTime: Double? = nil) {
-        if let coverData = getCoverData(from: coverBase64), let image = UIImage(data: coverData), image.size.width > 0 && image.size.height > 0 {
-            self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+        if let cover = coverBase64, !cover.isEmpty, cover != self.lastCoverBase64 {
+            self.lastCoverBase64 = cover
+            if let coverData = getCoverData(from: cover), let image = UIImage(data: coverData), image.size.width > 0 && image.size.height > 0 {
+                self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+            }
         }
         
         var nowPlayingInfo = self.authoritativeNowPlayingInfo
@@ -1670,8 +1672,21 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
 
-        let validDuration = (duration != nil && duration! > 0) ? duration! : (nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double ?? 60.0)
-        let validCurrentTime = (currentTime != nil && currentTime! >= 0) ? currentTime! : 0.0
+        let validDuration: Double
+        if let d = duration, d > 0 && !d.isNaN && !d.isInfinite {
+            validDuration = d
+        } else if let prevD = nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double, prevD > 0 && !prevD.isNaN && !prevD.isInfinite {
+            validDuration = prevD
+        } else {
+            validDuration = 60.0
+        }
+
+        let validCurrentTime: Double
+        if let c = currentTime, c >= 0 && !c.isNaN && !c.isInfinite {
+            validCurrentTime = c
+        } else {
+            validCurrentTime = 0.0
+        }
         let safeDuration = max(validDuration, validCurrentTime + 5.0)
 
         nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = safeDuration

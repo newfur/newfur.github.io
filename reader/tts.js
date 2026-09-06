@@ -2796,7 +2796,9 @@ export class TTSEngine {
     for (let i = 0; i < len; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return new Blob([bytes], { type: 'audio/mpeg' });
+    const blob = new Blob([bytes], { type: 'audio/mpeg' });
+    blob.audioBase64 = base64;
+    return blob;
   }
 
   _stopSilenceKeepAlive() {
