@@ -1,5 +1,6 @@
 package com.edgereader.app;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -85,6 +86,18 @@ public class AudioPlayerService extends Service {
     private float currentPlaybackVolume = 1.0f;
     private String activePlayerFilePath = "";
     private String preparedPlayerFilePath = "";
+    private volatile boolean isUserNavigatingPrevious = false;
+
+    private boolean isAppInForeground() {
+        try {
+            ActivityManager.RunningAppProcessInfo appProcessInfo = new ActivityManager.RunningAppProcessInfo();
+            ActivityManager.getMyMemoryState(appProcessInfo);
+            return (appProcessInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                    || appProcessInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE);
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -252,6 +265,7 @@ public class AudioPlayerService extends Service {
             @Override
             public void onSkipToPrevious() {
                 Log.d(TAG, "MediaSession: onSkipToPrevious");
+                isUserNavigatingPrevious = true;
                 notifyJS("previous");
                 evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
             }
@@ -443,6 +457,21 @@ public class AudioPlayerService extends Service {
                     } catch (Exception ignored) {}
                 }
 
+                // Guard against stale backward requests from throttled background JS while actively playing
+                boolean isForeground = isAppInForeground();
+                if (currentPlayingSentenceIndex > index && getActivePlayer() != null && !isUserNavigatingPrevious && !isForeground) {
+                    try {
+                        if (getActivePlayer().isPlaying()) {
+                            Log.d(TAG, "playNativeSentence: ignoring stale backward request for sentence " + index + " while sentence " + currentPlayingSentenceIndex + " is actively playing in background");
+                            if (callback != null) {
+                                callback.onSuccess(getActivePlayer().getDuration());
+                            }
+                            return;
+                        }
+                    } catch (Exception ignored) {}
+                }
+                isUserNavigatingPrevious = false;
+
                 // Check if preparedPlayer is already pre-warmed for this exact sentence
                 if (preparedSentenceIndex == index && isPreparedReady && getPreparedPlayer() != null) {
                     Log.d(TAG, "playNativeSentence: using pre-warmed preparedPlayer for index=" + index);
@@ -546,6 +575,13 @@ public class AudioPlayerService extends Service {
                 if (preparedSentenceIndex == index && isPreparedReady && getPreparedPlayer() != null) {
                     Log.d(TAG, "prepareNextSentence: index=" + index + " is already prepared, skipping duplicate prepare");
                     if (callback != null) callback.onSuccess(true);
+                    return;
+                }
+
+                // Ignore stale preparation for sentences already passed or currently playing
+                if (currentPlayingSentenceIndex >= 0 && index <= currentPlayingSentenceIndex) {
+                    Log.d(TAG, "prepareNextSentence: ignoring stale preparation for sentence " + index + " (currentPlayingIndex=" + currentPlayingSentenceIndex + ")");
+                    if (callback != null) callback.onSuccess(false);
                     return;
                 }
 
@@ -880,6 +916,7 @@ public class AudioPlayerService extends Service {
                         evaluateJSInWebView("if (window.tts) { window.tts.next(); }");
                         break;
                     case "ACTION_PREVIOUS":
+                        isUserNavigatingPrevious = true;
                         notifyJS("previous");
                         evaluateJSInWebView("if (window.tts) { window.tts.previous(); }");
                         break;

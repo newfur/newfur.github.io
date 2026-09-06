@@ -250,6 +250,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     private var silencePlayer: AVAudioPlayer?
     private var silencePauseTimer: Timer?
     private var nowPlayingGuardianTimer: Timer?
+    private var isUserNavigatingPrevious: Bool = false
     private lazy var ttsSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10.0
@@ -986,6 +987,19 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             return
         }
 
+        // Guard against stale backward requests from throttled background JS while actively playing
+        let isForeground = (UIApplication.shared.applicationState == .active)
+        if self.currentPlayingSentenceIndex > index, let active = self.activePlayer, active.isPlaying, !self.isUserNavigatingPrevious && !isForeground {
+            writeAppLog("NativeTTS", "playNativeSentence: ignoring stale backward request for sentence \(index) while sentence \(self.currentPlayingSentenceIndex) is actively playing in background")
+            call.resolve([
+                "success": true,
+                "index": self.currentPlayingSentenceIndex,
+                "duration": active.duration
+            ])
+            return
+        }
+        self.isUserNavigatingPrevious = false
+
         self.activateAudioSession()
         self.isNativeEngineActive = true
         self.isCurrentlyPlaying = true
@@ -1081,6 +1095,20 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
 
         writeAppLog("NativeTTS", "prepareNextSentence: index=\(index)")
 
+        // Skip redundant preparation if already pre-warmed for this exact index
+        if self.preparedSentenceIndex == index && self.preparedPlayer != nil {
+            writeAppLog("NativeTTS", "prepareNextSentence: sentence \(index) is already pre-warmed, skipping redundant preparation")
+            call.resolve(["success": true, "index": index, "prepared": true])
+            return
+        }
+
+        // Ignore stale preparation for sentences already passed or currently playing
+        if self.currentPlayingSentenceIndex >= 0 && index <= self.currentPlayingSentenceIndex {
+            writeAppLog("NativeTTS", "prepareNextSentence: ignoring stale preparation for sentence \(index) (currentPlayingIndex=\(self.currentPlayingSentenceIndex))")
+            call.resolve(["success": false, "index": index, "message": "Stale preparation index"])
+            return
+        }
+
         do {
             let player: AVAudioPlayer
             if let filePath = filePathOpt, !filePath.isEmpty, FileManager.default.fileExists(atPath: filePath) {
@@ -1175,6 +1203,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             ])
         } else {
             writeAppLog("NativeTTS", "audioPlayerDidFinishPlaying: next sentence \(finishedIndex + 1) not prepared yet, notifying JS")
+            self.activePlayer?.delegate = nil
+            self.activePlayer = nil
+            self.currentPlayingSentenceIndex = -1
             self.notifyListeners("sentenceEnded", data: [
                 "index": finishedIndex,
                 "gaplessHandled": false
@@ -2055,6 +2086,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                 bgTaskId = .invalid
             }
         }
+        self.isUserNavigatingPrevious = true
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.bridge?.webView?.evaluateJavaScript("if (window.tts) { window.tts.previous(); }", completionHandler: nil)

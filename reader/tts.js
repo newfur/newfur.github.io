@@ -2812,6 +2812,12 @@ export class TTSEngine {
   _startPlaybackWatchdog() {
     this._stopPlaybackWatchdog();
     if (!this.isPlaying || this.isPaused) return; // 處於暫停或停止狀態時絕不啟動看門狗
+
+    // 原生雙播放器引擎 (Route B: iOS AVAudioPlayer / Android MediaPlayer) 自身擁有底層生命週期、
+    // 事件回調、預加載與無縫切換。且在 TTS_MIN_SENTENCE_LEN=100 合併模式下，單句長度常達 25-35 秒，
+    // 後台 WebKit 計時器節流下強行運行 JS 看門狗會誤判停滯並重播句子，故原生引擎完全交由 Native 管理。
+    if (this._isNativeEngineAvailable()) return;
+
     appLog("TTS", "_startPlaybackWatchdog started");
     this._lastPlaybackProgressTime = Date.now();
     this._lastWatchedCurrentTime = null;
@@ -2822,19 +2828,6 @@ export class TTSEngine {
       }
       
       const now = Date.now();
-
-      // If Route B Native Audio Engine is active, audio is managed by native AVAudioPlayer
-      if (this._isNativeEngineAvailable()) {
-        const timeSinceProgress = now - this._lastPlaybackProgressTime;
-        if (timeSinceProgress > 15000) {
-          if (this.isPlaying && !this.isPaused) {
-            appLog("TTS Watchdog", `Native playback stalled for ${Math.round(timeSinceProgress/1000)}s at index ${this.currentIndex}, attempting recovery`);
-            this._lastPlaybackProgressTime = now;
-            this._playActiveSentence();
-          }
-        }
-        return;
-      }
 
       // 1. 如果當前音訊或任何播放器正在正常發聲播放（非暫停、非結尾、且非靜音保活軌道），且時間指針正在前進，視為健康播放中
       const activeAudio = (this.currentAudio && !this.currentAudio.paused && !this.currentAudio.ended && this.currentAudio !== this.silenceAudio)
