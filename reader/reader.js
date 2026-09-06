@@ -2305,9 +2305,8 @@ function initUIEventBindings() {
   }, { passive: true });
 
   // 觸控手勢在最頂部/最底部時切換章節 (適用於移動端，附帶冷卻時間、起始邊界過濾與重劃閾值)
-  // 控制參數：觸控切換章節所需最小滑動距離 (px)。預設 150px，需要明確「重劃」才切換，防止閱讀滾動時誤觸。
-  window.CHAPTER_TOUCH_SWIPE_THRESHOLD = 150;
-  const CHAPTER_TOUCH_SWIPE_THRESHOLD = window.CHAPTER_TOUCH_SWIPE_THRESHOLD;
+  // 控制參數：觸控切換章節所需最小滑動距離 (px)。預設 300px，需要明確「重劃」才切換，防止閱讀滾動時誤觸。
+  window.CHAPTER_TOUCH_SWIPE_THRESHOLD = 300;
   let touchStartY = 0;
   let touchStartX = 0;
   let touchStartScrollTop = 0;
@@ -2348,12 +2347,13 @@ function initUIEventBindings() {
     const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
     const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
     const clientHeight = window.innerHeight;
+    const swipeThreshold = window.CHAPTER_TOUCH_SWIPE_THRESHOLD || 300;
 
     // 判斷向下拉切換上一章：
     // 1. 手勢起始時必須已經位於最頂部 (touchStartScrollTop <= 15)
     // 2. 手勢結束時依然處於頂部 (scrollTop <= 15)
-    // 3. 向下拉動距離必須超過重劃閾值 CHAPTER_TOUCH_SWIPE_THRESHOLD (150px)
-    if (touchStartScrollTop <= 15 && scrollTop <= 15 && diffY > CHAPTER_TOUCH_SWIPE_THRESHOLD) {
+    // 3. 向下拉動距離必須超過重劃閾值 swipeThreshold (300px)
+    if (touchStartScrollTop <= 15 && scrollTop <= 15 && diffY > swipeThreshold) {
       if (currentChapterIndex > 0) {
         const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
         let prevIdx = currentChapterIndex - 1;
@@ -2368,11 +2368,11 @@ function initUIEventBindings() {
       // 判斷向上拉切換下一章：
       // 1. 手勢起始時必須已經位於最底部 (touchStartScrollTop + touchStartClientHeight >= touchStartScrollHeight - 15)
       // 2. 手勢結束時依然處於底部 (scrollTop + clientHeight >= scrollHeight - 15)
-      // 3. 向上拉動距離必須超過重劃閾值 CHAPTER_TOUCH_SWIPE_THRESHOLD (-150px)
+      // 3. 向上拉動距離必須超過重劃閾值 swipeThreshold (-300px)
       const isStartAtBottom = (touchStartScrollTop + touchStartClientHeight) >= (touchStartScrollHeight - 15);
       const isEndAtBottom = (scrollTop + clientHeight) >= (scrollHeight - 15);
 
-      if (isStartAtBottom && isEndAtBottom && diffY < -CHAPTER_TOUCH_SWIPE_THRESHOLD) {
+      if (isStartAtBottom && isEndAtBottom && diffY < -swipeThreshold) {
         if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
           const currentHref = epubBookData.chapters[currentChapterIndex].cleanHref;
           let nextIdx = currentChapterIndex + 1;
