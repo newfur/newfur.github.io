@@ -530,6 +530,9 @@ function initUIEventBindings() {
     statsBackdrop.addEventListener('click', closeStatsModal);
   }
 
+  // 書籍快捷操作抽屜 (Book Action Sheet)
+  initBookActionSheet();
+
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
   const fileInput = document.getElementById('file-input');
@@ -3105,6 +3108,13 @@ async function renderBookshelf(searchQuery = '') {
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
         </button>
+        <button class="book-more-btn" title="${getMsg('action_sheet_more')}">
+          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="2"></circle>
+            <circle cx="19" cy="12" r="2"></circle>
+            <circle cx="5" cy="12" r="2"></circle>
+          </svg>
+        </button>
         <div class="book-cover-container">
           <!-- 封面將在此動態注入 -->
         </div>
@@ -3223,8 +3233,71 @@ async function renderBookshelf(searchQuery = '') {
         });
       }
 
-      // 點擊事件：多選模式下為選中切換，正常模式下打開書籍
+      // 動態綁定更多操作按鈕事件
+      const moreBtn = card.querySelector('.book-more-btn');
+      if (moreBtn) {
+        moreBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          showBookActionSheet(book.id);
+        });
+      }
+
+      // 右鍵 / ContextMenu 事件綁定（桌面端呼出 Action Sheet）
+      card.addEventListener('contextmenu', (event) => {
+        if (!isSelectMode) {
+          event.preventDefault();
+          showBookActionSheet(book.id);
+        }
+      });
+
+      // 觸控長按事件綁定（移動端 420ms 呼出 Action Sheet，防滾動干擾）
+      let longPressTimer = null;
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let isLongPressTriggered = false;
+
+      card.addEventListener('touchstart', (e) => {
+        if (isSelectMode) return;
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        isLongPressTriggered = false;
+
+        longPressTimer = setTimeout(() => {
+          isLongPressTriggered = true;
+          if (navigator.vibrate) {
+            try { navigator.vibrate(40); } catch (_) {}
+          }
+          showBookActionSheet(book.id);
+        }, 420);
+      }, { passive: true });
+
+      card.addEventListener('touchmove', (e) => {
+        if (!longPressTimer) return;
+        const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+        const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+        if (deltaX > 8 || deltaY > 8) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }, { passive: true });
+
+      const cancelCardTouch = () => {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      };
+
+      card.addEventListener('touchend', cancelCardTouch, { passive: true });
+      card.addEventListener('touchcancel', cancelCardTouch, { passive: true });
+
+      // 點擊事件：多選模式下為選中切換，正常模式下打開書籍（若觸發長按則忽略點擊）
       card.addEventListener('click', () => {
+        if (isLongPressTriggered) {
+          isLongPressTriggered = false;
+          return;
+        }
         if (isSelectMode) {
           toggleBookSelection(book.id, card);
         } else {
@@ -3296,7 +3369,65 @@ async function deleteBookHandler(id) {
 }
 window.deleteBookHandler = deleteBookHandler;
 
-// 匯出書籍（全局函數）
+// 通用 Helper: 將 Blob 轉為 Base64 字串
+async function blobToBase64(blob) {
+  try {
+    if (typeof blob.arrayBuffer === 'function') {
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const len = bytes.byteLength;
+      const chunkSize = 16384;
+      for (let i = 0; i < len; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      return window.btoa(binary);
+    }
+  } catch (e) {
+    console.warn('ArrayBuffer base64 conversion failed, falling back to FileReader:', e);
+  }
+  
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        const base64String = reader.result.split(',')[1];
+        if (base64String) {
+          resolve(base64String);
+        } else {
+          reject(new Error('Base64 data was empty'));
+        }
+      } else {
+        reject(new Error('Reader result is not a string'));
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error('FileReader error'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// 通用 Helper: 將一個 Blob 分塊寫入 Capacitor Filesystem
+async function writeBlobToCache(Filesystem, path, blob) {
+  const chunkSize = 16 * 1024 * 1024; // 16MB chunks
+  const totalSize = blob.size;
+  const totalChunks = Math.ceil(totalSize / chunkSize);
+  
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, totalSize);
+    const chunkBlob = blob.slice(start, end);
+    const base64Data = await blobToBase64(chunkBlob);
+    
+    if (i === 0) {
+      await Filesystem.writeFile({ path, data: base64Data, directory: 'CACHE' });
+    } else {
+      await Filesystem.appendFile({ path, data: base64Data, directory: 'CACHE' });
+    }
+  }
+}
+
+// 匯出書籍（全局函數，支援移動端原生分享與 Web 下載）
 async function exportBookHandler(id) {
   try {
     const book = await library.getBook(id);
@@ -3304,22 +3435,173 @@ async function exportBookHandler(id) {
       alert('Book file not found.');
       return;
     }
+
+    const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins;
+    const hasFilesystemAndShare = isCapacitor && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share;
+
+    const ext = book.format ? book.format.toLowerCase() : 'epub';
+    const safeTitle = (book.title || 'book').replace(/[/\\?%*:|"<>]/g, '_');
+    const filename = `${safeTitle}.${ext}`;
+
+    if (hasFilesystemAndShare) {
+      const { Filesystem, Share } = window.Capacitor.Plugins;
+      const cachePath = `export_${Date.now()}_${filename}`;
+      await writeBlobToCache(Filesystem, cachePath, book.file);
+      const uriResult = await Filesystem.getUri({
+        path: cachePath,
+        directory: 'CACHE'
+      });
+      await Share.share({
+        title: book.title,
+        url: uriResult.uri,
+        dialogTitle: getMsg('export_book_title') || 'Export Book'
+      });
+      setTimeout(() => {
+        Filesystem.deleteFile({ path: cachePath, directory: 'CACHE' }).catch(() => {});
+      }, 60000);
+      return;
+    }
+
     const blob = book.file;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const ext = book.format ? book.format.toLowerCase() : 'epub';
-    a.download = `${book.title}.${ext}`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (err) {
     console.error('Export failed:', err);
     alert(`Failed to export book: ${err.message}`);
   }
 }
 window.exportBookHandler = exportBookHandler;
+
+// ==================== 書籍快捷操作選單 (Action Sheet) 管理 ====================
+let currentActionSheetBookId = null;
+
+async function showBookActionSheet(bookId) {
+  try {
+    const book = await library.getBook(bookId);
+    if (!book) return;
+
+    currentActionSheetBookId = bookId;
+
+    const backdrop = document.getElementById('book-action-sheet-backdrop');
+    const sheet = document.getElementById('book-action-sheet');
+    const coverContainer = document.getElementById('action-sheet-cover-container');
+    const titleEl = document.getElementById('action-sheet-title');
+    const authorEl = document.getElementById('action-sheet-author');
+    const badgeEl = document.getElementById('action-sheet-badge');
+
+    if (!backdrop || !sheet) return;
+
+    if (titleEl) titleEl.textContent = book.title || 'Untitled';
+    if (authorEl) authorEl.textContent = book.author || '';
+    if (badgeEl) badgeEl.textContent = (book.format || 'epub').toUpperCase();
+
+    // 封面預覽
+    if (coverContainer) {
+      const cachedCover = bookCoverCache.get(book.id);
+      const effectiveCover = book.cover || cachedCover;
+      let coverUrl = '';
+
+      if (effectiveCover) {
+        if (typeof effectiveCover === 'string' && effectiveCover.length > 0) {
+          coverUrl = effectiveCover;
+        } else if (isBlobLike(effectiveCover)) {
+          try {
+            coverUrl = URL.createObjectURL(effectiveCover);
+          } catch (_) {}
+        }
+      }
+
+      if (coverUrl) {
+        coverContainer.innerHTML = `<img src="${coverUrl}" alt="${book.title}" onerror="this.style.display='none';">`;
+      } else {
+        coverContainer.innerHTML = `
+          <div class="book-cover-placeholder">
+            <div class="book-cover-placeholder-icon">
+              <svg class="svg-icon svg-icon-sm" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            </div>
+          </div>`;
+      }
+    }
+
+    backdrop.classList.add('active');
+    sheet.classList.add('active');
+  } catch (err) {
+    console.error('[ActionSheet] Failed to show action sheet:', err);
+  }
+}
+
+function hideBookActionSheet() {
+  const backdrop = document.getElementById('book-action-sheet-backdrop');
+  const sheet = document.getElementById('book-action-sheet');
+  if (backdrop) backdrop.classList.remove('active');
+  if (sheet) sheet.classList.remove('active');
+  currentActionSheetBookId = null;
+}
+
+function initBookActionSheet() {
+  const backdrop = document.getElementById('book-action-sheet-backdrop');
+  const cancelBtn = document.getElementById('action-sheet-cancel-btn');
+  const statsBtn = document.getElementById('action-sheet-stats-btn');
+  const exportBtn = document.getElementById('action-sheet-export-btn');
+  const moveBtn = document.getElementById('action-sheet-move-btn');
+  const deleteBtn = document.getElementById('action-sheet-delete-btn');
+  const handleBar = document.querySelector('.action-sheet-handle-bar');
+
+  if (backdrop) backdrop.addEventListener('click', hideBookActionSheet);
+  if (cancelBtn) cancelBtn.addEventListener('click', hideBookActionSheet);
+  if (handleBar) handleBar.addEventListener('click', hideBookActionSheet);
+
+  if (statsBtn) {
+    statsBtn.addEventListener('click', async () => {
+      const bookId = currentActionSheetBookId;
+      hideBookActionSheet();
+      if (bookId) {
+        await openSingleBookStatsModal(bookId);
+      }
+    });
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      const bookId = currentActionSheetBookId;
+      hideBookActionSheet();
+      if (bookId) {
+        await exportBookHandler(bookId);
+      }
+    });
+  }
+
+  if (moveBtn) {
+    moveBtn.addEventListener('click', () => {
+      const bookId = currentActionSheetBookId;
+      hideBookActionSheet();
+      if (bookId) {
+        openFolderSelectDialog(async (folderName) => {
+          await library.updateBookFolder(bookId, folderName);
+          await renderBookshelf();
+        });
+      }
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      const bookId = currentActionSheetBookId;
+      hideBookActionSheet();
+      if (bookId) {
+        await deleteBookHandler(bookId);
+      }
+    });
+  }
+}
+window.showBookActionSheet = showBookActionSheet;
+window.hideBookActionSheet = hideBookActionSheet;
 
 // ==================== 閱讀時間統計管理邏輯 ====================
 function startReadingTracker(bookId) {
@@ -10427,65 +10709,6 @@ async function handleExportBackup(backupMode = 'full') {
   if (!backupBtn) return;
   const originalHtml = backupBtn.innerHTML;
   
-  // Helper to convert blob to base64 using memory-efficient ArrayBuffer chunking
-  const blobToBase64 = async (blob) => {
-    try {
-      if (typeof blob.arrayBuffer === 'function') {
-        const buffer = await blob.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        const len = bytes.byteLength;
-        const chunkSize = 16384; // 16KB chunks to avoid stack overflow
-        for (let i = 0; i < len; i += chunkSize) {
-          const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
-          binary += String.fromCharCode.apply(null, chunk);
-        }
-        return window.btoa(binary);
-      }
-    } catch (e) {
-      console.warn('ArrayBuffer base64 conversion failed, falling back to FileReader:', e);
-    }
-    
-    // Fallback to FileReader with safe onload/onerror handling
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          const base64String = reader.result.split(',')[1];
-          if (base64String) {
-            resolve(base64String);
-          } else {
-            reject(new Error('Base64 data was empty'));
-          }
-        } else {
-          reject(new Error('Reader result is not a string'));
-        }
-      };
-      reader.onerror = () => reject(reader.error || new Error('FileReader error'));
-      reader.readAsDataURL(blob);
-    });
-  };
-
-  // Helper: 將一個 Blob 分塊寫入 Capacitor Filesystem（解決超大文件的橋接限制）
-  const writeBlobToCache = async (Filesystem, path, blob) => {
-    const chunkSize = 16 * 1024 * 1024; // 16MB chunks
-    const totalSize = blob.size;
-    const totalChunks = Math.ceil(totalSize / chunkSize);
-    
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, totalSize);
-      const chunkBlob = blob.slice(start, end);
-      const base64Data = await blobToBase64(chunkBlob);
-      
-      if (i === 0) {
-        await Filesystem.writeFile({ path, data: base64Data, directory: 'CACHE' });
-      } else {
-        await Filesystem.appendFile({ path, data: base64Data, directory: 'CACHE' });
-      }
-    }
-  };
-  
   try {
     const isLightweight = backupMode === 'lightweight';
     // 1. 取得所有書籍（若為完整備份，加載檔案 Blob；輕量備份則只加載元數據）
@@ -11978,6 +12201,12 @@ window.__testRunner = {
   },
   async closeStats() {
     document.getElementById('close-stats-modal')?.click();
+  },
+  async openBookActionSheet(bookId) {
+    await showBookActionSheet(bookId);
+  },
+  async closeBookActionSheet() {
+    hideBookActionSheet();
   },
   async openGlobalSettings() {
     document.getElementById('global-settings-btn')?.click();

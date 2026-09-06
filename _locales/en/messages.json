@@ -499,6 +499,15 @@
   "export_book_title": {
     "message": "Export Book"
   },
+  "action_sheet_more": {
+    "message": "More Actions"
+  },
+  "action_sheet_move": {
+    "message": "Move to Folder"
+  },
+  "action_sheet_export_share": {
+    "message": "Export / Share Book"
+  },
   "cover_size_tooltip": {
     "message": "Adjust Cover Size"
   },

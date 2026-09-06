@@ -580,6 +580,68 @@
     </div>
   </div>
 
+  <!-- ==================== 書籍快捷操作選單 (Book Action Sheet) ==================== -->
+  <div id="book-action-sheet-backdrop" class="book-action-sheet-backdrop"></div>
+  <div id="book-action-sheet" class="book-action-sheet panel-glass">
+    <div class="action-sheet-handle-bar">
+      <div class="action-sheet-handle"></div>
+    </div>
+    <div class="action-sheet-header">
+      <div class="action-sheet-cover-container" id="action-sheet-cover-container"></div>
+      <div class="action-sheet-info">
+        <div class="action-sheet-title" id="action-sheet-title"></div>
+        <div class="action-sheet-meta">
+          <span class="action-sheet-author" id="action-sheet-author"></span>
+          <span class="book-format-badge" id="action-sheet-badge"></span>
+        </div>
+      </div>
+    </div>
+    <div class="action-sheet-items">
+      <button id="action-sheet-stats-btn" class="action-sheet-item" type="button">
+        <div class="action-sheet-icon-box stats-icon">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </div>
+        <span class="action-sheet-label" data-i18n="stats_btn_tooltip">查看阅读统计</span>
+      </button>
+      <button id="action-sheet-export-btn" class="action-sheet-item" type="button">
+        <div class="action-sheet-icon-box export-icon">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+        <span class="action-sheet-label" data-i18n="action_sheet_export_share">导出 / 分享书籍</span>
+      </button>
+      <button id="action-sheet-move-btn" class="action-sheet-item" type="button">
+        <div class="action-sheet-icon-box move-icon">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
+        <span class="action-sheet-label" data-i18n="action_sheet_move">移动到分类</span>
+      </button>
+      <button id="action-sheet-delete-btn" class="action-sheet-item danger" type="button">
+        <div class="action-sheet-icon-box delete-icon">
+          <svg class="svg-icon" viewBox="0 0 24 24">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        </div>
+        <span class="action-sheet-label" data-i18n="delete_book_title">删除书籍</span>
+      </button>
+    </div>
+    <div class="action-sheet-footer">
+      <button id="action-sheet-cancel-btn" class="action-sheet-cancel-btn" type="button" data-i18n="btn_cancel">取消</button>
+    </div>
+  </div>
+
   <!-- ==================== 閱讀統計對話框 (Statistics Modal) ==================== -->
   <div id="stats-modal-backdrop" class="stats-modal-backdrop"></div>
   <div id="stats-modal" class="stats-modal panel-glass">

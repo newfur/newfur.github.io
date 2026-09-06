@@ -25,13 +25,17 @@ const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 pkg.version = newVersion;
 fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 
-// Update README version badges
+// Update README version badges and release links
 readmePaths.forEach(readmePath => {
   if (fs.existsSync(readmePath)) {
     let content = fs.readFileSync(readmePath, 'utf8');
     content = content.replace(
       new RegExp(`badge/version-${currentVersion.replace(/\\./g, '\\.')}-orange`, 'g'),
       `badge/version-${newVersion}-orange`
+    );
+    content = content.replace(
+      new RegExp(`releases/tag/v${currentVersion.replace(/\\./g, '\\.')}`, 'g'),
+      `releases/tag/v${newVersion}`
     );
     fs.writeFileSync(readmePath, content, 'utf8');
   }

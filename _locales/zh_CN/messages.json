@@ -499,6 +499,15 @@
   "export_book_title": {
     "message": "导出书籍"
   },
+  "action_sheet_more": {
+    "message": "更多操作"
+  },
+  "action_sheet_move": {
+    "message": "移动到分类"
+  },
+  "action_sheet_export_share": {
+    "message": "导出 / 分享书籍"
+  },
   "cover_size_tooltip": {
     "message": "调整封面大小"
   },
