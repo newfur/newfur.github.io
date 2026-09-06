@@ -15,22 +15,22 @@ The project is distributed in **5 form factors**: **Browser Extension**, **Singl
 
 ## 🌟 Highlights of the Multi-Platform Refactor (v3.4.6x)
 
-To conquer the challenges of mobile background audio freezing, sentence-to-sentence latency, and device storage inflation, the core architecture underwent major optimizations:
+Designed for cross-platform reading, extended immersion listening, and efficient e-book storage, the core architecture features modern engineering innovations:
 
 ### 1. 🎧 Adaptive Dual-Engine TTS Architecture
 - **Route A (Standard Web DOM Audio Engine)**: Tailored for desktop browser extensions, single-file offline builds, and Web browsers. Driven by standard HTML5 Audio APIs and in-memory Blob URLs for maximum agility and zero dependencies.
 - **Route B (Native Twin-Player Hardware Buffering Engine)**:
-  - **0ms Gapless Sentence Switching**: Mobile WebViews are often throttled or suspended in background/lockscreen states, causing pauses between sentences. On iOS (`AVAudioPlayer`) and Android (`MediaPlayer`), native twin-player hardware channels operate in a **ping-pong buffering cycle**. While sentence A is playing, sentence B is already synthesized and pre-warmed in the physical hardware buffer (`prepareToPlay`). At the exact millisecond sentence A finishes, playback switches seamlessly with zero delay.
-  - **Main-Thread RunLoop Dispatching**: On iOS, player instantiation, delegate registration, and event callbacks are strictly bound to `RunLoop.main`, eliminating delegate callback drops previously caused by background GCD worker threads.
+  - **0ms Gapless Sentence Switching**: iOS (`AVAudioPlayer`) and Android (`MediaPlayer`) native twin-player hardware channels operate in a **ping-pong buffering cycle**. While sentence A is playing, sentence B is already synthesized and pre-warmed in the physical hardware buffer (`prepareToPlay`). At the exact millisecond sentence A finishes, playback switches seamlessly with zero delay.
+  - **Main-Thread RunLoop Dispatching**: On iOS, all audio player lifecycles, event listeners, and state management are strictly bound to `RunLoop.main`, ensuring instantaneous, precise dispatching of Apple CoreAudio hardware events and delegate callbacks.
   - **Hardware Watchdog Fallback Timer**: The native layer features an authoritative watchdog timer calculated from sentence duration. In edge cases (incoming phone calls, rapid Bluetooth disconnections, audio focus preemptions), the watchdog autonomously detects audio hardware state and recovers playback progression, **guaranteeing that continuous reading never freezes**.
 
 ### 2. 🗄️ Decoupled High-Performance Storage Engine
-- **Elimination of Storage Bloat**: Previous versions suffered from nested serialization where entire book texts were redundantly embedded into user settings or progress checkpoints, causing local storage to balloon into tens of gigabytes over time. The refactored storage strictly decouples book bodies, indices, and reading bookmarks into separate IndexedDB stores.
-- **Predictable Storage Health**: Even when importing hundreds of large illustrated e-books, the app storage footprint remains lean and steady in the tens of megabytes range.
+- **Independent Entity & Metadata Stores**: Book contents, reading progress, bookmarks, and search indices are stored in dedicated IndexedDB object stores, eliminating redundant object nesting and serialization overhead for instantaneous access.
+- **Efficient & Predictable Footprint**: Compact sandbox data management keeps application memory and cache lean even with hundreds of imported books, ensuring snappy read/write performance and optimal storage health.
 
-### 3. 🖼️ Dynamic 512px Cover Image Downsampling (`compressCoverImage`)
-- High-resolution e-book covers often span 3MB~10MB. Transmitting raw bitmaps across the JavaScript-to-Native bridge can congest IPC channels or trigger OOM crashes.
-- Covers are dynamically downsampled via Canvas to crisp 512×512 JPEG images (only 20KB~40KB). Artwork renders instantly on mobile lockscreens and notifications while slashing RAM overhead.
+### 3. 🖼️ Dynamic 512px Cover Image Downsampling & IPC Broadcasting (`compressCoverImage`)
+- **Smart Canvas Optimization Pipeline**: Dynamically downsamples high-resolution book artwork to a crisp 512×512 retina standard (compacted to 20KB~40KB), preserving sharp visual fidelity while minimizing memory and IPC bridge overhead.
+- **Instant Lockscreen Artwork Display**: Lightweight cover payloads render instantaneously across native system media centers and notification panels without latency.
 
 ### 4. 🧠 Client-Side Asynchronous RAG & Instant Full-Text Search
 - Engineered with a zero-dependency in-memory inverted index and TF-IDF search algorithm. The entire book is indexed asynchronously within milliseconds after opening, feeding relevant context to on-device models (Gemini Nano) and cloud APIs (OpenAI, DeepSeek, Claude, Ollama) for character relationship mapping and dynamic Mermaid mindmap generation.
