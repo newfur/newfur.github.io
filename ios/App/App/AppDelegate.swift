@@ -1561,6 +1561,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         self.wasPlayingBeforeInterruption = false
         self.isCurrentlyPlaying = false
         self.currentArtwork = nil
+        self.lastCoverBase64 = ""
         self.authoritativeNowPlayingInfo = [:]
         self.stopSilencePlayer()
         self.endInterruptionResumeBgTask()
@@ -1699,10 +1700,15 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     }
 
     private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil, duration: Double? = nil, currentTime: Double? = nil) {
-        if let cover = coverBase64, !cover.isEmpty, cover != self.lastCoverBase64 {
+        if let cover = coverBase64, !cover.isEmpty, (self.currentArtwork == nil || cover != self.lastCoverBase64) {
             self.lastCoverBase64 = cover
             if let coverData = getCoverData(from: cover), let image = UIImage(data: coverData), image.size.width > 0 && image.size.height > 0 {
                 self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
+            }
+        }
+        if self.currentArtwork == nil {
+            if let appIcon = UIImage(named: "AppIcon") ?? UIImage(named: "AppIcon-512@2x") {
+                self.currentArtwork = MPMediaItemArtwork(boundsSize: appIcon.size) { _ in return appIcon }
             }
         }
         

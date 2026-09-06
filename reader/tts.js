@@ -3872,7 +3872,18 @@ export class TTSEngine {
 export async function compressCoverImage(coverBlobOrUrl, maxDimension = 360, quality = 0.7) {
   if (!coverBlobOrUrl) return '';
   if (typeof window === 'undefined' || typeof document === 'undefined') return '';
-  
+
+  const fallbackToDataUrl = (blob) => {
+    return new Promise((res) => {
+      if (typeof blob === 'string') return res(blob);
+      if (!(blob instanceof Blob)) return res('');
+      const reader = new FileReader();
+      reader.onload = () => res(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => res('');
+      reader.readAsDataURL(blob);
+    });
+  };
+
   return new Promise((resolve) => {
     let url = '';
     let needsRevoke = false;
@@ -3884,14 +3895,17 @@ export async function compressCoverImage(coverBlobOrUrl, maxDimension = 360, qua
         url = URL.createObjectURL(coverBlobOrUrl);
         needsRevoke = true;
       } catch (e) {
-        return resolve('');
+        return fallbackToDataUrl(coverBlobOrUrl).then(resolve);
       }
     } else {
       return resolve('');
     }
 
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // 嚴格僅對遠端 http/https 啟用 crossOrigin，本地 blob: 或 data: 絕不能設置，否則 WebKit 會因 CORS 拋錯導致封面加載失敗
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      img.crossOrigin = 'anonymous';
+    }
     
     const cleanup = () => {
       if (needsRevoke && url) {
@@ -3905,7 +3919,7 @@ export async function compressCoverImage(coverBlobOrUrl, maxDimension = 360, qua
         let height = img.naturalHeight || img.height;
         if (!width || !height) {
           cleanup();
-          return resolve('');
+          return fallbackToDataUrl(coverBlobOrUrl).then(resolve);
         }
 
         // 等比縮放，確保寬高均不超過 maxDimension
@@ -3925,7 +3939,7 @@ export async function compressCoverImage(coverBlobOrUrl, maxDimension = 360, qua
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           cleanup();
-          return resolve('');
+          return fallbackToDataUrl(coverBlobOrUrl).then(resolve);
         }
         ctx.drawImage(img, 0, 0, width, height);
 
@@ -3934,13 +3948,13 @@ export async function compressCoverImage(coverBlobOrUrl, maxDimension = 360, qua
         resolve(dataUrl);
       } catch (err) {
         cleanup();
-        resolve('');
+        fallbackToDataUrl(coverBlobOrUrl).then(resolve);
       }
     };
 
     img.onerror = () => {
       cleanup();
-      resolve('');
+      fallbackToDataUrl(coverBlobOrUrl).then(resolve);
     };
 
     img.src = url;
