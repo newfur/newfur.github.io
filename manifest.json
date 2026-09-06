@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extension_name__",
+  "version": "3.4.72",
+  "description": "__MSG_extension_description__",
+  "default_locale": "en",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "tts",
+    "unlimitedStorage",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "*://*.platform.bing.com/*",
+    "wss://*.platform.bing.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

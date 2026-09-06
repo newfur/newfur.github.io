@@ -1,0 +1,1032 @@
+{
+  "extension_name": {
+    "message": "讀書人"
+  },
+  "extension_description": {
+    "message": "一款高級電子書閱讀器。支持 EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等格式，並支持微軟高品質語音朗讀。"
+  },
+  "library_title": {
+    "message": "我的書庫"
+  },
+  "import_book": {
+    "message": "導入書籍"
+  },
+  "create_folder": {
+    "message": "新建資料夾"
+  },
+  "batch_manage": {
+    "message": "批量管理"
+  },
+  "batch_move": {
+    "message": "移動到資料夾"
+  },
+  "batch_delete": {
+    "message": "刪除所選"
+  },
+  "move_to_root": {
+    "message": "移出資料夾"
+  },
+  "rename_folder": {
+    "message": "重命名資料夾"
+  },
+  "confirm_delete_folder": {
+    "message": "確定要刪除這個資料夾嗎？其中的書籍不會被刪除。"
+  },
+  "folder_books_count": {
+    "message": "$count$ 本書籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "folder_name_placeholder": {
+    "message": "資料夾名稱"
+  },
+  "batch_selected_count": {
+    "message": "已選擇 $count$ 本書籍",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_library": {
+    "message": "備份書庫"
+  },
+  "restore_library": {
+    "message": "還原書庫"
+  },
+  "backup_library_tooltip": {
+    "message": "導出包含所有書籍、閱讀進度、高亮與筆記的備份檔 (.zip)"
+  },
+  "restore_library_tooltip": {
+    "message": "導入先前備份的書庫檔案"
+  },
+  "more_actions": {
+    "message": "更多"
+  },
+  "check_update": {
+    "message": "檢查更新"
+  },
+  "check_update_tooltip": {
+    "message": "檢查新版本並下載更新"
+  },
+  "checking_update": {
+    "message": "正在檢查..."
+  },
+  "update_available": {
+    "message": "發現新版本"
+  },
+  "up_to_date": {
+    "message": "已是最新"
+  },
+  "update_check_failed": {
+    "message": "檢查失敗"
+  },
+  "view_releases": {
+    "message": "前往 GitHub 查看版本"
+  },
+  "ai_offline_unavailable": {
+    "message": "AI 功能需要網路存取。離線 HTML 版在 file:// 協定下無法連線外部 AI 服務（瀏覽器安全限制）。請使用 Chrome 插件版、網頁版，或設定本機 AI 模型（如 Ollama localhost）。"
+  },
+  "download_latest": {
+    "message": "下載最新版本"
+  },
+  "download_apk": {
+    "message": "Android APK"
+  },
+  "download_offline_html": {
+    "message": "離線網頁版"
+  },
+  "download_chrome": {
+    "message": "Chrome 插件"
+  },
+  "voice_gender_female": {
+    "message": "女"
+  },
+  "voice_gender_male": {
+    "message": "男"
+  },
+  "already_offline": {
+    "message": "您目前已經處於離線版或本地執行環境中！"
+  },
+  "backup_success": {
+    "message": "書庫備份成功！已下載備份檔案。"
+  },
+  "restore_success": {
+    "message": "書庫還原成功！所有書籍與進度已恢復。"
+  },
+  "backup_failed": {
+    "message": "備份書庫時發生錯誤"
+  },
+  "restore_failed": {
+    "message": "還原書庫時發生錯誤"
+  },
+  "invalid_backup_file": {
+    "message": "無效的備份檔案，格式不符！"
+  },
+  "backing_up": {
+    "message": "正在進行備份..."
+  },
+  "backup_dialog_title": {
+    "message": "書庫備份"
+  },
+  "backup_packing_hint": {
+    "message": "正在整合所有書籍檔案、進度與筆記..."
+  },
+  "backup_ready_title": {
+    "message": "書庫備份包已打包就緒！"
+  },
+  "backup_ios_instruction": {
+    "message": "iPhone / iPad 使用者請點擊下方【儲存到系統 / 分享】，在系統彈出的選單中選擇「儲存至『檔案』」即可儲存至手機或 iCloud。"
+  },
+  "backup_btn_save_share": {
+    "message": "儲存到系統 / 分享 (.zip)"
+  },
+  "backup_btn_direct_download": {
+    "message": "直接下載備份檔案"
+  },
+  "backup_share_title": {
+    "message": "讀書人書庫備份"
+  },
+  "backup_share_text": {
+    "message": "讀書人書庫備份檔案"
+  },
+  "backup_share_dialog_title": {
+    "message": "儲存或分享備份檔案"
+  },
+  "backup_share_success": {
+    "message": "備份檔案已交給系統儲存/分享面板。請在面板中選擇儲存位置。"
+  },
+  "backup_save_prompt": {
+    "message": "您希望如何儲存備份檔案？\n\n點「確定」：儲存到 App 檔案目錄。\n點「取消」：開啟系統分享面板。"
+  },
+  "backup_saved_to_downloads": {
+    "message": "備份成功！檔案已儲存至系統下載目錄：\n$path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
+  },
+  "backup_save_fallback_share": {
+    "message": "直接儲存到下載目錄失敗，將改為開啟系統分享面板。"
+  },
+  "backup_native_save_unavailable": {
+    "message": "原生儲存不可用，將改為開啟系統分享面板。"
+  },
+  "backup_saved_to_app_directory": {
+    "message": "備份成功！檔案已儲存至 App 檔案目錄：\n$filename$",
+    "placeholders": {
+      "filename": {
+        "content": "$1"
+      }
+    }
+  },
+  "restoring": {
+    "message": "正在進行還原，請稍候..."
+  },
+  "drag_drop_tip": {
+    "message": "將電子書拖曳到此處導入"
+  },
+  "no_books": {
+    "message": "書庫空空如也。請拖曳電子書檔案到此處，或點擊上方「導入書籍」按鈕！"
+  },
+  "settings": {
+    "message": "閱讀設定"
+  },
+  "theme": {
+    "message": "背景主題"
+  },
+  "theme_light": {
+    "message": "明亮白"
+  },
+  "theme_dark": {
+    "message": "深雅灰"
+  },
+  "theme_sepia": {
+    "message": "復古紙"
+  },
+  "theme_mint": {
+    "message": "極簡綠"
+  },
+  "theme_oled": {
+    "message": "純黑 (OLED)"
+  },
+  "theme_sakura": {
+    "message": "櫻花粉"
+  },
+  "theme_ocean": {
+    "message": "海洋藍"
+  },
+  "theme_slate": {
+    "message": "石板灰"
+  },
+  "font_size": {
+    "message": "字型大小"
+  },
+  "font_family": {
+    "message": "閱讀字型"
+  },
+  "line_height": {
+    "message": "行間距"
+  },
+  "margin_width": {
+    "message": "左右邊距"
+  },
+  "margin_top": {
+    "message": "上方留白"
+  },
+  "margin_bottom": {
+    "message": "下方留白"
+  },
+  "page_padding": {
+    "message": "紙張邊框留白"
+  },
+  "read_aloud": {
+    "message": "語音朗讀 (TTS)"
+  },
+  "tts_voice": {
+    "message": "朗讀人聲"
+  },
+  "tts_speed": {
+    "message": "播放倍速"
+  },
+  "tts_sync_offset": {
+    "message": "高亮同步微調"
+  },
+  "toc": {
+    "message": "章節目錄"
+  },
+  "highlights": {
+    "message": "書籤與筆記"
+  },
+  "ai_summary": {
+    "message": "AI 摘要"
+  },
+  "ai_explain": {
+    "message": "AI 釋義"
+  },
+  "ai_translate": {
+    "message": "AI 翻譯"
+  },
+  "search_placeholder": {
+    "message": "搜尋書籍名稱或作者..."
+  },
+  "unsupported_format": {
+    "message": "不支援此文件格式！"
+  },
+  "parse_failed": {
+    "message": "書籍解析失敗，請確認檔案是否損壞。"
+  },
+  "drm_warning": {
+    "message": "此電子書似乎受到 DRM 加密保護，插件無法解析。"
+  },
+  "reading_progress": {
+    "message": "已讀 $progress$%",
+    "placeholders": {
+      "progress": {
+        "content": "$1"
+      }
+    }
+  },
+  "font_sans": {
+    "message": "黑體/無襯線 (Inter)"
+  },
+  "font_serif": {
+    "message": "宋體/明體 (Lora)"
+  },
+  "font_lxgw": {
+    "message": "霞鶩文楷 (LXGW WenKai)"
+  },
+  "font_noto_serif": {
+    "message": "思源宋體 (Noto Serif TC)"
+  },
+  "font_playfair": {
+    "message": "Playfair Display (西文襯線)"
+  },
+  "font_fira": {
+    "message": "Fira Code (等寬程式碼)"
+  },
+  "font_dyslexic": {
+    "message": "易讀字體 (OpenDyslexic)"
+  },
+  "font_system": {
+    "message": "系統預設字型"
+  },
+  "layout_scroll": {
+    "message": "上下連續滾動"
+  },
+  "layout_paginated": {
+    "message": "左右模擬翻頁"
+  },
+  "layout_mode": {
+    "message": "版面佈局"
+  },
+  "close_reader": {
+    "message": "返回書庫"
+  },
+  "prev_page": {
+    "message": "上一頁"
+  },
+  "next_page": {
+    "message": "下一頁"
+  },
+  "note_title": {
+    "message": "筆記"
+  },
+  "highlight_title": {
+    "message": "劃線"
+  },
+  "pages_displayed": {
+    "message": "分欄顯示頁數"
+  },
+  "pages_displayed_auto": {
+    "message": "自動自適應"
+  },
+  "pages_displayed_1": {
+    "message": "單頁顯示"
+  },
+  "pages_displayed_2": {
+    "message": "雙頁顯示"
+  },
+  "pages_displayed_3": {
+    "message": "三頁顯示"
+  },
+  "tts_highlight_style": {
+    "message": "朗讀高亮樣式"
+  },
+  "highlight_style_yellow": {
+    "message": "黃色螢光筆"
+  },
+  "highlight_style_green": {
+    "message": "綠色螢光筆"
+  },
+  "highlight_style_blue": {
+    "message": "藍色螢光筆"
+  },
+  "highlight_style_underline": {
+    "message": "僅底線"
+  },
+  "highlight_style_border": {
+    "message": "虛線邊框"
+  },
+  "highlight_style_text": {
+    "message": "僅文字著色"
+  },
+  "btn_cancel": {
+    "message": "取消"
+  },
+  "btn_save": {
+    "message": "儲存"
+  },
+  "add_bookmark": {
+    "message": "新增書籤"
+  },
+  "bookmarks_header": {
+    "message": "書籤"
+  },
+  "notes_header": {
+    "message": "筆記與高亮"
+  },
+  "selection_speak": {
+    "message": "朗讀"
+  },
+  "selection_delete": {
+    "message": "刪除"
+  },
+  "note_placeholder": {
+    "message": "在此輸入筆記..."
+  },
+  "ai_assistant_title": {
+    "message": "AI 閱讀助手"
+  },
+  "chapter_label": {
+    "message": "第 $num$ 章",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
+  "tts_play": {
+    "message": "播放"
+  },
+  "tts_pause": {
+    "message": "暫停"
+  },
+  "tts_stop": {
+    "message": "停止"
+  },
+  "tts_prev": {
+    "message": "上一句"
+  },
+  "tts_next": {
+    "message": "下一句"
+  },
+  "loading_book": {
+    "message": "正在載入書籍..."
+  },
+  "loading_page": {
+    "message": "正在載入第 $page$ 頁...",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "ai_thinking": {
+    "message": "AI 正在思考..."
+  },
+  "error_prefix": {
+    "message": "錯誤"
+  },
+  "failed_load_book": {
+    "message": "書籍載入失敗"
+  },
+  "failed_init_db": {
+    "message": "資料庫初始化失敗"
+  },
+  "delete_book_title": {
+    "message": "刪除書籍"
+  },
+  "confirm_delete_book": {
+    "message": "確定要刪除這本書嗎？"
+  },
+  "unknown_author": {
+    "message": "未知作者"
+  },
+  "paper_texture": {
+    "message": "紙張底紋"
+  },
+  "texture_none": {
+    "message": "無"
+  },
+  "texture_classic": {
+    "message": "經典紙紋"
+  },
+  "texture_parchment": {
+    "message": "羊皮紙"
+  },
+  "texture_linen": {
+    "message": "亞麻布紋"
+  },
+  "texture_aged": {
+    "message": "仿舊紙"
+  },
+  "texture_wove": {
+    "message": "水紋紙"
+  },
+  "transition_effect": {
+    "message": "翻頁動畫效果"
+  },
+  "transition_slide": {
+    "message": "滑動效果"
+  },
+  "transition_flip": {
+    "message": "3D 翻頁效果"
+  },
+  "transition_none": {
+    "message": "無動畫"
+  },
+  "tts_filter_edge": {
+    "message": "僅顯示 Edge 線上高品質語音"
+  },
+  "notes_chapter_title": {
+    "message": "附錄/註釋"
+  },
+  "export_book_title": {
+    "message": "匯出書籍"
+  },
+  "action_sheet_more": {
+    "message": "更多操作"
+  },
+  "action_sheet_move": {
+    "message": "移動到分類"
+  },
+  "action_sheet_export_share": {
+    "message": "匯出 / 分享書籍"
+  },
+  "cover_size_tooltip": {
+    "message": "調整封面大小"
+  },
+  "stats_title": {
+    "message": "數據統計"
+  },
+  "stats_btn_tooltip": {
+    "message": "查看閱讀統計"
+  },
+  "stats_modal_title": {
+    "message": "閱讀數據統計"
+  },
+  "stats_tab_overview": {
+    "message": "全局概覽"
+  },
+  "stats_tab_books": {
+    "message": "單本統計"
+  },
+  "stats_total_time": {
+    "message": "總閱讀時長"
+  },
+  "stats_total_books": {
+    "message": "閱讀書籍數"
+  },
+  "stats_total_days": {
+    "message": "閱讀天數"
+  },
+  "stats_hourly_dist_title": {
+    "message": "閱讀時間段分佈"
+  },
+  "stats_select_book": {
+    "message": "選擇書籍:"
+  },
+  "stats_book_time": {
+    "message": "閱讀時間"
+  },
+  "stats_book_days": {
+    "message": "閱讀天數"
+  },
+  "stats_book_daily_avg": {
+    "message": "日均閱讀時長"
+  },
+  "stats_book_hourly_title": {
+    "message": "閱讀時間段分佈"
+  },
+  "stats_reading_history_title": {
+    "message": "每日閱讀明細"
+  },
+  "stats_no_time": {
+    "message": "暫無時長"
+  },
+  "about_title": {
+    "message": "關於"
+  },
+  "about_dialog_title": {
+    "message": "關於閱讀器"
+  },
+  "about_dialog_desc": {
+    "message": "一款面向網頁、瀏覽器及行動裝置的現代化電子書閱讀器。整合多格式解析、高品質 Edge 神經網路語音朗讀、智慧 AI 伴侶與深度閱讀統計。"
+  },
+  "about_features_title": {
+    "message": "核心特性:"
+  },
+  "about_feature_1": {
+    "message": "支援格式：EPUB、AZW3、MOBI、TXT、MD、FB2、CBZ 等多格式本地解析"
+  },
+  "about_feature_2": {
+    "message": "語音朗讀：直連 Edge 高品質雲端神經網路 TTS，雙播放器無縫預載，支援行動端背景靜音保活"
+  },
+  "about_feature_3": {
+    "message": "極致排版：滾動與翻頁佈局，內置思源宋體、霞鶩文楷等字型，支援多款紙張質感底紋"
+  },
+  "about_feature_4": {
+    "message": "AI 伴侶：支援劃詞釋義、摘要與離線翻譯，適配本地 Gemini Nano 及雲端/本地大語言模型"
+  },
+  "about_feature_5": {
+    "message": "數據與多端：包含閱讀時間段分佈與日曆熱力圖，支援全量備份，適配外掛、PWA 及 Android 原生 App"
+  },
+  "about_usage_title": {
+    "message": "基本用法:"
+  },
+  "about_usage_1": {
+    "message": "導入：點擊書架上的「導入書籍」按鈕或直接拖拽電子書檔案到書架中。"
+  },
+  "about_usage_2": {
+    "message": "閱讀與朗讀：點擊書籍開始閱讀。點擊頂部喇叭圖標可開啟語音朗讀面板，點擊句子可直接從該句開始朗讀。"
+  },
+  "about_usage_3": {
+    "message": "高亮標註：在閱讀時選中文本即可彈出選單進行劃線、記筆記和發起本地 AI 交互。"
+  },
+  "about_usage_4": {
+    "message": "備份：點擊「更多」 -> 「備份書庫」可一鍵導出包含書籍和閱讀進度的 .zip 壓縮包。"
+  },
+  "about_tip_title": {
+    "message": "重要提示"
+  },
+  "about_tip_content": {
+    "message": "強烈推薦下載離線單檔案版！本地雙擊打開運行離線版，可以直接免除各種跨域（CORS）與服務代理限制，完美利用微軟 Edge 原生高品質在線神經網路語音朗讀（Natural TTS Engine）。"
+  },
+  "btn_close": {
+    "message": "關閉"
+  },
+  "clear_all_stats": {
+    "message": "清理閱讀記錄"
+  },
+  "clear_book_stats": {
+    "message": "清理閱讀記錄"
+  },
+  "confirm_clear_all_stats": {
+    "message": "確定要清除所有書籍的閱讀統計數據嗎？此操作無法撤銷。"
+  },
+  "confirm_clear_book_stats": {
+    "message": "確定要清除本書的閱讀統計數據嗎？此操作無法撤销。"
+  },
+  "texture_kraft": {
+    "message": "牛皮紙"
+  },
+  "texture_bamboo": {
+    "message": "竹木纖維"
+  },
+  "texture_grid": {
+    "message": "復古格子"
+  },
+  "ai_profile": {
+    "message": "AI 設定 / 服務商"
+  },
+  "ai_profile_name": {
+    "message": "配置名稱"
+  },
+  "ai_profile_add": {
+    "message": "新建配置"
+  },
+  "ai_profile_delete": {
+    "message": "刪除配置"
+  },
+  "ai_profile_default_custom_name": {
+    "message": "新自訂 AI"
+  },
+  "ai_profile_migrated": {
+    "message": "已遷移配置"
+  },
+  "ai_profile_builtin": {
+    "message": "內建 AI (Gemini Nano)"
+  },
+  "ai_profile_openai": {
+    "message": "OpenAI (官方)"
+  },
+  "ai_profile_deepseek": {
+    "message": "DeepSeek"
+  },
+  "ai_profile_gemini": {
+    "message": "Google Gemini API"
+  },
+  "ai_profile_siliconflow": {
+    "message": "矽基流動 (SiliconFlow)"
+  },
+  "ai_profile_ollama": {
+    "message": "Ollama (本地)"
+  },
+  "ai_profile_lmstudio": {
+    "message": "LM Studio"
+  },
+  "confirm_delete_profile": {
+    "message": "確定要刪除此 AI 設定嗎？"
+  },
+  "ai_builtin_not_supported": {
+    "message": "目前瀏覽器不支援內建 AI (Gemini Nano)。請在全域設定（點擊齒輪圖示）中配置自訂 AI 服務商（如 DeepSeek、OpenAI 或 Ollama）。"
+  },
+  "ai_provider": {
+    "message": "AI 服務商"
+  },
+  "ai_provider_builtin": {
+    "message": "瀏覽器內置 AI (Gemini Nano)"
+  },
+  "ai_provider_openai": {
+    "message": "OpenAI 相容介面"
+  },
+  "ai_provider_ollama": {
+    "message": "Ollama (本地部署)"
+  },
+  "ai_api_key": {
+    "message": "API 金鑰 (Key)"
+  },
+  "ai_endpoint": {
+    "message": "API 介面地址"
+  },
+  "ai_model": {
+    "message": "模型名稱 (Model)"
+  },
+  "ai_input_placeholder": {
+    "message": "輸入問題，向 AI 提問..."
+  },
+  "ai_save_settings": {
+    "message": "保存"
+  },
+  "ai_settings_saved": {
+    "message": "已保存"
+  },
+  "ai_test_settings": {
+    "message": "測試連接"
+  },
+  "ai_test_testing": {
+    "message": "測試中..."
+  },
+  "ai_test_success": {
+    "message": "測試成功！"
+  },
+  "ai_test_fail": {
+    "message": "測試失敗"
+  },
+  "ai_assistant": {
+    "message": "AI 助手"
+  },
+  "ai_summary_label": {
+    "message": "AI 摘要"
+  },
+  "ai_explain_label": {
+    "message": "AI 釋義"
+  },
+  "ai_translate_label": {
+    "message": "AI 翻譯"
+  },
+  "global_settings_title": {
+    "message": "全局設置"
+  },
+  "library_settings_section": {
+    "message": "書庫設置"
+  },
+  "ai_settings_section": {
+    "message": "AI 配置"
+  },
+  "tts_settings_section": {
+    "message": "TTS 朗讀配置"
+  },
+  "tts_provider": {
+    "message": "TTS 服務商"
+  },
+  "tts_provider_edge": {
+    "message": "微軟 Edge 線上高品質語音"
+  },
+  "tts_provider_system": {
+    "message": "系統原生 WebSpeech 語音"
+  },
+  "tts_provider_openai": {
+    "message": "OpenAI TTS 語音接口"
+  },
+  "tts_provider_local": {
+    "message": "本地部署語音接口 (OpenAI相容)"
+  },
+  "tts_api_key": {
+    "message": "API 密鑰"
+  },
+  "tts_endpoint": {
+    "message": "API 端點 URL"
+  },
+  "tts_model": {
+    "message": "朗讀模型"
+  },
+  "tts_fetch_models": {
+    "message": "獲取模型"
+  },
+  "tts_api_key_optional": {
+    "message": "可選 (例如本地代理認證)"
+  },
+  "tts_language": {
+    "message": "朗讀語言"
+  },
+  "tts_lang_auto": {
+    "message": "自動檢測"
+  },
+  "tts_lang_zh_cn": {
+    "message": "簡體中文"
+  },
+  "tts_lang_zh_tw": {
+    "message": "繁體中文"
+  },
+  "tts_lang_en": {
+    "message": "英語"
+  },
+  "tts_lang_ja": {
+    "message": "日語"
+  },
+  "tts_lang_ko": {
+    "message": "韓語"
+  },
+  "tts_voice_label": {
+    "message": "聲音名稱"
+  },
+  "tts_lang_multilingual": {
+    "message": "多語言"
+  },
+  "cover_width_setting": {
+    "message": "封面大小"
+  },
+  "ai_welcome_msg": {
+    "message": "你好！我是你的 AI 閱讀助手。今天有什麼我可以幫你的嗎？"
+  },
+  "ai_system_prompt_summarize": {
+    "message": "你是一位得力的閱讀助手。請簡明扼要地總結以下文本。用繁體中文回答。"
+  },
+  "ai_system_prompt_explain": {
+    "message": "你親切的詞典助手。請結合上下文，簡明扼要地解釋所選詞語的涵義。用繁體中文回答。"
+  },
+  "ai_system_prompt_translate": {
+    "message": "你是一位專業的翻譯官。請將文本翻譯為 {target}。只輸出翻譯結果，不要有任何解釋。"
+  },
+  "ai_target_lang": {
+    "message": "Traditional Chinese"
+  },
+  "ai_fetch_models": {
+    "message": "獲取模型"
+  },
+  "ai_fetching_models": {
+    "message": "獲取中..."
+  },
+  "ai_fetch_models_success": {
+    "message": "模型列表獲取成功！"
+  },
+  "ai_fetch_models_fail": {
+    "message": "模型列表獲取失敗"
+  },
+  "ai_api_key_optional": {
+    "message": "可選 (例如本地代理認證)"
+  },
+  "ai_ask": {
+    "message": "提問"
+  },
+  "ai_focus": {
+    "message": "聚焦於:"
+  },
+  "ai_clear_history_title": {
+    "message": "清除所有對話歷史"
+  },
+  "ai_delete_chat_title": {
+    "message": "刪除該對話"
+  },
+  "confirm_delete_all_chats": {
+    "message": "確定要清除本書的所有 AI 溝通記錄嗎？此操作無法撤銷。"
+  },
+  "confirm_delete_single_chat": {
+    "message": "確定要刪除這條溝通記錄嗎？"
+  },
+  "ai_suggest_sum_chapter_lbl": {
+    "message": "總結本章"
+  },
+  "ai_suggest_sum_chapter_prt": {
+    "message": "幫我總結當前章節的核心觀點與主要內容。"
+  },
+  "ai_suggest_chapter_map_lbl": {
+    "message": "本章思維導圖"
+  },
+  "ai_suggest_chapter_map_prt": {
+    "message": "請梳理當前章節的內容結構，輸出一份 Mermaid mindmap 思維導圖。請根據書籍體裁調整梳理重點（若為小說故事，側重時間軸與情節；若為非虛構/學術書籍，側重核心論點與邏輯推導）。嚴格要求：1) 必須以 ```mermaid 代碼塊包裹；2) 第一行寫 mindmap；3) 純縮進表示層級，禁止使用箭頭 -->、::icon()、subgraph 等語法；4) 節點文字不要包含括號或特殊符號；5) 節點文字必須非常簡短（建議不超過 10 個字，最好 2-4 個字），絕對不要輸出長句或段落以防止節點重疊；6) 參考格式：mindmap\n  root(主題)\n    分支1\n      子節點 A\n      子節點 B\n    分支2\n      子節點 C"
+  },
+  "ai_suggest_book_map_lbl": {
+    "message": "全書思維導圖"
+  },
+  "ai_suggest_book_map_prt": {
+    "message": "請結合全書檢索到的脈絡，梳理本書的整體架構與核心章節邏輯，輸出一份 Mermaid mindmap 思維導圖。請根據書籍體裁調整梳理重點（若為小說故事，側重時間軸與情節；若為非虛構/學術書籍，側重核心論點與邏輯推導）。嚴格要求：1) 必須以 ```mermaid 代碼塊包裹；2) 第一行寫 mindmap；3) 純縮進表示層級，禁止使用箭頭 -->、::icon()、subgraph 等語法；4) 節點文字不要包含括號或特殊符號；5) 節點文字必須非常簡短（建議不超過 10 個字，最好 2-4 個字），絕對不要輸出長句或段落以防止節點重疊；6) 參考格式：mindmap\n  root(書名)\n    第一部分\n      要點1\n      要點2\n    第二部分\n      要點3"
+  },
+  "ai_suggest_takeaways_lbl": {
+    "message": "核心要點"
+  },
+  "ai_suggest_takeaways_prt": {
+    "message": "分析當前章節或全書中最重要的 3-5 個核心知識點與啟示（Key Takeaways）。"
+  },
+  "ai_suggest_characters_lbl": {
+    "message": "人物關係"
+  },
+  "ai_suggest_characters_prt": {
+    "message": "梳理本書中出現的主要人物、角色背景及其相互之間的關係脈絡。"
+  },
+  "ai_suggest_explain_concept_lbl": {
+    "message": "名詞解釋"
+  },
+  "ai_suggest_explain_concept_prt": {
+    "message": "解釋本書當前上下文中提到的核心專業術語或深奧概念。"
+  },
+  "ai_suggest_quiz_lbl": {
+    "message": "閱讀自測"
+  },
+  "ai_suggest_quiz_prt": {
+    "message": "根據當前章節的內容，為我設計 3 道閱讀理解或自測思考題，幫助我加深理解。"
+  },
+  "ai_toggle_suggestions_title": {
+    "message": "折疊/展開常用提示詞"
+  },
+  "ai_prompts_section": {
+    "message": "AI 提示詞模板"
+  },
+  "ai_add_prompt": {
+    "message": "新增"
+  },
+  "ai_prompt_name_placeholder": {
+    "message": "名稱"
+  },
+  "ai_prompt_content_placeholder": {
+    "message": "提示詞內容"
+  },
+  "ai_prompt_edit_title": {
+    "message": "編輯提示詞模板"
+  },
+  "ai_prompt_add_title": {
+    "message": "新增提示詞模板"
+  },
+  "ai_prompt_name_label": {
+    "message": "模板名稱"
+  },
+  "ai_prompt_content_label": {
+    "message": "提示詞內容"
+  },
+  "confirm_delete_prompt": {
+    "message": "確定要刪除這個提示詞模板嗎？"
+  },
+  "btn_edit": {
+    "message": "編輯"
+  },
+  "btn_delete": {
+    "message": "刪除"
+  },
+  "zoom_in": {
+    "message": "放大"
+  },
+  "zoom_out": {
+    "message": "縮小"
+  },
+  "zoom_reset": {
+    "message": "重置"
+  },
+  "ai_deep_analysis_title": {
+    "message": "一鍵全書深度分析"
+  },
+  "ai_deep_analysis_trigger": {
+    "message": "一鍵全書深度分析"
+  },
+  "confirm_reanalyze_book": {
+    "message": "這本書已經有深度分析報告了，確定要重新生成嗎？這將會消耗較多 API Token。"
+  },
+  "confirm_deep_analysis": {
+    "message": "「深度分析全书」将会在本书进行全书扫描，并消耗较多 API Token。是否继续？"
+  },
+  "search_book": {
+    "message": "搜尋"
+  },
+  "search_in_book_placeholder": {
+    "message": "在本書中搜尋..."
+  },
+  "searching": {
+    "message": "正在搜尋..."
+  },
+  "search_no_results": {
+    "message": "未找到匹配內容。"
+  },
+  "search_results_count": {
+    "message": "共找到 $count$ 處匹配",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "indexing_book": {
+    "message": "正在建立搜尋索引..."
+  },
+  "duplicate_dialog_title": {
+    "message": "偵測到重複書籍"
+  },
+  "duplicate_desc_hash": {
+    "message": "書庫中已存在內容完全相同的書籍。"
+  },
+  "duplicate_desc_name": {
+    "message": "書庫中已存在同名但內容不同的書籍。"
+  },
+  "duplicate_new_file": {
+    "message": "準備匯入的檔案："
+  },
+  "duplicate_existing_book": {
+    "message": "書庫中的現有書籍："
+  },
+  "duplicate_apply_all": {
+    "message": "套用到所有剩餘衝突"
+  },
+  "duplicate_btn_replace": {
+    "message": "覆蓋檔案 (保留閱讀進度與筆記)"
+  },
+  "duplicate_btn_keep_both": {
+    "message": "保留兩者"
+  },
+  "duplicate_btn_skip": {
+    "message": "跳過"
+  },
+  "load_sample_book": {
+    "message": "快速體驗內置示例書"
+  },
+  "sample_book_title": {
+    "message": "小王子 (精選試讀)"
+  },
+  "sample_book_author": {
+    "message": "安托萬·德·聖-埃克蘇佩里"
+  },
+  "btn_retry": {
+    "message": "重試"
+  },
+  "backup_choose_mode_hint": {
+    "message": "請選擇備份模式。若您的書庫包含大量書籍檔案（大於 100MB），推薦優先使用【輕量備份】或使用 iOS 原生 App 版。"
+  },
+  "backup_mode_full_title": {
+    "message": "完整備份 (包含書籍源檔案)"
+  },
+  "backup_mode_full_desc": {
+    "message": "打包全部書籍源檔案、封面、閱讀進度、筆記、書籤與 AI 對話。"
+  },
+  "backup_mode_light_title": {
+    "message": "輕量數據備份 (不含電子書源檔案)"
+  },
+  "backup_mode_light_desc": {
+    "message": "僅備份閱讀進度、劃線筆記、書籤與 AI 記錄。體積僅幾十 KB，秒級完成，杜絕記憶體溢出。"
+  },
+  "btn_start_backup": {
+    "message": "開始備份"
+  }
+}
