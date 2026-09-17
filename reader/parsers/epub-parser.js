@@ -12,6 +12,7 @@ export class EpubParser {
     this.metadata = {};
     this.manifest = {}; // id -> { href, mediaType }
     this.spine = [];    // list of manifest ids in reading order
+    this.guide = {};    // type -> { href, title }
     this.chapters = []; // list of processed chapters: { title, href, content }
     this.cover = null;
     this.resourceUrls = [];
@@ -48,8 +49,12 @@ export class EpubParser {
     this.spine.forEach(idref => {
       const item = this.manifest[idref];
       if (item && item.href && !tocCleanHrefs.has(item.href)) {
+        let title = getMsg('notes_chapter_title') || 'Notes/Appendix';
+        if (this.guide && this.guide.toc && item.href === this.guide.toc.href) {
+          title = this.guide.toc.title || 'Table of Contents';
+        }
         tocChapters.push({
-          title: getMsg('notes_chapter_title') || 'Notes/Appendix',
+          title,
           href: item.href,
           hash: '',
           cleanHref: item.href,
@@ -148,6 +153,21 @@ export class EpubParser {
     itemrefNodes.forEach(node => {
       const idref = node.getAttribute('idref');
       this.spine.push(idref);
+    });
+
+    // 解析導引 (Guide)
+    this.guide = {};
+    const refNodes = xmlDoc.querySelectorAll('guide > reference');
+    refNodes.forEach(node => {
+      const type = (node.getAttribute('type') || '').toLowerCase();
+      const href = node.getAttribute('href');
+      const title = node.getAttribute('title') || '';
+      if (type && href) {
+        this.guide[type] = {
+          href: this._resolvePath(this.opfDir, href),
+          title
+        };
+      }
     });
   }
 
@@ -339,135 +359,217 @@ export class EpubParser {
     }
     return null; // 默認返回 null，後續使用占位封面
   }
-  // 解析 TOC 目錄
-  async _parseTOC() {
-    let navItem = Object.values(this.manifest).find(item => item.properties && item.properties.includes('nav'));
-    let ncxItem = Object.values(this.manifest).find(item => item.mediaType === 'application/x-dtbncx+xml');
-
-    // 如果沒有標準的 nav 且沒有標準的 ncx，才進行容錯降級尋找可能的文件
-    if (!navItem && !ncxItem) {
-      navItem = Object.entries(this.manifest).find(([id, item]) => 
-        id.toLowerCase().includes('nav') || 
-        id.toLowerCase().includes('toc') || 
-        (item.href && (item.href.toLowerCase().includes('nav.xhtml') || item.href.toLowerCase().includes('toc.xhtml') || item.href.toLowerCase().includes('nav.html') || item.href.toLowerCase().includes('toc.html')))
-      )?.[1];
-
-      if (!navItem) {
-        ncxItem = Object.entries(this.manifest).find(([id, item]) => 
-          id.toLowerCase().includes('ncx') || 
-          (item.href && item.href.toLowerCase().includes('.ncx'))
-        )?.[1];
+  // 檢驗 TOC 清單是否存在嚴重退化/損壞（例如大量不同章節無錨點指向同一個實體 HTML 檔案）
+  _isTocDegraded(list) {
+    if (!list || list.length < 4) return false;
+    let plainCount = 0;
+    const plainMap = new Map();
+    list.forEach(item => {
+      if (!item.href.includes('#')) {
+        plainCount++;
+        const clean = item.href;
+        plainMap.set(clean, (plainMap.get(clean) || 0) + 1);
       }
-    }
+    });
+    let duplicates = 0;
+    plainMap.forEach(count => {
+      if (count > 1) duplicates += (count - 1);
+    });
+    // 若無錨點的純檔案指向重複數達到 3 個以上，且重複佔比超過 20%，判定為損壞目錄
+    return plainCount > 0 && duplicates >= 3 && (duplicates / plainCount) > 0.2;
+  }
 
-    const tocList = [];
+  // 解析 HTML / XHTML 格式目錄（包括 EPUB 3 nav、OPF guide 中的 toc 以及 manifest 中的備用 toc）
+  async _parseHtmlToc(htmlHref) {
+    if (!htmlHref) return [];
+    try {
+      const zipRes = this._findZipFile(htmlHref);
+      if (!zipRes) return [];
+      let navText = await zipRes.file.async('string');
+      // 修復自閉合 script 標籤
+      navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(navText, 'text/html');
+      let navLinks = doc.querySelectorAll('nav a');
+      if (navLinks.length === 0) {
+        navLinks = doc.querySelectorAll('a');
+      }
 
-    if (navItem) {
-      try {
-        let navText = await this.zip.file(navItem.href).async('string');
-        // Fix self-closing script tags that break DOMParser in text/html mode
-        navText = navText.replace(/<script([^>]*?)\/>/gi, '<script$1><\/script>');
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(navText, 'text/html');
-        let navLinks = doc.querySelectorAll('nav a');
-        if (navLinks.length === 0) {
-          navLinks = doc.querySelectorAll('a'); // 容錯：若無 nav 標籤，獲取所有連結
+      const list = [];
+      const baseDir = this._getDirectory(zipRes.path);
+      navLinks.forEach(link => {
+        const hrefAttr = link.getAttribute('href');
+        if (!hrefAttr) return;
+        // 過濾外部連結與空錨點
+        if (hrefAttr.startsWith('http://') || hrefAttr.startsWith('https://') || hrefAttr.startsWith('mailto:') || hrefAttr === '#') return;
+        const title = link.textContent.trim();
+        if (!title) return;
+        const resolvedHref = this._resolvePath(baseDir, hrefAttr);
+
+        // 計算 depth: 向上尋找導航節點中的 ol/ul 父節點個數
+        let depth = 0;
+        let parent = link.parentElement;
+        while (parent && parent.tagName.toLowerCase() !== 'nav' && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html') {
+          const tagName = parent.tagName.toLowerCase();
+          if (tagName === 'ol' || tagName === 'ul') {
+            depth++;
+          }
+          parent = parent.parentElement;
         }
-        
-        navLinks.forEach(link => {
-          const hrefAttr = link.getAttribute('href');
-          if (!hrefAttr) return;
-          const title = link.textContent.trim();
-          // navItem.href 的資料夾部分作為 resolved href 的 base
-          const baseDir = this._getDirectory(navItem.href);
-          const resolvedHref = this._resolvePath(baseDir, hrefAttr);
-          
-          // 計算 depth: 向上尋找導航節點中的 ol/ul 父節點個數
+        const finalDepth = Math.max(0, depth - 1);
+        list.push({ title, href: resolvedHref, depth: finalDepth });
+      });
+      return list;
+    } catch (e) {
+      console.warn('HTML TOC parsing failed for', htmlHref, e);
+      return [];
+    }
+  }
+
+  // 解析 EPUB 2 的 NCX 目錄
+  async _parseNcx(ncxHref) {
+    if (!ncxHref) return [];
+    try {
+      const zipRes = this._findZipFile(ncxHref);
+      if (!zipRes) return [];
+      const ncxText = await zipRes.file.async('string');
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(ncxText, 'text/xml');
+
+      // 容錯：XML 區分大小寫，支持 navPoint 和 navpoint，並忽略命名空間
+      let navPoints = Array.from(xmlDoc.getElementsByTagNameNS('*', 'navPoint'));
+      if (navPoints.length === 0) {
+        navPoints = Array.from(xmlDoc.getElementsByTagNameNS('*', 'navpoint'));
+      }
+      if (navPoints.length === 0) {
+        navPoints = Array.from(xmlDoc.querySelectorAll('navPoint, navpoint'));
+      }
+
+      const list = [];
+      const baseDir = this._getDirectory(zipRes.path);
+      navPoints.forEach(point => {
+        const labels = Array.from(point.getElementsByTagNameNS('*', 'navLabel'));
+        const labelsLower = Array.from(point.getElementsByTagNameNS('*', 'navlabel'));
+        const allLabels = [...labels, ...labelsLower];
+        let title = '';
+
+        if (allLabels.length > 0) {
+          const firstLabel = allLabels[0];
+          const texts = Array.from(firstLabel.getElementsByTagNameNS('*', 'text'));
+          if (texts.length > 0) {
+            title = texts[0].textContent.trim();
+          } else {
+            title = firstLabel.textContent.trim();
+          }
+        }
+
+        const contents = Array.from(point.getElementsByTagNameNS('*', 'content'));
+        const contentNode = contents.length > 0 ? contents[0] : null;
+
+        if (title && contentNode) {
+          const src = contentNode.getAttribute('src');
+          const resolvedHref = this._resolvePath(baseDir, src);
+
+          // 計算 depth: 向上尋找 navPoint/navpoint 父節點個數
           let depth = 0;
-          let parent = link.parentElement;
-          while (parent && parent.tagName.toLowerCase() !== 'nav' && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html') {
-            const tagName = parent.tagName.toLowerCase();
-            if (tagName === 'ol' || tagName === 'ul') {
+          let parent = point.parentElement;
+          while (parent) {
+            const pTagName = parent.tagName ? parent.tagName.toLowerCase() : '';
+            if (pTagName === 'navpoint') {
               depth++;
             }
             parent = parent.parentElement;
           }
-          const finalDepth = Math.max(0, depth - 1);
-          tocList.push({ title, href: resolvedHref, depth: finalDepth });
-        });
-      } catch (e) {
-        console.warn('EPUB 3 nav parsing failed, falling back to Ncx:', e);
+          list.push({ title, href: resolvedHref, depth: depth });
+        }
+      });
+      return list;
+    } catch (e) {
+      console.warn('EPUB 2 NCX parsing failed for', ncxHref, e);
+      return [];
+    }
+  }
+
+  // 解析 TOC 目錄
+  async _parseTOC() {
+    const navItem = Object.values(this.manifest).find(item => item.properties && item.properties.includes('nav'));
+    let ncxItem = Object.values(this.manifest).find(item => item.mediaType === 'application/x-dtbncx+xml');
+    const guideTocHref = this.guide && this.guide.toc ? this.guide.toc.href : null;
+
+    // 容錯：若無標準 ncx 標記，在 manifest 中尋找帶 ncx 關鍵字項
+    if (!ncxItem) {
+      ncxItem = Object.entries(this.manifest).find(([id, item]) => 
+        id.toLowerCase().includes('ncx') || 
+        (item.href && item.href.toLowerCase().includes('.ncx'))
+      )?.[1];
+    }
+
+    // 容錯備用 HTML TOC：若 manifest 中有明確命名為 toc/nav 的 html
+    const fallbackHtmlItem = Object.entries(this.manifest).find(([id, item]) => 
+      id.toLowerCase().includes('nav') || 
+      id.toLowerCase().includes('toc') || 
+      (item.href && (item.href.toLowerCase().includes('nav.xhtml') || item.href.toLowerCase().includes('toc.xhtml') || item.href.toLowerCase().includes('nav.html') || item.href.toLowerCase().includes('toc.html')))
+    )?.[1];
+
+    let tocList = [];
+
+    // 1. 優先嘗試 EPUB 3 Navigation Document
+    if (navItem) {
+      const navList = await this._parseHtmlToc(navItem.href);
+      if (navList.length > 0 && !this._isTocDegraded(navList)) {
+        tocList = navList;
       }
     }
 
+    // 2. 嘗試 EPUB 2 NCX 文件
     if (tocList.length === 0 && ncxItem) {
-      try {
-        const ncxText = await this.zip.file(ncxItem.href).async('string');
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(ncxText, 'text/xml');
-        
-        // 容錯：XML 區分大小寫，支持 navPoint 和 navpoint，並忽略命名空間
-        let navPoints = Array.from(xmlDoc.getElementsByTagNameNS('*', 'navPoint'));
-        if (navPoints.length === 0) {
-          navPoints = Array.from(xmlDoc.getElementsByTagNameNS('*', 'navpoint'));
-        }
-        if (navPoints.length === 0) {
-          // 最後的退路，嘗試傳統方法
-          navPoints = Array.from(xmlDoc.querySelectorAll('navPoint, navpoint'));
-        }
-        
-        navPoints.forEach(point => {
-          // 容錯：提取標題與內容節點，忽略命名空間
-          const labels = Array.from(point.getElementsByTagNameNS('*', 'navLabel'));
-          const labelsLower = Array.from(point.getElementsByTagNameNS('*', 'navlabel'));
-          const allLabels = [...labels, ...labelsLower];
-          let title = '';
-          
-          if (allLabels.length > 0) {
-            // 取第一個 label（直接子級）的 text
-            const firstLabel = allLabels[0];
-            const texts = Array.from(firstLabel.getElementsByTagNameNS('*', 'text'));
-            if (texts.length > 0) {
-              title = texts[0].textContent.trim();
-            } else {
-              title = firstLabel.textContent.trim();
+      const ncxList = await this._parseNcx(ncxItem.href);
+      if (ncxList.length > 0) {
+        if (!this._isTocDegraded(ncxList)) {
+          tocList = ncxList;
+        } else {
+          // NCX 存在嚴重退化/損壞（大量章節指向相同目標且無錨點），嘗試 Guide TOC 或備用 HTML TOC 進行修復
+          console.warn('[EpubParser] NCX TOC appears degraded with excessive duplicate target files. Checking Guide/HTML TOC candidates...');
+          const altHref = guideTocHref || fallbackHtmlItem?.href;
+          if (altHref) {
+            const altList = await this._parseHtmlToc(altHref);
+            if (altList.length > 0 && !this._isTocDegraded(altList)) {
+              console.log(`[EpubParser] Successfully recovered TOC using Guide/HTML TOC (${altList.length} items) from ${altHref}`);
+              tocList = altList;
             }
           }
-          
-          const contents = Array.from(point.getElementsByTagNameNS('*', 'content'));
-          const contentNode = contents.length > 0 ? contents[0] : null;
-          
-          if (title && contentNode) {
-            const src = contentNode.getAttribute('src');
-            const baseDir = this._getDirectory(ncxItem.href);
-            const resolvedHref = this._resolvePath(baseDir, src);
-            
-            // 計算 depth: 向上尋找 navPoint/navpoint 父節點個數
-            let depth = 0;
-            let parent = point.parentElement;
-            while (parent) {
-              const pTagName = parent.tagName ? parent.tagName.toLowerCase() : '';
-              if (pTagName === 'navpoint') {
-                depth++;
-              }
-              parent = parent.parentElement;
-            }
-            tocList.push({ title, href: resolvedHref, depth: depth });
+          if (tocList.length === 0) {
+            tocList = ncxList; // 若無更好的備選方案，保留 NCX
           }
-        });
-      } catch (e) {
-        console.warn('EPUB 2 NCX parsing failed:', e);
+        }
       }
     }
 
-    // 如果沒有目錄，就直接使用 Spine 中的文件作為章節
+    // 3. 嘗試 Guide 中的 TOC 引用
+    if (tocList.length === 0 && guideTocHref) {
+      const guideList = await this._parseHtmlToc(guideTocHref);
+      if (guideList.length > 0) {
+        tocList = guideList;
+      }
+    }
+
+    // 4. 嘗試 Manifest 中候選的 HTML TOC
+    if (tocList.length === 0 && fallbackHtmlItem) {
+      const fallbackList = await this._parseHtmlToc(fallbackHtmlItem.href);
+      if (fallbackList.length > 0) {
+        tocList = fallbackList;
+      }
+    }
+
+    // 5. 若仍無目錄，直接使用 Spine 中的文件作為章節
     if (tocList.length === 0) {
       this.spine.forEach((id, index) => {
         const item = this.manifest[id];
         if (item) {
           tocList.push({
             title: `Chapter ${index + 1}`,
-            href: item.href
+            href: item.href,
+            depth: 0
           });
         }
       });
