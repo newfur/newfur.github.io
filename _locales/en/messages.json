@@ -454,6 +454,9 @@
   "confirm_delete_book": {
     "message": "Are you sure you want to delete this book?"
   },
+  "book_file_missing_cleaned": {
+    "message": "The book file was missing or deleted. It has been automatically cleaned from your library."
+  },
   "unknown_author": {
     "message": "Unknown"
   },

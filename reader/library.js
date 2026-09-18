@@ -12,6 +12,7 @@ export class BookLibrary {
     this.db = null;
     this._progressQueue = null;
     this._cleanupTriggered = false;
+    this._deletedBookIds = new Set();
   }
 
   // 打開資料庫
@@ -60,6 +61,7 @@ export class BookLibrary {
     if (!this._cleanupTriggered) {
       this._cleanupTriggered = true;
       this._triggerLegacyCleanup().catch(e => console.warn('[BookLibrary] Legacy cleanup error:', e));
+      this.cleanOrphanedBooks().catch(e => console.warn('[BookLibrary] Auto clean orphaned books error:', e));
     }
 
     return this.db;
@@ -477,9 +479,13 @@ export class BookLibrary {
     if (!meta) return null;
 
     const fileRecord = await this.getBookFile(id);
+    if (!fileRecord || !fileRecord.file) {
+      console.warn(`[BookLibrary] Book "${meta.title}" (${id}) metadata exists, but file is missing in book_files.`);
+      return null;
+    }
     return {
       ...meta,
-      file: fileRecord ? fileRecord.file : null
+      file: fileRecord.file
     };
   }
 
@@ -509,41 +515,115 @@ export class BookLibrary {
     });
   }
 
-  // 刪除書籍 (同時刪除元數據與實體檔案)
+  // 刪除書籍 (同時刪除元數據與實體檔案，納入隊列排程，杜絕非同步任務復活幽靈記錄)
   async deleteBook(id) {
+    if (!id) return false;
     await this._ensureOpen();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books', 'book_files'], 'readwrite');
-      transaction.objectStore('books').delete(id);
-      transaction.objectStore('book_files').delete(id);
+    this._deletedBookIds.add(String(id));
 
-      transaction.oncomplete = () => resolve(true);
-      transaction.onerror = () => reject(transaction.error);
-    });
-  }
-
-  // 核心安全元數據變更器 (帶排隊保護，保證在併發寫入時讀取最新元數據，防止進度與統計互相覆蓋)
-  async _mutateBook(id, mutatorFn) {
     if (!this._progressQueue) {
       this._progressQueue = Promise.resolve();
     }
 
     const task = async () => {
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction(['books', 'book_files'], 'readwrite');
+        transaction.objectStore('books').delete(id);
+        transaction.objectStore('book_files').delete(id);
+
+        transaction.oncomplete = () => resolve(true);
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('Delete transaction aborted'));
+      });
+    };
+
+    this._progressQueue = this._progressQueue.then(task, task);
+    return this._progressQueue;
+  }
+
+  // 自動清理無實體檔案的孤立書籍記錄（如歷史異常或中斷產生的死數據）
+  async cleanOrphanedBooks() {
+    await this._ensureOpen();
+    try {
+      const transaction = this.db.transaction(['books', 'book_files'], 'readonly');
+      const bookStore = transaction.objectStore('books');
+      const fileStore = transaction.objectStore('book_files');
+
+      const allBooks = await new Promise(res => {
+        const req = bookStore.getAll();
+        req.onsuccess = () => res(req.result || []);
+        req.onerror = () => res([]);
+      });
+
+      const allFileKeys = await new Promise(res => {
+        const req = fileStore.getAllKeys();
+        req.onsuccess = () => res(new Set(req.result ? req.result.map(String) : []));
+        req.onerror = () => res(new Set());
+      });
+
+      const orphanedIds = allBooks
+        .filter(b => !allFileKeys.has(String(b.id)))
+        .map(b => b.id);
+
+      if (orphanedIds.length > 0) {
+        console.warn(`[BookLibrary] Found ${orphanedIds.length} orphaned book records. Cleaning up...`, orphanedIds);
+        for (const id of orphanedIds) {
+          await this.deleteBook(id);
+        }
+      }
+      return orphanedIds;
+    } catch (e) {
+      console.warn('[BookLibrary] Error cleaning orphaned books:', e);
+      return [];
+    }
+  }
+
+  // 核心安全元數據變更器 (帶排隊保護與防幽靈復活校驗，保證在併發寫入時讀取最新元數據，防止進度與統計互相覆蓋或刪除後復活)
+  async _mutateBook(id, mutatorFn) {
+    if (!id || this._deletedBookIds.has(String(id))) {
+      return null;
+    }
+
+    if (!this._progressQueue) {
+      this._progressQueue = Promise.resolve();
+    }
+
+    const task = async () => {
+      if (this._deletedBookIds.has(String(id))) {
+        return null;
+      }
       await this._ensureOpen();
       const book = await this.getBookMetadata(id);
-      if (!book) return null;
+      if (!book || this._deletedBookIds.has(String(id))) return null;
 
       const result = await mutatorFn(book);
+      if (this._deletedBookIds.has(String(id))) return null;
       book.lastReadAt = Date.now();
 
       return new Promise((resolve) => {
         const transaction = this.db.transaction(['books'], 'readwrite');
         const store = transaction.objectStore('books');
-        const request = store.put(this._cleanBookForStorage(book));
 
-        transaction.oncomplete = () => resolve(result !== undefined ? result : book);
+        // 二次事務內安全校驗：再次確認記錄在數據庫中依然存在，若已被刪除則堅決不執行 put
+        const checkReq = store.get(id);
+        checkReq.onsuccess = () => {
+          if (!checkReq.result || this._deletedBookIds.has(String(id))) {
+            resolve(null);
+            return;
+          }
+          const request = store.put(this._cleanBookForStorage(book));
+          request.onsuccess = () => resolve(result !== undefined ? result : book);
+          request.onerror = () => {
+            console.warn('[BookLibrary] _mutateBook put error:', request.error);
+            resolve(result !== undefined ? result : book);
+          };
+        };
+        checkReq.onerror = () => {
+          resolve(null);
+        };
+
         transaction.onerror = () => {
-          console.warn('[BookLibrary] _mutateBook transaction error:', transaction.error || request.error);
+          console.warn('[BookLibrary] _mutateBook transaction error:', transaction.error);
           resolve(result !== undefined ? result : book);
         };
         transaction.onabort = () => {

@@ -469,7 +469,88 @@ assert.match(
   'reader.css must enable font-synthesis: weight style'
 );
 
-console.log('TTS and font review regression tests passed');
+// ==================== Book Deletion & Ghost Prevention Tests ====================
+const librarySource = fs.readFileSync('reader/library.js', 'utf8');
+
+// 1. Verify _deletedBookIds set exists in BookLibrary constructor
+assert.match(
+  librarySource,
+  /this\._deletedBookIds\s*=\s*new Set\(\);/,
+  'BookLibrary constructor must initialize _deletedBookIds set'
+);
+
+// 2. Verify deleteBook registers id into _deletedBookIds and queues in _progressQueue
+assert.match(
+  librarySource,
+  /this\._deletedBookIds\.add\(String\(id\)\);/,
+  'deleteBook must record id into _deletedBookIds'
+);
+assert.match(
+  librarySource,
+  /this\._progressQueue\s*=\s*this\._progressQueue\.then\(task,\s*task\);/,
+  'deleteBook must be sequenced in _progressQueue to avoid concurrency race condition'
+);
+
+// 3. Verify _mutateBook checks _deletedBookIds and validates store.get before store.put
+assert.match(
+  librarySource,
+  /if\s*\(!id\s*\|\|\s*this\._deletedBookIds\.has\(String\(id\)\)\)\s*\{\s*return null;\s*\}/,
+  '_mutateBook must immediately reject deleted book IDs'
+);
+assert.match(
+  librarySource,
+  /const checkReq = store\.get\(id\);[\s\S]*?if\s*\(!checkReq\.result\s*\|\|\s*this\._deletedBookIds\.has\(String\(id\)\)\)/,
+  '_mutateBook must perform intra-transaction safety check before executing store.put'
+);
+
+// 4. Verify getBook returns null when fileRecord is missing
+assert.match(
+  librarySource,
+  /if\s*\(!fileRecord\s*\|\|\s*!fileRecord\.file\)\s*\{[\s\S]*?return null;/,
+  'getBook must return null when physical file in book_files is missing'
+);
+
+// 5. Verify cleanOrphanedBooks method exists
+assert.match(
+  librarySource,
+  /async\s+cleanOrphanedBooks\(\)/,
+  'BookLibrary must provide cleanOrphanedBooks method'
+);
+
+// 6. Verify deleteBookHandler cleans pendingIndexedDBUpdates and localStorage
+assert.match(
+  source,
+  /pendingIndexedDBUpdates\.delete\(id\);/,
+  'deleteBookHandler must clean in-flight pendingIndexedDBUpdates'
+);
+assert.match(
+  source,
+  /localStorage\.removeItem\(`edgereader_progress_\$\{id\}`\);/,
+  'deleteBookHandler must clean localStorage progress'
+);
+assert.match(
+  source,
+  /bookCoverCache\.delete\(id\);/,
+  'deleteBookHandler must clean bookCoverCache'
+);
+
+// 7. Verify openBook auto-cleans orphaned books
+assert.match(
+  source,
+  /\[openBook\] Auto-cleaning orphaned book metadata for ID:/,
+  'openBook must detect and clean orphaned book metadata'
+);
+
+// 8. Verify locale message for missing file cleanup in all 3 locales
+for (const loc of ['en', 'zh_CN', 'zh_TW']) {
+  const locJson = JSON.parse(fs.readFileSync(`_locales/${loc}/messages.json`, 'utf8'));
+  assert.ok(
+    locJson.book_file_missing_cleaned && locJson.book_file_missing_cleaned.message,
+    `_locales/${loc}/messages.json must contain book_file_missing_cleaned message`
+  );
+}
+
+console.log('TTS, font review, and book deletion regression tests passed');
 
 
 

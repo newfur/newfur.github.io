@@ -463,6 +463,25 @@ function initUIEventBindings() {
       if (selectedBookIds.size === 0) return;
       if (confirm(`確定要刪除選中的 ${selectedBookIds.size} 本書籍嗎？`)) {
         for (const bookId of selectedBookIds) {
+          if (pendingIndexedDBUpdates.has(bookId)) {
+            pendingIndexedDBUpdates.delete(bookId);
+          }
+          if (saveTimeout && currentBook && currentBook.id === bookId) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+          }
+          try {
+            localStorage.removeItem(`edgereader_progress_${bookId}`);
+          } catch (_) {}
+          bookCoverCache.delete(bookId);
+
+          if (currentBook && currentBook.id === bookId) {
+            try { tts.stop(); } catch (_) {}
+            stopReadingTracker();
+            currentBook = null;
+            window.currentBook = null;
+          }
+
           await library.deleteBook(bookId);
         }
         toggleSelectMode(false);
@@ -3203,6 +3222,7 @@ async function renderBookshelf(searchQuery = '') {
               compressCoverImage(effectiveCover, 512, 0.85).then(async (compressed) => {
                 const finalData = compressed || (await blobToDataUrl(effectiveCover));
                 if (finalData && typeof finalData === 'string' && finalData.startsWith('data:')) {
+                  if (library._deletedBookIds && library._deletedBookIds.has(String(book.id))) return;
                   bookCoverCache.set(book.id, finalData);
                   book.cover = finalData;
                   library.updateBook(book).catch(() => {});
@@ -3391,6 +3411,7 @@ async function repairMissingBookCover(book, coverContainer) {
       }
 
       if (dataUrl && coverContainer.isConnected) {
+        if (library._deletedBookIds && library._deletedBookIds.has(String(book.id))) return;
         book.cover = dataUrl;
         bookCoverCache.set(book.id, dataUrl);
         coverContainer.innerHTML = `
@@ -3414,7 +3435,33 @@ async function repairMissingBookCover(book, coverContainer) {
 
 // 刪除書籍（全局函數，便於 HTML 觸發）
 async function deleteBookHandler(id) {
+  if (!id) return;
   if (confirm(getMsg('confirm_delete_book'))) {
+    // 1. 清理防抖寫入隊列中該書籍的未決更新，防止後續定時器將已刪除書籍寫回數據庫
+    if (pendingIndexedDBUpdates.has(id)) {
+      pendingIndexedDBUpdates.delete(id);
+    }
+    if (saveTimeout && currentBook && currentBook.id === id) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+
+    // 2. 清理 localStorage 進度記錄與封面快取
+    try {
+      localStorage.removeItem(`edgereader_progress_${id}`);
+    } catch (_) {}
+    bookCoverCache.delete(id);
+
+    // 3. 如果刪除的是當前正處於打開/或最後打開的書籍，停止 TTS 與閱讀計時器
+    if (currentBook && currentBook.id === id) {
+      try { tts.stop(); } catch (_) {}
+      stopReadingTracker();
+      currentBook = null;
+      window.currentBook = null;
+    }
+    hideBookActionSheet();
+
+    // 4. 執行數據庫物理刪除（納入隊列與防幽靈復活）
     await library.deleteBook(id);
     await renderBookshelf();
   }
@@ -3797,8 +3844,18 @@ async function openBook(id) {
   openingBookId = id;
   const requestId = ++openBookRequestId;
   const book = await library.getBook(id);
-  if (!book || requestId !== openBookRequestId) {
+  if (!book || !book.file || requestId !== openBookRequestId) {
     openingBookId = null;
+    if (!book || (book && !book.file)) {
+      // 檢查是否為殘留的無實體檔案的孤立書籍記錄，若是則自動從書庫清理，防用戶重複受困
+      const meta = await library.getBookMetadata(id);
+      if (meta) {
+        console.warn(`[openBook] Auto-cleaning orphaned book metadata for ID: ${id}`);
+        await library.deleteBook(id);
+        await renderBookshelf();
+        alert(getMsg('book_file_missing_cleaned') || '該書籍檔案不存在或已被刪除，已自動從書庫清理。');
+      }
+    }
     return;
   }
   if (book && book.cover) {

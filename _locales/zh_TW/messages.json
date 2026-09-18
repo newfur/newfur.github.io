@@ -454,6 +454,9 @@
   "confirm_delete_book": {
     "message": "確定要刪除這本書嗎？"
   },
+  "book_file_missing_cleaned": {
+    "message": "該書籍檔案不存在或已被刪除，已自動從書庫清理。"
+  },
   "unknown_author": {
     "message": "未知作者"
   },

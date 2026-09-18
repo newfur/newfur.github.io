@@ -454,6 +454,9 @@
   "confirm_delete_book": {
     "message": "确定要删除这本书吗？"
   },
+  "book_file_missing_cleaned": {
+    "message": "该书籍文件不存在或已被删除，已自动从书库清理。"
+  },
   "unknown_author": {
     "message": "未知作者"
   },
