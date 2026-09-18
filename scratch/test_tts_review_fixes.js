@@ -330,7 +330,7 @@ class MockTTSEngine {
   assert.ok(simEngine.mediaSessionState.playbackRate >= 0.1, 'playbackRate must never be 0 in setPositionState');
 }
 
-// Flicker prevention regression assertions
+// Option A: Single sentence progress and chapter percentage regression assertions
 const updatedTtsSource = fs.readFileSync('reader/tts.js', 'utf8');
 assert.match(
   updatedTtsSource,
@@ -349,8 +349,13 @@ assert.match(
 );
 assert.match(
   updatedTtsSource,
-  /this\._updatePositionState\(initProg\.position\);\s+this\._updateMediaSession\(sentence\);/,
-  'tts.js must pre-sync chapter position and metadata before changing audio.src'
+  /this\._updatePositionState\(0\);\s+this\._updateMediaSession\(sentence\);/,
+  'tts.js must pre-sync sentence zero start and metadata before changing audio.src'
+);
+assert.match(
+  updatedTtsSource,
+  /\$\{chapterTitle\} \(\$\{pct\}%\)/,
+  'tts.js must display chapter progress percentage in subtitle'
 );
 
 console.log('TTS review regression tests passed');

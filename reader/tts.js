@@ -2387,11 +2387,9 @@ export class TTSEngine {
     if (!isSameSource) {
       audio._boundaries = null; // 重置已快取的邊界數據
 
-      // 關鍵修復：在切換音訊源之前，同步將鎖屏標題與章節進度提前鎖定到新句子的起點！
-      // 杜絕換源瞬間因音訊標籤內部 currentTime 重設為 0 而在鎖屏界面閃爍 0:00
+      // 方案A：在切換音訊源之前，同步將鎖屏標題更新為新句子，單句進度自然從 0:00 起步
       if (this.isPlaying && !this.isPaused) {
-        const initProg = this._getChapterProgress(sentence);
-        this._updatePositionState(initProg.position);
+        this._updatePositionState(0);
         this._updateMediaSession(sentence);
       }
 
@@ -3193,7 +3191,7 @@ export class TTSEngine {
     }
   }
 
-  // 統一同步更新系統鎖屏與控制中心（MediaSession）的章節進度狀態
+  // 同步更新系統鎖屏與控制中心（MediaSession）的單句播放進度（方案A：100%契合原生音訊生命週期，杜絕跳躍與閃爍）
   _updatePositionState(forcedPosition = null) {
     if (this._isNativeEngineAvailable()) return;
     if (typeof window === 'undefined' || !('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') {
@@ -3201,30 +3199,27 @@ export class TTSEngine {
     }
 
     try {
-      const progress = this._getChapterProgress();
-      const chapterDuration = progress.duration;
-      if (!chapterDuration || chapterDuration <= 0 || isNaN(chapterDuration)) return;
+      const audio = this.currentAudio;
+      let duration = (audio && typeof audio.duration === 'number' && !isNaN(audio.duration) && audio.duration > 0)
+        ? audio.duration
+        : null;
 
-      let currentElapsed;
-      if (typeof forcedPosition === 'number' && !isNaN(forcedPosition)) {
-        currentElapsed = forcedPosition;
-      } else {
-        const audio = this.currentAudio;
-        const sentenceCurrentTime = (audio && typeof audio.currentTime === 'number' && !isNaN(audio.currentTime)) ? audio.currentTime : 0;
-
-        if (audio && audio._isGroupPlay && typeof audio._groupStartIndex === 'number' && Array.isArray(this.sentences)) {
-          const groupFirstSentence = this.sentences[audio._groupStartIndex];
-          const groupStartProg = this._getChapterProgress(groupFirstSentence);
-          currentElapsed = groupStartProg.position + sentenceCurrentTime;
-        } else {
-          currentElapsed = progress.position + sentenceCurrentTime;
-        }
+      if (!duration) {
+        const sentence = (this.sentences && this.sentences[this.currentIndex]) || null;
+        const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
+        const len = (sentence && sentence.text) ? sentence.text.length : 15;
+        duration = Math.max(1.5, (len / (4.2 * rate)) + 0.5);
       }
 
-      const safeDuration = Math.max(60.0, Number(chapterDuration) || 60.0);
-      const safePosition = Math.max(0, Math.min(Number(currentElapsed) || 0, safeDuration));
-      // W3C 規範：playbackRate 嚴格禁止傳入 0，否則拋出 TypeError！
-      // 暫停狀態由 mediaSession.playbackState = 'paused' 負責制動，此處保持配置語速（>= 0.1）
+      let position = 0;
+      if (typeof forcedPosition === 'number' && !isNaN(forcedPosition)) {
+        position = forcedPosition;
+      } else if (audio && typeof audio.currentTime === 'number' && !isNaN(audio.currentTime)) {
+        position = audio.currentTime;
+      }
+
+      const safeDuration = Math.max(0.5, Number(duration) || 1.5);
+      const safePosition = Math.max(0, Math.min(Number(position) || 0, safeDuration));
       const safeRate = Math.max(0.1, Number(this.rate) || 1.0);
 
       navigator.mediaSession.setPositionState({
@@ -3234,7 +3229,7 @@ export class TTSEngine {
       });
       this._lastPositionUpdateTime = Date.now();
     } catch (e) {
-      // 捕獲並靜默處理瀏覽器兼容性異常
+      // 靜默處理兼容性異常
     }
   }
 
@@ -3324,8 +3319,8 @@ export class TTSEngine {
     const chapterDuration = progress.duration;
     const currentElapsed = progress.position;
 
-    // 關鍵：先於任何元數據更新之前，立即鎖定章節累計進度，防止系統回落至音訊標籤的單句 0:00
-    this._updatePositionState(currentElapsed);
+    // 方案A：立即同步單句起點進度，與底層音訊標籤 100% 吻合
+    this._updatePositionState();
 
     const sentIndex = sentence ? sentence.index : this.currentIndex;
     if (this._currentMediaSessionSentenceIndex === sentIndex && typeof navigator !== 'undefined' && navigator.mediaSession && navigator.mediaSession.metadata) {
@@ -3343,11 +3338,28 @@ export class TTSEngine {
       this.currentBookCover = coverBase64;
     }
 
+    const sentIdx = progress.sentIdxInChapter;
+    const totalSent = Math.max(1, progress.totalSentences);
+    const pct = Math.round(((sentIdx + 1) / totalSent) * 100);
+
     let chapterTitle = '';
     if (this.epubBookData && this.epubBookData.chapters && this.epubBookData.chapters[progress.chapterIndex]) {
       chapterTitle = this.epubBookData.chapters[progress.chapterIndex].title || '';
     }
-    const displayArtist = chapterTitle ? `${chapterTitle} · ${artist}` : artist;
+
+    // 方案A核心：在副標題展示章節進度百分比，兼顧精確章節進度感知與鎖屏單句物理流暢性
+    let displayArtist = '';
+    if (chapterTitle) {
+      displayArtist = `${chapterTitle} (${pct}%)`;
+      if (artist && artist !== 'E-Book Reader') {
+        displayArtist += ` · ${artist}`;
+      }
+    } else {
+      displayArtist = `(${pct}%)`;
+      if (artist && artist !== 'E-Book Reader') {
+        displayArtist += ` · ${artist}`;
+      }
+    }
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
@@ -3392,8 +3404,6 @@ export class TTSEngine {
 
         // 核心優化：若 MediaMetadata 已存在，直接原地修改屬性（in-place mutation），
         // 嚴禁每句重新 new MediaMetadata(metadataOpts)！
-        // 重新實例化 MediaMetadata 會導致 WebKit 清空系統 NowPlayingInfo 字典，
-        // 使得 iOS 鎖屏進度條在接收到 setPositionState 之前短暫回退至單句 0:00，產生視覺閃爍！
         if (navigator.mediaSession.metadata && typeof MediaMetadata !== 'undefined' && navigator.mediaSession.metadata instanceof MediaMetadata) {
           navigator.mediaSession.metadata.title = text;
           if (navigator.mediaSession.metadata.artist !== displayArtist) {
@@ -3410,7 +3420,7 @@ export class TTSEngine {
         }
 
         this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
-        this._updatePositionState(currentElapsed);
+        this._updatePositionState();
 
         if (!this._mediaSessionActionHandlersAttached) {
           this._mediaSessionActionHandlersAttached = true;
@@ -3441,27 +3451,9 @@ export class TTSEngine {
             navigator.mediaSession.setActionHandler('seekto', (details) => {
               if (details && typeof details.seekTime === 'number') {
                 const targetTime = details.seekTime;
-                const curProg = this._getChapterProgress();
-                const chapterSentences = curProg.chapterSentences;
-                if (chapterSentences && chapterSentences.length > 0) {
-                  let accumulated = 0;
-                  let targetSentence = chapterSentences[0];
-                  const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
-                  for (let i = 0; i < chapterSentences.length; i++) {
-                    const s = chapterSentences[i];
-                    const sDur = (s && typeof s.actualDuration === 'number' && s.actualDuration > 0)
-                      ? s.actualDuration
-                      : Math.max(1.5, (((s && s.text) ? s.text.length : 15) / (4.2 * rate)) + 0.5);
-                    if (accumulated + sDur >= targetTime || i === chapterSentences.length - 1) {
-                      targetSentence = s;
-                      break;
-                    }
-                    accumulated += sDur;
-                  }
-                  if (targetSentence && typeof targetSentence.index === 'number') {
-                    this.play(targetSentence.index, true);
-                    this._updatePositionState(targetTime);
-                  }
+                if (this.currentAudio && !isNaN(this.currentAudio.duration)) {
+                  this.currentAudio.currentTime = Math.max(0, Math.min(targetTime, this.currentAudio.duration));
+                  this._updatePositionState(this.currentAudio.currentTime);
                 }
               }
             });
