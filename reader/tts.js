@@ -452,6 +452,10 @@ export class TTSEngine {
         if (this.isPlaying && !this.isPaused && navigator.mediaSession.playbackState !== 'playing' && audio && !audio.paused && !audio.ended) {
           navigator.mediaSession.playbackState = 'playing';
         }
+        const now = Date.now();
+        if (!this._lastPositionUpdateTime || now - this._lastPositionUpdateTime >= 1000) {
+          this._updatePositionState();
+        }
       }
     };
     
@@ -2318,6 +2322,9 @@ export class TTSEngine {
     const prevAudio = this.currentAudio;
     const audio = this.players[this.activePlayerIdx];
     this.currentAudio = audio;
+    audio._isGroupPlay = isGroupPlay;
+    audio._groupStartIndex = groupStartIndex;
+    audio._groupSentences = groupSentences;
     
     const isSameSource = (audio.dataset.srcUrl === audioUrl);
     
@@ -2377,6 +2384,25 @@ export class TTSEngine {
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
         setupGroupSeeking();
+        if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
+          if (isGroupPlay && groupSentences) {
+            const bounds = getBoundaries();
+            if (bounds && bounds.length === groupSentences.length) {
+              for (let i = 0; i < groupSentences.length; i++) {
+                const s = this.sentences[groupStartIndex + i] || groupSentences[i];
+                if (s) {
+                  s.actualDuration = Math.max(0.1, bounds[i].end - bounds[i].start);
+                }
+              }
+            }
+          } else {
+            const sent = this.sentences[index] || sentence;
+            if (sent) {
+              sent.actualDuration = audio.duration;
+            }
+          }
+        }
+        this._updatePositionState();
         if (this.isPlaying && !this.isPaused) {
           const sent = this.sentences[index] || sentence;
           this._updateMediaSession(sent);
@@ -2386,6 +2412,7 @@ export class TTSEngine {
       audio.loop = false;
       audio.playbackRate = this.rate;
       setupGroupSeeking();
+      this._updatePositionState();
     }
     audio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
     audio.muted = false; // 關鍵修復：防止 WebKit 底層因自動播放或後台切源隱式設置 muted=true 導致有進度無聲音
@@ -2395,6 +2422,7 @@ export class TTSEngine {
 
     audio.onplay = () => {
       this._setMediaSessionPlaybackState('playing');
+      this._updatePositionState();
       if (this.isPlaying && !this.isPaused && isCapacitorApp) {
         window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
           isPlaying: true
@@ -2404,6 +2432,7 @@ export class TTSEngine {
     audio.onplaying = () => {
       if (this.isPlaying && !this.isPaused) {
         this._setMediaSessionPlaybackState('playing');
+        this._updatePositionState();
       }
     };
     audio.onpause = () => {
@@ -2412,9 +2441,11 @@ export class TTSEngine {
       if (this.currentAudio === audio) {
         if (this.isPaused) {
           this._setMediaSessionPlaybackState('paused');
+          this._updatePositionState();
         } else if (this.isPlaying) {
           // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
           this._setMediaSessionPlaybackState('playing');
+          this._updatePositionState();
         }
       }
       // 換句過渡期間當前句子音訊暫停，WebKit底層會誤將鎖屏翻轉為三角形(▶)。立即通知原生層維持播放中(⏸)！
@@ -2440,6 +2471,10 @@ export class TTSEngine {
         if (typeof audio._lastWatchedTime !== 'number' || Math.abs(rawTime - audio._lastWatchedTime) > 0.1) {
           audio._lastWatchedTime = rawTime;
           this._markPlaybackProgress();
+        }
+        const now = Date.now();
+        if (!this._lastPositionUpdateTime || now - this._lastPositionUpdateTime >= 1000) {
+          this._updatePositionState();
         }
         const currentTime = rawTime;
         
@@ -2547,6 +2582,7 @@ export class TTSEngine {
               } catch (e) {}
             }
             this._setMediaSessionPlaybackState('playing');
+            this._updatePositionState();
             if (isCapacitorApp) {
               window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
                 isPlaying: true
@@ -2563,6 +2599,11 @@ export class TTSEngine {
         if (typeof audio._lastWatchedTime !== 'number' || Math.abs(audio.currentTime - audio._lastWatchedTime) > 0.1) {
           audio._lastWatchedTime = audio.currentTime;
           this._markPlaybackProgress();
+        }
+        
+        const now = Date.now();
+        if (!this._lastPositionUpdateTime || now - this._lastPositionUpdateTime >= 1000) {
+          this._updatePositionState();
         }
         
         // 僅在多播放器架構（桌面端雙播放器）下提前 80ms 切換至下一播放器以實現無縫交替；
@@ -2619,6 +2660,7 @@ export class TTSEngine {
               } catch (e) {}
             }
             this._setMediaSessionPlaybackState('playing');
+            this._updatePositionState();
             if (isCapacitorApp) {
               window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
                 isPlaying: true
@@ -2639,19 +2681,38 @@ export class TTSEngine {
           isPlaying: true
         }).catch(() => {});
       }
-      
-      // 停止其它播放器的回調（僅多播放器架構），避免事件競爭，但延後到新音訊成功播放後再執行 pause()
-      // 消除新舊音訊切換時的「零音訊空窗期」，防止 iOS 鎖屏/通知欄判定為暫停而閃爍切換圖標
+
+      // 如果當前播放器已暫停且 src 匹配，嘗試直接 resume
+      if (audio.paused && audio.currentTime > 0 && audio.src && !audio.ended && isSameSource) {
+        audio.playbackRate = this.rate;
+        audio.play().then(() => {
+          this._stopSilenceKeepAlive();
+          this._setMediaSessionPlaybackState('playing');
+          this._updatePositionState();
+          this._startPolling();
+          doHighlightAndCallbacks();
+        }).catch(() => {
+          // 若直接播放失敗則走完整 play 邏輯
+        });
+        return;
+      }
+
+      // 關鍵修復：在啟動真實語音播放前，徹底重置並暫停所有閒置播放器！
+      // 必須在調用 audio.play() 之前同步暫停閒置播放器，以保證其發出的 pause 事件在當前播放器 playing 事件之前被發送，
+      // 避免閒置播放器的 pause 事件晚於當前播放器的 play 事件到達系統，誤將鎖屏界面的雙豎線暫停鍵（⏸）翻轉為三角形（▶）
       if (Array.isArray(this.players) && this.players.length > 1) {
         this.players.forEach(p => {
           if (p && p !== audio) {
             try {
+              // 移除多餘的事件監聽，防止閒置播放器的舊回調被觸發
               p.ontimeupdate = null;
               p.onended = null;
               p.onloadedmetadata = null;
               p.onpause = null;
               p.onplay = null;
               p.onplaying = null;
+              p.pause();
+              p.currentTime = 0;
             } catch (e) {}
           }
         });
@@ -2670,9 +2731,10 @@ export class TTSEngine {
           this.players.forEach(p => {
             if (p && p !== audio) {
               try {
-                if (typeof p._cleanupResources === 'function') {
-                  p._cleanupResources();
-                  p._cleanupResources = null;
+                if (p.dataset) {
+                  p.dataset.srcUrl = '';
+                  p.removeAttribute('src');
+                  p.load();
                 }
                 p.ontimeupdate = null;
                 p.onended = null;
@@ -2691,7 +2753,7 @@ export class TTSEngine {
         this._stopSilenceKeepAlive();
 
         // 關鍵核心修復：在暫停舊播放器與靜音播放器之後，立即無條件再次強行宣告 playing！
-        // 徹底覆蓋 WebKit 因閒置播放器 pause() 而發送給 iOS MediaRemote 的異步 Paused IPC 通知，
+        // 徹底覆蓋 WebKit 因閒置播放器 pause() 而發送給 iOS MediaRemote 的異步 IPC 通知，
         // 確保通知欄與鎖屏界面的播放控制按鈕在起播與換句後始終保持為雙豎線暫停鍵（⏸）
         this._setMediaSessionPlaybackState('playing');
         if (isCapacitorApp) {
@@ -2709,6 +2771,7 @@ export class TTSEngine {
         this._prefetchNextChapter();
         this._prewarmNextPlayer();
         this._startPolling(); // 啟動高頻輪詢以即時更新高亮
+        this._updatePositionState(); // 確保起播第一秒立即鎖定章節進度
         
         // 在音訊實際開始播放時，才執行高亮和回調，消除播放延遲導致的高亮超前
         doHighlightAndCallbacks();
@@ -3113,6 +3176,51 @@ export class TTSEngine {
     }
   }
 
+  // 統一同步更新系統鎖屏與控制中心（MediaSession）的章節進度狀態
+  _updatePositionState(forcedPosition = null) {
+    if (this._isNativeEngineAvailable()) return;
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') {
+      return;
+    }
+
+    try {
+      const progress = this._getChapterProgress();
+      const chapterDuration = progress.duration;
+      if (!chapterDuration || chapterDuration <= 0 || isNaN(chapterDuration)) return;
+
+      let currentElapsed;
+      if (typeof forcedPosition === 'number' && !isNaN(forcedPosition)) {
+        currentElapsed = forcedPosition;
+      } else {
+        const audio = this.currentAudio;
+        const sentenceCurrentTime = (audio && typeof audio.currentTime === 'number' && !isNaN(audio.currentTime)) ? audio.currentTime : 0;
+
+        if (audio && audio._isGroupPlay && typeof audio._groupStartIndex === 'number' && Array.isArray(this.sentences)) {
+          const groupFirstSentence = this.sentences[audio._groupStartIndex];
+          const groupStartProg = this._getChapterProgress(groupFirstSentence);
+          currentElapsed = groupStartProg.position + sentenceCurrentTime;
+        } else {
+          currentElapsed = progress.position + sentenceCurrentTime;
+        }
+      }
+
+      const safeDuration = Math.max(60.0, Number(chapterDuration) || 60.0);
+      const safePosition = Math.max(0, Math.min(Number(currentElapsed) || 0, safeDuration));
+      // W3C 規範：playbackRate 嚴格禁止傳入 0，否則拋出 TypeError！
+      // 暫停狀態由 mediaSession.playbackState = 'paused' 負責制動，此處保持配置語速（>= 0.1）
+      const safeRate = Math.max(0.1, Number(this.rate) || 1.0);
+
+      navigator.mediaSession.setPositionState({
+        duration: safeDuration,
+        playbackRate: safeRate,
+        position: safePosition
+      });
+      this._lastPositionUpdateTime = Date.now();
+    } catch (e) {
+      // 捕獲並靜默處理瀏覽器兼容性異常
+    }
+  }
+
   // 獲取當前章節的維度進度與時長（以章節文件 cleanHref 為聚合維度，確保子章節切換時時長平穩不跳躍）
   _getChapterProgress(sentence) {
     const currentSentence = sentence || (this.sentences && this.sentences[this.currentIndex]) || null;
@@ -3158,9 +3266,12 @@ export class TTSEngine {
     }
     sentIdxInChapter = Math.max(0, Math.min(sentIdxInChapter, totalSentences - 1));
 
-    // 4. 時長估算（基準估算：字數 + 標點自然停頓）
+    // 4. 時長估算（優先採用已解碼的真實音訊時長，未知句子按字數+標點精準估算）
     const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
     const estimateDuration = (s) => {
+      if (s && typeof s.actualDuration === 'number' && s.actualDuration > 0) {
+        return s.actualDuration;
+      }
       const len = (s && s.text) ? s.text.length : 15;
       return Math.max(1.5, (len / (4.2 * rate)) + 0.5);
     };
@@ -3191,6 +3302,7 @@ export class TTSEngine {
 
   async _updateMediaSession(sentence) {
     this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
+    this._updatePositionState();
 
     const progress = this._getChapterProgress(sentence);
     const chapterDuration = progress.duration;
@@ -3253,16 +3365,7 @@ export class TTSEngine {
         navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
 
         this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
-
-        if ('setPositionState' in navigator.mediaSession && chapterDuration > 0) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: chapterDuration,
-              playbackRate: (this.isPlaying && !this.isPaused) ? (this.rate || 1.0) : 0,
-              position: Math.min(currentElapsed, chapterDuration)
-            });
-          } catch (posErr) {}
-        }
+        this._updatePositionState();
 
         navigator.mediaSession.setActionHandler('play', () => {
           this.resume();
@@ -3299,8 +3402,9 @@ export class TTSEngine {
                 const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
                 for (let i = 0; i < chapterSentences.length; i++) {
                   const s = chapterSentences[i];
-                  const len = (s && s.text) ? s.text.length : 15;
-                  const sDur = Math.max(1.5, (len / (4.2 * rate)) + 0.5);
+                  const sDur = (s && typeof s.actualDuration === 'number' && s.actualDuration > 0)
+                    ? s.actualDuration
+                    : Math.max(1.5, (((s && s.text) ? s.text.length : 15) / (4.2 * rate)) + 0.5);
                   if (accumulated + sDur >= targetTime || i === chapterSentences.length - 1) {
                     targetSentence = s;
                     break;
@@ -3309,6 +3413,7 @@ export class TTSEngine {
                 }
                 if (targetSentence && typeof targetSentence.index === 'number') {
                   this.play(targetSentence.index, true);
+                  this._updatePositionState(targetTime);
                 }
               }
             }
@@ -3438,6 +3543,7 @@ export class TTSEngine {
       this._ensurePlayersAttached();
       const currentSentence = this.sentences[this.currentIndex];
       this._updateMediaSession(currentSentence);
+      this._updatePositionState();
     }
 
     this._setMediaSessionPlaybackState('playing');
@@ -3466,6 +3572,7 @@ export class TTSEngine {
         activeAudio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
         activeAudio.playbackRate = this.rate || 1.0;
         activeAudio.play().catch(() => {});
+        this._updatePositionState();
       }
     }
 
@@ -3742,6 +3849,7 @@ export class TTSEngine {
     }
 
     this._setMediaSessionPlaybackState('paused');
+    this._updatePositionState();
 
     if (this.onStateChange) this.onStateChange();
   }
@@ -3793,6 +3901,7 @@ export class TTSEngine {
 
       this._ensurePlayersAttached();
       this._setMediaSessionPlaybackState('playing');
+      this._updatePositionState();
 
       const voice = this.selectedVoice;
       const useNativeSynth = (voice && voice.type === 'speechSynthesis');
@@ -3840,6 +3949,7 @@ export class TTSEngine {
               // 但硬體音訊管線仍可能卡頓未啟動！讓 resumeTimeout 在 500ms 時檢查 currentTime 是否真正前進
               this._stopSilenceKeepAlive();
               this._startPolling();
+              this._updatePositionState();
             }).catch(err => {
               if (hasSettled) return;
               hasSettled = true;
@@ -3893,6 +4003,9 @@ export class TTSEngine {
 
     this._isInterrupted = false;
     this._setMediaSessionPlaybackState('none');
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function') {
+      try { navigator.mediaSession.setPositionState(null); } catch (e) {}
+    }
 
     if (this.synth) {
       this.synth.cancel();

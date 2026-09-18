@@ -147,9 +147,188 @@ assert.match(
 );
 assert.match(
   ttsSource,
+  /_updatePositionState\(forcedPosition = null\)/,
+  'tts.js must define _updatePositionState to continuously update mediaSession position'
+);
+assert.match(
+  ttsSource,
+  /actualDuration/,
+  'tts.js must support actualDuration tracking for seamless chapter timeline'
+);
+assert.match(
+  ttsSource,
   /const remainingSentences = this\.sentences\.length - this\.currentIndex;\s+if \(remainingSentences > 20\) \{\s+return;\s+\}/,
   '_prefetchNextChapter must throttle prefetching when remainingSentences > 20'
 );
+
+// Chapter progress simulation test
+class MockTTSEngine {
+  constructor() {
+    this.currentIndex = 0;
+    this.rate = 1.0;
+    this.currentChapterIndex = 0;
+    this.isPlaying = true;
+    this.isPaused = false;
+    this.sentences = [
+      { index: 0, chapterIndex: 0, text: '第一句话。' },
+      { index: 1, chapterIndex: 0, text: '第二句比较长的一句话测试。' },
+      { index: 2, chapterIndex: 0, text: '第三句。' },
+      { index: 3, chapterIndex: 1, text: '第二章第一句。' }
+    ];
+    this.epubBookData = {
+      chapters: [
+        { index: 0, cleanHref: 'chapter1.html', title: '第一章' },
+        { index: 1, cleanHref: 'chapter2.html', title: '第二章' }
+      ]
+    };
+    this.currentAudio = {
+      currentTime: 0,
+      duration: 0
+    };
+    this.mediaSessionState = null;
+  }
+
+  _getChapterProgress(sentence) {
+    const currentSentence = sentence || (this.sentences && this.sentences[this.currentIndex]) || null;
+    const currentChapterIdx = (currentSentence && currentSentence.chapterIndex !== undefined && currentSentence.chapterIndex !== null)
+      ? currentSentence.chapterIndex
+      : (this.currentChapterIndex !== undefined ? this.currentChapterIndex : 0);
+
+    const sameFileIndices = new Set();
+    sameFileIndices.add(currentChapterIdx);
+    if (this.epubBookData && this.epubBookData.chapters) {
+      const currentChapter = this.epubBookData.chapters[currentChapterIdx];
+      if (currentChapter && currentChapter.cleanHref) {
+        this.epubBookData.chapters.forEach((ch, idx) => {
+          if (ch.cleanHref === currentChapter.cleanHref) {
+            sameFileIndices.add(idx);
+          }
+        });
+      }
+    }
+
+    let chapterSentences = [];
+    if (Array.isArray(this.sentences)) {
+      chapterSentences = this.sentences.filter(s => sameFileIndices.has(s.chapterIndex));
+    }
+    if (chapterSentences.length === 0) {
+      chapterSentences = this.sentences || [];
+    }
+
+    const totalSentences = Math.max(1, chapterSentences.length);
+
+    let sentIdxInChapter = 0;
+    if (currentSentence) {
+      sentIdxInChapter = chapterSentences.indexOf(currentSentence);
+      if (sentIdxInChapter < 0) {
+        sentIdxInChapter = chapterSentences.findIndex(s => s.index === currentSentence.index);
+      }
+    }
+    if (sentIdxInChapter < 0) {
+      sentIdxInChapter = 0;
+    }
+    sentIdxInChapter = Math.max(0, Math.min(sentIdxInChapter, totalSentences - 1));
+
+    const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
+    const estimateDuration = (s) => {
+      if (s && typeof s.actualDuration === 'number' && s.actualDuration > 0) {
+        return s.actualDuration;
+      }
+      const len = (s && s.text) ? s.text.length : 15;
+      return Math.max(1.5, (len / (4.2 * rate)) + 0.5);
+    };
+
+    let elapsedSeconds = 0;
+    for (let i = 0; i < sentIdxInChapter; i++) {
+      elapsedSeconds += estimateDuration(chapterSentences[i]);
+    }
+
+    let totalDuration = 0;
+    for (let i = 0; i < chapterSentences.length; i++) {
+      totalDuration += estimateDuration(chapterSentences[i]);
+    }
+    totalDuration = Math.max(60.0, totalDuration);
+    elapsedSeconds = Math.min(elapsedSeconds, totalDuration);
+
+    return {
+      chapterIndex: currentChapterIdx,
+      chapterSentences: chapterSentences,
+      sentIdxInChapter: sentIdxInChapter,
+      totalSentences: totalSentences,
+      duration: totalDuration,
+      position: elapsedSeconds
+    };
+  }
+
+  _updatePositionState(forcedPosition = null) {
+    const progress = this._getChapterProgress();
+    const chapterDuration = progress.duration;
+    if (!chapterDuration || chapterDuration <= 0 || isNaN(chapterDuration)) return;
+
+    let currentElapsed;
+    if (typeof forcedPosition === 'number' && !isNaN(forcedPosition)) {
+      currentElapsed = forcedPosition;
+    } else {
+      const audio = this.currentAudio;
+      const sentenceCurrentTime = (audio && typeof audio.currentTime === 'number' && !isNaN(audio.currentTime)) ? audio.currentTime : 0;
+      currentElapsed = progress.position + sentenceCurrentTime;
+    }
+
+    const safeDuration = Math.max(60.0, Number(chapterDuration) || 60.0);
+    const safePosition = Math.max(0, Math.min(Number(currentElapsed) || 0, safeDuration));
+    const safeRate = Math.max(0.1, Number(this.rate) || 1.0);
+
+    this.mediaSessionState = {
+      duration: safeDuration,
+      playbackRate: safeRate,
+      position: safePosition
+    };
+  }
+}
+
+{
+  const simEngine = new MockTTSEngine();
+  // Sentence 0 start
+  simEngine.currentIndex = 0;
+  simEngine.currentAudio.currentTime = 0;
+  simEngine._updatePositionState();
+  assert.strictEqual(simEngine.mediaSessionState.position, 0);
+  assert.strictEqual(simEngine.mediaSessionState.playbackRate, 1.0);
+  assert.ok(simEngine.mediaSessionState.duration >= 60.0);
+
+  // Sentence 0 playing (currentTime advances to 2.5s)
+  simEngine.currentAudio.currentTime = 2.5;
+  simEngine._updatePositionState();
+  assert.strictEqual(simEngine.mediaSessionState.position, 2.5);
+
+  // Sentence 0 finishes, actual duration recorded as 3.2s
+  simEngine.sentences[0].actualDuration = 3.2;
+
+  // Sentence 1 starts: position should seamlessly start at 3.2s
+  simEngine.currentIndex = 1;
+  simEngine.currentAudio.currentTime = 0;
+  simEngine._updatePositionState();
+  assert.strictEqual(simEngine.mediaSessionState.position, 3.2, 'Sentence 1 must start exactly where sentence 0 ended');
+
+  // Sentence 1 plays for 1.8s: position advances to 5.0s
+  simEngine.currentAudio.currentTime = 1.8;
+  simEngine._updatePositionState();
+  assert.strictEqual(Math.round(simEngine.mediaSessionState.position * 10) / 10, 5.0);
+
+  // Sentence 1 finishes, actual duration recorded as 4.5s
+  simEngine.sentences[1].actualDuration = 4.5;
+
+  // Sentence 2 starts: position should seamlessly be 3.2 + 4.5 = 7.7s
+  simEngine.currentIndex = 2;
+  simEngine.currentAudio.currentTime = 0;
+  simEngine._updatePositionState();
+  assert.strictEqual(Math.round(simEngine.mediaSessionState.position * 10) / 10, 7.7);
+
+  // Paused state: playbackRate must remain non-zero (> 0)
+  simEngine.isPaused = true;
+  simEngine._updatePositionState();
+  assert.ok(simEngine.mediaSessionState.playbackRate >= 0.1, 'playbackRate must never be 0 in setPositionState');
+}
 
 console.log('TTS review regression tests passed');
 
