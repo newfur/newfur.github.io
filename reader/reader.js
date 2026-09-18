@@ -12079,7 +12079,7 @@ function performBookSearch(query) {
       if (end < res.text.length) snippet = snippet + '...';
 
       const queryRegex = new RegExp(escapeRegExp(cleanQuery), 'gi');
-      const highlightedSnippet = snippet.replace(queryRegex, match => `<span class="search-snippet-match" style="background-color: rgba(255, 235, 59, 0.4); color: var(--text-color); font-weight: bold; border-radius: 2px; padding: 0 2px;">${match}</span>`);
+      const highlightedSnippet = snippet.replace(queryRegex, match => `<span class="search-snippet-match" style="background-color: rgba(255, 235, 59, 0.4); color: var(--text-color); font-weight: bold; border-radius: 2px; padding: 0 2px; font-family: inherit;">${match}</span>`);
 
       li.innerHTML = `
         <div style="font-size: 13px; color: var(--primary-color); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--font-sans);">${res.chapterTitle}</div>

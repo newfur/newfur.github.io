@@ -442,6 +442,27 @@ assert.ok(
   `Embedded font file size must be around 2MB, actual: ${fontStat.size}`
 );
 
+// Verify LXGW WenKai font-weight range covers bold/headings/highlight (100 900)
+assert.match(
+  readerCssSource,
+  /font-family:\s*'LXGW WenKai'[\s\S]*?font-weight:\s*100\s+900;/,
+  'reader.css must declare font-weight: 100 900 range for LXGW WenKai'
+);
+
+// Verify highlight and TTS sentence elements inherit font-family
+assert.match(
+  readerCssSource,
+  /\.font-lxgw\s+\.reading-sentence[\s\S]*?font-family:\s*var\(--font-lxgw\)\s*!important;/,
+  'reader.css must enforce font-family on .reading-sentence under .font-lxgw'
+);
+
+// Verify font-synthesis is enabled
+assert.match(
+  readerCssSource,
+  /font-synthesis:\s*weight\s+style;/,
+  'reader.css must enable font-synthesis: weight style'
+);
+
 console.log('TTS and font review regression tests passed');
 
 

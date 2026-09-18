@@ -22,20 +22,14 @@
        local('霞鶩文楷 螢幕版'),
        local('LXGWWenKai-Regular'),
        local('LXGWWenKaiScreen-Regular'),
-       url('./fonts/lxgw-wenkai-screen-standard.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'LXGW WenKai';
-  src: local('LXGW WenKai Bold'),
+       local('LXGW WenKai Bold'),
        local('LXGW WenKai Screen Bold'),
        local('霞鹜文楷 粗体'),
        local('霞鶩文楷 粗體'),
        local('LXGWWenKai-Bold'),
-       local('LXGWWenKaiScreen-Bold');
-  font-weight: 700;
+       local('LXGWWenKaiScreen-Bold'),
+       url('./fonts/lxgw-wenkai-screen-standard.woff2') format('woff2');
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -49,19 +43,13 @@
        local('霞鹜文楷'),
        local('霞鶩文楷'),
        local('LXGWWenKaiScreen-Regular'),
-       local('LXGWWenKai-Regular');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'LXGW WenKai Screen';
-  src: local('LXGW WenKai Screen Bold'),
+       local('LXGWWenKai-Regular'),
+       local('LXGW WenKai Screen Bold'),
        local('LXGW WenKai Bold'),
        local('霞鹜文楷 屏幕版 粗体'),
        local('霞鹜文楷 粗体'),
        local('LXGWWenKaiScreen-Bold');
-  font-weight: 700;
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -997,6 +985,28 @@ button, select, input {
   font-family: var(--font-lxgw) !important;
 }
 
+.font-lxgw .tts-sentence,
+.font-lxgw .reading-sentence,
+.font-lxgw .reading-sentence *,
+.font-lxgw .highlight-yellow,
+.font-lxgw .highlight-green,
+.font-lxgw .highlight-blue,
+.font-lxgw .highlight-pink,
+.font-lxgw span[class*="highlight-"],
+.font-lxgw mark,
+.font-lxgw mark.search-highlight,
+.font-lxgw mark.obsidian-highlight {
+  font-family: var(--font-lxgw) !important;
+}
+
+#reader-container,
+#book-content,
+.reader-sidebar,
+.note-dialog,
+.selection-menu {
+  font-synthesis: weight style;
+}
+
 .font-noto-serif, .font-noto-serif *:not(code):not(pre):not(kbd) {
   font-family: var(--font-noto-serif) !important;
 }
@@ -1379,31 +1389,40 @@ body.format-cbz .comic-page {
   display: inline;
   cursor: pointer;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0.05);
+  font-family: inherit !important;
 }
 
 /* 當前朗讀的句子 - 各式自定義樣式 */
+.reading-sentence {
+  font-family: inherit !important;
+}
+
 .reading-sentence.highlight-style-yellow {
   background-color: rgba(255, 235, 59, 0.45) !important;
   box-shadow: 0 0 8px rgba(255, 235, 59, 0.3);
   border-bottom: 2px solid #fbc02d;
+  font-family: inherit !important;
 }
 
 .reading-sentence.highlight-style-green {
   background-color: rgba(76, 175, 80, 0.35) !important;
   box-shadow: 0 0 8px rgba(76, 175, 80, 0.2);
   border-bottom: 2px solid #388e3c;
+  font-family: inherit !important;
 }
 
 .reading-sentence.highlight-style-blue {
   background-color: rgba(33, 150, 243, 0.35) !important;
   box-shadow: 0 0 8px rgba(33, 150, 243, 0.2);
   border-bottom: 2px solid #1976d2;
+  font-family: inherit !important;
 }
 
 .reading-sentence.highlight-style-underline {
   background-color: transparent !important;
   border-bottom: 2.5px solid var(--primary-color) !important;
   box-shadow: none !important;
+  font-family: inherit !important;
 }
 
 .reading-sentence.highlight-style-border {
@@ -1411,6 +1430,7 @@ body.format-cbz .comic-page {
   border: 1.5px dashed var(--primary-color) !important;
   border-radius: 4px;
   box-shadow: none !important;
+  font-family: inherit !important;
 }
 
 .reading-sentence.highlight-style-text {
@@ -1419,9 +1439,21 @@ body.format-cbz .comic-page {
   font-weight: 600;
   box-shadow: none !important;
   border-bottom: none !important;
+  font-family: inherit !important;
 }
 
 /* ==================== 6. 用戶手動劃線高亮樣式 ==================== */
+.highlight-yellow,
+.highlight-green,
+.highlight-blue,
+.highlight-pink,
+span[class*="highlight-"],
+mark,
+mark.search-highlight,
+mark.obsidian-highlight {
+  font-family: inherit !important;
+}
+
 .highlight-yellow {
   background-color: rgba(255, 235, 59, 0.4) !important;
   border-bottom: 1px dashed #fbc02d !important;
@@ -1697,7 +1729,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 /* ==================== 8. 可折疊側邊欄 ==================== */
 /* 防禦性樣式：強制側邊欄內所有元素使用指定閱讀字型，防範書籍 CSS 洩漏污染 */
 .reader-sidebar {
-  --sidebar-font-family: var(--font-sans);
+  --sidebar-font-family: var(--font-lxgw);
 }
 
 .reader-sidebar.font-sans { --sidebar-font-family: var(--font-sans); }
@@ -1956,7 +1988,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .list-item-text {
   font-size: 14px !important;
-  font-style: italic !important;
+  font-style: normal !important;
+  font-family: var(--sidebar-font-family) !important;
   line-height: 1.4 !important;
   margin-top: 6px !important;
   color: var(--text-muted) !important;
@@ -2219,7 +2252,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .note-preview {
-  font-style: italic;
+  font-style: normal !important;
+  font-family: inherit !important;
   font-size: 13px;
   color: var(--text-muted);
   border-left: 3px solid var(--primary-color);
@@ -5606,6 +5640,7 @@ mark.search-highlight {
   box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   font-weight: 500;
   transition: background-color 0.3s;
+  font-family: inherit !important;
 }
 
 /* Loading animations */
