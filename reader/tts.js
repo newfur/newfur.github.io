@@ -348,24 +348,41 @@ export class TTSEngine {
 
   _ensurePlayersAttached() {
     if (this._isNativeEngineAvailable()) return;
-    if (typeof document !== 'undefined' && document.body && Array.isArray(this.players)) {
-      this.players.forEach((audio, idx) => {
-        if (!audio.isConnected) {
-          audio.id = `tts-player-${idx}`;
-          audio.preload = 'auto';
-          audio.style.position = 'fixed';
-          audio.style.top = '-9999px';
-          audio.style.left = '-9999px';
-          audio.style.width = '1px';
-          audio.style.height = '1px';
-          audio.style.opacity = '0.01';
-          audio.style.pointerEvents = 'none';
-          audio.setAttribute('aria-hidden', 'true');
-          try {
-            document.body.appendChild(audio);
-          } catch (e) {}
-        }
-      });
+    if (typeof document !== 'undefined' && document.body) {
+      if (Array.isArray(this.players)) {
+        this.players.forEach((audio, idx) => {
+          if (audio && !audio.isConnected) {
+            audio.id = `tts-player-${idx}`;
+            audio.preload = 'auto';
+            audio.style.position = 'fixed';
+            audio.style.top = '-9999px';
+            audio.style.left = '-9999px';
+            audio.style.width = '1px';
+            audio.style.height = '1px';
+            audio.style.opacity = '0.01';
+            audio.style.pointerEvents = 'none';
+            audio.setAttribute('aria-hidden', 'true');
+            try {
+              document.body.appendChild(audio);
+            } catch (e) {}
+          }
+        });
+      }
+      if (this.silenceAudio && !this.silenceAudio.isConnected) {
+        this.silenceAudio.id = 'tts-silence-player';
+        this.silenceAudio.preload = 'auto';
+        this.silenceAudio.style.position = 'fixed';
+        this.silenceAudio.style.top = '-9999px';
+        this.silenceAudio.style.left = '-9999px';
+        this.silenceAudio.style.width = '1px';
+        this.silenceAudio.style.height = '1px';
+        this.silenceAudio.style.opacity = '0.01';
+        this.silenceAudio.style.pointerEvents = 'none';
+        this.silenceAudio.setAttribute('aria-hidden', 'true');
+        try {
+          document.body.appendChild(this.silenceAudio);
+        } catch (e) {}
+      }
     }
   }
 
@@ -2263,15 +2280,9 @@ export class TTSEngine {
       }
 
       // 如果當前沒有任何音訊在播放（或者當前音訊已暫停/播放結束），為防止純網頁版 iOS WebKit 挂起 JavaScript 或鎖屏按鈕被置為三角形，
-      // 立即使用當前主播放器以無感 PCM 靜音軌進行持續播放保活，鎖定 WebKit NowPlaying 會話為 Playing 狀態（保持雙豎線暫停鍵 ⏸）
-      if (!this._isNativeEngineAvailable()) {
-        const audio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
-        if (audio && (audio.paused || audio.ended)) {
-          audio.loop = true;
-          audio.src = this._getSilentWavUrl();
-          audio.playbackRate = this.rate || 1.0;
-          audio.play().catch(e => console.warn("Failed to resume silence on cache miss:", e));
-        }
+      // 確保獨立靜音保活軌道運行，鎖定 WebKit NowPlaying 會話為 Playing 狀態（保持雙豎線暫停鍵 ⏸）
+      if (!this._isNativeEngineAvailable() && this.isPlaying && !this.isPaused) {
+        this._startSilenceKeepAlive();
       }
       return;
     }
@@ -2511,13 +2522,8 @@ export class TTSEngine {
         }
         
         if (this.isPlaying && !this.isPaused) {
-          if (!this._isNativeEngineAvailable() && this.players.length === 1) {
-            try {
-              audio.loop = true;
-              audio.src = this._getSilentWavUrl();
-              audio.playbackRate = this.rate || 1.0;
-              audio.play().catch(() => {});
-            } catch (e) {}
+          if (!this._isNativeEngineAvailable()) {
+            this._startSilenceKeepAlive();
           }
           this._setMediaSessionPlaybackState('playing');
           if (isCapacitorApp) {
@@ -2574,13 +2580,8 @@ export class TTSEngine {
         }
         
         if (this.isPlaying && !this.isPaused) {
-          if (!this._isNativeEngineAvailable() && this.players.length === 1) {
-            try {
-              audio.loop = true;
-              audio.src = this._getSilentWavUrl();
-              audio.playbackRate = this.rate || 1.0;
-              audio.play().catch(() => {});
-            } catch (e) {}
+          if (!this._isNativeEngineAvailable()) {
+            this._startSilenceKeepAlive();
           }
           this._setMediaSessionPlaybackState('playing');
           if (isCapacitorApp) {
@@ -2906,19 +2907,6 @@ export class TTSEngine {
     if (this._isNativeEngineAvailable()) return;
     if (typeof Audio === 'undefined') return;
     if (!this.isPlaying || this.isPaused) return; // 暫停或未播放時嚴禁啟動靜音音訊
-    
-    // 在單播放器架構（iOS Web）下，靜音保活直接由主播放器以無感 PCM 靜音軌承載，
-    // 杜絕獨立靜音音訊元素競爭 NowPlaying 會話或在暫停時誤發 pause 事件導致鎖屏顯示三角形
-    if (Array.isArray(this.players) && this.players.length === 1) {
-      const audio = this.players[0];
-      if (audio && (audio.paused || audio.ended)) {
-        audio.loop = true;
-        audio.src = this._getSilentWavUrl();
-        audio.playbackRate = this.rate || 1.0;
-        audio.play().catch(() => {});
-      }
-      return;
-    }
 
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
@@ -2926,6 +2914,8 @@ export class TTSEngine {
       this.silenceAudio.loop = true;
       this.silenceAudio.volume = 0.001; // 微量音量維持 WebKit CoreAudio 活躍，完全無感靜音
       this.silenceAudio.preload = 'auto';
+      this.silenceAudio.disableRemotePlayback = true; // 確保靜音保活軌道絕不搶佔系統 NowPlaying 播控
+      this._ensurePlayersAttached();
     }
     
     if (this.silenceAudio.paused) {
@@ -3049,13 +3039,7 @@ export class TTSEngine {
           this._fetchSentence(idx);
           // 只有在未暫停且播放中時才保活 (僅純網頁版)
           if (!this._isNativeEngineAvailable() && this.isPlaying && !this.isPaused) {
-            const audio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
-            if (audio && (audio.paused || audio.ended)) {
-              audio.loop = true;
-              audio.src = this._getSilentWavUrl();
-              audio.playbackRate = this.rate || 1.0;
-              audio.play().catch(() => {});
-            }
+            this._startSilenceKeepAlive();
           }
         }
         
@@ -3419,31 +3403,6 @@ export class TTSEngine {
     this._setMediaSessionPlaybackState('playing');
     this._startSilenceKeepAlive();
     this._startPlaybackWatchdog();
-
-    // 【關鍵核心修復】：在用戶手勢同步上下文中立即啟動活躍播放器播放！
-    // 若首句已就緒則直接播放真實語音；若首句仍在網絡加載中，立即以無感 2 秒 PCM 靜音軌開始播放並循環。
-    // 這確保了 WebKit 媒體管線在點擊第一秒即獲得 User Gesture 授權並將 NowPlaying 會話鎖定為 Playing，
-    // 徹底杜絕 iOS 鎖屏和通知欄將未開始播放的媒體會話誤判為 Paused（三角形▶）！
-    if (!this._isNativeEngineAvailable()) {
-      this._ensurePlayersAttached();
-      const activeAudio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
-      if (activeAudio) {
-        this.currentAudio = activeAudio;
-        const cached = this.audioCache.get(this.currentIndex);
-        if (cached && cached.isReady && cached.blobUrl) {
-          activeAudio.loop = false;
-          activeAudio.src = cached.blobUrl;
-          activeAudio.dataset.srcUrl = cached.blobUrl;
-        } else {
-          activeAudio.loop = true;
-          activeAudio.src = this._getSilentWavUrl();
-        }
-        activeAudio.muted = false;
-        activeAudio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
-        activeAudio.playbackRate = this.rate || 1.0;
-        activeAudio.play().catch(() => {});
-      }
-    }
 
     this._playActiveSentence();
     this._prefetchNextChapter();
