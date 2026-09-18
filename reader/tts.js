@@ -2168,13 +2168,16 @@ export class TTSEngine {
       this.playbackStarted = true;
       this._markPlaybackProgress();
 
-      const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
-      const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
-      const remainingSentences = Math.max(1, totalSentences - currentSentIdx);
-      const currentElapsed = currentSentIdx * 5.0;
-      const chapterDuration = Math.max(60.0, currentElapsed + remainingSentences * 5.0);
+      const progress = this._getChapterProgress(sentence);
+      const chapterDuration = progress.duration;
+      const currentElapsed = progress.position;
       const bookTitle = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
-      const bookArtist = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
+      const bookAuthor = this.currentBookAuthor || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.author || currentBook.author || 'E-Book Reader') : 'E-Book Reader');
+      let chapterTitle = '';
+      if (this.epubBookData && this.epubBookData.chapters && this.epubBookData.chapters[progress.chapterIndex]) {
+        chapterTitle = this.epubBookData.chapters[progress.chapterIndex].title || '';
+      }
+      const displayArtist = chapterTitle ? `${chapterTitle} · ${bookAuthor}` : bookAuthor;
       let coverBase64 = this.currentBookCover || '';
       if (coverBase64 && coverBase64.length > 250000) {
         coverBase64 = '';
@@ -2186,7 +2189,7 @@ export class TTSEngine {
         index: index,
         text: sentence ? sentence.text : '',
         title: bookTitle,
-        artist: bookArtist,
+        artist: displayArtist,
         cover: coverBase64,
         duration: chapterDuration,
         currentTime: currentElapsed,
@@ -3086,8 +3089,72 @@ export class TTSEngine {
     }
   }
 
+  // 獲取當前章節的維度進度與時長（嚴格限定在當前章節範圍，並根據字數和語速精確估算）
+  _getChapterProgress(sentence) {
+    const currentSentence = sentence || (this.sentences && this.sentences[this.currentIndex]) || null;
+    const currentChapterIdx = (currentSentence && currentSentence.chapterIndex !== undefined && currentSentence.chapterIndex !== null)
+      ? currentSentence.chapterIndex
+      : (this.currentChapterIndex !== undefined ? this.currentChapterIndex : 0);
+
+    let chapterSentences = [];
+    if (Array.isArray(this.sentences)) {
+      chapterSentences = this.sentences.filter(s => s.chapterIndex === currentChapterIdx);
+    }
+    if (chapterSentences.length === 0) {
+      chapterSentences = this.sentences || [];
+    }
+
+    const totalSentences = Math.max(1, chapterSentences.length);
+    let sentIdxInChapter = 0;
+    if (currentSentence) {
+      if (typeof currentSentence.relativeIndex === 'number' && currentSentence.relativeIndex >= 0) {
+        sentIdxInChapter = currentSentence.relativeIndex;
+      } else {
+        const found = chapterSentences.indexOf(currentSentence);
+        sentIdxInChapter = found >= 0 ? found : 0;
+      }
+    }
+    sentIdxInChapter = Math.max(0, Math.min(sentIdxInChapter, totalSentences - 1));
+
+    const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
+    const estimateDuration = (s) => {
+      const len = (s && s.text) ? s.text.length : 15;
+      // 基於字數與語速進行精準時長估算，中文約4.5字/秒，附加標點停頓0.4秒，單句最低1.2秒
+      return Math.max(1.2, (len / (4.5 * rate)) + 0.4);
+    };
+
+    let elapsedSeconds = 0;
+    for (let i = 0; i < sentIdxInChapter; i++) {
+      elapsedSeconds += estimateDuration(chapterSentences[i]);
+    }
+    const sentenceAudioTime = (this.currentAudio && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0;
+    const currentSentenceEstDuration = estimateDuration(chapterSentences[sentIdxInChapter]);
+    elapsedSeconds += Math.min(sentenceAudioTime, currentSentenceEstDuration);
+
+    let totalDuration = 0;
+    for (let i = 0; i < chapterSentences.length; i++) {
+      totalDuration += estimateDuration(chapterSentences[i]);
+    }
+    // 保證單章時長至少為 60 秒（防止極短章節被系統誤判）
+    totalDuration = Math.max(60.0, totalDuration);
+    elapsedSeconds = Math.min(elapsedSeconds, totalDuration);
+
+    return {
+      chapterIndex: currentChapterIdx,
+      chapterSentences: chapterSentences,
+      sentIdxInChapter: sentIdxInChapter,
+      totalSentences: totalSentences,
+      duration: totalDuration,
+      position: elapsedSeconds
+    };
+  }
+
   async _updateMediaSession(sentence) {
     this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
+
+    const progress = this._getChapterProgress(sentence);
+    const chapterDuration = progress.duration;
+    const currentElapsed = progress.position;
 
     const text = sentence ? sentence.text : (this.currentBookTitle || 'TTS Reading');
     const title = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
@@ -3097,19 +3164,17 @@ export class TTSEngine {
       this.currentBookCover = coverBase64;
     }
 
-    // 計算章節維度的整體進度與時長，防止單句時長（2~3秒）走完時被 iOS 系統誤判為音訊播放完畢而自動翻轉為播放（▶）圖標
-    const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
-    const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
-    const remainingSentences = Math.max(1, totalSentences - currentSentIdx);
-    const sentenceAudioTime = (this.currentAudio && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0;
-    const currentElapsed = currentSentIdx * 5.0 + sentenceAudioTime;
-    const chapterDuration = Math.max(60.0, currentElapsed + remainingSentences * 5.0);
+    let chapterTitle = '';
+    if (this.epubBookData && this.epubBookData.chapters && this.epubBookData.chapters[progress.chapterIndex]) {
+      chapterTitle = this.epubBookData.chapters[progress.chapterIndex].title || '';
+    }
+    const displayArtist = chapterTitle ? `${chapterTitle} · ${artist}` : artist;
 
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
     if (isCapacitorApp) {
       const nativePayload = {
         title: title,
-        artist: artist,
+        artist: displayArtist,
         text: text,
         duration: chapterDuration,
         currentTime: currentElapsed,
@@ -3132,7 +3197,7 @@ export class TTSEngine {
       try {
         const metadataOpts = {
           title: text,
-          artist: artist,
+          artist: displayArtist,
           album: title
         };
         if (coverBase64) {
@@ -3186,9 +3251,25 @@ export class TTSEngine {
           navigator.mediaSession.setActionHandler('seekto', (details) => {
             if (details && typeof details.seekTime === 'number') {
               const targetTime = details.seekTime;
-              const targetSentenceIdx = Math.floor(targetTime / 5.0);
-              if (targetSentenceIdx >= 0 && targetSentenceIdx < this.sentences.length) {
-                this.play(targetSentenceIdx, true);
+              const curProg = this._getChapterProgress();
+              const chapterSentences = curProg.chapterSentences;
+              if (chapterSentences && chapterSentences.length > 0) {
+                let accumulated = 0;
+                let targetSentence = chapterSentences[0];
+                const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
+                for (let i = 0; i < chapterSentences.length; i++) {
+                  const s = chapterSentences[i];
+                  const len = (s && s.text) ? s.text.length : 15;
+                  const sDur = Math.max(1.2, (len / (4.5 * rate)) + 0.4);
+                  if (accumulated + sDur >= targetTime || i === chapterSentences.length - 1) {
+                    targetSentence = s;
+                    break;
+                  }
+                  accumulated += sDur;
+                }
+                if (targetSentence && typeof targetSentence.index === 'number') {
+                  this.play(targetSentence.index, true);
+                }
               }
             }
           });
@@ -3293,13 +3374,17 @@ export class TTSEngine {
         if (coverBase64 && !this.currentBookCover) {
           this.currentBookCover = coverBase64;
         }
-        const totalSentences = (Array.isArray(this.sentences) && this.sentences.length > 0) ? this.sentences.length : 1;
-        const currentSentIdx = Math.max(0, Math.min(this.currentIndex, totalSentences - 1));
-        const chapterDuration = Math.max(60, totalSentences * 5);
-        const currentElapsed = Math.min(chapterDuration - 1, currentSentIdx * 5);
+        const progress = this._getChapterProgress(sentence);
+        const chapterDuration = progress.duration;
+        const currentElapsed = progress.position;
+        let chapterTitle = '';
+        if (this.epubBookData && this.epubBookData.chapters && this.epubBookData.chapters[progress.chapterIndex]) {
+          chapterTitle = this.epubBookData.chapters[progress.chapterIndex].title || '';
+        }
+        const displayArtist = chapterTitle ? `${chapterTitle} · ${bookArtist}` : bookArtist;
         window.Capacitor.Plugins.NativeTTS.startForegroundService({
           title: bookTitle,
-          artist: bookArtist,
+          artist: displayArtist,
           text: sentence ? sentence.text : '',
           cover: coverBase64,
           duration: chapterDuration,
@@ -3353,6 +3438,13 @@ export class TTSEngine {
   async _prefetchNextChapter() {
     if (!this.getNextChapterData || this.lastPrefetchedChapterIndex === undefined) return;
     
+    // 檢查剩餘句子數量：僅當當前隊列剩餘句子不多（<= 20 句）時才按需預加載下一章，
+    // 避免過早連續預加載多個後續章節導致內存佔用過高或鎖屏時長虛高
+    const remainingSentences = this.sentences.length - this.currentIndex;
+    if (remainingSentences > 20) {
+      return;
+    }
+
     const targetNextIndex = this.lastPrefetchedChapterIndex + 1;
     if (this.prefetchedChapterIndex === targetNextIndex) return;
     
@@ -3363,7 +3455,12 @@ export class TTSEngine {
       const nextChapter = await this.getNextChapterData(this.lastPrefetchedChapterIndex);
       if (!nextChapter || !this.isPlaying) {
         if (this.prefetchedChapterIndex === targetNextIndex) {
-          this.prefetchedChapterIndex = null;
+          // 若已到達書籍最後一章（無後續章節），保留 targetNextIndex 避免每次播放句子都無效調用 getNextChapterData
+          if (this.epubBookData && this.epubBookData.chapters && targetNextIndex >= this.epubBookData.chapters.length) {
+            // 已是全書結尾，無需重置標記
+          } else {
+            this.prefetchedChapterIndex = null;
+          }
         }
         return;
       }

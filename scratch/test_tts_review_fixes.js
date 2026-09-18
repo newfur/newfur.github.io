@@ -139,6 +139,18 @@ assert.match(
   'pause() must unconditionally set isPaused and stop watchdog and silence keep-alive'
 );
 
+// Chapter progress calculation and prefetch throttling regression checks
+assert.match(
+  ttsSource,
+  /_getChapterProgress\(sentence\)/,
+  'tts.js must define _getChapterProgress to compute duration scoped to current chapter'
+);
+assert.match(
+  ttsSource,
+  /const remainingSentences = this\.sentences\.length - this\.currentIndex;\s+if \(remainingSentences > 20\) \{\s+return;\s+\}/,
+  '_prefetchNextChapter must throttle prefetching when remainingSentences > 20'
+);
+
 console.log('TTS review regression tests passed');
 
 
