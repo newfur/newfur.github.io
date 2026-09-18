@@ -69,11 +69,11 @@ const fontWoff2Path = path.join(rootDir, 'reader/fonts/lxgw-wenkai-screen-standa
 if (fs.existsSync(fontWoff2Path)) {
   const fontBase64 = fs.readFileSync(fontWoff2Path).toString('base64');
   const fontDataUri = `data:font/woff2;base64,${fontBase64}`;
-  readerCss = readerCss.replace(
+  readerCss = readerCss.replaceAll(
     "url('./fonts/lxgw-wenkai-screen-standard.woff2')",
     `url('${fontDataUri}')`
   );
-  console.log('[Offline Build] Successfully embedded LXGW WenKai font (8,105 characters subset) into CSS @font-face rule.');
+  console.log('[Offline Build] Successfully embedded unified LXGW WenKai font (SC+TC 17,900+ characters subset) into CSS @font-face rule.');
 }
 
 // 5. Read reader.html

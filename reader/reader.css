@@ -6,7 +6,7 @@
    只要用戶設備（macOS / Windows / iOS / Android / Linux）安裝了對應字體，
    直接調用系統字庫，0 額外打包體積、免受 CORS 限制、0 毫秒冷啟動渲染。
    針對霞鹜文楷，若設備未安裝本地字庫（如未裝描述文件的 iPhone/iPad），
-   自動回退加載 8,105 字標準子集 WOFF2（離線單文件版直接以 Base64 內嵌）。 */
+   自動回退加載涵蓋簡繁全字表（通用規範漢字表 8,105 字 + 臺灣/香港/BIG5 繁體常用與次常用字庫及粵語字，逾 17,900 字）的 WOFF2（離線單文件版直接以 Base64 內嵌）。 */
 
 /* 1. 霞鹜文楷 (LXGW WenKai) */
 @font-face {
@@ -15,13 +15,20 @@
        local('LXGW WenKai Screen'),
        local('LXGW WenKai TC'),
        local('LXGW WenKai SC'),
+       local('LXGW WenKai Lite'),
        local('霞鹜文楷'),
        local('霞鶩文楷'),
        local('霞鹜文楷 屏幕版'),
        local('霞鹜文楷 屏幕阅读版'),
        local('霞鶩文楷 螢幕版'),
+       local('霞鹜文楷 繁体'),
+       local('霞鶩文楷 繁體'),
+       local('霞鹜文楷 轻便版'),
+       local('霞鶩文楷 輕便版'),
        local('LXGWWenKai-Regular'),
        local('LXGWWenKaiScreen-Regular'),
+       local('LXGWWenKaiTC-Regular'),
+       local('LXGWWenKaiLite-Regular'),
        local('LXGW WenKai Bold'),
        local('LXGW WenKai Screen Bold'),
        local('霞鹜文楷 粗体'),
@@ -37,13 +44,17 @@
   font-family: 'LXGW WenKai Screen';
   src: local('LXGW WenKai Screen'),
        local('LXGW WenKai'),
+       local('LXGW WenKai TC'),
        local('霞鹜文楷 屏幕版'),
        local('霞鹜文楷 屏幕阅读版'),
        local('霞鶩文楷 螢幕版'),
        local('霞鹜文楷'),
        local('霞鶩文楷'),
+       local('霞鹜文楷 繁体'),
+       local('霞鶩文楷 繁體'),
        local('LXGWWenKaiScreen-Regular'),
        local('LXGWWenKai-Regular'),
+       local('LXGWWenKaiLite-Regular'),
        local('LXGW WenKai Screen Bold'),
        local('LXGW WenKai Bold'),
        local('霞鹜文楷 屏幕版 粗体'),

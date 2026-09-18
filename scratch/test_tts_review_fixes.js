@@ -438,8 +438,14 @@ assert.ok(
 );
 const fontStat = fs.statSync('reader/fonts/lxgw-wenkai-screen-standard.woff2');
 assert.ok(
-  fontStat.size > 1500000 && fontStat.size < 3000000,
-  `Embedded font file size must be around 2MB, actual: ${fontStat.size}`
+  fontStat.size > 3500000 && fontStat.size < 4800000,
+  `Embedded SC+TC font file size must be around 4MB, actual: ${fontStat.size}`
+);
+const fontBuffer = fs.readFileSync('reader/fonts/lxgw-wenkai-screen-standard.woff2');
+assert.strictEqual(
+  fontBuffer.subarray(0, 4).toString('ascii'),
+  'wOF2',
+  'Font file must be a valid WOFF2 font (wOF2 magic header)'
 );
 
 // Verify LXGW WenKai font-weight range covers bold/headings/highlight (100 900)
