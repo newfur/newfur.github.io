@@ -2494,18 +2494,21 @@ export class TTSEngine {
           }
         }
         
-        // 計算合理的提前量
-        const threshold = Math.min(0.08, audio.duration * 0.08);
-        if (rawTime >= audio.duration - threshold) {
-          if (!hasTriggeredNext) {
-            hasTriggeredNext = true;
-            this._stopPolling(); // 停止高頻輪詢
-            audio.ontimeupdate = null; // 避免重疊期間重複觸發
-            
-            // 切換至下一個播放器，播放下一分組的起點
-            this.activePlayerIdx = nextPlayerIdx;
-            this.currentIndex = groupStartIndex + groupSentences.length;
-            this._playActiveSentence();
+        // 僅在多播放器架構（桌面端雙播放器）下提前 80ms 切換至下一播放器以實現無縫交替；
+        // 在單播放器架構（iOS Web）下不提前切源，避免切源後上一句殘留的 onended 異步事件覆蓋新句子導致跳句
+        if (this.players.length > 1) {
+          const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
+          if (rawTime >= audio.duration - threshold) {
+            if (!hasTriggeredNext) {
+              hasTriggeredNext = true;
+              this._stopPolling(); // 停止高頻輪詢
+              audio.ontimeupdate = null; // 避免重疊期間重複觸發
+              
+              // 切換至下一個播放器，播放下一分組的起點
+              this.activePlayerIdx = nextPlayerIdx;
+              this.currentIndex = groupStartIndex + groupSentences.length;
+              this._playActiveSentence();
+            }
           }
         }
       };
@@ -2520,26 +2523,37 @@ export class TTSEngine {
           audio._cleanupResources();
           audio._cleanupResources = null;
         }
-        
-        if (this.isPlaying && !this.isPaused) {
-          if (!this._isNativeEngineAvailable()) {
-            this._startSilenceKeepAlive();
-          }
-          this._setMediaSessionPlaybackState('playing');
-          if (isCapacitorApp) {
-            window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
-              isPlaying: true
-            }).catch(() => {});
-          }
-        }
 
         if (!this.isPlaying || this.isPaused) return;
-        
+
+        const nextIndex = groupStartIndex + groupSentences.length;
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
-          this.currentIndex = groupStartIndex + groupSentences.length;
-          this._playActiveSentence();
+          this.currentIndex = nextIndex;
+
+          const nextCached = this.audioCache.get(nextIndex);
+          if (nextCached && nextCached.isReady && nextCached.blobUrl) {
+            // 下一句已快取就緒：直接無縫切換播放，不塞入任何靜音！
+            this._playActiveSentence();
+          } else {
+            // 下一句仍在網絡加載中，單播放器下循環播放靜音軌保活 WebKit NowPlaying (保持雙豎線 ⏸)
+            if (!this._isNativeEngineAvailable() && this.players.length === 1) {
+              try {
+                audio.loop = true;
+                audio.src = this._getSilentWavUrl();
+                audio.playbackRate = this.rate || 1.0;
+                audio.play().catch(() => {});
+              } catch (e) {}
+            }
+            this._setMediaSessionPlaybackState('playing');
+            if (isCapacitorApp) {
+              window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+                isPlaying: true
+              }).catch(() => {});
+            }
+            this._fetchSentence(nextIndex);
+          }
         }
       };
     } else {
@@ -2551,23 +2565,26 @@ export class TTSEngine {
           this._markPlaybackProgress();
         }
         
-        // 計算合理的提前量。減小提前量至 80ms (或句子長度的 8%)，使其落在結尾標點符號的靜音期，避免語音重疊與音量波動
-        const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
-        if (audio.duration && audio.currentTime >= audio.duration - threshold) {
-          if (!hasTriggeredNext) {
-            hasTriggeredNext = true;
-            this._stopPolling(); // 停止高頻輪詢
-            audio.ontimeupdate = null; // 避免重疊期間重複觸發
-            
-            // 切換至下一個播放器，並播放下一句
-            this.activePlayerIdx = nextPlayerIdx;
-            this.currentIndex = index + 1;
-            this._playActiveSentence();
+        // 僅在多播放器架構（桌面端雙播放器）下提前 80ms 切換至下一播放器以實現無縫交替；
+        // 在單播放器架構（iOS Web）下不提前切源，避免切源後上一句殘留的 onended 異步事件覆蓋新句子導致跳句
+        if (this.players.length > 1) {
+          const threshold = audio.duration ? Math.min(0.08, audio.duration * 0.08) : 0.08;
+          if (audio.duration && audio.currentTime >= audio.duration - threshold) {
+            if (!hasTriggeredNext) {
+              hasTriggeredNext = true;
+              this._stopPolling(); // 停止高頻輪詢
+              audio.ontimeupdate = null; // 避免重疊期間重複觸發
+              
+              // 切換至下一個播放器，並播放下一句
+              this.activePlayerIdx = nextPlayerIdx;
+              this.currentIndex = index + 1;
+              this._playActiveSentence();
+            }
           }
         }
       };
       
-      // 容錯機制：以防 ontimeupdate 由於特殊原因未觸發（例如有些設備或格式的 duration 為空）
+      // 播放結束事件：單播放器下權威換句節點
       audio.onended = () => {
         this._stopPolling(); // 停止高頻輪詢
         audio.ontimeupdate = null;
@@ -2578,27 +2595,37 @@ export class TTSEngine {
           audio._cleanupResources();
           audio._cleanupResources = null;
         }
-        
-        if (this.isPlaying && !this.isPaused) {
-          if (!this._isNativeEngineAvailable()) {
-            this._startSilenceKeepAlive();
-          }
-          this._setMediaSessionPlaybackState('playing');
-          if (isCapacitorApp) {
-            window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
-              isPlaying: true
-            }).catch(() => {});
-          }
-        }
 
         if (!this.isPlaying || this.isPaused) return;
-        
-        // 若下一句還沒有被觸發播放，則在此手動觸發
+
+        const nextIndex = index + 1;
         if (!hasTriggeredNext) {
           hasTriggeredNext = true;
           this.activePlayerIdx = nextPlayerIdx;
-          this.currentIndex = index + 1;
-          this._playActiveSentence();
+          this.currentIndex = nextIndex;
+
+          const nextCached = this.audioCache.get(nextIndex);
+          if (nextCached && nextCached.isReady && nextCached.blobUrl) {
+            // 下一句已快取就緒：直接無縫切換播放，不塞入任何靜音！
+            this._playActiveSentence();
+          } else {
+            // 下一句仍在網絡加載中，單播放器下循環播放靜音軌保活 WebKit NowPlaying (保持雙豎線 ⏸)
+            if (!this._isNativeEngineAvailable() && this.players.length === 1) {
+              try {
+                audio.loop = true;
+                audio.src = this._getSilentWavUrl();
+                audio.playbackRate = this.rate || 1.0;
+                audio.play().catch(() => {});
+              } catch (e) {}
+            }
+            this._setMediaSessionPlaybackState('playing');
+            if (isCapacitorApp) {
+              window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+                isPlaying: true
+              }).catch(() => {});
+            }
+            this._fetchSentence(nextIndex);
+          }
         }
       };
     }
@@ -2907,6 +2934,19 @@ export class TTSEngine {
     if (this._isNativeEngineAvailable()) return;
     if (typeof Audio === 'undefined') return;
     if (!this.isPlaying || this.isPaused) return; // 暫停或未播放時嚴禁啟動靜音音訊
+
+    // 在單播放器架構（iOS Web）下，靜音保活直接由主播放器以無感 PCM 靜音軌承載，
+    // 杜絕獨立靜音音訊元素競爭 NowPlaying 會話或在暫停時誤發 pause 事件導致鎖屏顯示三角形
+    if (Array.isArray(this.players) && this.players.length === 1) {
+      const audio = this.players[0];
+      if (audio && (audio.paused || audio.ended)) {
+        audio.loop = true;
+        audio.src = this._getSilentWavUrl();
+        audio.playbackRate = this.rate || 1.0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
 
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
@@ -3403,6 +3443,31 @@ export class TTSEngine {
     this._setMediaSessionPlaybackState('playing');
     this._startSilenceKeepAlive();
     this._startPlaybackWatchdog();
+
+    // 在用戶手勢同步上下文中立即啟動活躍主播放器播放！
+    // 若首句已就緒則直接播放真實語音；若首句仍在網絡加載中，立即以無感 2 秒 PCM 靜音軌開始播放並循環。
+    // 這確保了 WebKit 媒體管線在點擊第一秒即獲得 User Gesture 授權並將 NowPlaying 會話鎖定為 Playing，
+    // 徹底杜絕 iOS 鎖屏和通知欄將未開始播放的媒體會話誤判為 Paused（三角形▶）！
+    if (!this._isNativeEngineAvailable()) {
+      this._ensurePlayersAttached();
+      const activeAudio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
+      if (activeAudio) {
+        this.currentAudio = activeAudio;
+        const cached = this.audioCache.get(this.currentIndex);
+        if (cached && cached.isReady && cached.blobUrl) {
+          activeAudio.loop = false;
+          activeAudio.src = cached.blobUrl;
+          activeAudio.dataset.srcUrl = cached.blobUrl;
+        } else {
+          activeAudio.loop = true;
+          activeAudio.src = this._getSilentWavUrl();
+        }
+        activeAudio.muted = false;
+        activeAudio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
+        activeAudio.playbackRate = this.rate || 1.0;
+        activeAudio.play().catch(() => {});
+      }
+    }
 
     this._playActiveSentence();
     this._prefetchNextChapter();
