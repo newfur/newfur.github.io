@@ -91,6 +91,30 @@ function isInterjectionShortSentence(text) {
   return false;
 }
 
+// 輔助函式：動態生成符合 AOL 主內容時長閾值 (>=0.95秒) 的無感 PCM 靜音 WAV Blob，
+// 用於在用戶手勢起播及切源間隙鎖定 WebKit NowPlaying 會話，杜絕鎖屏按鈕被置為三角形（▶）
+function createSilentWavBlob(durationSec = 2) {
+  const sampleRate = 8000;
+  const numSamples = Math.floor(sampleRate * durationSec);
+  const buffer = new ArrayBuffer(44 + numSamples);
+  const view = new DataView(buffer);
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, 36 + numSamples, true);
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate, true); // byte rate (8000 * 1 * 1)
+  view.setUint16(32, 1, true); // block align
+  view.setUint16(34, 8, true); // 8-bit
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, numSamples, true);
+  new Uint8Array(buffer, 44).fill(128);
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
 function appLog(tag, msg) {
   try {
     if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS && typeof window.Capacitor.Plugins.NativeTTS.writeLog === 'function') {
@@ -130,22 +154,33 @@ export class TTSEngine {
     this.activeFetchCount = 0; // 當前並發抓取數
     this.maxConcurrentFetches = 3; // 最大並發下載數，兼顧首句極速啟動與後續分組吞吐量
     
-    // 建立持久的雙通道 Audio 播放器以進行無縫交替預熱播放，消除播放間隙。
-    // 在 Native 原生端（iOS/Android），播放路徑由 _isNativeEngineAvailable() 攔截由原生底層處理，不使用此處的 DOM Audio。
-    // 在 Chrome 插件版與網頁版，雙播放器配合 _prewarmNextPlayer 實現 0ms 物理無縫切換。
-    this.players = typeof Audio !== 'undefined' ? [new Audio(), new Audio()] : [];
+    // 在 iOS WebKit（iPhone/iPad 的 Edge/Safari 等純網頁版）：
+    // 1) 嚴格使用單一持久 Audio 播放器實例。多音訊元素交替切換時，閒置/結尾播放器的 pause 事件會觸發
+    //    WebKit clientWillPausePlayback()，覆蓋 NowPlaying 狀態，導致通知欄與鎖屏按鈕被置為三角形播放鍵（▶）。
+    // 2) 必須將 Audio 元素掛載到 DOM (document.body) 中，觸發 WebKit MediaElementSession::registerWithDocument，
+    //    使音訊元素與 Document 的 MediaSession 及 iOS NowPlayingInfoCenter 建立雙向綁定。未掛載的游離 Audio 元素
+    //    無法與 navigator.mediaSession 建立會話聯動。
+    // 在桌面版瀏覽器（Chrome/Edge 等），維持雙播放器以獲得 0ms 無縫預熱。
+    // 在 Native 原生端（iOS/Android），播放路徑由 _isNativeEngineAvailable() 攔截由原生底層處理，不使用 DOM Audio。
+    const isIOS = typeof navigator !== 'undefined' && 
+      (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    this.isIOS = isIOS;
+    this.players = typeof Audio !== 'undefined' ? (isIOS ? [new Audio()] : [new Audio(), new Audio()]) : [];
     this.activePlayerIdx = 0;
     this.currentAudio = null; // 當前正在播放的 Audio 對象
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
     this.isAutoScrolling = false; // 標記是否為 TTS 自動滾動
+    this._silentWavUrl = null; // 緩存的靜音 WAV Blob URL
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
       // 注意：不可對真實音訊播放器設置 disableRemotePlayback = true，否則 iOS WebKit 會抑制系統鎖屏/通知欄 NowPlaying 聯動
     });
 
+    this._ensurePlayersAttached();
+
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
-    this.silenceAudio = null; // 用於移動端後台持續播放的靜音播放器
+    this.silenceAudio = null; // 舊靜音播放器引用保留（兼容外部代碼，內部已由主播放器靜音軌替代）
     this._playbackWatchdog = null; // 播放看門狗計時器：偵測並恢復播放停滯
     this._lastPlaybackProgressTime = 0; // 上次播放進展的時間戳
     this._nativeSentenceStartTime = 0; // 原生引擎當前句子開始播放的時間戳
@@ -311,10 +346,50 @@ export class TTSEngine {
       typeof window.Capacitor.Plugins.NativeTTS.playNativeSentence === 'function';
   }
 
+  _ensurePlayersAttached() {
+    if (this._isNativeEngineAvailable()) return;
+    if (typeof document !== 'undefined' && document.body && Array.isArray(this.players)) {
+      this.players.forEach((audio, idx) => {
+        if (!audio.isConnected) {
+          audio.id = `tts-player-${idx}`;
+          audio.preload = 'auto';
+          audio.style.position = 'fixed';
+          audio.style.top = '-9999px';
+          audio.style.left = '-9999px';
+          audio.style.width = '1px';
+          audio.style.height = '1px';
+          audio.style.opacity = '0.01';
+          audio.style.pointerEvents = 'none';
+          audio.setAttribute('aria-hidden', 'true');
+          try {
+            document.body.appendChild(audio);
+          } catch (e) {}
+        }
+      });
+    }
+  }
+
+  _getSilentWavUrl() {
+    if (!this._silentWavUrl && typeof Blob !== 'undefined') {
+      try {
+        const blob = createSilentWavBlob(2.0);
+        this._silentWavUrl = URL.createObjectURL(blob);
+      } catch (e) {}
+    }
+    return this._silentWavUrl || '';
+  }
+
   _setMediaSessionPlaybackState(state) {
     if (this._isNativeEngineAvailable()) return;
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = state;
+    if (typeof window !== 'undefined') {
+      if ('audioSession' in navigator && (state === 'playing' || this.isPlaying)) {
+        try {
+          navigator.audioSession.type = 'playback';
+        } catch (e) {}
+      }
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = state;
+      }
     }
   }
 
@@ -2168,6 +2243,8 @@ export class TTSEngine {
       return;
     }
     
+    this._ensurePlayersAttached();
+    
     const cached = this.audioCache.get(index);
     if (!cached || !cached.isReady) {
       this._fetchSentence(index);
@@ -2182,9 +2259,16 @@ export class TTSEngine {
         }
       }
 
-      // 如果當前沒有任何音訊在播放（或者當前音訊已暫停/播放結束），為防止純網頁版 iOS Safari 挂起 JavaScript，應立刻啟動靜音播放器保活
-      if (!this._isNativeEngineAvailable() && (!this.currentAudio || this.currentAudio.paused || this.currentAudio.ended) && this.silenceAudio) {
-        this.silenceAudio.play().catch(e => console.warn("Failed to resume silence on cache miss:", e));
+      // 如果當前沒有任何音訊在播放（或者當前音訊已暫停/播放結束），為防止純網頁版 iOS WebKit 挂起 JavaScript 或鎖屏按鈕被置為三角形，
+      // 立即使用當前主播放器以無感 PCM 靜音軌進行持續播放保活，鎖定 WebKit NowPlaying 會話為 Playing 狀態（保持雙豎線暫停鍵 ⏸）
+      if (!this._isNativeEngineAvailable()) {
+        const audio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
+        if (audio && (audio.paused || audio.ended)) {
+          audio.loop = true;
+          audio.src = this._getSilentWavUrl();
+          audio.playbackRate = this.rate || 1.0;
+          audio.play().catch(e => console.warn("Failed to resume silence on cache miss:", e));
+        }
       }
       return;
     }
@@ -2271,6 +2355,7 @@ export class TTSEngine {
     };
 
     if (!isSameSource) {
+      audio.loop = false; // 關鍵：確保真實語音不循環
       audio.src = audioUrl;
       audio.dataset.srcUrl = audioUrl;
       audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
@@ -2284,6 +2369,7 @@ export class TTSEngine {
         }
       };
     } else {
+      audio.loop = false;
       audio.playbackRate = this.rate;
       setupGroupSeeking();
     }
@@ -2422,6 +2508,14 @@ export class TTSEngine {
         }
         
         if (this.isPlaying && !this.isPaused) {
+          if (!this._isNativeEngineAvailable() && this.players.length === 1) {
+            try {
+              audio.loop = true;
+              audio.src = this._getSilentWavUrl();
+              audio.playbackRate = this.rate || 1.0;
+              audio.play().catch(() => {});
+            } catch (e) {}
+          }
           this._setMediaSessionPlaybackState('playing');
           if (isCapacitorApp) {
             window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
@@ -2477,6 +2571,14 @@ export class TTSEngine {
         }
         
         if (this.isPlaying && !this.isPaused) {
+          if (!this._isNativeEngineAvailable() && this.players.length === 1) {
+            try {
+              audio.loop = true;
+              audio.src = this._getSilentWavUrl();
+              audio.playbackRate = this.rate || 1.0;
+              audio.play().catch(() => {});
+            } catch (e) {}
+          }
           this._setMediaSessionPlaybackState('playing');
           if (isCapacitorApp) {
             window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
@@ -2507,9 +2609,9 @@ export class TTSEngine {
         }).catch(() => {});
       }
       
-      // 停止其它播放器的回調，避免事件競爭，但延後到新音訊成功播放後再執行 pause()
+      // 停止其它播放器的回調（僅多播放器架構），避免事件競爭，但延後到新音訊成功播放後再執行 pause()
       // 消除新舊音訊切換時的「零音訊空窗期」，防止 iOS 鎖屏/通知欄判定為暫停而閃爍切換圖標
-      if (Array.isArray(this.players)) {
+      if (Array.isArray(this.players) && this.players.length > 1) {
         this.players.forEach(p => {
           if (p && p !== audio) {
             try {
@@ -2532,8 +2634,8 @@ export class TTSEngine {
           return;
         }
 
-        // 成功播放後，先清理並暫停所有非當前閒置播放器
-        if (Array.isArray(this.players)) {
+        // 成功播放後，先清理並暫停所有非當前閒置播放器（僅多播放器架構）
+        if (Array.isArray(this.players) && this.players.length > 1) {
           this.players.forEach(p => {
             if (p && p !== audio) {
               try {
@@ -2763,33 +2865,18 @@ export class TTSEngine {
     if (this._isAudioUnlocked) return;
     this._isAudioUnlocked = true;
 
-    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+    this._ensurePlayersAttached();
 
-    // 1. 初始化並在用戶手勢中解鎖靜音保活播放器 (僅純網頁瀏覽器用於維持 iOS Mobile Safari WebContent 音訊管道活躍)
-    // 原生 App (iOS / Android) 使用原生雙播放器引擎 (Route B)，完全不使用 WebKit 靜音播放器
-    if (!isCapacitorApp && !this._isNativeEngineAvailable()) {
-      if (!this.silenceAudio) {
-        this.silenceAudio = new Audio();
-        this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
-        this.silenceAudio.loop = true;
-        this.silenceAudio.volume = 0.001;
-        this.silenceAudio.preload = 'auto';
-        this.silenceAudio.disableRemotePlayback = true; // 確保靜音保活軌道絕不搶佔系統 NowPlaying 播控
-      }
+    // 啟用 iOS WebKit AudioSession playback 類型
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
       try {
-        const pSilence = this.silenceAudio.play();
-        if (pSilence && typeof pSilence.then === 'function') {
-          pSilence.then(() => {
-            // 若當前未在播放 TTS，解鎖成功後暫停靜音播放器，避免背景耗電
-            if (!this.isPlaying || this.isPaused) {
-              this.silenceAudio.pause();
-            }
-          }).catch(() => {});
-        }
+        navigator.audioSession.type = 'playback';
       } catch (e) {}
     }
 
-    // 2. 在用戶手勢中同步預熱音訊播放器，使其獲得 WebKit Autoplay 授權
+    const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
+
+    // 在用戶手勢中同步預熱音訊播放器，使其獲得 WebKit Autoplay 授權
     const SILENCE_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
     if (Array.isArray(this.players)) {
       this.players.forEach(p => {
@@ -2817,13 +2904,25 @@ export class TTSEngine {
     if (typeof Audio === 'undefined') return;
     if (!this.isPlaying || this.isPaused) return; // 暫停或未播放時嚴禁啟動靜音音訊
     
+    // 在單播放器架構（iOS Web）下，靜音保活直接由主播放器以無感 PCM 靜音軌承載，
+    // 杜絕獨立靜音音訊元素競爭 NowPlaying 會話或在暫停時誤發 pause 事件導致鎖屏顯示三角形
+    if (Array.isArray(this.players) && this.players.length === 1) {
+      const audio = this.players[0];
+      if (audio && (audio.paused || audio.ended)) {
+        audio.loop = true;
+        audio.src = this._getSilentWavUrl();
+        audio.playbackRate = this.rate || 1.0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
+
     if (!this.silenceAudio) {
       this.silenceAudio = new Audio();
-      this.silenceAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+      this.silenceAudio.src = this._getSilentWavUrl() || 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
       this.silenceAudio.loop = true;
       this.silenceAudio.volume = 0.001; // 微量音量維持 WebKit CoreAudio 活躍，完全無感靜音
       this.silenceAudio.preload = 'auto';
-      this.silenceAudio.disableRemotePlayback = true; // 確保靜音保活軌道絕不搶佔系統 NowPlaying 播控
     }
     
     if (this.silenceAudio.paused) {
@@ -2946,8 +3045,14 @@ export class TTSEngine {
           }
           this._fetchSentence(idx);
           // 只有在未暫停且播放中時才保活 (僅純網頁版)
-          if (!this._isNativeEngineAvailable() && this.isPlaying && !this.isPaused && this.silenceAudio && this.silenceAudio.paused) {
-            this.silenceAudio.play().catch(() => {});
+          if (!this._isNativeEngineAvailable() && this.isPlaying && !this.isPaused) {
+            const audio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
+            if (audio && (audio.paused || audio.ended)) {
+              audio.loop = true;
+              audio.src = this._getSilentWavUrl();
+              audio.playbackRate = this.rate || 1.0;
+              audio.play().catch(() => {});
+            }
           }
         }
         
@@ -3048,7 +3153,7 @@ export class TTSEngine {
           try {
             navigator.mediaSession.setPositionState({
               duration: chapterDuration,
-              playbackRate: this.rate || 1.0,
+              playbackRate: (this.isPlaying && !this.isPaused) ? (this.rate || 1.0) : 0,
               position: Math.min(currentElapsed, chapterDuration)
             });
           } catch (posErr) {}
@@ -3077,6 +3182,17 @@ export class TTSEngine {
             this.next();
           });
         } catch (seekErr) {}
+        try {
+          navigator.mediaSession.setActionHandler('seekto', (details) => {
+            if (details && typeof details.seekTime === 'number') {
+              const targetTime = details.seekTime;
+              const targetSentenceIdx = Math.floor(targetTime / 5.0);
+              if (targetSentenceIdx >= 0 && targetSentenceIdx < this.sentences.length) {
+                this.play(targetSentenceIdx, true);
+              }
+            }
+          });
+        } catch (seekToErr) {}
       } catch (e) {
         console.warn("MediaSession update failed:", e);
       }
@@ -3194,6 +3310,7 @@ export class TTSEngine {
     } else {
       // 純網頁版（iOS Safari/Edge 等）：在用戶點擊手勢的同步上下文中，立即初始化 MediaSession 元數據與操作回調
       // 確保 iOS 系統自起播第一秒起即可授予完整的 NowPlaying 播控權限，避免延遲初始化導致鎖屏按鈕呈三角形
+      this._ensurePlayersAttached();
       const currentSentence = this.sentences[this.currentIndex];
       this._updateMediaSession(currentSentence);
     }
@@ -3201,6 +3318,32 @@ export class TTSEngine {
     this._setMediaSessionPlaybackState('playing');
     this._startSilenceKeepAlive();
     this._startPlaybackWatchdog();
+
+    // 【關鍵核心修復】：在用戶手勢同步上下文中立即啟動活躍播放器播放！
+    // 若首句已就緒則直接播放真實語音；若首句仍在網絡加載中，立即以無感 2 秒 PCM 靜音軌開始播放並循環。
+    // 這確保了 WebKit 媒體管線在點擊第一秒即獲得 User Gesture 授權並將 NowPlaying 會話鎖定為 Playing，
+    // 徹底杜絕 iOS 鎖屏和通知欄將未開始播放的媒體會話誤判為 Paused（三角形▶）！
+    if (!this._isNativeEngineAvailable()) {
+      this._ensurePlayersAttached();
+      const activeAudio = (Array.isArray(this.players) && this.players.length > 0) ? this.players[this.activePlayerIdx] : null;
+      if (activeAudio) {
+        this.currentAudio = activeAudio;
+        const cached = this.audioCache.get(this.currentIndex);
+        if (cached && cached.isReady && cached.blobUrl) {
+          activeAudio.loop = false;
+          activeAudio.src = cached.blobUrl;
+          activeAudio.dataset.srcUrl = cached.blobUrl;
+        } else {
+          activeAudio.loop = true;
+          activeAudio.src = this._getSilentWavUrl();
+        }
+        activeAudio.muted = false;
+        activeAudio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
+        activeAudio.playbackRate = this.rate || 1.0;
+        activeAudio.play().catch(() => {});
+      }
+    }
+
     this._playActiveSentence();
     this._prefetchNextChapter();
     if (this.onStateChange) this.onStateChange();
@@ -3511,6 +3654,7 @@ export class TTSEngine {
         }).catch(e => console.error("Error updating native playback state:", e));
       }
 
+      this._ensurePlayersAttached();
       this._setMediaSessionPlaybackState('playing');
 
       const voice = this.selectedVoice;
@@ -3519,8 +3663,8 @@ export class TTSEngine {
         this._stopSilenceKeepAlive();
         this.synth.resume();
       } else {
-        // 確保其它所有未處於播放狀態的播放器完全暫停並重置進度
-        if (Array.isArray(this.players)) {
+        // 確保其它所有未處於播放狀態的閒置播放器完全暫停並重置進度（僅多播放器架構）
+        if (Array.isArray(this.players) && this.players.length > 1) {
           this.players.forEach(p => {
             if (p && p !== this.currentAudio) {
               try {
