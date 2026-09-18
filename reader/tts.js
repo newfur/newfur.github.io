@@ -141,7 +141,7 @@ export class TTSEngine {
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
-      audio.disableRemotePlayback = true; // 停用遠端播放，提高穩定性
+      // 注意：不可對真實音訊播放器設置 disableRemotePlayback = true，否則 iOS WebKit 會抑制系統鎖屏/通知欄 NowPlaying 聯動
     });
 
     this.nativeQueue = new Set(); // 儲存預載排隊中的 native 句子索引
@@ -352,6 +352,14 @@ export class TTSEngine {
       const audio = this.currentAudio;
       if (audio.ontimeupdate) {
         audio.ontimeupdate();
+      }
+
+      // WebKit NowPlaying State Guardian（純網頁端 iOS 鎖屏狀態守衛）
+      // 防止 iOS WebKit 因切換音訊或後台節流發出的異步 pause IPC 將鎖屏狀態誤置為 paused
+      if (!this._isNativeEngineAvailable() && typeof window !== 'undefined' && 'mediaSession' in navigator) {
+        if (this.isPlaying && !this.isPaused && navigator.mediaSession.playbackState !== 'playing' && audio && !audio.paused && !audio.ended) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
       }
     };
     
@@ -2293,12 +2301,21 @@ export class TTSEngine {
         }).catch(() => {});
       }
     };
-    audio.onpause = () => {
-      if (this.isPaused) {
-        this._setMediaSessionPlaybackState('paused');
-      } else if (this.isPlaying) {
-        // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
+    audio.onplaying = () => {
+      if (this.isPlaying && !this.isPaused) {
         this._setMediaSessionPlaybackState('playing');
+      }
+    };
+    audio.onpause = () => {
+      // 關鍵防禦：只有當該音訊仍然是當前活躍播放器時，才允許同步暫停狀態
+      // 避免雙播放器切換時舊播放器的 pause 事件誤將系統鎖屏改寫為 paused (三角形▶)
+      if (this.currentAudio === audio) {
+        if (this.isPaused) {
+          this._setMediaSessionPlaybackState('paused');
+        } else if (this.isPlaying) {
+          // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
+          this._setMediaSessionPlaybackState('playing');
+        }
       }
       // 換句過渡期間當前句子音訊暫停，WebKit底層會誤將鎖屏翻轉為三角形(▶)。立即通知原生層維持播放中(⏸)！
       if (this.isPlaying && !this.isPaused) {
@@ -2499,6 +2516,9 @@ export class TTSEngine {
               p.ontimeupdate = null;
               p.onended = null;
               p.onloadedmetadata = null;
+              p.onpause = null;
+              p.onplay = null;
+              p.onplaying = null;
             } catch (e) {}
           }
         });
@@ -2511,16 +2531,8 @@ export class TTSEngine {
           try { audio.pause(); } catch (e) {}
           return;
         }
-        this._setMediaSessionPlaybackState('playing');
-        if (isCapacitorApp) {
-          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
-            isPlaying: true
-          }).catch(() => {});
-        }
-        // 成功播放真實語音後暫停靜音保活播放器，避免雙重音訊競爭或音量衰減
-        this._stopSilenceKeepAlive();
 
-        // 成功播放後，立即暫停所有非當前播放器並重置進度與清理資源
+        // 成功播放後，先清理並暫停所有非當前閒置播放器
         if (Array.isArray(this.players)) {
           this.players.forEach(p => {
             if (p && p !== audio) {
@@ -2529,14 +2541,30 @@ export class TTSEngine {
                   p._cleanupResources();
                   p._cleanupResources = null;
                 }
-                p.pause();
-                p.currentTime = 0;
                 p.ontimeupdate = null;
                 p.onended = null;
                 p.onloadedmetadata = null;
+                p.onpause = null;
+                p.onplay = null;
+                p.onplaying = null;
+                p.pause();
+                p.currentTime = 0;
               } catch (e) {}
             }
           });
+        }
+        
+        // 成功播放真實語音後暫停靜音保活播放器（若有）
+        this._stopSilenceKeepAlive();
+
+        // 關鍵核心修復：在暫停舊播放器與靜音播放器之後，立即無條件再次強行宣告 playing！
+        // 徹底覆蓋 WebKit 因閒置播放器 pause() 而發送給 iOS MediaRemote 的異步 Paused IPC 通知，
+        // 確保通知欄與鎖屏界面的播放控制按鈕在起播與換句後始終保持為雙豎線暫停鍵（⏸）
+        this._setMediaSessionPlaybackState('playing');
+        if (isCapacitorApp) {
+          window.Capacitor.Plugins.NativeTTS.updatePlaybackState({
+            isPlaying: true
+          }).catch(() => {});
         }
         
         // 再次強制設置播放速度，以防止部分 iOS 瀏覽器在啟動播放時強制將速度重設為 1.0
@@ -2746,6 +2774,7 @@ export class TTSEngine {
         this.silenceAudio.loop = true;
         this.silenceAudio.volume = 0.001;
         this.silenceAudio.preload = 'auto';
+        this.silenceAudio.disableRemotePlayback = true; // 確保靜音保活軌道絕不搶佔系統 NowPlaying 播控
       }
       try {
         const pSilence = this.silenceAudio.play();
@@ -2794,6 +2823,7 @@ export class TTSEngine {
       this.silenceAudio.loop = true;
       this.silenceAudio.volume = 0.001; // 微量音量維持 WebKit CoreAudio 活躍，完全無感靜音
       this.silenceAudio.preload = 'auto';
+      this.silenceAudio.disableRemotePlayback = true; // 確保靜音保活軌道絕不搶佔系統 NowPlaying 播控
     }
     
     if (this.silenceAudio.paused) {
@@ -3161,6 +3191,11 @@ export class TTSEngine {
           isPlaying: this.isPlaying && !this.isPaused
         }).catch(e => console.error("Error starting native foreground service:", e));
       })();
+    } else {
+      // 純網頁版（iOS Safari/Edge 等）：在用戶點擊手勢的同步上下文中，立即初始化 MediaSession 元數據與操作回調
+      // 確保 iOS 系統自起播第一秒起即可授予完整的 NowPlaying 播控權限，避免延遲初始化導致鎖屏按鈕呈三角形
+      const currentSentence = this.sentences[this.currentIndex];
+      this._updateMediaSession(currentSentence);
     }
 
     this._setMediaSessionPlaybackState('playing');
@@ -3691,6 +3726,12 @@ export class TTSEngine {
       
       const nextPlayer = this.players[1 - this.activePlayerIdx];
       if (nextPlayer.dataset.srcUrl !== targetBlobUrl) {
+        // 清除預熱播放器的殘留事件回調，防止加載時干擾當前播放器與 WebKit 媒體會話
+        nextPlayer.ontimeupdate = null;
+        nextPlayer.onended = null;
+        nextPlayer.onpause = null;
+        nextPlayer.onplay = null;
+        nextPlayer.onplaying = null;
         nextPlayer.src = targetBlobUrl;
         nextPlayer.dataset.srcUrl = targetBlobUrl;
         nextPlayer.load();
