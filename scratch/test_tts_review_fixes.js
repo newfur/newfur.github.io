@@ -357,7 +357,43 @@ assert.match(
   /\$\{chapterTitle\} \(\$\{pct\}%\)/,
   'tts.js must display chapter progress percentage in subtitle'
 );
+assert.match(
+  updatedTtsSource,
+  /this\._initMediaSessionHandlers\(\);/,
+  'tts.js must initialize MediaSession action handlers globally in constructor'
+);
+assert.match(
+  updatedTtsSource,
+  /_initMediaSessionHandlers\(\) \{/,
+  'tts.js must define _initMediaSessionHandlers method'
+);
+assert.match(
+  updatedTtsSource,
+  /safeSet\('togglepause'/,
+  'tts.js must register togglepause handler for bluetooth earphones'
+);
+assert.match(
+  updatedTtsSource,
+  /this\._isSwitchingSource = true;/,
+  'tts.js must mark _isSwitchingSource when changing audio source'
+);
+assert.match(
+  updatedTtsSource,
+  /if \(this\._isSwitchingSource \|\| audio\.ended\)/,
+  'tts.js must distinguish source transitions from hardware pause events'
+);
+assert.match(
+  updatedTtsSource,
+  /Hardware\/Bluetooth pause detected on active audio element, pausing TTS[\s\S]*?this\.pause\(\);/,
+  'tts.js must invoke this.pause() when hardware/bluetooth pauses the audio element'
+);
+assert.match(
+  updatedTtsSource,
+  /Native\/Bluetooth triggered play while paused\/stopped, resuming[\s\S]*?this\.resume\(\);/,
+  'tts.js must invoke this.resume() when hardware/bluetooth plays the audio element while paused'
+);
 
 console.log('TTS review regression tests passed');
+
 
 

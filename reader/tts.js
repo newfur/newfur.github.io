@@ -173,7 +173,10 @@ export class TTSEngine {
     this._silentWavUrl = null; // 緩存的靜音 WAV Blob URL
     this._currentMediaSessionSentenceIndex = null; // 快取已同步 MediaSession 的句子索引
     this._mediaSessionActionHandlersAttached = false; // 標記 MediaSession 動作處理器是否已綁定
+    this._isSwitchingSource = false; // 標記是否處於句子音訊源切換過渡期（區分切源暫停與藍牙耳機暫停）
     
+    this._initMediaSessionHandlers(); // 全域初始化持久 MediaSession 播控回調（支援系統鎖屏/通知欄/藍牙耳機）
+
     this.players.forEach(audio => {
       audio.preload = 'auto';
       // 注意：不可對真實音訊播放器設置 disableRemotePlayback = true，否則 iOS WebKit 會抑制系統鎖屏/通知欄 NowPlaying 聯動
@@ -410,6 +413,65 @@ export class TTSEngine {
         navigator.mediaSession.playbackState = state;
       }
     }
+  }
+
+  // 全域初始化持久 MediaSession 播控回調（支援系統鎖屏、通知欄、藍牙耳機播放/暫停/切歌按鍵）
+  _initMediaSessionHandlers() {
+    if (this._isNativeEngineAvailable()) return;
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || typeof navigator.mediaSession.setActionHandler !== 'function') {
+      return;
+    }
+    if (this._mediaSessionActionHandlersAttached) return;
+    this._mediaSessionActionHandlersAttached = true;
+
+    const ms = navigator.mediaSession;
+    const safeSet = (action, handler) => {
+      try { ms.setActionHandler(action, handler); } catch (e) {}
+    };
+
+    safeSet('play', () => {
+      console.log('[MediaSession] Remote/Bluetooth play command received');
+      this.resume();
+    });
+    safeSet('pause', () => {
+      console.log('[MediaSession] Remote/Bluetooth pause command received');
+      this.pause();
+    });
+    safeSet('togglepause', () => {
+      console.log('[MediaSession] Remote/Bluetooth togglepause command received');
+      if (this.isPaused || !this.isPlaying) {
+        this.resume();
+      } else {
+        this.pause();
+      }
+    });
+    safeSet('stop', () => {
+      console.log('[MediaSession] Remote stop command received');
+      this.stop();
+    });
+    safeSet('previoustrack', () => {
+      console.log('[MediaSession] Remote previous track command received');
+      this.previous();
+    });
+    safeSet('nexttrack', () => {
+      console.log('[MediaSession] Remote next track command received');
+      this.next();
+    });
+    safeSet('seekbackward', () => {
+      this.previous();
+    });
+    safeSet('seekforward', () => {
+      this.next();
+    });
+    safeSet('seekto', (details) => {
+      if (details && typeof details.seekTime === 'number') {
+        const targetTime = details.seekTime;
+        if (this.currentAudio && !isNaN(this.currentAudio.duration)) {
+          this.currentAudio.currentTime = Math.max(0, Math.min(targetTime, this.currentAudio.duration));
+          this._updatePositionState(this.currentAudio.currentTime);
+        }
+      }
+    });
   }
 
   // 設置配置項
@@ -2385,6 +2447,7 @@ export class TTSEngine {
     };
 
     if (!isSameSource) {
+      this._isSwitchingSource = true;
       audio._boundaries = null; // 重置已快取的邊界數據
 
       // 方案A：在切換音訊源之前，同步將鎖屏標題更新為新句子，單句進度自然從 0:00 起步
@@ -2401,6 +2464,7 @@ export class TTSEngine {
       }
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度，並同步最新真實時長
       audio.onloadedmetadata = () => {
+        this._isSwitchingSource = false;
         audio.playbackRate = this.rate;
         setupGroupSeeking();
         if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
@@ -2424,6 +2488,7 @@ export class TTSEngine {
         this._updatePositionState();
       };
     } else {
+      this._isSwitchingSource = false;
       audio.loop = false;
       audio.playbackRate = this.rate;
       setupGroupSeeking();
@@ -2436,6 +2501,13 @@ export class TTSEngine {
     const isCapacitorApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeTTS;
 
     audio.onplay = () => {
+      this._isSwitchingSource = false;
+      // 若是藍牙耳機/外接硬體直接向底層 AVPlayer 發送 play 指令使 audio 開始播放，而前端處於暫停態，則同步恢復播放
+      if (this.isPaused || !this.isPlaying) {
+        console.log('[Audio] Native/Bluetooth triggered play while paused/stopped, resuming');
+        this.resume();
+        return;
+      }
       this._setMediaSessionPlaybackState('playing');
       this._updatePositionState();
       if (this.isPlaying && !this.isPaused && isCapacitorApp) {
@@ -2445,6 +2517,7 @@ export class TTSEngine {
       }
     };
     audio.onplaying = () => {
+      this._isSwitchingSource = false;
       if (this.isPlaying && !this.isPaused) {
         this._setMediaSessionPlaybackState('playing');
         this._updatePositionState();
@@ -2458,9 +2531,15 @@ export class TTSEngine {
           this._setMediaSessionPlaybackState('paused');
           this._updatePositionState();
         } else if (this.isPlaying) {
-          // 換句過渡期間當前句子音訊暫停，明確告知 WebKit 媒體會話依然處於 playing 狀態！
-          this._setMediaSessionPlaybackState('playing');
-          this._updatePositionState();
+          if (this._isSwitchingSource || audio.ended) {
+            // 換句過渡期間當前句子音訊切換或自然播完，明確告知 WebKit 媒體會話依然處於 playing 狀態！
+            this._setMediaSessionPlaybackState('playing');
+            this._updatePositionState();
+          } else {
+            // 藍牙耳機/外接硬體/系統控制中心直接暫停底層 AVPlayer（非切換音訊源，且非播放結束自然停頓）
+            console.log('[Audio] Hardware/Bluetooth pause detected on active audio element, pausing TTS');
+            this.pause();
+          }
         }
       }
       // 換句過渡期間當前句子音訊暫停，WebKit底層會誤將鎖屏翻轉為三角形(▶)。立即通知原生層維持播放中(⏸)！
@@ -2701,12 +2780,14 @@ export class TTSEngine {
       if (audio.paused && audio.currentTime > 0 && audio.src && !audio.ended && isSameSource) {
         audio.playbackRate = this.rate;
         audio.play().then(() => {
+          this._isSwitchingSource = false;
           this._stopSilenceKeepAlive();
           this._setMediaSessionPlaybackState('playing');
           this._updatePositionState();
           this._startPolling();
           doHighlightAndCallbacks();
         }).catch(() => {
+          this._isSwitchingSource = false;
           // 若直接播放失敗則走完整 play 邏輯
         });
         return;
@@ -2736,6 +2817,7 @@ export class TTSEngine {
       audio.muted = false;
       audio.volume = (typeof this.volume === 'number' && this.volume > 0) ? this.volume : 1.0;
       audio.play().then(() => {
+        this._isSwitchingSource = false;
         if (!this.isPlaying || this.isPaused) {
           try { audio.pause(); } catch (e) {}
           return;
@@ -2791,6 +2873,7 @@ export class TTSEngine {
         // 在音訊實際開始播放時，才執行高亮和回調，消除播放延遲導致的高亮超前
         doHighlightAndCallbacks();
       }).catch(err => {
+        this._isSwitchingSource = false;
         console.error("Audio play error:", err);
         this._stopPolling(); // 確保停止輪詢
         audio.ontimeupdate = null;
@@ -3422,43 +3505,7 @@ export class TTSEngine {
         this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
         this._updatePositionState();
 
-        if (!this._mediaSessionActionHandlersAttached) {
-          this._mediaSessionActionHandlersAttached = true;
-          navigator.mediaSession.setActionHandler('play', () => {
-            this.resume();
-          });
-          navigator.mediaSession.setActionHandler('pause', () => {
-            this.pause();
-          });
-          navigator.mediaSession.setActionHandler('stop', () => {
-            this.stop();
-          });
-          navigator.mediaSession.setActionHandler('previoustrack', () => {
-            this.previous();
-          });
-          navigator.mediaSession.setActionHandler('nexttrack', () => {
-            this.next();
-          });
-          try {
-            navigator.mediaSession.setActionHandler('seekbackward', () => {
-              this.previous();
-            });
-            navigator.mediaSession.setActionHandler('seekforward', () => {
-              this.next();
-            });
-          } catch (seekErr) {}
-          try {
-            navigator.mediaSession.setActionHandler('seekto', (details) => {
-              if (details && typeof details.seekTime === 'number') {
-                const targetTime = details.seekTime;
-                if (this.currentAudio && !isNaN(this.currentAudio.duration)) {
-                  this.currentAudio.currentTime = Math.max(0, Math.min(targetTime, this.currentAudio.duration));
-                  this._updatePositionState(this.currentAudio.currentTime);
-                }
-              }
-            });
-          } catch (seekToErr) {}
-        }
+        this._initMediaSessionHandlers();
       } catch (e) {
         console.warn("MediaSession update failed:", e);
       }
@@ -3474,6 +3521,7 @@ export class TTSEngine {
     // 停止當前播放器並清理播放狀態，但保留音訊快取以加速點擊後的啟動播放
     this.isPlaying = false;
     this.isPaused = false;
+    this._isSwitchingSource = false;
     this._stopPolling();
     
     if (this.synth) {
@@ -3833,6 +3881,7 @@ export class TTSEngine {
     this.isPaused = true;
     this._stopPlaybackWatchdog();
     this._stopSilenceKeepAlive();
+    this._isSwitchingSource = false;
     if (this._silencePauseTimeout) {
       clearTimeout(this._silencePauseTimeout);
       this._silencePauseTimeout = null;
@@ -4016,6 +4065,7 @@ export class TTSEngine {
     const lastPlayingIndex = this.currentlyPlayingIndex;
     this.isPlaying = false;
     this.isPaused = false;
+    this._isSwitchingSource = false;
     this.playbackStarted = false;
     this.prefetchQueue = [];
     this.activeFetchCount = 0;
