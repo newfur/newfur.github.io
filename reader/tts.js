@@ -171,6 +171,8 @@ export class TTSEngine {
     this.pollingTimer = null; // 用於高頻同步高亮的時間監聽器
     this.isAutoScrolling = false; // 標記是否為 TTS 自動滾動
     this._silentWavUrl = null; // 緩存的靜音 WAV Blob URL
+    this._currentMediaSessionSentenceIndex = null; // 快取已同步 MediaSession 的句子索引
+    this._mediaSessionActionHandlersAttached = false; // 標記 MediaSession 動作處理器是否已綁定
     
     this.players.forEach(audio => {
       audio.preload = 'auto';
@@ -1196,6 +1198,8 @@ export class TTSEngine {
     if (title) this.currentBookTitle = title;
     if (author) this.currentBookAuthor = author;
     if (cover) this.currentBookCover = cover;
+    this._currentMediaSessionSentenceIndex = null;
+    this._mediaSessionActionHandlersAttached = false;
   }
 
   // 設置全局壓縮版封面
@@ -1216,12 +1220,17 @@ export class TTSEngine {
           let mimeType = 'image/jpeg';
           if (cover.startsWith('data:image/png')) mimeType = 'image/png';
           else if (cover.startsWith('data:image/webp')) mimeType = 'image/webp';
-          navigator.mediaSession.metadata = new MediaMetadata({
-            title: this.currentBookTitle || 'TTS Reading',
-            artist: this.currentBookAuthor || 'E-Book Reader',
-            album: this.currentBookTitle || '',
-            artwork: [{ src: cover, sizes: '512x512', type: mimeType }]
-          });
+          const artworkArr = [{ src: cover, sizes: '512x512', type: mimeType }];
+          if (navigator.mediaSession.metadata && typeof MediaMetadata !== 'undefined' && navigator.mediaSession.metadata instanceof MediaMetadata) {
+            navigator.mediaSession.metadata.artwork = artworkArr;
+          } else {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: this.currentBookTitle || 'TTS Reading',
+              artist: this.currentBookAuthor || 'E-Book Reader',
+              album: this.currentBookTitle || '',
+              artwork: artworkArr
+            });
+          }
         } catch (e) {}
       }
     }
@@ -2376,10 +2385,22 @@ export class TTSEngine {
     };
 
     if (!isSameSource) {
+      audio._boundaries = null; // 重置已快取的邊界數據
+
+      // 關鍵修復：在切換音訊源之前，同步將鎖屏標題與章節進度提前鎖定到新句子的起點！
+      // 杜絕換源瞬間因音訊標籤內部 currentTime 重設為 0 而在鎖屏界面閃爍 0:00
+      if (this.isPlaying && !this.isPaused) {
+        const initProg = this._getChapterProgress(sentence);
+        this._updatePositionState(initProg.position);
+        this._updateMediaSession(sentence);
+      }
+
       audio.loop = false; // 關鍵：確保真實語音不循環
       audio.src = audioUrl;
       audio.dataset.srcUrl = audioUrl;
-      audio.load(); // 強制加載新音訊源，防止 file:// 協議下解碼狀態混亂
+      if (audioUrl.startsWith('file:') || (typeof location !== 'undefined' && location.protocol === 'file:')) {
+        audio.load(); // 僅在 file:// 協議下調用 load()，blob: 與 http: 下避免觸發 emptied 事件與管線重置
+      }
       // 確保 iOS Safari 在加載音訊元數據後不會重設播放速度，並同步最新真實時長
       audio.onloadedmetadata = () => {
         audio.playbackRate = this.rate;
@@ -2403,10 +2424,6 @@ export class TTSEngine {
           }
         }
         this._updatePositionState();
-        if (this.isPlaying && !this.isPaused) {
-          const sent = this.sentences[index] || sentence;
-          this._updateMediaSession(sent);
-        }
       };
     } else {
       audio.loop = false;
@@ -3302,11 +3319,21 @@ export class TTSEngine {
 
   async _updateMediaSession(sentence) {
     this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
-    this._updatePositionState();
 
     const progress = this._getChapterProgress(sentence);
     const chapterDuration = progress.duration;
     const currentElapsed = progress.position;
+
+    // 關鍵：先於任何元數據更新之前，立即鎖定章節累計進度，防止系統回落至音訊標籤的單句 0:00
+    this._updatePositionState(currentElapsed);
+
+    const sentIndex = sentence ? sentence.index : this.currentIndex;
+    if (this._currentMediaSessionSentenceIndex === sentIndex && typeof navigator !== 'undefined' && navigator.mediaSession && navigator.mediaSession.metadata) {
+      // 該句元數據已經更新過，只需保持 positionState 與 playbackState，避免重複重建或更新引發鎖屏抖動
+      this._updatePositionState();
+      return;
+    }
+    this._currentMediaSessionSentenceIndex = sentIndex;
 
     const text = sentence ? sentence.text : (this.currentBookTitle || 'TTS Reading');
     const title = this.currentBookTitle || (typeof currentBook !== 'undefined' && currentBook ? (currentBook.metadata?.title || currentBook.title || 'TTS Reading') : 'TTS Reading');
@@ -3362,63 +3389,84 @@ export class TTSEngine {
             { src: coverBase64, sizes: '512x512', type: mimeType }
           ];
         }
-        navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
+
+        // 核心優化：若 MediaMetadata 已存在，直接原地修改屬性（in-place mutation），
+        // 嚴禁每句重新 new MediaMetadata(metadataOpts)！
+        // 重新實例化 MediaMetadata 會導致 WebKit 清空系統 NowPlayingInfo 字典，
+        // 使得 iOS 鎖屏進度條在接收到 setPositionState 之前短暫回退至單句 0:00，產生視覺閃爍！
+        if (navigator.mediaSession.metadata && typeof MediaMetadata !== 'undefined' && navigator.mediaSession.metadata instanceof MediaMetadata) {
+          navigator.mediaSession.metadata.title = text;
+          if (navigator.mediaSession.metadata.artist !== displayArtist) {
+            navigator.mediaSession.metadata.artist = displayArtist;
+          }
+          if (navigator.mediaSession.metadata.album !== title) {
+            navigator.mediaSession.metadata.album = title;
+          }
+          if (coverBase64 && (!navigator.mediaSession.metadata.artwork || navigator.mediaSession.metadata.artwork.length === 0)) {
+            navigator.mediaSession.metadata.artwork = metadataOpts.artwork;
+          }
+        } else {
+          navigator.mediaSession.metadata = new MediaMetadata(metadataOpts);
+        }
 
         this._setMediaSessionPlaybackState((this.isPlaying && !this.isPaused) ? 'playing' : 'paused');
-        this._updatePositionState();
+        this._updatePositionState(currentElapsed);
 
-        navigator.mediaSession.setActionHandler('play', () => {
-          this.resume();
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-          this.pause();
-        });
-        navigator.mediaSession.setActionHandler('stop', () => {
-          this.stop();
-        });
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-          this.previous();
-        });
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-          this.next();
-        });
-        try {
-          navigator.mediaSession.setActionHandler('seekbackward', () => {
+        if (!this._mediaSessionActionHandlersAttached) {
+          this._mediaSessionActionHandlersAttached = true;
+          navigator.mediaSession.setActionHandler('play', () => {
+            this.resume();
+          });
+          navigator.mediaSession.setActionHandler('pause', () => {
+            this.pause();
+          });
+          navigator.mediaSession.setActionHandler('stop', () => {
+            this.stop();
+          });
+          navigator.mediaSession.setActionHandler('previoustrack', () => {
             this.previous();
           });
-          navigator.mediaSession.setActionHandler('seekforward', () => {
+          navigator.mediaSession.setActionHandler('nexttrack', () => {
             this.next();
           });
-        } catch (seekErr) {}
-        try {
-          navigator.mediaSession.setActionHandler('seekto', (details) => {
-            if (details && typeof details.seekTime === 'number') {
-              const targetTime = details.seekTime;
-              const curProg = this._getChapterProgress();
-              const chapterSentences = curProg.chapterSentences;
-              if (chapterSentences && chapterSentences.length > 0) {
-                let accumulated = 0;
-                let targetSentence = chapterSentences[0];
-                const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
-                for (let i = 0; i < chapterSentences.length; i++) {
-                  const s = chapterSentences[i];
-                  const sDur = (s && typeof s.actualDuration === 'number' && s.actualDuration > 0)
-                    ? s.actualDuration
-                    : Math.max(1.5, (((s && s.text) ? s.text.length : 15) / (4.2 * rate)) + 0.5);
-                  if (accumulated + sDur >= targetTime || i === chapterSentences.length - 1) {
-                    targetSentence = s;
-                    break;
+          try {
+            navigator.mediaSession.setActionHandler('seekbackward', () => {
+              this.previous();
+            });
+            navigator.mediaSession.setActionHandler('seekforward', () => {
+              this.next();
+            });
+          } catch (seekErr) {}
+          try {
+            navigator.mediaSession.setActionHandler('seekto', (details) => {
+              if (details && typeof details.seekTime === 'number') {
+                const targetTime = details.seekTime;
+                const curProg = this._getChapterProgress();
+                const chapterSentences = curProg.chapterSentences;
+                if (chapterSentences && chapterSentences.length > 0) {
+                  let accumulated = 0;
+                  let targetSentence = chapterSentences[0];
+                  const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
+                  for (let i = 0; i < chapterSentences.length; i++) {
+                    const s = chapterSentences[i];
+                    const sDur = (s && typeof s.actualDuration === 'number' && s.actualDuration > 0)
+                      ? s.actualDuration
+                      : Math.max(1.5, (((s && s.text) ? s.text.length : 15) / (4.2 * rate)) + 0.5);
+                    if (accumulated + sDur >= targetTime || i === chapterSentences.length - 1) {
+                      targetSentence = s;
+                      break;
+                    }
+                    accumulated += sDur;
                   }
-                  accumulated += sDur;
-                }
-                if (targetSentence && typeof targetSentence.index === 'number') {
-                  this.play(targetSentence.index, true);
-                  this._updatePositionState(targetTime);
+                  if (targetSentence && typeof targetSentence.index === 'number') {
+                    this.play(targetSentence.index, true);
+                    this._updatePositionState(targetTime);
+                  }
                 }
               }
-            }
-          });
-        } catch (seekToErr) {}
+            });
+          } catch (seekToErr) {}
+        }
       } catch (e) {
         console.warn("MediaSession update failed:", e);
       }
@@ -4002,6 +4050,7 @@ export class TTSEngine {
     }
 
     this._isInterrupted = false;
+    this._currentMediaSessionSentenceIndex = null;
     this._setMediaSessionPlaybackState('none');
     if (typeof window !== 'undefined' && 'mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function') {
       try { navigator.mediaSession.setPositionState(null); } catch (e) {}

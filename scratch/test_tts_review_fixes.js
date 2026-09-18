@@ -330,6 +330,29 @@ class MockTTSEngine {
   assert.ok(simEngine.mediaSessionState.playbackRate >= 0.1, 'playbackRate must never be 0 in setPositionState');
 }
 
+// Flicker prevention regression assertions
+const updatedTtsSource = fs.readFileSync('reader/tts.js', 'utf8');
+assert.match(
+  updatedTtsSource,
+  /navigator\.mediaSession\.metadata\.title = text;/,
+  'tts.js must mutate metadata in-place to prevent MediaMetadata recreation flicker'
+);
+assert.match(
+  updatedTtsSource,
+  /this\._currentMediaSessionSentenceIndex === sentIndex/,
+  'tts.js must deduplicate _updateMediaSession calls for the same sentence'
+);
+assert.match(
+  updatedTtsSource,
+  /this\._mediaSessionActionHandlersAttached/,
+  'tts.js must only attach MediaSession action handlers once'
+);
+assert.match(
+  updatedTtsSource,
+  /this\._updatePositionState\(initProg\.position\);\s+this\._updateMediaSession\(sentence\);/,
+  'tts.js must pre-sync chapter position and metadata before changing audio.src'
+);
+
 console.log('TTS review regression tests passed');
 
 
