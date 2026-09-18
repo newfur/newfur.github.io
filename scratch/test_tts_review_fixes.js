@@ -393,7 +393,34 @@ assert.match(
   'tts.js must invoke this.resume() when hardware/bluetooth plays the audio element while paused'
 );
 
-console.log('TTS review regression tests passed');
+// Font regression tests: All supported fonts must declare local() fallbacks for offline usage
+const readerCssSource = fs.readFileSync('reader/reader.css', 'utf8');
+const supportedFontFamilies = [
+  'LXGW WenKai',
+  'Noto Serif TC',
+  'Lora',
+  'Inter',
+  'Playfair Display',
+  'Fira Code',
+  'OpenDyslexic'
+];
+for (const font of supportedFontFamilies) {
+  assert.ok(
+    readerCssSource.includes(`font-family: '${font}'`) && readerCssSource.includes(`local('${font}')`),
+    `reader.css must declare local() fallback for ${font}`
+  );
+}
+
+// Ensure offline build script makes font links non-blocking
+const compileOfflineSource = fs.readFileSync('scratch/compile_offline.js', 'utf8');
+assert.match(
+  compileOfflineSource,
+  /media="print" onload="this\.media/,
+  'compile_offline.js must make external font links non-blocking'
+);
+
+console.log('TTS and font review regression tests passed');
+
 
 
 

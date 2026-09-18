@@ -89,6 +89,18 @@ html = html.replace(scriptMermaidRegex, '<script src="reader/libs/mermaid.min.js
 // but the output HTML files live at root, so rewrite libs/ -> reader/libs/
 html = html.replace(/script\.src\s*=\s*'libs\//g, "script.src = 'reader/libs/");
 
+// External fonts: Make webfont links asynchronous non-blocking in offline builds
+// so that when opening offline without network, the page renders instantly (0ms)
+// via local system fonts without waiting 3-5s for Google/CDN DNS timeouts.
+html = html.replace(
+  /(<link rel="stylesheet" href="https:\/\/cdn\.jsdelivr\.net\/[^"]+")(\s*\/?>)/i,
+  '$1 media="print" onload="this.media=\'all\'"$2'
+);
+html = html.replace(
+  /(<link href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]+" rel="stylesheet")(\s*\/?>)/i,
+  (match) => match.replace('rel="stylesheet"', 'rel="stylesheet" media="print" onload="this.media=\'all\'"')
+);
+
 // 6. Write final offline files to root
 fs.writeFileSync(path.join(rootDir, 'reader_offline.html'), html, 'utf8');
 fs.writeFileSync(path.join(rootDir, 'index.html'), html, 'utf8');
