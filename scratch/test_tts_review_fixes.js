@@ -420,13 +420,15 @@ assert.match(
 );
 assert.match(
   compileOfflineSource,
-  /offline-embedded-font-lxgw/,
-  'compile_offline.js must embed offline LXGW WenKai font data container'
+  /data:font\/woff2;base64/,
+  'compile_offline.js must inline WOFF2 font as Base64 data URI into CSS @font-face'
 );
+
+// Verify reader.css declares woff2 URL fallback for LXGW WenKai
 assert.match(
-  compileOfflineSource,
-  /new FontFace\('LXGW WenKai'/,
-  'compile_offline.js must instantiate FontFace for LXGW WenKai'
+  readerCssSource,
+  /url\('\.\/fonts\/lxgw-wenkai-screen-standard\.woff2'\)\s*format\('woff2'\)/,
+  'reader.css must declare WOFF2 fallback url for LXGW WenKai'
 );
 
 // Verify font file existence and integrity
@@ -438,14 +440,6 @@ const fontStat = fs.statSync('reader/fonts/lxgw-wenkai-screen-standard.woff2');
 assert.ok(
   fontStat.size > 1500000 && fontStat.size < 3000000,
   `Embedded font file size must be around 2MB, actual: ${fontStat.size}`
-);
-
-// Verify reader.js triggers __loadOfflineEmbeddedFont
-const readerJsSource = fs.readFileSync('reader/reader.js', 'utf8');
-assert.match(
-  readerJsSource,
-  /window\.__loadOfflineEmbeddedFont\(\)/,
-  'reader.js setFontFamily must invoke __loadOfflineEmbeddedFont when font-lxgw is selected'
 );
 
 console.log('TTS and font review regression tests passed');

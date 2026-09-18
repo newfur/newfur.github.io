@@ -4,7 +4,9 @@
 /* ==================== 0. 本地已安裝字體優先宣告 (@font-face local) ==================== */
 /* 核心機制：確保離線版在完全斷網或 file:/// 本地文件協議下，
    只要用戶設備（macOS / Windows / iOS / Android / Linux）安裝了對應字體，
-   直接調用系統字庫，0 額外打包體積、免受 CORS 限制、0 毫秒冷啟動渲染 */
+   直接調用系統字庫，0 額外打包體積、免受 CORS 限制、0 毫秒冷啟動渲染。
+   針對霞鹜文楷，若設備未安裝本地字庫（如未裝描述文件的 iPhone/iPad），
+   自動回退加載 8,105 字標準子集 WOFF2（離線單文件版直接以 Base64 內嵌）。 */
 
 /* 1. 霞鹜文楷 (LXGW WenKai) */
 @font-face {
@@ -19,7 +21,8 @@
        local('霞鹜文楷 屏幕阅读版'),
        local('霞鶩文楷 螢幕版'),
        local('LXGWWenKai-Regular'),
-       local('LXGWWenKaiScreen-Regular');
+       local('LXGWWenKaiScreen-Regular'),
+       url('./fonts/lxgw-wenkai-screen-standard.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -31,6 +34,32 @@
        local('霞鹜文楷 粗体'),
        local('霞鶩文楷 粗體'),
        local('LXGWWenKai-Bold'),
+       local('LXGWWenKaiScreen-Bold');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LXGW WenKai Screen';
+  src: local('LXGW WenKai Screen'),
+       local('LXGW WenKai'),
+       local('霞鹜文楷 屏幕版'),
+       local('霞鹜文楷 屏幕阅读版'),
+       local('霞鶩文楷 螢幕版'),
+       local('霞鹜文楷'),
+       local('霞鶩文楷'),
+       local('LXGWWenKaiScreen-Regular'),
+       local('LXGWWenKai-Regular');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LXGW WenKai Screen';
+  src: local('LXGW WenKai Screen Bold'),
+       local('LXGW WenKai Bold'),
+       local('霞鹜文楷 屏幕版 粗体'),
+       local('霞鹜文楷 粗体'),
        local('LXGWWenKaiScreen-Bold');
   font-weight: 700;
   font-style: normal;

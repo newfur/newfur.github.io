@@ -6439,11 +6439,6 @@ function setFontFamily(fontFamily, writeToStorage = true) {
     sidebar.classList.add(fontFamily);
   }
 
-  // 若切換為霞鶩文楷，觸發離線內建字體的按需載入（若尚未載入）
-  if (fontFamily === 'font-lxgw' && typeof window !== 'undefined' && typeof window.__loadOfflineEmbeddedFont === 'function') {
-    window.__loadOfflineEmbeddedFont();
-  }
-
   if (writeToStorage) {
     chrome.storage.local.set({ fontFamily });
     if (currentBook) {

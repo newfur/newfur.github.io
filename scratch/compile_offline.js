@@ -62,8 +62,19 @@ const jszipJs = fs.readFileSync(path.join(rootDir, 'reader/libs/jszip.min.js'), 
 const mindElixirJs = fs.readFileSync(path.join(rootDir, 'reader/libs/mind-elixir.js'), 'utf8');
 const mindElixirCss = fs.readFileSync(path.join(rootDir, 'reader/libs/mind-elixir.css'), 'utf8');
 
-// 4. Read reader.css
-const readerCss = fs.readFileSync(path.join(rootDir, 'reader/reader.css'), 'utf8');
+// 4. Read reader.css and inline offline LXGW WenKai font if available
+let readerCss = fs.readFileSync(path.join(rootDir, 'reader/reader.css'), 'utf8');
+
+const fontWoff2Path = path.join(rootDir, 'reader/fonts/lxgw-wenkai-screen-standard.woff2');
+if (fs.existsSync(fontWoff2Path)) {
+  const fontBase64 = fs.readFileSync(fontWoff2Path).toString('base64');
+  const fontDataUri = `data:font/woff2;base64,${fontBase64}`;
+  readerCss = readerCss.replace(
+    "url('./fonts/lxgw-wenkai-screen-standard.woff2')",
+    `url('${fontDataUri}')`
+  );
+  console.log('[Offline Build] Successfully embedded LXGW WenKai font (8,105 characters subset) into CSS @font-face rule.');
+}
 
 // 5. Read reader.html
 let html = fs.readFileSync(path.join(rootDir, 'reader/reader.html'), 'utf8');
@@ -100,90 +111,6 @@ html = html.replace(
   /(<link href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]+" rel="stylesheet")(\s*\/?>)/i,
   (match) => match.replace('rel="stylesheet"', 'rel="stylesheet" media="print" onload="this.media=\'all\'"')
 );
-
-// 6. Embed offline LXGW WenKai font (Standard 8,105 characters subset) via inert data container
-// and asynchronous FontFace lazy-loader.
-// This achieves:
-// 1) 0ms initial render without render-blocking Base64 in <style>
-// 2) Native FontFace background decoding
-// 3) Automatic local system font detection (skips decoding if device already has font)
-// 4) Immediate garbage collection of Base64 container to prevent memory bloat
-const fontWoff2Path = path.join(rootDir, 'reader/fonts/lxgw-wenkai-screen-standard.woff2');
-if (fs.existsSync(fontWoff2Path)) {
-  const fontBase64 = fs.readFileSync(fontWoff2Path).toString('base64');
-  const fontLoaderSnippet = `
-  <!-- Offline Embedded LXGW WenKai Font (Standard 8,105 Chinese Characters) -->
-  <script id="offline-embedded-font-lxgw" type="text/plain">${fontBase64}</script>
-  <script>
-  (function() {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-    function loadEmbeddedFont() {
-      if (window.__lxgwFontLoaded) return Promise.resolve();
-
-      // Check if device already has local font installed (macOS/Win)
-      if (document.fonts && typeof document.fonts.check === 'function') {
-        try {
-          if (document.fonts.check('16px "LXGW WenKai"') || document.fonts.check('16px "LXGW WenKai Screen"')) {
-            window.__lxgwFontLoaded = true;
-            return Promise.resolve();
-          }
-        } catch (e) {}
-      }
-
-      const dataElem = document.getElementById('offline-embedded-font-lxgw');
-      if (!dataElem) return Promise.resolve();
-      const base64 = (dataElem.textContent || '').trim();
-      if (!base64) return Promise.resolve();
-
-      try {
-        const fontUrl = 'url(data:font/woff2;base64,' + base64 + ')';
-        const f1 = new FontFace('LXGW WenKai', fontUrl, { weight: '400', style: 'normal', display: 'swap' });
-        const f2 = new FontFace('LXGW WenKai Screen', fontUrl, { weight: '400', style: 'normal', display: 'swap' });
-
-        return Promise.all([f1.load(), f2.load()]).then(function(fonts) {
-          fonts.forEach(function(f) { document.fonts.add(f); });
-          window.__lxgwFontLoaded = true;
-          // Release memory immediately
-          dataElem.textContent = '';
-          if (dataElem.parentNode) dataElem.parentNode.removeChild(dataElem);
-        }).catch(function(err) {
-          console.warn('[FontLoader] Failed to decode embedded font:', err);
-        });
-      } catch (err) {
-        console.warn('[FontLoader] FontFace error:', err);
-        return Promise.resolve();
-      }
-    }
-
-    window.__loadOfflineEmbeddedFont = loadEmbeddedFont;
-
-    function init() {
-      try {
-        var currentFont = localStorage.getItem('font-family') || 'font-lxgw';
-        if (currentFont === 'font-lxgw') {
-          if ('requestIdleCallback' in window) {
-            requestIdleCallback(loadEmbeddedFont, { timeout: 800 });
-          } else {
-            setTimeout(loadEmbeddedFont, 60);
-          }
-        }
-      } catch (e) {
-        setTimeout(loadEmbeddedFont, 60);
-      }
-    }
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', init);
-    } else {
-      init();
-    }
-  })();
-  </script>
-`;
-  html = html.replace('</body>', fontLoaderSnippet + '\n</body>');
-  console.log('[Offline Build] Successfully embedded LXGW WenKai font (8,105 characters subset) with lazy FontFace loader.');
-}
 
 // 7. Write final offline files to root
 fs.writeFileSync(path.join(rootDir, 'reader_offline.html'), html, 'utf8');
