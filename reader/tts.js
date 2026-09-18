@@ -3089,53 +3089,69 @@ export class TTSEngine {
     }
   }
 
-  // 獲取當前章節的維度進度與時長（嚴格限定在當前章節範圍，並根據字數和語速精確估算）
+  // 獲取當前章節的維度進度與時長（以章節文件 cleanHref 為聚合維度，確保子章節切換時時長平穩不跳躍）
   _getChapterProgress(sentence) {
     const currentSentence = sentence || (this.sentences && this.sentences[this.currentIndex]) || null;
     const currentChapterIdx = (currentSentence && currentSentence.chapterIndex !== undefined && currentSentence.chapterIndex !== null)
       ? currentSentence.chapterIndex
       : (this.currentChapterIndex !== undefined ? this.currentChapterIndex : 0);
 
+    // 1. 聚合相同 cleanHref 的所有子章節索引，保證章節時長以物理文件為單位，杜絕在同一章節內因錨點切換導致時長忽長忽短
+    const sameFileIndices = new Set();
+    sameFileIndices.add(currentChapterIdx);
+    if (this.epubBookData && this.epubBookData.chapters) {
+      const currentChapter = this.epubBookData.chapters[currentChapterIdx];
+      if (currentChapter && currentChapter.cleanHref) {
+        this.epubBookData.chapters.forEach((ch, idx) => {
+          if (ch.cleanHref === currentChapter.cleanHref) {
+            sameFileIndices.add(idx);
+          }
+        });
+      }
+    }
+
+    // 2. 獲取屬於當前物理章節文件的所有句子
     let chapterSentences = [];
     if (Array.isArray(this.sentences)) {
-      chapterSentences = this.sentences.filter(s => s.chapterIndex === currentChapterIdx);
+      chapterSentences = this.sentences.filter(s => sameFileIndices.has(s.chapterIndex));
     }
     if (chapterSentences.length === 0) {
       chapterSentences = this.sentences || [];
     }
 
     const totalSentences = Math.max(1, chapterSentences.length);
+
+    // 3. 計算當前句子在該章節文件中的嚴格單調遞增索引
     let sentIdxInChapter = 0;
     if (currentSentence) {
-      if (typeof currentSentence.relativeIndex === 'number' && currentSentence.relativeIndex >= 0) {
-        sentIdxInChapter = currentSentence.relativeIndex;
-      } else {
-        const found = chapterSentences.indexOf(currentSentence);
-        sentIdxInChapter = found >= 0 ? found : 0;
+      sentIdxInChapter = chapterSentences.indexOf(currentSentence);
+      if (sentIdxInChapter < 0) {
+        sentIdxInChapter = chapterSentences.findIndex(s => s.index === currentSentence.index);
       }
+    }
+    if (sentIdxInChapter < 0) {
+      sentIdxInChapter = 0;
     }
     sentIdxInChapter = Math.max(0, Math.min(sentIdxInChapter, totalSentences - 1));
 
+    // 4. 時長估算（基準估算：字數 + 標點自然停頓）
     const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
     const estimateDuration = (s) => {
       const len = (s && s.text) ? s.text.length : 15;
-      // 基於字數與語速進行精準時長估算，中文約4.5字/秒，附加標點停頓0.4秒，單句最低1.2秒
-      return Math.max(1.2, (len / (4.5 * rate)) + 0.4);
+      return Math.max(1.5, (len / (4.2 * rate)) + 0.5);
     };
 
+    // 5. 計算當前句起點的累計播放時長（不疊加隨播放器頻繁重置的單句音訊 currentTime，
+    // iOS 系统会依据 playbackRate 自动在锁屏界面按秒平滑向前走动，避免音频切源时倒跳导致忽长忽短）
     let elapsedSeconds = 0;
     for (let i = 0; i < sentIdxInChapter; i++) {
       elapsedSeconds += estimateDuration(chapterSentences[i]);
     }
-    const sentenceAudioTime = (this.currentAudio && !isNaN(this.currentAudio.currentTime)) ? this.currentAudio.currentTime : 0;
-    const currentSentenceEstDuration = estimateDuration(chapterSentences[sentIdxInChapter]);
-    elapsedSeconds += Math.min(sentenceAudioTime, currentSentenceEstDuration);
 
     let totalDuration = 0;
     for (let i = 0; i < chapterSentences.length; i++) {
       totalDuration += estimateDuration(chapterSentences[i]);
     }
-    // 保證單章時長至少為 60 秒（防止極短章節被系統誤判）
     totalDuration = Math.max(60.0, totalDuration);
     elapsedSeconds = Math.min(elapsedSeconds, totalDuration);
 
@@ -3260,7 +3276,7 @@ export class TTSEngine {
                 for (let i = 0; i < chapterSentences.length; i++) {
                   const s = chapterSentences[i];
                   const len = (s && s.text) ? s.text.length : 15;
-                  const sDur = Math.max(1.2, (len / (4.5 * rate)) + 0.4);
+                  const sDur = Math.max(1.5, (len / (4.2 * rate)) + 0.5);
                   if (accumulated + sDur >= targetTime || i === chapterSentences.length - 1) {
                     targetSentence = s;
                     break;
