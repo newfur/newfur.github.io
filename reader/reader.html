@@ -4,23 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title data-i18n="extension_name">Edge E-Book Reader</title>
-  <!-- 立即同步恢復主題設定，杜絕首屏閃爍 (Anti-FOUC) -->
-  <script>
-    (function() {
-      try {
-        var theme = null;
-        var raw = localStorage.getItem('theme');
-        if (raw) {
-          try { theme = JSON.parse(raw); } catch (e) { theme = raw; }
-        }
-        if (!theme && window.matchMedia) {
-          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'mint';
-        }
-        theme = theme || 'mint';
-        document.documentElement.classList.add('theme-' + theme);
-      } catch (e) {}
-    })();
-  </script>
+  <!-- 立即同步恢復主題設定，杜絕首屏閃爍 (Anti-FOUC)，符合 Manifest V3 CSP 規範 -->
+  <script src="theme-init.js"></script>
 
   <link rel="stylesheet" href="libs/mind-elixir.css">
   <link rel="stylesheet" href="reader.css">
@@ -32,22 +17,6 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" />
 </head>
 <body>
-  <script>
-    (function() {
-      try {
-        var theme = null;
-        var raw = localStorage.getItem('theme');
-        if (raw) {
-          try { theme = JSON.parse(raw); } catch (e) { theme = raw; }
-        }
-        if (!theme && window.matchMedia) {
-          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'mint';
-        }
-        theme = theme || 'mint';
-        document.body.classList.add('theme-' + theme);
-      } catch (e) {}
-    })();
-  </script>
 
   <!-- ==================== 書庫主視圖 (Library View) ==================== -->
   <div id="library-view" class="view-active">

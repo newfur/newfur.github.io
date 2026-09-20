@@ -191,6 +191,21 @@ async function mergeShortChapters(chapters) {
   return chapters;
 }
 
+// 全域捕捉圖片載入失敗（遵守 Manifest V3 CSP 規範，徹底替代 HTML 行內 onerror 屬性）
+document.addEventListener('error', (e) => {
+  const target = e.target;
+  if (target && target.tagName === 'IMG') {
+    if (target.classList.contains('folder-cover-item')) {
+      target.style.display = 'none';
+    } else if (target.classList.contains('book-cover') || (target.closest && target.closest('#action-sheet-cover-container'))) {
+      target.style.display = 'none';
+      if (target.nextElementSibling && target.nextElementSibling.classList.contains('book-cover-placeholder')) {
+        target.nextElementSibling.style.display = 'flex';
+      }
+    }
+  }
+}, true);
+
 // ==================== 1. 初始化與事件綁定 ==================== */
 document.addEventListener('DOMContentLoaded', async () => {
   // 0.0 取得並綁定原生安全區域留白 (Safe Area Insets)
@@ -3062,7 +3077,7 @@ async function renderBookshelf(searchQuery = '') {
               }
             }
             if (bookCoverUrl) {
-              coverGridHtml += `<img class="folder-cover-item" src="${bookCoverUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none';">`;
+              coverGridHtml += `<img class="folder-cover-item" src="${bookCoverUrl}" alt="${book.title}">`;
             } else {
               coverGridHtml += `
                 <div class="folder-cover-placeholder">
@@ -3235,7 +3250,7 @@ async function renderBookshelf(searchQuery = '') {
 
       if (coverUrl) {
         coverContainer.innerHTML = `
-          <img class="book-cover" src="${coverUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          <img class="book-cover" src="${coverUrl}" alt="${book.title}">
           <div class="book-cover-placeholder" style="display: none;">
             <div class="book-cover-placeholder-icon">
               <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
@@ -3415,7 +3430,7 @@ async function repairMissingBookCover(book, coverContainer) {
         book.cover = dataUrl;
         bookCoverCache.set(book.id, dataUrl);
         coverContainer.innerHTML = `
-          <img class="book-cover" src="${dataUrl}" alt="${book.title}" onerror="this.onerror=null; this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          <img class="book-cover" src="${dataUrl}" alt="${book.title}">
           <div class="book-cover-placeholder" style="display: none;">
             <div class="book-cover-placeholder-icon">
               <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
@@ -3633,7 +3648,13 @@ function showBookActionSheet(bookId, bookData = null) {
         }
 
         if (coverUrl) {
-          coverContainer.innerHTML = `<img src="${coverUrl}" alt="${book.title}" onerror="this.style.display='none';">`;
+          coverContainer.innerHTML = `
+            <img class="book-cover" src="${coverUrl}" alt="${book.title}">
+            <div class="book-cover-placeholder" style="display: none;">
+              <div class="book-cover-placeholder-icon">
+                <svg class="svg-icon svg-icon-sm" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+              </div>
+            </div>`;
         } else {
           coverContainer.innerHTML = `
             <div class="book-cover-placeholder">

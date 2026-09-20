@@ -347,6 +347,8 @@ html {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  background-color: var(--bg-color);
+  color: var(--text-color);
 }
 
 button, a, input, select, textarea, [role="button"] {

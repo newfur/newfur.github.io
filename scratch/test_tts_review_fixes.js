@@ -550,7 +550,33 @@ for (const loc of ['en', 'zh_CN', 'zh_TW']) {
   );
 }
 
-console.log('TTS, font review, and book deletion regression tests passed');
+// 9. CSP Compliance & Anti-FOUC Regression Tests
+const readerHtml = fs.readFileSync('reader/reader.html', 'utf8');
+const themeInitPath = 'reader/theme-init.js';
+assert.ok(fs.existsSync(themeInitPath), 'reader/theme-init.js must exist for CSP-compliant Anti-FOUC');
+
+const themeInitContent = fs.readFileSync(themeInitPath, 'utf8');
+assert.match(themeInitContent, /localStorage\.getItem\(['"]theme['"]\)/, 'theme-init.js must retrieve saved theme');
+assert.match(themeInitContent, /document\.documentElement\.classList\.add/, 'theme-init.js must apply theme to documentElement');
+
+// Check that reader.html has NO inline <script> tags without src
+const scriptTags = readerHtml.match(/<script\b[^>]*>/gi) || [];
+assert.ok(scriptTags.length > 0, 'reader.html must have scripts');
+for (const tag of scriptTags) {
+  assert.ok(/\bsrc=["'][^"']+["']/i.test(tag), `All script tags in reader.html must have src attribute: ${tag}`);
+}
+assert.match(readerHtml, /<script src="theme-init\.js"><\/script>/, 'reader.html must include external theme-init.js');
+
+// Check that reader.html has NO inline event handlers
+assert.ok(!/\bon[a-z]+=["']/i.test(readerHtml), 'reader.html must not contain inline event handlers');
+
+// Check that reader.js has NO inline event handlers in template strings
+assert.ok(!/\bon[a-z]+=["']/i.test(source), 'reader.js must not contain inline event handlers like onerror="..." in template strings');
+
+// Check that reader.js registers global image error capturing listener
+assert.match(source, /document\.addEventListener\('error'[\s\S]*?true\);/, 'reader.js must register capturing error listener');
+
+console.log('TTS, font review, book deletion, and CSP compliance regression tests passed');
 
 
 
