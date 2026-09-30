@@ -182,6 +182,16 @@ export class BookLibrary {
     if (clean.cover && typeof File !== 'undefined' && clean.cover instanceof File) {
       clean.cover = new Blob([clean.cover], { type: clean.cover.type || 'image/jpeg' });
     }
+    // 確保 stats 擁有完整可靠的數據結構，絕不留空 undefined 或無效格式
+    if (!clean.stats || typeof clean.stats !== 'object') {
+      clean.stats = { totalTime: 0, readingDays: {}, hourlyDist: {} };
+    } else {
+      clean.stats = {
+        totalTime: Number(clean.stats.totalTime) || 0,
+        readingDays: (clean.stats.readingDays && typeof clean.stats.readingDays === 'object') ? { ...clean.stats.readingDays } : {},
+        hourlyDist: (clean.stats.hourlyDist && typeof clean.stats.hourlyDist === 'object') ? { ...clean.stats.hourlyDist } : {}
+      };
+    }
     return clean;
   }
 
@@ -211,7 +221,12 @@ export class BookLibrary {
         scrollTop: 0
       },
       bookmarks: [],
-      notes: [] // 保存劃線高亮與筆記
+      notes: [], // 保存劃線高亮與筆記
+      stats: {
+        totalTime: 0,
+        readingDays: {},
+        hourlyDist: {}
+      }
     };
 
     let cleanFile = file;
@@ -247,18 +262,19 @@ export class BookLibrary {
     book.size = size || book.size;
     book.fileHash = fileHash || book.fileHash;
     
-    // 重置位置相關的進度，因為新文件的章節結構可能不同
-    if (book.progress) {
-      book.progress.chapterIndex = 0;
-      book.progress.elementIndex = 0;
-      book.progress.scrollTop = 0;
-      book.progress.ttsActiveSentenceIndex = 0;
-      book.progress.ttsChapterIndex = 0;
-      book.progress.activeSentenceIndex = 0;
-      book.progress.currentPageIndex = 0;
-      book.progress.pdfPage = 1;
-      book.progress.comicImageIndex = 0;
-      book.progress.percent = 0;
+    // 【修復】：保留現有閱讀進度、閱讀統計與筆記，嚴禁強制歸零！
+    if (!book.progress) {
+      book.progress = {
+        percent: 0,
+        chapterIndex: 0,
+        elementIndex: 0,
+        activeSentenceIndex: 0,
+        ttsActiveSentenceIndex: 0,
+        ttsChapterIndex: 0,
+        pdfPage: 1,
+        comicImageIndex: 0,
+        scrollTop: 0
+      };
     }
 
     let cleanFile = file;
@@ -286,7 +302,15 @@ export class BookLibrary {
     if (!book || !book.id) return null;
     return this._mutateBook(book.id, (existing) => {
       const clean = this._cleanBookForStorage(book);
-      Object.assign(existing, clean);
+      for (const [key, val] of Object.entries(clean)) {
+        if (val !== undefined) {
+          // 若原有已有統計且傳入的 stats totalTime 為 0，保留原有累積的統計
+          if (key === 'stats' && existing.stats && existing.stats.totalTime > 0 && val.totalTime === 0) {
+            continue;
+          }
+          existing[key] = val;
+        }
+      }
       return existing;
     });
   }
@@ -310,21 +334,19 @@ export class BookLibrary {
     if (existingBook) {
       // 合併記錄
       const mergedProgress = { ...existingBook.progress, ...backupBook.progress };
+      const existingPercent = existingBook.progress?.percent || 0;
+      const backupPercent = backupBook.progress?.percent || 0;
       const existingLastRead = existingBook.lastReadAt || 0;
       const backupLastRead = backupBook.lastReadAt || 0;
 
-      if (existingLastRead > backupLastRead) {
-        if (existingBook.progress) {
-          mergedProgress.chapterIndex = existingBook.progress.chapterIndex ?? mergedProgress.chapterIndex;
-          mergedProgress.elementIndex = existingBook.progress.elementIndex ?? mergedProgress.elementIndex;
-          mergedProgress.activeSentenceIndex = existingBook.progress.activeSentenceIndex ?? mergedProgress.activeSentenceIndex;
-          mergedProgress.ttsChapterIndex = existingBook.progress.ttsChapterIndex ?? mergedProgress.ttsChapterIndex;
-          mergedProgress.ttsActiveSentenceIndex = existingBook.progress.ttsActiveSentenceIndex ?? mergedProgress.ttsActiveSentenceIndex;
-          mergedProgress.percent = existingBook.progress.percent ?? mergedProgress.percent;
-          mergedProgress.scrollTop = existingBook.progress.scrollTop ?? mergedProgress.scrollTop;
-          mergedProgress.pdfPage = existingBook.progress.pdfPage ?? mergedProgress.pdfPage;
-          mergedProgress.comicImageIndex = existingBook.progress.comicImageIndex ?? mergedProgress.comicImageIndex;
-        }
+      // 智慧進度合併：
+      // 如果現有書籍進度為 0 且備份有進度，優先採用備份的進度（防止新設備導入空書覆蓋了備份進度）
+      if (existingPercent === 0 && backupPercent > 0) {
+        Object.assign(mergedProgress, backupBook.progress);
+      } else if (existingLastRead > backupLastRead && existingPercent > 0) {
+        Object.assign(mergedProgress, existingBook.progress);
+      } else if (backupPercent > 0) {
+        Object.assign(mergedProgress, backupBook.progress);
       }
 
       const mergedBookmarks = [...(existingBook.bookmarks || [])];
@@ -373,21 +395,24 @@ export class BookLibrary {
 
       let mergedStats = null;
       if (existingBook.stats || backupBook.stats) {
-        const eStats = existingBook.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
-        const bStats = backupBook.stats || { totalTime: 0, readingDays: {}, hourlyDist: {} };
+        const eStats = (existingBook.stats && typeof existingBook.stats === 'object') ? existingBook.stats : { totalTime: 0, readingDays: {}, hourlyDist: {} };
+        const bStats = (backupBook.stats && typeof backupBook.stats === 'object') ? backupBook.stats : { totalTime: 0, readingDays: {}, hourlyDist: {} };
         const allDays = new Set([...Object.keys(eStats.readingDays || {}), ...Object.keys(bStats.readingDays || {})]);
         const mergedReadingDays = {};
         for (const day of allDays) {
-          mergedReadingDays[day] = Math.max(eStats.readingDays?.[day] || 0, bStats.readingDays?.[day] || 0);
+          mergedReadingDays[day] = Math.max(Number(eStats.readingDays?.[day]) || 0, Number(bStats.readingDays?.[day]) || 0);
         }
 
         const mergedHourlyDist = {};
         for (let h = 0; h < 24; h++) {
-          mergedHourlyDist[h] = Math.max(eStats.hourlyDist?.[h] || 0, bStats.hourlyDist?.[h] || 0);
+          mergedHourlyDist[h] = Math.max(Number(eStats.hourlyDist?.[h]) || 0, Number(bStats.hourlyDist?.[h]) || 0);
         }
 
+        const daysSum = Object.values(mergedReadingDays).reduce((s, v) => s + (Number(v) || 0), 0);
+        const legacyMax = Math.max(Number(eStats.totalTime) || 0, Number(bStats.totalTime) || 0);
+
         mergedStats = {
-          totalTime: Math.max(eStats.totalTime || 0, bStats.totalTime || 0),
+          totalTime: Math.max(daysSum, legacyMax),
           readingDays: mergedReadingDays,
           hourlyDist: mergedHourlyDist
         };
@@ -541,7 +566,8 @@ export class BookLibrary {
     return this._progressQueue;
   }
 
-  // 自動清理無實體檔案的孤立書籍記錄（如歷史異常或中斷產生的死數據）
+  // 清理無效的孤立檔案二進制數據（如書籍元數據已物理刪除，但 book_files 中仍殘留大型二進制檔案，釋放空間）
+  // 核心安全原則：絕不可因為 book_files 無實體檔案而反向刪除 books 中的元數據（否則會毀滅用戶的輕量備份、閱讀進度與統計）
   async cleanOrphanedBooks() {
     await this._ensureOpen();
     try {
@@ -549,31 +575,31 @@ export class BookLibrary {
       const bookStore = transaction.objectStore('books');
       const fileStore = transaction.objectStore('book_files');
 
-      const allBooks = await new Promise(res => {
-        const req = bookStore.getAll();
-        req.onsuccess = () => res(req.result || []);
-        req.onerror = () => res([]);
-      });
-
-      const allFileKeys = await new Promise(res => {
-        const req = fileStore.getAllKeys();
+      const allBookKeys = await new Promise(res => {
+        const req = bookStore.getAllKeys();
         req.onsuccess = () => res(new Set(req.result ? req.result.map(String) : []));
         req.onerror = () => res(new Set());
       });
 
-      const orphanedIds = allBooks
-        .filter(b => !allFileKeys.has(String(b.id)))
-        .map(b => b.id);
+      const allFileKeys = await new Promise(res => {
+        const req = fileStore.getAllKeys();
+        req.onsuccess = () => res(req.result || []);
+        req.onerror = () => res([]);
+      });
 
-      if (orphanedIds.length > 0) {
-        console.warn(`[BookLibrary] Found ${orphanedIds.length} orphaned book records. Cleaning up...`, orphanedIds);
-        for (const id of orphanedIds) {
-          await this.deleteBook(id);
+      // 孤立檔案：存在於 book_files 但在 books 中已被刪除的大檔案
+      const orphanedFileIds = allFileKeys.filter(k => !allBookKeys.has(String(k)));
+      if (orphanedFileIds.length > 0) {
+        console.log(`[BookLibrary] Cleaning ${orphanedFileIds.length} orphaned files from book_files...`, orphanedFileIds);
+        const delTx = this.db.transaction(['book_files'], 'readwrite');
+        const delStore = delTx.objectStore('book_files');
+        for (const fId of orphanedFileIds) {
+          delStore.delete(fId);
         }
       }
-      return orphanedIds;
+      return orphanedFileIds;
     } catch (e) {
-      console.warn('[BookLibrary] Error cleaning orphaned books:', e);
+      console.warn('[BookLibrary] Error cleaning orphaned files:', e);
       return [];
     }
   }

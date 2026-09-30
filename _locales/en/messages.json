@@ -1030,7 +1030,18 @@
     "message": "Lightweight Backup (Data Only)"
   },
   "backup_mode_light_desc": {
-    "message": "Backs up reading progress, highlights, notes, bookmarks, and AI chats only. Takes only seconds and prevents out-of-memory."
+    "message": "Backs up all reading time & statistics, reading progress, highlights, notes, bookmarks, and AI chats (excluding source book files). Takes only seconds and prevents out-of-memory."
+  },
+  "lightweight_book_file_prompt": {
+    "message": "\"$title$\" is from a lightweight backup (book file not loaded yet).\nWould you like to select the local book file ($title$$format$) to load and continue reading?\n(Your reading statistics, progress, and notes are preserved)",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "format": {
+        "content": "$2"
+      }
+    }
   },
   "btn_start_backup": {
     "message": "Start Backup"

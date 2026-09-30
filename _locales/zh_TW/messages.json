@@ -1027,7 +1027,18 @@
     "message": "輕量數據備份 (不含電子書源檔案)"
   },
   "backup_mode_light_desc": {
-    "message": "僅備份閱讀進度、劃線筆記、書籤與 AI 記錄。體積僅幾十 KB，秒級完成，杜絕記憶體溢出。"
+    "message": "備份全部閱讀時長與統計、閱讀進度、劃線筆記、書籤與 AI 對話（不含原書檔案）。體積僅數十 KB，秒級完成，杜絕記憶體溢出。"
+  },
+  "lightweight_book_file_prompt": {
+    "message": "《$title$》為輕量備份記錄（尚未載入實體電子書檔案）。\n是否立即選取本機對應的書籍檔案（$title$$format$）載入並繼續閱讀？\n（您的閱讀進度、統計數據與筆記已完好保留）",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "format": {
+        "content": "$2"
+      }
+    }
   },
   "btn_start_backup": {
     "message": "開始備份"

@@ -9,6 +9,7 @@ scratch/*
 !scratch/build_ios_ipa.js
 !scratch/bump_version.js
 !scratch/test_tts_review_fixes.js
+!scratch/test_backup_records.js
 www/
 ios/build/
 ios/build_sim/

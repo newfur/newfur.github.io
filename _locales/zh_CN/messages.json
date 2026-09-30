@@ -1027,7 +1027,18 @@
     "message": "轻量数据备份 (不含电子书源文件)"
   },
   "backup_mode_light_desc": {
-    "message": "仅备份阅读进度、高亮笔记、书签与 AI 记录。体积仅几十 KB，秒级完成，杜绝内存溢出。"
+    "message": "备份全部阅读时长与统计、阅读进度、高亮笔记、书签与 AI 对话（不含原书文件）。体积仅数十 KB，秒级完成，杜绝内存溢出。"
+  },
+  "lightweight_book_file_prompt": {
+    "message": "《$title$》为轻量备份记录（尚未载入实体电子书文件）。\n是否立即选取本机对应的书籍文件（$title$$format$）载入并继续阅读？\n（您的阅读进度、统计数据与笔记已完好保留）",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "format": {
+        "content": "$2"
+      }
+    }
   },
   "btn_start_backup": {
     "message": "开始备份"

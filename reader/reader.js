@@ -2793,7 +2793,7 @@ async function handleImportFiles(files) {
           }
         } else {
           // 如果沒有 Hash，但大小完全一致，動態計算舊書的 Hash 並存儲，以防後續誤判
-          if (ex.size === file.size) {
+          if (ex.file && ex.size === file.size) {
             try {
               console.log(`[handleImportFiles] Dynamically computing hash for existing book "${ex.title}" due to size match.`);
               ex.fileHash = await computeFileHash(ex.file);
@@ -3240,7 +3240,7 @@ async function renderBookshelf(searchQuery = '') {
                   if (library._deletedBookIds && library._deletedBookIds.has(String(book.id))) return;
                   bookCoverCache.set(book.id, finalData);
                   book.cover = finalData;
-                  library.updateBook(book).catch(() => {});
+                  library.updateBookCover(book.id, finalData).catch(() => {});
                 }
               }).catch(() => {});
             } catch (e) {}
@@ -3439,7 +3439,7 @@ async function repairMissingBookCover(book, coverContainer) {
           </div>
           <span class="book-format-badge">${book.format}</span>
         `;
-        await library.updateBook(book);
+        await library.updateBookCover(book.id, dataUrl);
         console.log(`[Bookshelf] Automatically repaired and saved cover for book: "${book.title}"`);
       }
     }
@@ -3854,6 +3854,88 @@ function isReadingTimeActive(now = Date.now()) {
 
 // ==================== 3. 閱讀器渲染與控制 ==================== */
 
+// 提示使用者為輕量備份或遺失實體檔案的書籍重新關聯本機檔案
+async function promptAttachBookFile(meta) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.epub,.azw3,.mobi,.txt,.md,.fb2,.cbz';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.onchange = async () => {
+      try {
+        const file = input.files && input.files[0];
+        if (!file) {
+          resolve(false);
+          return;
+        }
+        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        const format = ext.replace('.', '');
+        const incomingHash = await computeFileHash(file);
+
+        // 如果書籍缺少封面，嘗試從新檔案解析
+        let cover = meta.cover;
+        if (!cover) {
+          try {
+            if (format === 'epub') {
+              const parser = new EpubParser(file);
+              const res = await parser.parse();
+              cover = res.metadata.cover || '';
+            } else if (format === 'azw3' || format === 'mobi') {
+              const parser = new Azw3Parser(file);
+              const res = await parser.parse();
+              cover = res.metadata.cover || '';
+            } else if (format === 'cbz') {
+              const parser = new ComicParser(file);
+              const res = await parser.parse();
+              cover = res.metadata.cover || '';
+            }
+            if (cover && isBlobLike(cover)) {
+              const compressed = await compressCoverImage(cover, 512, 0.85);
+              cover = compressed || (await blobToDataUrl(cover));
+            }
+          } catch (e) {
+            console.warn('[promptAttachBookFile] Failed to extract cover from file:', e);
+          }
+        }
+
+        const incomingBookData = {
+          file,
+          size: file.size,
+          fileHash: incomingHash,
+          format: format || meta.format
+        };
+        if (cover) {
+          incomingBookData.cover = cover;
+        }
+
+        await library.replaceBookContent(meta.id, incomingBookData);
+        await renderBookshelf();
+        await openBook(meta.id);
+        resolve(true);
+      } catch (err) {
+        console.error('[promptAttachBookFile] Error attaching file:', err);
+        alert(getMsg('error') || '載入檔案失敗，請重試。');
+        resolve(false);
+      } finally {
+        if (input.parentNode) {
+          input.parentNode.removeChild(input);
+        }
+      }
+    };
+
+    input.oncancel = () => {
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+      resolve(false);
+    };
+
+    input.click();
+  });
+}
+
 // 打開書籍
 async function openBook(id) {
   hideBookActionSheet();
@@ -3868,9 +3950,20 @@ async function openBook(id) {
   if (!book || !book.file || requestId !== openBookRequestId) {
     openingBookId = null;
     if (!book || (book && !book.file)) {
-      // 檢查是否為殘留的無實體檔案的孤立書籍記錄，若是則自動從書庫清理，防用戶重複受困
       const meta = await library.getBookMetadata(id);
-      if (meta) {
+      if (meta && meta.title) {
+        // 書籍元數據存在（如輕量備份還原或檔案未關聯），絕不可刪除用戶的閱讀統計、進度與筆記
+        const title = meta.title || 'Unknown';
+        const format = meta.format ? `.${meta.format}` : '';
+        const shouldAttach = confirm(
+          getMsg('lightweight_book_file_prompt', [title, format]) ||
+          `《${title}》為輕量備份記錄（本機尚未載入實體檔案）。\n是否立即選取本機電子書檔案（${title}${format}）載入並繼續閱讀？\n（您的閱讀記錄、進度與筆記已完好保留）`
+        );
+        if (shouldAttach) {
+          await promptAttachBookFile(meta);
+        }
+      } else {
+        // 檢查是否為殘留的無實體檔案的孤立書籍記錄，若是則自動從書庫清理，防用戶重複受困
         console.warn(`[openBook] Auto-cleaning orphaned book metadata for ID: ${id}`);
         await library.deleteBook(id);
         await renderBookshelf();
@@ -10900,6 +10993,14 @@ async function handleExportBackup(backupMode = 'full') {
   const originalHtml = backupBtn.innerHTML;
   
   try {
+    // 0. 備份前主動刷新當前正在進行的閱讀計時與防抖進度
+    try {
+      await saveReadingTime();
+      await flushDebouncedIndexedDBProgress();
+    } catch (flushErr) {
+      console.warn('[Backup] Failed to flush reading time/progress before backup:', flushErr);
+    }
+
     const isLightweight = backupMode === 'lightweight';
     // 1. 取得所有書籍（若為完整備份，加載檔案 Blob；輕量備份則只加載元數據）
     const books = await library.getAllBooks({ includeFiles: !isLightweight });
@@ -10971,12 +11072,25 @@ async function handleExportBackup(backupMode = 'full') {
             backupProgressText.textContent = `${getMsg('backing_up')} (${i + 1}/${books.length})`;
           }
 
+          const localProg = getProgressFromLocalStorage(book.id);
+          const effectiveProgress = localProg ? { ...(book.progress || {}), ...localProg } : (book.progress || null);
+
+          const validStats = (book.stats && typeof book.stats === 'object') ? {
+            totalTime: Number(book.stats.totalTime) || 0,
+            readingDays: (book.stats.readingDays && typeof book.stats.readingDays === 'object') ? book.stats.readingDays : {},
+            hourlyDist: (book.stats.hourlyDist && typeof book.stats.hourlyDist === 'object') ? book.stats.hourlyDist : {}
+          } : {
+            totalTime: 0,
+            readingDays: {},
+            hourlyDist: {}
+          };
+
           const meta = {
             id: book.id, title: book.title, author: book.author,
             format: book.format, size: book.size, addedAt: book.addedAt,
-            lastReadAt: book.lastReadAt, progress: book.progress,
+            lastReadAt: book.lastReadAt, progress: effectiveProgress,
             bookmarks: book.bookmarks || [], notes: book.notes || [],
-            stats: book.stats || null, aiChats: book.aiChats || [],
+            stats: validStats, aiChats: book.aiChats || [],
             bookSummary: book.bookSummary || '', chapterSummaries: book.chapterSummaries || {},
             folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
           };
@@ -10986,12 +11100,17 @@ async function handleExportBackup(backupMode = 'full') {
             await writeBlobToCache(Filesystem, `backup_temp/books/${book.id}.bin`, book.file);
           }
 
-          if (book.cover instanceof Blob) {
+          let coverSource = book.cover;
+          if (!coverSource && bookCoverCache.has(book.id)) {
+            coverSource = bookCoverCache.get(book.id);
+          }
+
+          if (coverSource instanceof Blob) {
             meta.coverType = 'blob';
-            await writeBlobToCache(Filesystem, `backup_temp/covers/${book.id}.bin`, book.cover);
-          } else if (typeof book.cover === 'string') {
+            await writeBlobToCache(Filesystem, `backup_temp/covers/${book.id}.bin`, coverSource);
+          } else if (typeof coverSource === 'string' && coverSource) {
             meta.coverType = 'string';
-            meta.coverValue = book.cover;
+            meta.coverValue = coverSource;
           }
 
           serializedBooks.push(meta);
@@ -11134,12 +11253,25 @@ async function handleExportBackup(backupMode = 'full') {
         backupProgressText.textContent = `${getMsg('backing_up')} (${i + 1}/${books.length})`;
       }
 
+      const localProg = getProgressFromLocalStorage(book.id);
+      const effectiveProgress = localProg ? { ...(book.progress || {}), ...localProg } : (book.progress || null);
+
+      const validStats = (book.stats && typeof book.stats === 'object') ? {
+        totalTime: Number(book.stats.totalTime) || 0,
+        readingDays: (book.stats.readingDays && typeof book.stats.readingDays === 'object') ? book.stats.readingDays : {},
+        hourlyDist: (book.stats.hourlyDist && typeof book.stats.hourlyDist === 'object') ? book.stats.hourlyDist : {}
+      } : {
+        totalTime: 0,
+        readingDays: {},
+        hourlyDist: {}
+      };
+
       const meta = {
         id: book.id, title: book.title, author: book.author,
         format: book.format, size: book.size, addedAt: book.addedAt,
-        lastReadAt: book.lastReadAt, progress: book.progress,
+        lastReadAt: book.lastReadAt, progress: effectiveProgress,
         bookmarks: book.bookmarks || [], notes: book.notes || [],
-        stats: book.stats || null, aiChats: book.aiChats || [],
+        stats: validStats, aiChats: book.aiChats || [],
         bookSummary: book.bookSummary || '', chapterSummaries: book.chapterSummaries || {},
         folder: book.folder || null, hasFile: false, coverType: 'none', coverValue: ''
       };
@@ -11154,10 +11286,15 @@ async function handleExportBackup(backupMode = 'full') {
         }
       }
 
-      if (book.cover instanceof Blob) {
+      let coverSource = book.cover;
+      if (!coverSource && bookCoverCache.has(book.id)) {
+        coverSource = bookCoverCache.get(book.id);
+      }
+
+      if (coverSource instanceof Blob) {
         try {
-          await book.cover.slice(0, 1).arrayBuffer();
-          zip.file(`covers/${book.id}.bin`, book.cover);
+          await coverSource.slice(0, 1).arrayBuffer();
+          zip.file(`covers/${book.id}.bin`, coverSource);
           meta.coverType = 'blob';
         } catch (cErr) {
           const cached = bookCoverCache.get(book.id);
@@ -11166,9 +11303,9 @@ async function handleExportBackup(backupMode = 'full') {
             meta.coverValue = cached;
           }
         }
-      } else if (typeof book.cover === 'string') {
+      } else if (typeof coverSource === 'string' && coverSource) {
         meta.coverType = 'string';
-        meta.coverValue = book.cover;
+        meta.coverValue = coverSource;
       }
 
       serializedBooks.push(meta);
@@ -11454,6 +11591,16 @@ function handleImportBackup(e) {
             fileObj = new File([fileBlob], fileName, { type: fileBlob.type });
           }
 
+          const validStats = (b.stats && typeof b.stats === 'object') ? {
+            totalTime: Number(b.stats.totalTime) || 0,
+            readingDays: (b.stats.readingDays && typeof b.stats.readingDays === 'object') ? b.stats.readingDays : {},
+            hourlyDist: (b.stats.hourlyDist && typeof b.stats.hourlyDist === 'object') ? b.stats.hourlyDist : {}
+          } : {
+            totalTime: 0,
+            readingDays: {},
+            hourlyDist: {}
+          };
+
           const book = {
             id: b.id,
             title: b.title,
@@ -11468,11 +11615,16 @@ function handleImportBackup(e) {
             progress: b.progress,
             bookmarks: b.bookmarks || [],
             notes: b.notes || [],
-            stats: b.stats || null,
+            stats: validStats,
             aiChats: b.aiChats || [],
             bookSummary: b.bookSummary || '',
-            chapterSummaries: b.chapterSummaries || {}
+            chapterSummaries: b.chapterSummaries || {},
+            hasFile: Boolean(b.hasFile && fileObj)
           };
+
+          if (b.progress && typeof b.progress === 'object') {
+            saveProgressToLocalStorage(b.id, b.progress);
+          }
 
           await library.importBook(book);
         }
@@ -11546,6 +11698,16 @@ function handleImportBackup(e) {
             fileObj = new File([fileBlob], fileName, { type: fileBlob.type });
           }
 
+          const validStats = (b.stats && typeof b.stats === 'object') ? {
+            totalTime: Number(b.stats.totalTime) || 0,
+            readingDays: (b.stats.readingDays && typeof b.stats.readingDays === 'object') ? b.stats.readingDays : {},
+            hourlyDist: (b.stats.hourlyDist && typeof b.stats.hourlyDist === 'object') ? b.stats.hourlyDist : {}
+          } : {
+            totalTime: 0,
+            readingDays: {},
+            hourlyDist: {}
+          };
+
           const book = {
             id: b.id,
             title: b.title,
@@ -11559,11 +11721,16 @@ function handleImportBackup(e) {
             progress: b.progress,
             bookmarks: b.bookmarks || [],
             notes: b.notes || [],
-            stats: b.stats || null,
+            stats: validStats,
             aiChats: b.aiChats || [],
             bookSummary: b.bookSummary || '',
-            chapterSummaries: b.chapterSummaries || {}
+            chapterSummaries: b.chapterSummaries || {},
+            hasFile: Boolean(fileObj)
           };
+
+          if (b.progress && typeof b.progress === 'object') {
+            saveProgressToLocalStorage(b.id, b.progress);
+          }
 
           await library.importBook(book);
         }
