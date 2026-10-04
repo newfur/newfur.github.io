@@ -10,6 +10,7 @@ scratch/*
 !scratch/bump_version.js
 !scratch/test_tts_review_fixes.js
 !scratch/test_backup_records.js
+!scratch/test_chapter_navigation_fixes.js
 www/
 ios/build/
 ios/build_sim/

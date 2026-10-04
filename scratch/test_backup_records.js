@@ -102,6 +102,6 @@ for (const loc of ['en', 'zh_CN', 'zh_TW']) {
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 assert.strictEqual(pkg.version, manifest.version, 'package.json and manifest.json versions must match');
-assert.strictEqual(pkg.version, '3.5.20', 'Version should be 3.5.20');
+assert.match(pkg.version, /^\d+\.\d+\.\d+$/, 'Version should be valid semver');
 
 console.log('✅ All Lightweight Backup & Reading Records tests passed successfully!');

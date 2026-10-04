@@ -982,7 +982,14 @@ button, select, input {
   border: 1px solid var(--border-color);
   transition: background-color var(--transition-speed), border-color var(--transition-speed), box-shadow var(--transition-speed);
   position: relative;
+}
+
+body.layout-paginated .reader-container {
   view-transition-name: reader-page-transition;
+}
+
+body:not(.layout-paginated) .reader-container {
+  view-transition-name: none !important;
 }
 
 /* 字體切換樣式 */
@@ -2790,14 +2797,17 @@ html.transition-none::view-transition-new(reader-page-transition) {
 }
 
 /* === 連續滾動模式垂直過渡動畫 (Scroll Mode Vertical Transitions) === */
-/* 為了徹底解決滾動條瞬移造成的視覺撕裂與跳躍感，在滾動模式下將所有過渡（Slide/Flip/Fade）統一為優雅的淡入淡出 */
-html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-group(reader-page-transition) {
+/* 為了徹底解決滾動條瞬移造成的視覺撕裂與跳躍感，在滾動模式下將所有過渡（Slide/Flip/Fade）統一為優雅的淡入淡出，且僅對視口 root 進行安全過渡，杜絕 GPU 紋理溢出 */
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-group(reader-page-transition),
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-group(root) {
   animation: 0.25s ease both;
 }
-html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-old(reader-page-transition) {
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-old(reader-page-transition),
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-old(root) {
   animation-name: fade-out;
 }
-html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-new(reader-page-transition) {
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-new(reader-page-transition),
+html:not(:has(body.layout-paginated)):not(.transition-none)::view-transition-new(root) {
   animation-name: fade-in;
 }
 

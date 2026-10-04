@@ -71,6 +71,7 @@ const ai = new AIEngine();
 // 狀態追蹤
 let currentBook = null;
 let currentChapterIndex = 0;
+let currentlyLoadedCleanHref = null; // 追蹤當前 DOM 實際渲染的物理文件路徑，以支援極速子章節原位切換
 let prefetchedChapterCache = null; // 緩存背景預載的下一章 HTML 內容，避免重複讀取數據庫
 let epubBookData = null; // 存儲 EPUB 解析後的對象
 let bookChunksCache = []; // 緩存整本書的文本切片以供 RAG 檢索
@@ -805,6 +806,10 @@ function initUIEventBindings() {
     if (!e.state || !e.state.bookId) {
       if (currentBook) {
         closeCurrentBook(false);
+      }
+    } else if (currentBook && e.state.bookId === currentBook.id && typeof e.state.chapterIndex === 'number') {
+      if (e.state.chapterIndex !== currentChapterIndex) {
+        loadChapter(e.state.chapterIndex, false, false, true, false, null, null, null, null, null, false, true);
       }
     }
   });
@@ -3984,6 +3989,7 @@ async function openBook(id) {
   }
 
   // 清理舊的資源 Object URL 與預載快取
+  currentlyLoadedCleanHref = null;
   clearResourceUrls();
   // 記憶體轉換：如果 book.file 是 Blob 但不是 File（即缺少 name 屬性），在記憶體中將其包裝為 File 物件，以供解析器使用（不寫回資料庫，防止 Safari IndexedDB 儲存 File 物件的失效 Bug）
   if (book.file && typeof File !== 'undefined' && !(book.file instanceof File)) {
@@ -4198,6 +4204,7 @@ async function closeCurrentBook(triggerBack = true) {
   clearResourceUrls();
 
   // 清理書本內容 (避免 CSS 洩漏影響書庫樣式)
+  currentlyLoadedCleanHref = null;
   const contentEl = document.getElementById('book-content');
   if (contentEl) {
     contentEl.innerHTML = '';
@@ -4532,16 +4539,33 @@ function cleanUpCorruptedCharacters(container) {
 // 封裝 View Transitions API 進行頁面與章節切換平滑過渡
 function transitionPage(updateDOM, direction = 'forward') {
   if (!document.startViewTransition) {
-    updateDOM();
-    return Promise.resolve();
+    const res = updateDOM();
+    return res && typeof res.then === 'function' ? res : Promise.resolve();
   }
   
+  // 在滾動模式下，如果當前頁面高度過大（超過 15,000px），為保障移動端 / iOS 記憶體與 GPU 安全，安全降級為直接更新 DOM
+  const isPaginated = document.body.classList.contains('layout-paginated');
+  const scrollHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+  if (!isPaginated && scrollHeight > 15000) {
+    const res = updateDOM();
+    return res && typeof res.then === 'function' ? res : Promise.resolve();
+  }
+
   const htmlEl = document.documentElement;
   htmlEl.classList.remove('transition-dir-forward', 'transition-dir-backward');
   htmlEl.classList.add(`transition-dir-${direction}`);
   
   try {
-    const transition = document.startViewTransition(updateDOM);
+    const transition = document.startViewTransition(async () => {
+      try {
+        const res = updateDOM();
+        if (res && typeof res.then === 'function') {
+          await res;
+        }
+      } catch (innerErr) {
+        console.error('[transitionPage] Error inside updateDOM:', innerErr);
+      }
+    });
     transition.finished.finally(() => {
       htmlEl.classList.remove('transition-dir-forward', 'transition-dir-backward');
       // 過渡動畫結束後，重新整理與更新多欄排版寬度與定位，防止 Chrome/Edge 在動畫期間獲取錯誤的 clientRects
@@ -4555,8 +4579,11 @@ function transitionPage(updateDOM, direction = 'forward') {
         pendingGoToLastPage = false;
       }
     });
-    return transition.updateCallbackDone;
+    return transition.updateCallbackDone.catch(err => {
+      console.warn('[transitionPage] updateCallbackDone error:', err);
+    });
   } catch (e) {
+    console.warn('[transitionPage] startViewTransition failed, running updateDOM directly:', e);
     const res = updateDOM();
     htmlEl.classList.remove('transition-dir-forward', 'transition-dir-backward');
     return res && typeof res.then === 'function' ? res : Promise.resolve();
@@ -4733,8 +4760,7 @@ function updateActiveSubChapterOnPage() {
 }
 
 // 載入指定章節 (流式文本)
-// 載入指定章節 (流式文本)
-async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false) {
+async function loadChapter(index, goToLastPage = false, restoreProgress = false, animate = true, isSeamless = false, targetPageIndex = null, targetElementIndex = null, targetSentenceIndex = null, targetHash = null, targetKindleOffset = null, ignoreChapterHash = false, fromPopState = false) {
   if (!epubBookData || index < 0 || index >= epubBookData.chapters.length) return;
   if (isChangingChapter) {
     console.warn("loadChapter waiting because a chapter change is already in progress.");
@@ -4744,7 +4770,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       const checkInterval = setInterval(() => {
         if (!isChangingChapter) {
           clearInterval(checkInterval);
-          resolve(loadChapter(index, goToLastPage, restoreProgress, animate, isSeamless, targetPageIndex, targetElementIndex, targetSentenceIndex, targetHash, targetKindleOffset, ignoreChapterHash));
+          resolve(loadChapter(index, goToLastPage, restoreProgress, animate, isSeamless, targetPageIndex, targetElementIndex, targetSentenceIndex, targetHash, targetKindleOffset, ignoreChapterHash, fromPopState));
         }
       }, 50);
       // 安全超時：最多等待 5 秒，防止死鎖
@@ -4752,7 +4778,7 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
         clearInterval(checkInterval);
         console.warn("loadChapter timeout waiting for chapter change lock, forcing release.");
         isChangingChapter = false;
-        resolve(loadChapter(index, goToLastPage, restoreProgress, animate, isSeamless, targetPageIndex, targetElementIndex, targetSentenceIndex, targetHash, targetKindleOffset, ignoreChapterHash));
+        resolve(loadChapter(index, goToLastPage, restoreProgress, animate, isSeamless, targetPageIndex, targetElementIndex, targetSentenceIndex, targetHash, targetKindleOffset, ignoreChapterHash, fromPopState));
       }, 5000);
     });
   }
@@ -4769,28 +4795,137 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
   
   isChangingChapter = true;
   try {
+    const chapter = epubBookData.chapters[index];
+    const contentEl = document.getElementById('book-content');
+    activeHashElem = null;
+
+    // 檢查是否為同一物理文件內的子章節切換（且當前 DOM 已載入相應內容），直接錨點滾動/翻頁，避免重新載入與銷毀 DOM
+    const isSamePhysicalFile = currentlyLoadedCleanHref && chapter && chapter.cleanHref && (currentlyLoadedCleanHref === chapter.cleanHref) && contentEl && contentEl.children.length > 0 && !contentEl.querySelector('.ai-loading');
+
+    if (isSamePhysicalFile) {
+      if (!isSeamless) {
+        tts.stop();
+      }
+      
+      // 根據 targetHash 校正並取得最精確的子章節索引
+      let finalIdx = index;
+      if (targetHash) {
+        const bestIdx = findCorrectChapterIndexForHash(chapter.cleanHref, targetHash);
+        if (bestIdx > -1) {
+          finalIdx = bestIdx;
+        }
+      }
+      
+      currentChapterIndex = finalIdx;
+      tts.currentChapterIndex = finalIdx;
+      syncTOCActiveState(finalIdx);
+      
+      const finalHash = targetHash || ((chapter && !ignoreChapterHash) ? chapter.hash : null);
+      if (finalHash) {
+        activeHashElem = document.getElementById(finalHash) || contentEl.querySelector(`[name="${finalHash.replace(/"/g, '\\"')}"]`);
+      }
+
+      if (pendingGoToLastPageTimeout) {
+        clearTimeout(pendingGoToLastPageTimeout);
+        pendingGoToLastPageTimeout = null;
+      }
+      pendingGoToLastPage = false;
+
+      if (targetPageIndex !== null || targetElementIndex !== null || targetSentenceIndex !== null) {
+        if (targetSentenceIndex !== null) {
+          const sentenceEl = document.querySelector(`[data-sentence-index="${targetSentenceIndex}"]`);
+          if (sentenceEl) {
+            safeRestoreScrollToElementIndex(sentenceEl);
+          } else {
+            safeRestoreScrollToElementIndex(targetElementIndex !== null ? targetElementIndex : 0);
+          }
+        } else if (isPaginated && targetPageIndex !== null && targetPageIndex >= 0) {
+          currentPageIndex = targetPageIndex;
+          updatePageTranslate(false);
+        } else {
+          safeRestoreScrollToElementIndex(targetElementIndex !== null ? targetElementIndex : 0);
+        }
+      } else if (goToLastPage) {
+        if (isPaginated) {
+          currentPageIndex = getLastPageIndex();
+          updatePageTranslate(false);
+        } else {
+          window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight || 999999);
+        }
+      } else if (activeHashElem) {
+        safeRestoreScrollToElementIndex(activeHashElem);
+      } else {
+        if (isPaginated) {
+          currentPageIndex = 0;
+          updatePageTranslate(false);
+        } else {
+          window.scrollTo(0, 0);
+        }
+      }
+
+      // 更新閱讀進度
+      if (currentBook) {
+        const totalChapters = epubBookData.chapters.length;
+        let percent = ((finalIdx + 1) / totalChapters) * 100;
+        if (isPaginated) {
+          const { totalPages } = getPaginatedPagesInfo();
+          const progressFraction = (finalIdx + (currentPageIndex / Math.max(1, totalPages))) / totalChapters;
+          percent = Math.max(0, Math.min(100, Math.round(progressFraction * 100)));
+        } else {
+          percent = Math.max(0, Math.min(100, Math.round(percent)));
+        }
+        const progressUpdate = { 
+          chapterIndex: finalIdx, 
+          percent, 
+          currentPageIndex: isPaginated ? currentPageIndex : 0
+        };
+        if (currentBook.progress?.ttsChapterIndex !== undefined) {
+          progressUpdate.ttsChapterIndex = currentBook.progress.ttsChapterIndex;
+        }
+        if (currentBook.progress?.ttsActiveSentenceIndex !== undefined) {
+          progressUpdate.ttsActiveSentenceIndex = currentBook.progress.ttsActiveSentenceIndex;
+        }
+        currentBook.progress = { ...currentBook.progress, ...progressUpdate };
+        saveProgressToLocalStorage(currentBook.id, progressUpdate);
+        updateReaderTitle();
+        scheduleDebouncedIndexedDBProgress(currentBook.id, progressUpdate);
+      }
+
+      if (!fromPopState && currentBook && (!history.state || history.state.chapterIndex !== finalIdx)) {
+        try {
+          history.pushState({ bookId: currentBook.id, chapterIndex: finalIdx }, '');
+        } catch (e) {}
+      }
+
+      if (!isSeamless) {
+        const match = tts.sentences.find(s => s.chapterIndex === finalIdx);
+        if (match) {
+          tts.currentIndex = match.index;
+        }
+      }
+
+      return;
+    }
+
     // 停止語音 (如果是無縫過渡，則不停止)
     if (!isSeamless) {
       tts.stop();
     }
-
-  const chapter = epubBookData.chapters[index];
-  const contentEl = document.getElementById('book-content');
-  activeHashElem = null;
   
-  // 加載 HTML (優先使用背景預載快取)
-  let rawHtml;
-  if (prefetchedChapterCache && prefetchedChapterCache.index === index) {
-    rawHtml = prefetchedChapterCache.html;
-    prefetchedChapterCache = null; // 用完即清空
-  } else {
-    rawHtml = await chapter.getContent();
-  }
+    // 加載 HTML (優先使用背景預載快取)
+    let rawHtml;
+    if (prefetchedChapterCache && prefetchedChapterCache.index === index) {
+      rawHtml = prefetchedChapterCache.html;
+      prefetchedChapterCache = null; // 用完即清空
+    } else {
+      rawHtml = await chapter.getContent();
+    }
 
   // 判斷過渡方向 (根據新舊章節索引)
   const direction = (index > currentChapterIndex) ? 'forward' : 'backward';
 
   const updateDOM = () => {
+    currentlyLoadedCleanHref = chapter.cleanHref;
     contentEl.innerHTML = rawHtml;
     
     // 清除書籍內置的干擾多欄排版的內聯樣式
@@ -5175,6 +5310,18 @@ async function loadChapter(index, goToLastPage = false, restoreProgress = false,
       if (res && typeof res.then === 'function') {
         await res;
       }
+    }
+
+    if (!fromPopState && currentBook && (!history.state || history.state.chapterIndex !== currentChapterIndex)) {
+      try {
+        history.pushState({ bookId: currentBook.id, chapterIndex: currentChapterIndex }, '');
+      } catch (e) {}
+    }
+  } catch (err) {
+    console.error(`[loadChapter] Failed to load chapter ${index}:`, err);
+    const contentEl = document.getElementById('book-content');
+    if (contentEl && contentEl.children.length === 0) {
+      contentEl.innerHTML = `<p style="color:red; padding:40px; text-align:center;">${getMsg('failed_load_chapter') || 'Failed to load chapter'}: ${err.message}</p>`;
     }
   } finally {
     isChangingChapter = false;
@@ -5865,9 +6012,16 @@ function navigatePage(direction) {
       currentPageIndex++;
       updatePageTranslate();
     } else {
-      // 載入下一章
+      // 載入下一章（跳過相同 cleanHref 的物理文件，確保真正進入下一篇文檔）
       if (epubBookData && currentChapterIndex < epubBookData.chapters.length - 1) {
-        loadChapter(currentChapterIndex + 1, false, false, true, false, null, null, null, null, null, true);
+        const currentHref = epubBookData.chapters[currentChapterIndex]?.cleanHref;
+        let nextIdx = currentChapterIndex + 1;
+        while (nextIdx < epubBookData.chapters.length && epubBookData.chapters[nextIdx].cleanHref === currentHref) {
+          nextIdx++;
+        }
+        if (nextIdx < epubBookData.chapters.length) {
+          loadChapter(nextIdx, false, false, true, false, null, null, null, null, null, true);
+        }
       }
     }
   } else if (direction === 'prev') {
@@ -5875,9 +6029,16 @@ function navigatePage(direction) {
       currentPageIndex--;
       updatePageTranslate();
     } else {
-      // 載入前一章的最後一頁
+      // 載入前一章的最後一頁（跳過相同 cleanHref 的物理文件，確保真正進入上一篇文檔）
       if (currentChapterIndex > 0) {
-        loadChapter(currentChapterIndex - 1, true, false, true, false, null, null, null, null, null, true);
+        const currentHref = epubBookData.chapters[currentChapterIndex]?.cleanHref;
+        let prevIdx = currentChapterIndex - 1;
+        while (prevIdx >= 0 && epubBookData.chapters[prevIdx].cleanHref === currentHref) {
+          prevIdx--;
+        }
+        if (prevIdx >= 0) {
+          loadChapter(prevIdx, true, false, true, false, null, null, null, null, null, true);
+        }
       }
     }
   }
@@ -10599,43 +10760,51 @@ async function buildBookSearchIndex() {
   try {
     const chapters = epubBookData.chapters;
     const tempParser = new DOMParser();
+    const fileHtmlCache = new Map(); // cleanHref -> plainText
     
     for (let i = 0; i < chapters.length; i++) {
       const ch = chapters[i];
-      if (typeof ch.getContent !== 'function') continue;
       
       try {
-        const html = await ch.getContent();
-        const doc = tempParser.parseFromString(html, 'text/html');
-        // 清理無效標籤
-        doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
-
-        // 為了精確搜尋提取包含正確空格的文本
-        function extractText(node) {
-          if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const isBlock = /^(P|DIV|BR|H[1-6]|LI|BLOCKQUOTE|TR|TD|TH|SECTION|ARTICLE|ASIDE|NAV)$/i.test(node.tagName);
-            let text = isBlock ? ' ' : '';
-            for (const child of node.childNodes) {
-              text += extractText(child);
-            }
-            return text + (isBlock ? ' ' : '');
-          }
-          return '';
+        let plainText = '';
+        let chapterPlainText = '';
+        
+        // 優先從 ZIP 讀取純 HTML 字串（針對 EPUB），杜絕調用 ch.getContent() 產生的 Blob/Object URL 記憶體暴增
+        if (ch.cleanHref && fileHtmlCache.has(ch.cleanHref)) {
+          plainText = fileHtmlCache.get(ch.cleanHref);
+          chapterPlainText = plainText;
+        } else if (epubBookData.zip && ch.cleanHref && epubBookData.zip.file(ch.cleanHref)) {
+          const rawHtml = await epubBookData.zip.file(ch.cleanHref).async('string');
+          // 輕量提取純文本：先用正則快速剔除 script, style, noscript, svg, head 等
+          const cleanHtml = rawHtml
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+            .replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, '')
+            .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '');
+          
+          const doc = tempParser.parseFromString(cleanHtml, 'text/html');
+          plainText = (doc.body ? doc.body.textContent || '' : '').trim().replace(/\s+/g, ' ');
+          chapterPlainText = plainText;
+          fileHtmlCache.set(ch.cleanHref, plainText);
+        } else if (typeof ch.getContent === 'function') {
+          // 非 EPUB（如 TXT / MOBI）退回到 getContent
+          const html = await ch.getContent();
+          const doc = tempParser.parseFromString(html, 'text/html');
+          doc.querySelectorAll('script, style, noscript, iframe, svg').forEach(el => el.remove());
+          plainText = (doc.body ? doc.body.textContent || '' : '').trim().replace(/\s+/g, ' ');
+          chapterPlainText = plainText;
         }
         
-        const rawText = extractText(doc.body);
-        const chapterPlainText = rawText.replace(/\s+/g, ' ').trim();
+        if (chapterPlainText) {
+          chapterTextsCache.push({
+            chapterTitle: ch.title,
+            chapterIndex: i,
+            text: chapterPlainText
+          });
+        }
         
-        chapterTextsCache.push({
-          chapterTitle: ch.title,
-          chapterIndex: i,
-          text: chapterPlainText
-        });
-        
-        const plainText = (doc.body.textContent || '').trim().replace(/\s+/g, ' ');
-        
-        if (plainText.length > 50) {
+        if (plainText && plainText.length > 50) {
           const chunkTexts = chunkText(plainText, 800, 150);
           for (let j = 0; j < chunkTexts.length; j++) {
             bookChunksCache.push({
@@ -10646,10 +10815,16 @@ async function buildBookSearchIndex() {
             });
           }
         }
+        
+        // 週期性讓出主線程，給 GC 垃圾回收時間，防止記憶體激增卡死移動端
+        if (i % 5 === 0) {
+          await new Promise(r => setTimeout(r, 20));
+        }
       } catch (err) {
         console.warn(`Failed to index chapter ${i} (${ch.title}):`, err);
       }
     }
+    fileHtmlCache.clear();
     console.log(`Index built successfully! Total chunks: ${bookChunksCache.length}`);
   } catch (err) {
     console.error('Failed to build book search index:', err);
