@@ -286,6 +286,9 @@ export class TTSEngine {
           this.currentlyPlayingIndex = index;
           const currentSentence = this.sentences[index];
           if (currentSentence) {
+            if (data && typeof data.duration === 'number' && data.duration > 0) {
+              currentSentence.actualDuration = data.duration;
+            }
             const doHighlight = () => {
               const sent = this.sentences[index] || currentSentence;
               this._highlightSentence(sent);
@@ -2279,6 +2282,7 @@ export class TTSEngine {
         filePath: cached.filePath || '',
         audioBase64: cached.audioBase64 || '',
         index: index,
+        chapterIndex: progress.chapterIndex,
         text: sentence ? sentence.text : '',
         title: bookTitle,
         artist: displayArtist,
@@ -2296,6 +2300,9 @@ export class TTSEngine {
           this._nativeSentenceDuration = (res && typeof res.duration === 'number' && res.duration > 0) ? res.duration : 5.0;
           this._lastPlaybackProgressTime = Date.now();
           const sent = this.sentences[index] || sentence;
+          if (sent && res && typeof res.duration === 'number' && res.duration > 0) {
+            sent.actualDuration = res.duration;
+          }
           this._highlightSentence(sent);
           if (this.onSentenceStart) {
             this.onSentenceStart(index);
@@ -3289,9 +3296,8 @@ export class TTSEngine {
 
       if (!duration) {
         const sentence = (this.sentences && this.sentences[this.currentIndex]) || null;
-        const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
         const len = (sentence && sentence.text) ? sentence.text.length : 15;
-        duration = Math.max(1.5, (len / (4.2 * rate)) + 0.5);
+        duration = Math.max(1.5, (len / 4.2) + 0.5);
       }
 
       let position = 0;
@@ -3361,14 +3367,13 @@ export class TTSEngine {
     }
     sentIdxInChapter = Math.max(0, Math.min(sentIdxInChapter, totalSentences - 1));
 
-    // 4. 時長估算（優先採用已解碼的真實音訊時長，未知句子按字數+標點精準估算）
-    const rate = (typeof this.rate === 'number' && this.rate > 0) ? this.rate : 1.0;
+    // 4. 時長估算（優先採用已解碼的真實音訊時長，未知句子按字數+標點精準估算，基準語速 4.2 字/秒）
     const estimateDuration = (s) => {
       if (s && typeof s.actualDuration === 'number' && s.actualDuration > 0) {
         return s.actualDuration;
       }
       const len = (s && s.text) ? s.text.length : 15;
-      return Math.max(1.5, (len / (4.2 * rate)) + 0.5);
+      return Math.max(1.5, (len / 4.2) + 0.5);
     };
 
     // 5. 計算當前句起點的累計播放時長（不疊加隨播放器頻繁重置的單句音訊 currentTime，
@@ -3450,6 +3455,7 @@ export class TTSEngine {
         title: title,
         artist: displayArtist,
         text: text,
+        chapterIndex: progress.chapterIndex,
         duration: chapterDuration,
         currentTime: currentElapsed,
         isPlaying: this.isPlaying && !this.isPaused

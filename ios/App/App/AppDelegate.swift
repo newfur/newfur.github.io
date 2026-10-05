@@ -258,6 +258,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     private var isNativeEngineActive: Bool = false
     private var activePlayerFilePath: String = ""
     private var preparedPlayerFilePath: String = ""
+    private var currentPlayingChapterIndex: Int = -1
     private var currentChapterTotalDuration: Double = 60.0
     private var currentChapterProgressBase: Double = 0.0
     private var currentChapterTitle: String = ""
@@ -355,8 +356,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.isCurrentlyPlaying = isPlaying
             self.updateRemoteCommandsState(isPlaying: isPlaying)
 
-            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+            let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? targetRate : 0.0
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
             if let artwork = self.currentArtwork {
                 self.authoritativeNowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
             }
@@ -401,10 +403,12 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                         MPNowPlayingInfoCenter.default().playbackState = .playing
                     }
                 }
+                let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
                 if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
                     let currentRate = info[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0.0
-                    if currentRate < 0.5 {
-                        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                    if currentRate < 0.1 || abs(currentRate - targetRate) > 0.01 {
+                        info[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+                        info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
                         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
                     }
                 } else if !self.authoritativeNowPlayingInfo.isEmpty {
@@ -996,6 +1000,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             let title = call.getString("title") ?? self.currentChapterTitle
             let artist = call.getString("artist") ?? self.currentChapterArtist
             let coverBase64 = call.getString("cover")
+            let chapterIndexOpt = call.getInt("chapterIndex")
             let duration = call.getDouble("duration") ?? self.currentChapterTotalDuration
             let currentTime = call.getDouble("currentTime") ?? 0.0
             let rate = Float(call.getDouble("rate") ?? Double(self.currentPlaybackRate))
@@ -1004,12 +1009,20 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.currentChapterTitle = title
             self.currentChapterArtist = artist
             self.currentSentenceText = text
-            self.currentChapterTotalDuration = duration
-            self.currentChapterProgressBase = currentTime
             self.currentPlaybackRate = (rate > 0) ? rate : 1.0
             self.currentPlaybackVolume = (volume >= 0) ? volume : 1.0
 
-            writeAppLog("NativeTTS", "playNativeSentence: index=\(index), file=\(filePathOpt ?? "base64"), rate=\(self.currentPlaybackRate)")
+            let isChapterChange = (chapterIndexOpt != nil && chapterIndexOpt! != self.currentPlayingChapterIndex)
+            if isChapterChange {
+                self.currentPlayingChapterIndex = chapterIndexOpt!
+                self.currentChapterProgressBase = currentTime
+                self.currentChapterTotalDuration = max(duration, currentTime + 5.0)
+            } else if self.currentPlayingSentenceIndex != index {
+                self.currentChapterProgressBase = currentTime
+                self.currentChapterTotalDuration = max(duration, currentTime + 5.0)
+            }
+
+            writeAppLog("NativeTTS", "playNativeSentence: index=\(index), chapter=\(self.currentPlayingChapterIndex), file=\(filePathOpt ?? "base64"), rate=\(self.currentPlaybackRate), baseTime=\(self.currentChapterProgressBase)")
 
             // Check if this sentence is ALREADY actively playing in activePlayer
             if self.currentPlayingSentenceIndex == index, let active = self.activePlayer, active.isPlaying {
@@ -1021,7 +1034,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                     isPlaying: true,
                     coverBase64: coverBase64,
                     duration: duration,
-                    currentTime: currentTime
+                    currentTime: currentTime,
+                    chapterIndex: chapterIndexOpt,
+                    isExplicitSeekOrNewSentence: false
                 )
                 call.resolve([
                     "success": true,
@@ -1116,8 +1131,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                 text: text,
                 isPlaying: true,
                 coverBase64: coverBase64,
-                duration: duration,
-                currentTime: currentTime
+                duration: self.currentChapterTotalDuration,
+                currentTime: self.currentChapterProgressBase,
+                chapterIndex: chapterIndexOpt,
+                isExplicitSeekOrNewSentence: true
             )
 
             call.resolve([
@@ -1251,13 +1268,21 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
 
                 writeAppLog("NativeTTS", "Gapless switch: started pre-warmed sentence \(newIndex), play()=\(played), duration=\(nextPlayer.duration)")
 
-                // Update chapter progress on lock screen safely without exceeding total duration
-                let updatedCurrentTime = Double(newIndex) * 5.0
-                if updatedCurrentTime >= self.currentChapterTotalDuration - 5.0 {
-                    self.currentChapterTotalDuration = updatedCurrentTime + 30.0
+                // Advance chapter progress continuously using exact physical duration of the finished audio sentence
+                let finishedDuration = oldActive?.duration ?? 0.0
+                if finishedDuration > 0 {
+                    self.currentChapterProgressBase += finishedDuration
+                }
+                if self.currentChapterProgressBase >= self.currentChapterTotalDuration - 5.0 {
+                    self.currentChapterTotalDuration = self.currentChapterProgressBase + 30.0
                     self.authoritativeNowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = self.currentChapterTotalDuration
                 }
-                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = updatedCurrentTime
+
+                let safeCurrentTime = min(self.currentChapterProgressBase, max(0, self.currentChapterTotalDuration - 0.5))
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = safeCurrentTime
+                let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
                 self.syncNowPlaying(isPlaying: true)
 
                 self.notifyListeners("sentenceStarted", data: [
@@ -1270,6 +1295,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                 ])
             } else {
                 writeAppLog("NativeTTS", "handleSentenceCompletion: next sentence \(finishedIndex + 1) not prepared yet, notifying JS")
+                if let oldDuration = player?.duration, oldDuration > 0 {
+                    self.currentChapterProgressBase += oldDuration
+                }
                 // Retain activePlayer until playNativeSentence prepares the new one to prevent deallocation crash
                 self.currentPlayingSentenceIndex = -1
                 self.beginSentenceGapBgTask()
@@ -1297,6 +1325,9 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.stopNowPlayingGuardian()
             self.stopSentenceWatchdog()
             self.endSentenceGapBgTask()
+            let currentOffset = self.activePlayer?.currentTime ?? 0.0
+            let exactElapsed = min(self.currentChapterProgressBase + currentOffset, max(0, self.currentChapterTotalDuration - 0.5))
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = exactElapsed
             self.activePlayer?.pause()
             self.preparedPlayer?.pause()
             self.syncNowPlaying(isPlaying: false)
@@ -1341,6 +1372,12 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                 if played {
                     self.preparedPlayer?.prepareToPlay()
                     self.startSentenceWatchdog(expectedDuration: max(0.5, player.duration - player.currentTime), sentenceIndex: self.currentPlayingSentenceIndex)
+                    let currentOffset = player.currentTime
+                    let exactElapsed = min(self.currentChapterProgressBase + currentOffset, max(0, self.currentChapterTotalDuration - 0.5))
+                    self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = exactElapsed
+                    let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+                    self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+                    self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
                     self.startNowPlayingGuardian()
                     self.syncNowPlaying(isPlaying: true)
                     call.resolve(["resumed": true, "index": self.currentPlayingSentenceIndex])
@@ -1360,6 +1397,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                 self.preparedPlayerFilePath = ""
                 if played {
                     self.startSentenceWatchdog(expectedDuration: prep.duration, sentenceIndex: self.currentPlayingSentenceIndex)
+                    let exactElapsed = min(self.currentChapterProgressBase, max(0, self.currentChapterTotalDuration - 0.5))
+                    self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = exactElapsed
+                    let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+                    self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+                    self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
                     self.startNowPlayingGuardian()
                     self.syncNowPlaying(isPlaying: true)
                     call.resolve(["resumed": true, "index": self.currentPlayingSentenceIndex])
@@ -1379,6 +1421,11 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
                     self.activePlayer = newPlayer
                     if played {
                         self.startSentenceWatchdog(expectedDuration: newPlayer.duration, sentenceIndex: self.currentPlayingSentenceIndex)
+                        let exactElapsed = min(self.currentChapterProgressBase, max(0, self.currentChapterTotalDuration - 0.5))
+                        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = exactElapsed
+                        let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+                        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+                        self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
                         self.startNowPlayingGuardian()
                         self.syncNowPlaying(isPlaying: true)
                         call.resolve(["resumed": true, "index": self.currentPlayingSentenceIndex])
@@ -1404,6 +1451,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.isAudioSessionInterrupted = false
             self.currentPlayingSentenceIndex = -1
             self.preparedSentenceIndex = -1
+            self.currentPlayingChapterIndex = -1
+            self.currentChapterProgressBase = 0.0
             self.activePlayerFilePath = ""
             self.preparedPlayerFilePath = ""
 
@@ -1438,8 +1487,13 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             self.activePlayer?.rate = self.currentPlaybackRate
             self.preparedPlayer?.rate = self.currentPlaybackRate
             if self.isCurrentlyPlaying {
-                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = Double(self.currentPlaybackRate)
-                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = Double(self.currentPlaybackRate)
+                let currentOffset = (self.activePlayer?.isPlaying == true) ? (self.activePlayer?.currentTime ?? 0.0) : 0.0
+                let realAudioCurrentTime = self.currentChapterProgressBase + currentOffset
+                let validCurrentTime = min(realAudioCurrentTime, max(0, self.currentChapterTotalDuration - 0.5))
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = validCurrentTime
+                let targetRate = Double(self.currentPlaybackRate)
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+                self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
                 self.syncNowPlaying(isPlaying: true)
             }
             call.resolve()
@@ -1508,6 +1562,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         let coverBase64 = call.getString("cover")
         let duration = call.getDouble("duration")
         let currentTime = call.getDouble("currentTime")
+        let chapterIndex = call.getInt("chapterIndex")
 
         if !self.isCurrentlyPlaying && isPlaying && (Date().timeIntervalSince1970 - self.lastRemotePauseTime < 0.6) {
             writeAppLog("NativeTTS", "startForegroundService: dropped stale isPlaying=true within 600ms of remote pause")
@@ -1532,7 +1587,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
 
         let effectivePlaying = self.isCurrentlyPlaying
         DispatchQueue.main.async {
-            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: effectivePlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
+            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: effectivePlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime, chapterIndex: chapterIndex, isExplicitSeekOrNewSentence: false)
         }
         call.resolve()
     }
@@ -1570,6 +1625,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         let coverBase64 = call.getString("cover")
         let duration = call.getDouble("duration")
         let currentTime = call.getDouble("currentTime")
+        let chapterIndex = call.getInt("chapterIndex")
         if let callIsPlaying = call.getBool("isPlaying") {
             // Guard: If native is already paused by remote command, do not let an asynchronous in-flight metadata update revive playing state!
             if !self.isCurrentlyPlaying && callIsPlaying && (Date().timeIntervalSince1970 - self.lastRemotePauseTime < 0.6) {
@@ -1594,7 +1650,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         }
         let isPlaying = self.isCurrentlyPlaying
         DispatchQueue.main.async {
-            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime)
+            self.updateNowPlaying(title: title, artist: artist, text: text, isPlaying: isPlaying, coverBase64: coverBase64, duration: duration, currentTime: currentTime, chapterIndex: chapterIndex, isExplicitSeekOrNewSentence: false)
         }
         call.resolve()
     }
@@ -1602,6 +1658,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     @objc func stopForegroundService(_ call: CAPPluginCall) {
         self.wasPlayingBeforeInterruption = false
         self.isCurrentlyPlaying = false
+        self.currentPlayingChapterIndex = -1
+        self.currentChapterProgressBase = 0.0
         self.currentArtwork = nil
         self.lastCoverBase64 = ""
         self.authoritativeNowPlayingInfo = [:]
@@ -1734,7 +1792,17 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         return Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters)
     }
 
-    private func updateNowPlaying(title: String, artist: String, text: String? = nil, isPlaying: Bool, coverBase64: String? = nil, duration: Double? = nil, currentTime: Double? = nil) {
+    private func updateNowPlaying(
+        title: String,
+        artist: String,
+        text: String? = nil,
+        isPlaying: Bool,
+        coverBase64: String? = nil,
+        duration: Double? = nil,
+        currentTime: Double? = nil,
+        chapterIndex: Int? = nil,
+        isExplicitSeekOrNewSentence: Bool = false
+    ) {
         if let cover = coverBase64, !cover.isEmpty, (self.currentArtwork == nil || cover != self.lastCoverBase64) {
             self.lastCoverBase64 = cover
             if let coverData = getCoverData(from: cover), let image = UIImage(data: coverData), image.size.width > 0 && image.size.height > 0 {
@@ -1754,31 +1822,40 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = title
         }
         nowPlayingInfo[MPMediaItemPropertyArtist] = artist.isEmpty ? "E-Book Reader" : artist
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
 
-        let validDuration: Double
-        if let d = duration, d > 0 && !d.isNaN && !d.isInfinite {
-            validDuration = d
-        } else if let prevD = nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double, prevD > 0 && !prevD.isNaN && !prevD.isInfinite {
-            validDuration = prevD
+        let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? targetRate : 0.0
+        nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
+
+        if let ch = chapterIndex, ch >= 0, ch != self.currentPlayingChapterIndex {
+            self.currentPlayingChapterIndex = ch
+            self.currentChapterProgressBase = currentTime ?? 0.0
+            if let d = duration, d > 0 && !d.isNaN && !d.isInfinite {
+                self.currentChapterTotalDuration = max(d, self.currentChapterProgressBase + 5.0)
+            }
+        } else if isExplicitSeekOrNewSentence {
+            if let c = currentTime, c >= 0 && !c.isNaN && !c.isInfinite {
+                self.currentChapterProgressBase = c
+            }
+            if let d = duration, d > 0 && !d.isNaN && !d.isInfinite {
+                self.currentChapterTotalDuration = max(d, self.currentChapterProgressBase + 5.0)
+            }
         } else {
-            validDuration = 60.0
+            if let d = duration, d > 0 && !d.isNaN && !d.isInfinite {
+                self.currentChapterTotalDuration = max(d, self.currentChapterProgressBase + 5.0)
+            }
         }
 
-        let validCurrentTime: Double
-        if let c = currentTime, c >= 0 && !c.isNaN && !c.isInfinite {
-            validCurrentTime = c
-        } else {
-            validCurrentTime = 0.0
-        }
-        let safeDuration = max(validDuration, validCurrentTime + 5.0)
+        let currentAudioOffset = (self.isCurrentlyPlaying && self.activePlayer?.isPlaying == true) ? (self.activePlayer?.currentTime ?? 0.0) : 0.0
+        let realAudioCurrentTime = self.currentChapterProgressBase + currentAudioOffset
+
+        let safeDuration = max(self.currentChapterTotalDuration, realAudioCurrentTime + 5.0)
+        self.currentChapterTotalDuration = safeDuration
+
+        let validCurrentTime = min(realAudioCurrentTime, max(0, safeDuration - 0.5))
 
         nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = safeDuration
         nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = validCurrentTime
-        
-        self.currentChapterTotalDuration = safeDuration
-        self.currentChapterProgressBase = validCurrentTime
 
         if let artwork = self.currentArtwork {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
@@ -1953,6 +2030,12 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
             if played {
                 self.startSentenceWatchdog(expectedDuration: max(0.5, player.duration - player.currentTime), sentenceIndex: self.currentPlayingSentenceIndex)
             }
+            let currentOffset = player.currentTime
+            let exactElapsed = min(self.currentChapterProgressBase + currentOffset, max(0, self.currentChapterTotalDuration - 0.5))
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = exactElapsed
+            let targetRate = Double(self.currentPlaybackRate > 0 ? self.currentPlaybackRate : 1.0)
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = targetRate
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = targetRate
             writeAppLog("NativeTTS", "handleRemotePlay: native activePlayer.play() returned \(played)")
             self.startNowPlayingGuardian()
             self.syncNowPlaying(isPlaying: true)
@@ -2076,6 +2159,10 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         // Route B: Direct native pause within 0ms
         if self.isNativeEngineActive {
             self.stopSentenceWatchdog()
+            let currentOffset = self.activePlayer?.currentTime ?? 0.0
+            let exactElapsed = min(self.currentChapterProgressBase + currentOffset, max(0, self.currentChapterTotalDuration - 0.5))
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = exactElapsed
+            self.authoritativeNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
             self.activePlayer?.pause()
             self.preparedPlayer?.pause()
             self.syncNowPlaying(isPlaying: false)

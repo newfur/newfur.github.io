@@ -11,6 +11,7 @@ scratch/*
 !scratch/test_tts_review_fixes.js
 !scratch/test_backup_records.js
 !scratch/test_chapter_navigation_fixes.js
+!scratch/test_lockscreen_progress_fixes.js
 www/
 ios/build/
 ios/build_sim/
