@@ -235,8 +235,8 @@ public class NativeTTS extends Plugin {
             return;
         }
 
-        String url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
-                "?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4" +
+        String url = "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1" +
+                "?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4" +
                 "&ConnectionId=" + connectionId +
                 "&Sec-MS-GEC=" + secMsGec +
                 "&Sec-MS-GEC-Version=1-143.0.3650.75";
@@ -417,7 +417,7 @@ public class NativeTTS extends Plugin {
     public void syncClock(PluginCall call) {
         new Thread(() -> {
             try {
-                String url = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+                String url = "https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
                 Request request = new Request.Builder().url(url).head().build();
                 Response response = getOkHttpClient().newCall(request).execute();
                 String dateHeader = response.header("Date");

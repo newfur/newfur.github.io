@@ -3,7 +3,7 @@
 Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.5.22-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.5.22)
+[![Version](https://img.shields.io/badge/version-3.5.23-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.5.23)
 [![Build & Deploy](https://github.com/newfur/newfur.github.io/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/newfur/newfur.github.io/actions)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
@@ -73,7 +73,7 @@ Language: [简体中文](README.md) | **繁體中文** | [English](README.en.md)
 ### 2. 💾 單檔案離線網頁版 (Single-File Offline Reader)
 * **核心優勢**：
   - **零依賴單檔案**：整個閱讀器所有 JS 邏輯、CSS 樣式、解析器核心（JSZip 等）、字型及多語言資源全部內聯壓制在一個 `.html` 檔案中（約 2.3MB）。
-  - **本地直連 Edge 語音**：直接在本地以 `file:///` 通訊協定開啟執行時，閱讀器會透過 WebSocket (`wss://speech.platform.bing.com/...`) 直連微軟官方服務，結合動態計算的 `Sec-MS-GEC` 鑑權權杖，**完全不受跨網域限制，可直接流暢播放微軟高品質神經網路人聲**！若離線則自動降級為系統發音。
+  - **本地直連 Edge 語音**：直接在本地以 `file:///` 通訊協定開啟執行時，閱讀器會透過 WebSocket (`wss://api.msedgeservices.com/...`) 直連微軟官方服務，結合動態計算的 `Sec-MS-GEC` 鑑權權杖，**完全不受跨網域限制，可直接流暢播放微軟高品質神經網路人聲**！若離線則自動降級為系統發音。
   - 無需安裝 Node.js、無需部署伺服器，Windows/macOS/Linux/手機瀏覽器按兩下即開。
 * **局限性**：
   - 手機行動端瀏覽器退入背景或熄屏時，網頁指令碼易被系統休眠，無鎖定畫面主控台。

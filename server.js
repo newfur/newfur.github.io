@@ -3,9 +3,20 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const https = require('https');
+const crypto = require('crypto');
 const WebSocket = require('ws');
 
 const PORT = process.env.PORT || 3000;
+
+function getSecMsGec() {
+  const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+  const WIN_EPOCH = 11644473600;
+  let unixSeconds = Math.floor(Date.now() / 1000) + WIN_EPOCH;
+  unixSeconds -= (unixSeconds % 300);
+  const ticks = BigInt(unixSeconds) * 10000000n;
+  const strToHash = ticks.toString() + TRUSTED_CLIENT_TOKEN;
+  return crypto.createHash('sha256').update(strToHash, 'ascii').digest('hex').toUpperCase();
+}
 
 function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
@@ -13,31 +24,45 @@ function handleRequest(req, res) {
 
   // Route API for voices list
   if (pathname === '/api/voices') {
-    const apiReq = https.request('https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4', {
-      method: 'GET',
-      headers: {
-        'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0'
-      }
-    }, (apiRes) => {
-      const serverDate = apiRes.headers['date'];
-      let rawData = '';
-      apiRes.on('data', (chunk) => { rawData += chunk; });
-      apiRes.on('end', () => {
-        res.writeHead(apiRes.statusCode, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'x-server-date': serverDate || '',
-          'Access-Control-Expose-Headers': 'x-server-date'
+    const secMsGec = getSecMsGec();
+    const primaryUrl = `https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1-143.0.3650.75`;
+    const fallbackUrl = 'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+
+    const fetchVoices = (targetUrl, isFallback = false) => {
+      const apiReq = https.request(targetUrl, {
+        method: 'GET',
+        headers: {
+          'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0'
+        }
+      }, (apiRes) => {
+        if (!isFallback && apiRes.statusCode !== 200) {
+          return fetchVoices(fallbackUrl, true);
+        }
+        const serverDate = apiRes.headers['date'];
+        let rawData = '';
+        apiRes.on('data', (chunk) => { rawData += chunk; });
+        apiRes.on('end', () => {
+          res.writeHead(apiRes.statusCode, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'x-server-date': serverDate || '',
+            'Access-Control-Expose-Headers': 'x-server-date'
+          });
+          res.end(rawData);
         });
-        res.end(rawData);
       });
-    });
-    apiReq.on('error', (e) => {
-      console.error(`Problem with request: ${e.message}`);
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
-      res.end(`Proxy error: ${e.message}`);
-    });
-    apiReq.end();
+      apiReq.on('error', (e) => {
+        if (!isFallback) {
+          return fetchVoices(fallbackUrl, true);
+        }
+        console.error(`Problem with request: ${e.message}`);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end(`Proxy error: ${e.message}`);
+      });
+      apiReq.end();
+    };
+
+    fetchVoices(primaryUrl);
     return;
   }
 
@@ -109,7 +134,7 @@ wss.on('connection', (ws, req) => {
   const parsedUrl = url.parse(req.url, true);
   if (parsedUrl.pathname === '/api/tts') {
     const query = parsedUrl.search || '';
-    const targetUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1${query}&TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC-Version=1-143.0.3650.75`;
+    const targetUrl = `wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1${query}&Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC-Version=1-143.0.3650.75`;
     
     const targetWs = new WebSocket(targetUrl, {
       headers: {

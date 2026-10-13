@@ -739,7 +739,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
     }
 
     @objc func syncClock(_ call: CAPPluginCall) {
-        guard let url = URL(string: "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4") else {
+        guard let url = URL(string: "https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4") else {
             call.resolve(["clockSkew": 0])
             return
         }
@@ -750,7 +750,7 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         let task = self.ttsSession.dataTask(with: request) { _, response, _ in
             var clockSkew: Double = 0
             if let httpResponse = response as? HTTPURLResponse,
-               let dateHeader = httpResponse.allHeaderFields["Date"] as? String {
+               let dateHeader = (httpResponse.allHeaderFields["Date"] ?? httpResponse.allHeaderFields["date"]) as? String {
                 let formatter = DateFormatter()
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
@@ -776,8 +776,8 @@ public class NativeTTS: CAPPlugin, CAPBridgedPlugin, AVAudioPlayerDelegate, CXCa
         let rate = call.getString("rate") ?? "+0%"
         let volume = call.getString("volume") ?? "+0%"
 
-        let urlString = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
-            "?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4" +
+        let urlString = "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1" +
+            "?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4" +
             "&ConnectionId=\(connectionId)" +
             "&Sec-MS-GEC=\(secMsGec)" +
             "&Sec-MS-GEC-Version=1-143.0.3650.75"

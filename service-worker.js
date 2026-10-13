@@ -28,6 +28,29 @@ function setupRules() {
         ]
       },
       condition: {
+        urlFilter: "msedgeservices.com",
+        resourceTypes: ["websocket", "xmlhttprequest"]
+      }
+    },
+    {
+      id: 2,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          {
+            header: "Origin",
+            operation: "set",
+            value: "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
+          },
+          {
+            header: "User-Agent",
+            operation: "set",
+            value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+          }
+        ]
+      },
+      condition: {
         urlFilter: "speech.platform.bing.com",
         resourceTypes: ["websocket", "xmlhttprequest"]
       }
@@ -35,7 +58,7 @@ function setupRules() {
   ];
 
   chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [1],
+    removeRuleIds: [1, 2],
     addRules: rules
   }, () => {
     if (chrome.runtime.lastError) {
@@ -52,17 +75,39 @@ chrome.runtime.onStartup.addListener(setupRules);
 // 每次 Service Worker 被喚醒時都調用，確保 session 規則存在
 setupRules();
 
+async function getSecMsGecForSW() {
+  const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+  const WIN_EPOCH = 11644473600;
+  let unixSeconds = Math.floor(Date.now() / 1000) + WIN_EPOCH;
+  unixSeconds -= (unixSeconds % 300);
+  const ticks = BigInt(unixSeconds) * 10000000n;
+  const strToHash = ticks.toString() + TRUSTED_CLIENT_TOKEN;
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(strToHash));
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
 // 監聽來自前台的訊息，代理 CORS 限制的請求
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "fetchVoices") {
-    fetch("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4")
-      .then(r => {
+    (async () => {
+      try {
+        const secMsGec = await getSecMsGecForSW().catch(() => null);
+        const edgeUrl = secMsGec
+          ? `https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1-143.0.3650.75`
+          : null;
+        let r = edgeUrl ? await fetch(edgeUrl).catch(() => null) : null;
+        if (!r || !r.ok) {
+          r = await fetch("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4");
+        }
         if (!r.ok) throw new Error("Status " + r.status);
         const serverDate = r.headers.get("Date");
-        return r.json().then(data => ({ data, serverDate }));
-      })
-      .then(({ data, serverDate }) => sendResponse({ success: true, data, serverDate }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+        const data = await r.json();
+        sendResponse({ success: true, data, serverDate });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
     return true; // 保持異步通道開啟
   }
 

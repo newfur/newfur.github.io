@@ -661,17 +661,22 @@ export class TTSEngine {
           } catch (e) {}
         }
 
-        // 2. 若本地 API 不可用（例如在靜態離線託管、PWA 或 Native/file:// 下），直接 fetch 官方 Bing 端點
+        // 2. 若本地 API 不可用（例如在靜態離線託管、PWA 或 Native/file:// 下），直接 fetch 官方端點
         if (!list) {
           try {
-            const bingUrl = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-            const response = await fetch(bingUrl).catch(() => null);
+            const secMsGec = await this._generateSecMsGecToken();
+            const edgeUrl = `https://api.msedgeservices.com/tts/cognitiveservices/voices/list?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1-143.0.3650.75`;
+            let response = await fetch(edgeUrl).catch(() => null);
+            if (!response || !response.ok) {
+              const bingUrl = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+              response = await fetch(bingUrl).catch(() => null);
+            }
             if (response && response.ok) {
               list = await response.json();
               const serverDate = response.headers.get("x-server-date") || response.headers.get("Date");
               if (serverDate) {
                 this.clockSkew = new Date(serverDate).getTime() - Date.now();
-                console.log(`TTS Clock synced via Bing direct endpoint. Skew: ${this.clockSkew} ms`);
+                console.log(`TTS Clock synced via Edge direct endpoint. Skew: ${this.clockSkew} ms`);
               }
             }
           } catch (e) {}
@@ -1649,8 +1654,8 @@ export class TTSEngine {
                 `?ConnectionId=${connectionId}` +
                 `&Sec-MS-GEC=${secMsGec}`;
         } else {
-          url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1` +
-                `?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` +
+          url = `wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1` +
+                `?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4` +
                 `&ConnectionId=${connectionId}` +
                 `&Sec-MS-GEC=${secMsGec}` +
                 `&Sec-MS-GEC-Version=1-143.0.3650.75`;

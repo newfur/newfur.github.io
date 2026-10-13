@@ -3,7 +3,7 @@
 Language: [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **English**
 
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Web%20%7C%20Android%20%7C%20iOS-blue)](javascript:;)
-[![Version](https://img.shields.io/badge/version-3.5.22-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.5.22)
+[![Version](https://img.shields.io/badge/version-3.5.23-orange)](https://github.com/newfur/newfur.github.io/releases/tag/v3.5.23)
 [![Build & Deploy](https://github.com/newfur/newfur.github.io/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/newfur/newfur.github.io/actions)
 [![License](https://img.shields.io/badge/license-ISC-green)](LICENSE)
 
@@ -73,7 +73,7 @@ Designed for cross-platform reading, extended immersion listening, and efficient
 ### 2. 💾 Single-File Offline Reader (Single HTML)
 * **Key Advantages**:
   - **Zero-Dependency Single File**: All JavaScript logic, CSS themes, book parsers (JSZip, etc.), fonts, and multi-language localizations are bundled into a single `.html` file (~2.3MB).
-  - **Direct Edge TTS Connection**: When opened locally via the `file:///` protocol, the reader connects directly to Microsoft's official WebSocket (`wss://speech.platform.bing.com/...`) using dynamic `Sec-MS-GEC` authentication tokens. **It is unaffected by standard HTTP CORS barriers and delivers authentic neural speech out of the box**!
+  - **Direct Edge TTS Connection**: When opened locally via the `file:///` protocol, the reader connects directly to Microsoft's official WebSocket (`wss://api.msedgeservices.com/...`) using dynamic `Sec-MS-GEC` authentication tokens. **It is unaffected by standard HTTP CORS barriers and delivers authentic neural speech out of the box**!
   - No server or runtime needed. Runs effortlessly on Windows, macOS, Linux, and mobile browsers.
 * **Limitations**:
   - Background audio on mobile browsers is subject to operating system tab suspension; lacks native lockscreen media controls.
