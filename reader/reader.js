@@ -7754,26 +7754,245 @@ function shouldAppendChapterTitles(contentSample, chapterTitles) {
 // 根據系統語言格式化 TTS 語音顯示名稱
 // 例如 shortName="zh-CN-XiaoxiaoNeural" → 中文顯示 "晓晓 Xiaoxiao (中文(中国) · 女)"
 const VOICE_LOCAL_NAMES = {
-  // 中文 (简体)
+  // Edge / Azure 語音 (大陆普通话)
   'Xiaoxiao': { 'zh-CN': '晓晓', 'zh-TW': '曉曉' },
   'Xiaoyi': { 'zh-CN': '晓伊', 'zh-TW': '曉伊' },
   'Yunjian': { 'zh-CN': '云健', 'zh-TW': '雲健' },
   'Yunxi': { 'zh-CN': '云希', 'zh-TW': '雲希' },
   'Yunxia': { 'zh-CN': '云夏', 'zh-TW': '雲夏' },
   'Yunyang': { 'zh-CN': '云扬', 'zh-TW': '雲揚' },
+  'Xiaochen': { 'zh-CN': '晓辰', 'zh-TW': '曉辰' },
+  'Xiaohan': { 'zh-CN': '晓涵', 'zh-TW': '曉涵' },
+  'Xiaomeng': { 'zh-CN': '晓梦', 'zh-TW': '曉夢' },
+  'Xiaomo': { 'zh-CN': '晓墨', 'zh-TW': '曉墨' },
+  'Xiaorui': { 'zh-CN': '晓睿', 'zh-TW': '曉睿' },
+  'Xiaoshuang': { 'zh-CN': '晓双', 'zh-TW': '曉雙' },
+  'Xiaoxuan': { 'zh-CN': '晓萱', 'zh-TW': '曉萱' },
+  'Xiaoyan': { 'zh-CN': '晓颜', 'zh-TW': '曉顏' },
+  'Xiaoyou': { 'zh-CN': '晓悠', 'zh-TW': '曉悠' },
+  'Xiaozhen': { 'zh-CN': '晓甄', 'zh-TW': '曉甄' },
+  'Yunfeng': { 'zh-CN': '云枫', 'zh-TW': '雲楓' },
+  'Yunhao': { 'zh-CN': '云皓', 'zh-TW': '雲皓' },
+  'Yunjie': { 'zh-CN': '云杰', 'zh-TW': '雲傑' },
+  'Yunze': { 'zh-CN': '云泽', 'zh-TW': '雲澤' },
+  'Yunye': { 'zh-CN': '云野', 'zh-TW': '雲野' },
+
+  // Edge / Azure 方言语音与别名
   'Xiaobei': { 'zh-CN': '晓北', 'zh-TW': '曉北' },
-  'Xiaoni': { 'zh-CN': '晓妮', 'zh-TW': '曉妮' },
-  // 多级短名称 / 方言前缀别名容错
   'liaoning-Xiaobei': { 'zh-CN': '晓北', 'zh-TW': '曉北' },
+  'Xiaoni': { 'zh-CN': '晓妮', 'zh-TW': '曉妮' },
   'shaanxi-Xiaoni': { 'zh-CN': '晓妮', 'zh-TW': '曉妮' },
-  // 中文 (繁體)
-  'HsiaoChen': '曉臻', 'HsiaoYu': '曉雨', 'YunJhe': '雲哲',
-  // 中文 (粵語)
-  'HiuGaai': '曉佳', 'HiuMaan': '曉曼', 'WanLung': '雲龍',
+  'Yunxiang': { 'zh-CN': '云翔', 'zh-TW': '雲翔' },
+  'shandong-Yunxiang': { 'zh-CN': '云翔', 'zh-TW': '雲翔' },
+  'Yundeng': { 'zh-CN': '云登', 'zh-TW': '雲登' },
+  'henan-Yundeng': { 'zh-CN': '云登', 'zh-TW': '雲登' },
+  'Yunqi': { 'zh-CN': '云奇', 'zh-TW': '雲奇' },
+  'guangxi-Yunqi': { 'zh-CN': '云奇', 'zh-TW': '雲奇' },
+  'Xiaotong': { 'zh-CN': '晓彤', 'zh-TW': '曉彤' },
+  'XiaoMin': { 'zh-CN': '晓敏', 'zh-TW': '曉敏' },
+  'Xiaomin': { 'zh-CN': '晓敏', 'zh-TW': '曉敏' },
+
+  // Edge / Azure 台灣及香港語音
+  'HsiaoChen': { 'zh-CN': '晓臻', 'zh-TW': '曉臻' },
+  'HsiaoYu': { 'zh-CN': '晓雨', 'zh-TW': '曉雨' },
+  'YunJhe': { 'zh-CN': '云哲', 'zh-TW': '雲哲' },
+  'HiuGaai': { 'zh-CN': '晓佳', 'zh-TW': '曉佳' },
+  'HiuMaan': { 'zh-CN': '晓曼', 'zh-TW': '曉曼' },
+  'WanLung': { 'zh-CN': '云龙', 'zh-TW': '雲龍' },
+
+  // 手机端 / 系统原生语音 (Apple iOS / macOS / Windows / Android)
+  'Tingting': { 'zh-CN': '婷婷', 'zh-TW': '婷婷' },
+  'Ting-Ting': { 'zh-CN': '婷婷', 'zh-TW': '婷婷' },
+  'Sinji': { 'zh-CN': '善知', 'zh-TW': '善知' },
+  'Sin-Ji': { 'zh-CN': '善知', 'zh-TW': '善知' },
+  'Meijia': { 'zh-CN': '美佳', 'zh-TW': '美佳' },
+  'Mei-Jia': { 'zh-CN': '美佳', 'zh-TW': '美佳' },
+  'Yushu': { 'zh-CN': '玉舒', 'zh-TW': '玉舒' },
+  'Yu-shu': { 'zh-CN': '玉舒', 'zh-TW': '玉舒' },
+  'Lili': { 'zh-CN': '莉莉', 'zh-TW': '莉莉' },
+  'Qiang': { 'zh-CN': '强', 'zh-TW': '強' },
+  'Kaho': { 'zh-CN': '嘉豪', 'zh-TW': '嘉豪' },
+  'Hanhan': { 'zh-CN': '涵涵', 'zh-TW': '涵涵' },
+  'Huihui': { 'zh-CN': '慧慧', 'zh-TW': '慧慧' },
+  'Yaoyao': { 'zh-CN': '瑶瑶', 'zh-TW': '瑤瑤' },
+  'Kangkang': { 'zh-CN': '康康', 'zh-TW': '康康' },
+  'Zhiwei': { 'zh-CN': '智伟', 'zh-TW': '智偉' },
+  'Danny': { 'zh-CN': '丹尼', 'zh-TW': '丹尼' },
+  'Tracy': { 'zh-CN': '翠西', 'zh-TW': '翠西' },
+  'David': { 'zh-CN': '大卫', 'zh-TW': '大衛' },
+  'Zira': { 'zh-CN': '齐拉', 'zh-TW': '齊拉' },
+  'Mark': { 'zh-CN': '马克', 'zh-TW': '馬克' },
+
   // 日語
-  'Nanami': '七海', 'Keita': '圭太',
+  'Nanami': { 'zh-CN': '七海', 'zh-TW': '七海', 'ja': '七海' },
+  'Keita': { 'zh-CN': '圭太', 'zh-TW': '圭太', 'ja': '圭太' },
+  'Kyoko': { 'zh-CN': '京子', 'zh-TW': '京子', 'ja': '京子' },
+  'Otoya': { 'zh-CN': '乙也', 'zh-TW': '乙也', 'ja': '乙也' },
+  'Ayumi': { 'zh-CN': '步美', 'zh-TW': '步美', 'ja': '步美' },
+  'Haruka': { 'zh-CN': '遥', 'zh-TW': '遙', 'ja': '遥' },
+  'Ichiro': { 'zh-CN': '一郎', 'zh-TW': '一郎', 'ja': '一郎' },
+  'Sayaka': { 'zh-CN': '沙耶香', 'zh-TW': '沙耶香', 'ja': '沙耶香' },
+
   // 韓語
-  'SunHi': '선히', 'InJoon': '인준', 'Hyunsu': '현수'
+  'SunHi': { 'zh-CN': '善喜', 'zh-TW': '善喜', 'ko': '선히' },
+  'InJoon': { 'zh-CN': '仁俊', 'zh-TW': '仁俊', 'ko': '인준' },
+  'Hyunsu': { 'zh-CN': '贤秀', 'zh-TW': '賢秀', 'ko': '현수' },
+  'Yuna': { 'zh-CN': '优娜', 'zh-TW': '優娜', 'ko': '유나' },
+  'Sora': { 'zh-CN': '素拉', 'zh-TW': '素拉', 'ko': '소라' },
+  'Heami': { 'zh-CN': '惠美', 'zh-TW': '惠美', 'ko': '혜미' },
+
+  // 常用英語 (美/英/澳/加/愛爾蘭等)
+  'Jenny': { 'zh-CN': '珍妮', 'zh-TW': '珍妮' },
+  'Guy': { 'zh-CN': '盖伊', 'zh-TW': '蓋伊' },
+  'Aria': { 'zh-CN': '艾莉亚', 'zh-TW': '艾莉亞' },
+  'Ana': { 'zh-CN': '安娜', 'zh-TW': '安娜' },
+  'Andrew': { 'zh-CN': '安德鲁', 'zh-TW': '安德魯' },
+  'Ava': { 'zh-CN': '艾娃', 'zh-TW': '艾娃' },
+  'Brian': { 'zh-CN': '布莱恩', 'zh-TW': '布萊恩' },
+  'Christopher': { 'zh-CN': '克里斯托弗', 'zh-TW': '克里斯多福' },
+  'Emma': { 'zh-CN': '艾玛', 'zh-TW': '艾瑪' },
+  'Eric': { 'zh-CN': '埃里克', 'zh-TW': '埃里克' },
+  'Michelle': { 'zh-CN': '米歇尔', 'zh-TW': '蜜雪兒' },
+  'Roger': { 'zh-CN': '罗杰', 'zh-TW': '羅傑' },
+  'Steffan': { 'zh-CN': '斯蒂芬', 'zh-TW': '史蒂芬' },
+  'Libby': { 'zh-CN': '利比', 'zh-TW': '利比' },
+  'Maisie': { 'zh-CN': '梅西', 'zh-TW': '梅西' },
+  'Ryan': { 'zh-CN': '莱恩', 'zh-TW': '萊恩' },
+  'Sonia': { 'zh-CN': '索尼娅', 'zh-TW': '索尼婭' },
+  'Thomas': { 'zh-CN': '托马斯', 'zh-TW': '湯瑪斯' },
+  'Natasha': { 'zh-CN': '娜塔莎', 'zh-TW': '娜塔莎' },
+  'William': { 'zh-CN': '威廉', 'zh-TW': '威廉' },
+  'Clara': { 'zh-CN': '克拉拉', 'zh-TW': '克拉拉' },
+  'Liam': { 'zh-CN': '利亚姆', 'zh-TW': '利亞姆' },
+  'Connor': { 'zh-CN': '康纳', 'zh-TW': '康納' },
+  'Emily': { 'zh-CN': '艾米莉', 'zh-TW': '艾米莉' },
+  'Samantha': { 'zh-CN': '萨曼莎', 'zh-TW': '薩曼莎' },
+  'Alex': { 'zh-CN': '亚历克斯', 'zh-TW': '亞歷克斯' },
+  'Victoria': { 'zh-CN': '维多利亚', 'zh-TW': '維多利亞' },
+  'Fred': { 'zh-CN': '弗雷德', 'zh-TW': '佛瑞德' },
+  'Daniel': { 'zh-CN': '丹尼尔', 'zh-TW': '丹尼爾' },
+  'Karen': { 'zh-CN': '凯伦', 'zh-TW': '凱倫' },
+  'Moira': { 'zh-CN': '莫伊拉', 'zh-TW': '莫伊拉' },
+  'Fiona': { 'zh-CN': '菲奥娜', 'zh-TW': '菲奧娜' },
+  'Rishi': { 'zh-CN': '里希', 'zh-TW': '里希' },
+  'Tessa': { 'zh-CN': '特莎', 'zh-TW': '特莎' },
+  'James': { 'zh-CN': '詹姆斯', 'zh-TW': '詹姆斯' },
+  'Luna': { 'zh-CN': '露娜', 'zh-TW': '露娜' },
+  'Mitchell': { 'zh-CN': '米切尔', 'zh-TW': '米契爾' },
+  'Molly': { 'zh-CN': '莫莉', 'zh-TW': '莫莉' },
+  'Neerja': { 'zh-CN': '尼尔贾', 'zh-TW': '尼爾賈' },
+  'NeerjaExpressive': { 'zh-CN': '尼尔贾 (表现力)', 'zh-TW': '尼爾賈 (表現力)' },
+  'Prabhat': { 'zh-CN': '普拉巴特', 'zh-TW': '普拉巴特' },
+  'Sam': { 'zh-CN': '山姆', 'zh-TW': '山姆' },
+  'Wayne': { 'zh-CN': '韦恩', 'zh-TW': '韋恩' },
+  'Yan': { 'zh-CN': '燕', 'zh-TW': '燕' },
+  'Leah': { 'zh-CN': '莉亚', 'zh-TW': '莉亞' },
+  'Luke': { 'zh-CN': '卢克', 'zh-TW': '盧克' },
+
+  // 主要歐洲語系語音 (法/德/西/意/俄/葡等)
+  'Denise': { 'zh-CN': '丹妮丝', 'zh-TW': '丹妮絲' },
+  'Henri': { 'zh-CN': '亨利', 'zh-TW': '亨利' },
+  'Eloise': { 'zh-CN': '艾洛伊丝', 'zh-TW': '艾洛伊絲' },
+  'Remy': { 'zh-CN': '雷米', 'zh-TW': '雷米' },
+  'Vivienne': { 'zh-CN': '薇薇安', 'zh-TW': '薇薇安' },
+  'Antoine': { 'zh-CN': '安托万', 'zh-TW': '安托萬' },
+  'Jean': { 'zh-CN': '让', 'zh-TW': '讓' },
+  'Sylvie': { 'zh-CN': '西尔维', 'zh-TW': '西爾維' },
+  'Thierry': { 'zh-CN': '蒂埃里', 'zh-TW': '蒂埃里' },
+  'Katja': { 'zh-CN': '卡佳', 'zh-TW': '卡佳' },
+  'Conrad': { 'zh-CN': '康拉德', 'zh-TW': '康拉德' },
+  'Killian': { 'zh-CN': '基利安', 'zh-TW': '基利安' },
+  'Florian': { 'zh-CN': '弗洛里安', 'zh-TW': '弗洛里安' },
+  'Seraphina': { 'zh-CN': '塞拉菲娜', 'zh-TW': '塞拉菲娜' },
+  'Amala': { 'zh-CN': '阿玛拉', 'zh-TW': '阿瑪拉' },
+  'Ingrid': { 'zh-CN': '英格丽', 'zh-TW': '英格麗' },
+  'Jonas': { 'zh-CN': '乔纳斯', 'zh-TW': '喬納斯' },
+  'Jan': { 'zh-CN': '扬', 'zh-TW': '揚' },
+  'Leni': { 'zh-CN': '莱妮', 'zh-TW': '萊妮' },
+  'Alvaro': { 'zh-CN': '阿尔瓦罗', 'zh-TW': '阿爾瓦羅' },
+  'Elvira': { 'zh-CN': '埃尔维拉', 'zh-TW': '埃爾維拉' },
+  'Paloma': { 'zh-CN': '帕洛玛', 'zh-TW': '帕洛瑪' },
+  'Alonso': { 'zh-CN': '阿隆索', 'zh-TW': '阿隆索' },
+  'Dalia': { 'zh-CN': '达莉亚', 'zh-TW': '達莉亞' },
+  'Jorge': { 'zh-CN': '豪尔赫', 'zh-TW': '豪爾赫' },
+  'Diego': { 'zh-CN': '迭戈', 'zh-TW': '迭戈' },
+  'Elsa': { 'zh-CN': '艾尔莎', 'zh-TW': '艾爾莎' },
+  'Isabella': { 'zh-CN': '伊莎贝拉', 'zh-TW': '伊莎貝拉' },
+  'Giuseppe': { 'zh-CN': '朱塞佩', 'zh-TW': '朱塞佩' },
+  'Svetlana': { 'zh-CN': '斯韦特兰娜', 'zh-TW': '斯韋特蘭娜' },
+  'Dmitry': { 'zh-CN': '德米特里', 'zh-TW': '德米特里' },
+  'Francisca': { 'zh-CN': '弗朗西丝卡', 'zh-TW': '弗朗西絲卡' },
+  'Antonio': { 'zh-CN': '安东尼奥', 'zh-TW': '安東尼奧' },
+  'Duarte': { 'zh-CN': '杜阿尔特', 'zh-TW': '杜阿爾特' },
+  'Raquel': { 'zh-CN': '拉奎尔', 'zh-TW': '拉奎爾' },
+  'Thalita': { 'zh-CN': '塔莉塔', 'zh-TW': '塔莉塔' },
+
+  // 自定义 OpenAI / 本地 TTS 语音
+  'alloy': { 'zh-CN': '合金', 'zh-TW': '合金' },
+  'Alloy': { 'zh-CN': '合金', 'zh-TW': '合金' },
+  'echo': { 'zh-CN': '回声', 'zh-TW': '迴聲' },
+  'Echo': { 'zh-CN': '回声', 'zh-TW': '迴聲' },
+  'fable': { 'zh-CN': '寓言', 'zh-TW': '寓言' },
+  'Fable': { 'zh-CN': '寓言', 'zh-TW': '寓言' },
+  'onyx': { 'zh-CN': '玛瑙', 'zh-TW': '瑪瑙' },
+  'Onyx': { 'zh-CN': '玛瑙', 'zh-TW': '瑪瑙' },
+  'nova': { 'zh-CN': '新星', 'zh-TW': '新星' },
+  'Nova': { 'zh-CN': '新星', 'zh-TW': '新星' },
+  'shimmer': { 'zh-CN': '微光', 'zh-TW': '微光' },
+  'Shimmer': { 'zh-CN': '微光', 'zh-TW': '微光' }
+};
+
+const KNOWN_VOICE_GENDERS = {
+  // 手机与系统语音
+  'tingting': 'female', 'ting-ting': 'female',
+  'sinji': 'female', 'sin-ji': 'female',
+  'meijia': 'female', 'mei-jia': 'female',
+  'yushu': 'female', 'yu-shu': 'female',
+  'lili': 'female', 'qiang': 'male', 'kaho': 'male',
+  'hanhan': 'female', 'huihui': 'female', 'yaoyao': 'female', 'kangkang': 'male',
+  'zhiwei': 'male', 'danny': 'male', 'tracy': 'female', 'david': 'male', 'zira': 'female', 'mark': 'male',
+
+  // 日韩语音
+  'nanami': 'female', 'keita': 'male', 'kyoko': 'female', 'otoya': 'male',
+  'ayumi': 'female', 'haruka': 'female', 'ichiro': 'male', 'sayaka': 'female',
+  'sunhi': 'female', 'injoon': 'male', 'hyunsu': 'male', 'yuna': 'female',
+  'sora': 'female', 'heami': 'female',
+
+  // 常用英语及系统语音
+  'samantha': 'female', 'alex': 'male', 'victoria': 'female', 'fred': 'male',
+  'daniel': 'male', 'karen': 'female', 'moira': 'female', 'fiona': 'female',
+  'rishi': 'male', 'tessa': 'female', 'thomas': 'male',
+  'jenny': 'female', 'guy': 'male', 'aria': 'female', 'ana': 'female',
+  'andrew': 'male', 'ava': 'female', 'brian': 'male', 'christopher': 'male',
+  'emma': 'female', 'eric': 'male', 'michelle': 'female', 'roger': 'male',
+  'steffan': 'male', 'libby': 'female', 'maisie': 'female', 'ryan': 'male',
+  'sonia': 'female', 'natasha': 'female', 'william': 'male', 'clara': 'female',
+  'liam': 'male', 'connor': 'male', 'emily': 'female', 'james': 'male',
+  'luna': 'female', 'mitchell': 'male', 'molly': 'female', 'neerja': 'female',
+  'neerjaexpressive': 'female', 'prabhat': 'male', 'sam': 'male', 'wayne': 'male',
+  'yan': 'female', 'leah': 'female', 'luke': 'male',
+
+  // 欧洲主要语音
+  'denise': 'female', 'henri': 'male', 'eloise': 'female', 'remy': 'male',
+  'vivienne': 'female', 'antoine': 'male', 'jean': 'male', 'sylvie': 'female',
+  'thierry': 'male', 'katja': 'female', 'conrad': 'male', 'killian': 'male',
+  'florian': 'male', 'seraphina': 'female', 'amala': 'female', 'ingrid': 'female',
+  'jonas': 'male', 'jan': 'male', 'leni': 'female', 'alvaro': 'male',
+  'elvira': 'female', 'paloma': 'female', 'alonso': 'male', 'dalia': 'female',
+  'jorge': 'male', 'diego': 'male', 'elsa': 'female', 'isabella': 'female',
+  'giuseppe': 'male', 'svetlana': 'female', 'dmitry': 'male', 'francisca': 'female',
+  'antonio': 'male', 'duarte': 'male', 'raquel': 'female', 'thalita': 'female',
+
+  // 大陆与方言语音
+  'xiaoxiao': 'female', 'xiaoyi': 'female', 'yunjian': 'male', 'yunxi': 'male',
+  'yunxia': 'male', 'yunyang': 'male', 'xiaobei': 'female', 'xiaoni': 'female',
+  'hsiaochen': 'female', 'hsiaoyu': 'female', 'yunjhe': 'male',
+  'hiugaai': 'female', 'hiumaan': 'female', 'wanlung': 'male',
+  'xiaochen': 'female', 'xiaohan': 'female', 'xiaomeng': 'female', 'xiaomo': 'female',
+  'xiaorui': 'female', 'xiaoshuang': 'female', 'xiaoxuan': 'female', 'xiaoyan': 'female',
+  'xiaoyou': 'female', 'xiaozhen': 'female', 'yunfeng': 'male', 'yunhao': 'male',
+  'yunjie': 'male', 'yunze': 'male', 'yunye': 'male', 'yunxiang': 'male',
+  'yundeng': 'male', 'yunqi': 'male', 'xiaotong': 'female', 'xiaomin': 'female'
 };
 
 const SPECIAL_VOICE_LANG_DISPLAYS = {
@@ -7787,6 +8006,46 @@ const SPECIAL_VOICE_LANG_DISPLAYS = {
     'zh-TW': '陝西話 (中原官話)',
     'default': 'Zhongyuan Mandarin (Shaanxi)'
   },
+  'zh-cn-shandong': {
+    'zh-CN': '山东话 (冀鲁官话)',
+    'zh-TW': '山東話 (冀魯官話)',
+    'default': 'Jilu Mandarin (Shandong)'
+  },
+  'zh-cn-sichuan': {
+    'zh-CN': '四川话 (西南官话)',
+    'zh-TW': '四川話 (西南官話)',
+    'default': 'Southwestern Mandarin (Sichuan)'
+  },
+  'zh-cn-henan': {
+    'zh-CN': '河南话 (中原官话)',
+    'zh-TW': '河南話 (中原官話)',
+    'default': 'Zhongyuan Mandarin (Henan)'
+  },
+  'zh-cn-guangxi': {
+    'zh-CN': '桂柳话 (西南官话)',
+    'zh-TW': '桂柳話 (西南官話)',
+    'default': 'Southwestern Mandarin (Guangxi)'
+  },
+  'wuu-cn': {
+    'zh-CN': '吴语 (上海话)',
+    'zh-TW': '吳語 (上海話)',
+    'default': 'Wu (Shanghainese)'
+  },
+  'zh-wuu-cn': {
+    'zh-CN': '吴语 (上海话)',
+    'zh-TW': '吳語 (上海話)',
+    'default': 'Wu (Shanghainese)'
+  },
+  'yue-cn': {
+    'zh-CN': '粤语 (广东话)',
+    'zh-TW': '粵語 (廣東話)',
+    'default': 'Cantonese (Guangdong)'
+  },
+  'zh-yue-cn': {
+    'zh-CN': '粤语 (广东话)',
+    'zh-TW': '粵語 (廣東話)',
+    'default': 'Cantonese (Guangdong)'
+  },
   'zh-hk': {
     'zh-CN': '粤语 (香港)',
     'zh-TW': '粵語 (香港)',
@@ -7796,32 +8055,77 @@ const SPECIAL_VOICE_LANG_DISPLAYS = {
     'zh-CN': '国语 (台湾)',
     'zh-TW': '國語 (台灣)',
     'default': 'Taiwanese Mandarin'
+  },
+  'cmn-cn': {
+    'zh-CN': '普通话 (中国大陆)',
+    'zh-TW': '普通話 (中國大陸)',
+    'default': 'Mandarin (China)'
+  },
+  'cmn-tw': {
+    'zh-CN': '国语 (台湾)',
+    'zh-TW': '國語 (台灣)',
+    'default': 'Taiwanese Mandarin'
+  },
+  'cmn-hans-cn': {
+    'zh-CN': '普通话 (中国大陆)',
+    'zh-TW': '普通話 (中國大陸)',
+    'default': 'Mandarin (China)'
+  },
+  'cmn-hant-tw': {
+    'zh-CN': '国语 (台湾)',
+    'zh-TW': '國語 (台灣)',
+    'default': 'Taiwanese Mandarin'
   }
 };
 
 function formatVoiceDisplayName(voice) {
-  // 非 Edge 語音或 OpenAI/Local 語音，直接用原名
-  if (!voice.shortName && !voice.isEdge) {
+  const uiLang = (typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en');
+  const isTrad = /tw|hk|mo|hant/i.test(uiLang);
+  const uiLangPrefix = uiLang.toLowerCase().split('-')[0];
+  const isCJKUI = ['zh', 'ja', 'ko'].includes(uiLangPrefix);
+
+  // 自定义 OpenAI/Local 语音，支持中文名称与多语言显示
+  if (voice.type === 'openai' || voice.type === 'local') {
     const displayLang = voice.lang === 'multilingual' ? (getMsg('tts_lang_multilingual') || 'Multilingual') : voice.lang;
-    return `${voice.name} (${displayLang})`;
+    const nameKey = (voice.name || '').trim();
+    const rawLocal = VOICE_LOCAL_NAMES[nameKey]
+      || VOICE_LOCAL_NAMES[nameKey.replace(/-/g, '')]
+      || VOICE_LOCAL_NAMES[nameKey.charAt(0).toUpperCase() + nameKey.slice(1)]
+      || VOICE_LOCAL_NAMES[nameKey.toLowerCase()]
+      || '';
+    let localName = '';
+    if (typeof rawLocal === 'object' && rawLocal !== null) {
+      if (uiLangPrefix === 'ko' && rawLocal['ko']) {
+        localName = rawLocal['ko'];
+      } else if (uiLangPrefix === 'ja' && rawLocal['ja']) {
+        localName = rawLocal['ja'];
+      } else {
+        localName = isTrad ? (rawLocal['zh-TW'] || rawLocal['zh-CN'] || '') : (rawLocal['zh-CN'] || rawLocal['zh-TW'] || '');
+      }
+    } else if (typeof rawLocal === 'string') {
+      localName = rawLocal;
+    }
+    const displayName = (localName && isCJKUI) ? `${localName} ${voice.name}` : voice.name;
+    return `${displayName} (${displayLang})`;
   }
 
   const shortName = voice.shortName || '';
   // 從 shortName 提取人名：末尾段為發音人名，如 zh-CN-XiaoxiaoNeural → Xiaoxiao, zh-CN-liaoning-XiaobeiNeural → Xiaobei
-  const parts = shortName.split('-');
   let personName = '';
-  if (parts.length >= 3) {
-    const rawName = parts[parts.length - 1];
-    personName = rawName.replace(/Neural$/i, '').replace(/Multilingual$/i, '');
+  if (shortName) {
+    const parts = shortName.split('-');
+    if (parts.length >= 3) {
+      const rawName = parts[parts.length - 1];
+      personName = rawName.replace(/Neural$/i, '').replace(/Multilingual$/i, '');
+    }
   }
   if (!personName) {
-    // 從 FriendlyName 中提取：Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)
+    // 针对系统语音或 FriendlyName 提取纯人名（去掉括号内的 Enhanced / Compact 等修饰词）
+    const rawName = (voice.friendlyName || voice.name || '').replace(/\s*\([^)]*\)/g, '').trim();
     const match = (voice.friendlyName || voice.name || '').match(/,\s*([A-Za-z]+?)(?:Neural|Multilingual)?\s*\)/);
-    personName = match ? match[1] : voice.name;
+    personName = match ? match[1] : (rawName || voice.name);
   }
 
-  const uiLang = (typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en');
-  const isTrad = /tw|hk|mo|hant/i.test(uiLang);
   const langKey = (voice.lang || '').toLowerCase().replace(/_/g, '-');
 
   // 用 Intl.DisplayNames 把語言代碼翻譯成系統語言，特殊方言優先使用自定義友好名稱
@@ -7846,25 +8150,47 @@ function formatVoiceDisplayName(voice) {
     langDisplay = getMsg('tts_lang_multilingual') || 'Multilingual';
   }
 
-  // 性別本地化
+  // 是否为系统本地语音
+  const isSystem = voice.type === 'speechSynthesis' || voice.isNative;
+  const sysTag = isSystem ? (isTrad ? '系統' : (/^zh/i.test(uiLang) ? '系统' : 'System')) : '';
+
+  // 性別推断与本地化
+  const rawGender = (voice.gender && voice.gender !== 'unknown')
+    ? voice.gender
+    : (KNOWN_VOICE_GENDERS[personName.toLowerCase()] || KNOWN_VOICE_GENDERS[personName.replace(/-/g, '').toLowerCase()] || '');
+  const effectiveGender = String(rawGender || '').toLowerCase();
   const genderMap = {
     'female': getMsg('voice_gender_female') || 'Female',
     'male': getMsg('voice_gender_male') || 'Male'
   };
-  const genderStr = genderMap[voice.gender] || '';
+  const genderStr = genderMap[effectiveGender] || '';
 
-  const meta = genderStr ? `${langDisplay} · ${genderStr}` : langDisplay;
+  const metaParts = [langDisplay];
+  if (sysTag) metaParts.push(sysTag);
+  if (genderStr) metaParts.push(genderStr);
+  const meta = metaParts.filter(Boolean).join(' · ');
+
   // 對於有本地化名稱的語音，CJK 系統語言下顯示 "本地名 拉丁名 (語言 · 性別)"，否則只顯示拉丁名
-  const rawLocal = VOICE_LOCAL_NAMES[personName] || VOICE_LOCAL_NAMES[shortName] || '';
+  const nameKey = personName.trim();
+  const rawLocal = VOICE_LOCAL_NAMES[nameKey]
+    || VOICE_LOCAL_NAMES[nameKey.replace(/-/g, '')]
+    || VOICE_LOCAL_NAMES[nameKey.charAt(0).toUpperCase() + nameKey.slice(1)]
+    || VOICE_LOCAL_NAMES[nameKey.toLowerCase()]
+    || VOICE_LOCAL_NAMES[shortName]
+    || '';
   let localName = '';
   if (typeof rawLocal === 'object' && rawLocal !== null) {
-    localName = isTrad ? (rawLocal['zh-TW'] || rawLocal['zh-CN'] || '') : (rawLocal['zh-CN'] || rawLocal['zh-TW'] || '');
+    if (uiLangPrefix === 'ko' && rawLocal['ko']) {
+      localName = rawLocal['ko'];
+    } else if (uiLangPrefix === 'ja' && rawLocal['ja']) {
+      localName = rawLocal['ja'];
+    } else {
+      localName = isTrad ? (rawLocal['zh-TW'] || rawLocal['zh-CN'] || '') : (rawLocal['zh-CN'] || rawLocal['zh-TW'] || '');
+    }
   } else if (typeof rawLocal === 'string') {
     localName = rawLocal;
   }
 
-  const uiLangPrefix = uiLang.toLowerCase().split('-')[0];
-  const isCJKUI = ['zh', 'ja', 'ko'].includes(uiLangPrefix);
   const displayName = (localName && isCJKUI) ? `${localName} ${personName}` : personName;
   return `${displayName} (${meta})`;
 }

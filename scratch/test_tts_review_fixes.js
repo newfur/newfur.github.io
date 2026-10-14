@@ -646,6 +646,117 @@ assert.match(source, /document\.addEventListener\('error'[\s\S]*?true\);/, 'read
     isEdge: true
   });
   assert.strictEqual(xiaoniEn, 'Xiaoni (Zhongyuan Mandarin (Shaanxi) · Female)', 'Xiaoni should be formatted in en-US');
+
+  // Mobile / System Native Voices (Tingting, Sinji, Meijia)
+  const tingtingZhCN = formatZhCN({
+    name: 'Tingting',
+    lang: 'zh-CN',
+    isEdge: false,
+    isNative: true,
+    type: 'speechSynthesis'
+  });
+  assert.strictEqual(tingtingZhCN, '婷婷 Tingting (中文（中国） · 系统 · 女)', 'Tingting system voice should be localized in zh-CN');
+
+  const sinjiZhCN = formatZhCN({
+    name: 'Sinji',
+    lang: 'zh-HK',
+    isEdge: false,
+    isNative: true,
+    type: 'speechSynthesis'
+  });
+  assert.strictEqual(sinjiZhCN, '善知 Sinji (粤语 (香港) · 系统 · 女)', 'Sinji system voice should be localized in zh-CN');
+
+  const meijiaZhCN = formatZhCN({
+    name: 'Meijia (Enhanced)',
+    lang: 'zh-TW',
+    isEdge: false,
+    isNative: true,
+    type: 'speechSynthesis'
+  });
+  assert.strictEqual(meijiaZhCN, '美佳 Meijia (国语 (台湾) · 系统 · 女)', 'Meijia system voice should be localized in zh-CN');
+
+  const tingtingZhTW = formatZhTW({
+    name: 'Tingting',
+    lang: 'zh-CN',
+    isEdge: false,
+    isNative: true,
+    type: 'speechSynthesis'
+  });
+  assert.strictEqual(tingtingZhTW, '婷婷 Tingting (中文（中國） · 系統 · 女)', 'Tingting system voice should be localized in zh-TW');
+
+  const sinjiZhTW = formatZhTW({
+    name: 'Sinji',
+    lang: 'zh-HK',
+    isEdge: false,
+    isNative: true,
+    type: 'speechSynthesis'
+  });
+  assert.strictEqual(sinjiZhTW, '善知 Sinji (粵語 (香港) · 系統 · 女)', 'Sinji system voice should be localized in zh-TW');
+
+  const meijiaZhTW = formatZhTW({
+    name: 'Meijia',
+    lang: 'zh-TW',
+    isEdge: false,
+    isNative: true,
+    type: 'speechSynthesis'
+  });
+  assert.strictEqual(meijiaZhTW, '美佳 Meijia (國語 (台灣) · 系統 · 女)', 'Meijia system voice should be localized in zh-TW');
+
+  // English & International Edge Voices in zh-CN
+  const jennyZhCN = formatZhCN({
+    name: 'Microsoft Server Speech Text to Speech Voice (en-US, JennyNeural)',
+    shortName: 'en-US-JennyNeural',
+    lang: 'en-US',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(jennyZhCN, '珍妮 Jenny (美国英语 · 女)', 'Jenny should be localized in zh-CN');
+
+  const guyZhCN = formatZhCN({
+    name: 'Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)',
+    shortName: 'en-US-GuyNeural',
+    lang: 'en-US',
+    gender: 'male',
+    isEdge: true
+  });
+  assert.strictEqual(guyZhCN, '盖伊 Guy (美国英语 · 男)', 'Guy should be localized in zh-CN');
+
+  const nanamiZhCN = formatZhCN({
+    name: 'Microsoft Server Speech Text to Speech Voice (ja-JP, NanamiNeural)',
+    shortName: 'ja-JP-NanamiNeural',
+    lang: 'ja-JP',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(nanamiZhCN, '七海 Nanami (日语（日本） · 女)', 'Nanami should be localized in zh-CN');
+
+  const sunhiZhCN = formatZhCN({
+    name: 'Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)',
+    shortName: 'ko-KR-SunHiNeural',
+    lang: 'ko-KR',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(sunhiZhCN, '善喜 SunHi (韩语（韩国） · 女)', 'SunHi should be localized in zh-CN');
+
+  // OpenAI / Local TTS Voices
+  const getMsgWithMultiZhCN = (key) => key === 'tts_lang_multilingual' ? '多语言' : testEnv.getMsg(key);
+  const formatZhCNMulti = evalFunc({ language: 'zh-CN' }, Intl, getMsgWithMultiZhCN);
+  const alloyZhCN = formatZhCNMulti({
+    name: 'alloy',
+    type: 'openai',
+    lang: 'multilingual'
+  });
+  assert.strictEqual(alloyZhCN, '合金 alloy (多语言)', 'alloy OpenAI voice should be localized in zh-CN');
+
+  const getMsgWithMultiEn = (key) => key === 'tts_lang_multilingual' ? 'Multilingual' : getMsgEn(key);
+  const formatEnMulti = evalFunc({ language: 'en-US' }, Intl, getMsgWithMultiEn);
+  const alloyEn = formatEnMulti({
+    name: 'alloy',
+    type: 'openai',
+    lang: 'multilingual'
+  });
+  assert.strictEqual(alloyEn, 'alloy (Multilingual)', 'alloy OpenAI voice should remain English in en-US');
 }
 
 console.log('TTS, font review, book deletion, and CSP compliance regression tests passed');
