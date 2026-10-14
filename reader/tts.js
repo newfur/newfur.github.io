@@ -691,6 +691,8 @@ export class TTSEngine {
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunxiNeural", Gender: "Male" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, YunjianNeural)", Locale: "zh-CN", ShortName: "zh-CN-YunjianNeural", Gender: "Male" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)", Locale: "zh-CN", ShortName: "zh-CN-XiaoyiNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN-liaoning, XiaobeiNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN-liaoning, XiaobeiNeural)", Locale: "zh-CN-liaoning", ShortName: "zh-CN-liaoning-XiaobeiNeural", Gender: "Female" },
+          { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-CN-shaanxi, XiaoniNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-CN-shaanxi, XiaoniNeural)", Locale: "zh-CN-shaanxi", ShortName: "zh-CN-shaanxi-XiaoniNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoChenNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoChenNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, HsiaoYuNeural)", Locale: "zh-TW", ShortName: "zh-TW-HsiaoYuNeural", Gender: "Female" },
           { FriendlyName: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Name: "Microsoft Server Speech Text to Speech Voice (zh-TW, YunJheNeural)", Locale: "zh-TW", ShortName: "zh-TW-YunJheNeural", Gender: "Male" },
@@ -1468,6 +1470,8 @@ export class TTSEngine {
       if (name.includes('Xiaoxiao')) return 'zh-CN-XiaoxiaoNeural';
       if (name.includes('Yunjian')) return 'zh-CN-YunjianNeural';
       if (name.includes('Xiaoyi')) return 'zh-CN-XiaoyiNeural';
+      if (name.includes('Xiaobei')) return 'zh-CN-liaoning-XiaobeiNeural';
+      if (name.includes('Xiaoni')) return 'zh-CN-shaanxi-XiaoniNeural';
       return 'zh-CN-XiaoxiaoNeural';
     } else if (cleanLang.startsWith('zh-hk')) {
       return 'zh-HK-HiuMaanNeural';

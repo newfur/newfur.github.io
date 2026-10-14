@@ -576,6 +576,78 @@ assert.ok(!/\bon[a-z]+=["']/i.test(source), 'reader.js must not contain inline e
 // Check that reader.js registers global image error capturing listener
 assert.match(source, /document\.addEventListener\('error'[\s\S]*?true\);/, 'reader.js must register capturing error listener');
 
+// 10. Voice Display Name Localization Tests (Xiaobei, Xiaoni, and Dialects)
+{
+  const voiceBlock = source.slice(source.indexOf('const VOICE_LOCAL_NAMES ='), source.indexOf('function getTTSVoiceGroups('));
+  const testEnv = {
+    navigator: { language: 'zh-CN' },
+    Intl: Intl,
+    getMsg: (key) => key === 'voice_gender_female' ? '女' : (key === 'voice_gender_male' ? '男' : '')
+  };
+  const evalFunc = new Function('navigator', 'Intl', 'getMsg', `${voiceBlock}; return formatVoiceDisplayName;`);
+
+  // Simplified Chinese UI
+  const formatZhCN = evalFunc({ language: 'zh-CN' }, Intl, testEnv.getMsg);
+  const xiaobeiZhCN = formatZhCN({
+    name: 'Microsoft Server Speech Text to Speech Voice (zh-CN-liaoning, XiaobeiNeural)',
+    shortName: 'zh-CN-liaoning-XiaobeiNeural',
+    lang: 'zh-CN-liaoning',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(xiaobeiZhCN, '晓北 Xiaobei (东北话 (辽宁) · 女)', 'Xiaobei should be localized in zh-CN');
+
+  const xiaoniZhCN = formatZhCN({
+    name: 'Microsoft Server Speech Text to Speech Voice (zh-CN-shaanxi, XiaoniNeural)',
+    shortName: 'zh-CN-shaanxi-XiaoniNeural',
+    lang: 'zh-CN-shaanxi',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(xiaoniZhCN, '晓妮 Xiaoni (陕西话 (中原官话) · 女)', 'Xiaoni should be localized in zh-CN');
+
+  // Traditional Chinese UI
+  const formatZhTW = evalFunc({ language: 'zh-TW' }, Intl, testEnv.getMsg);
+  const xiaobeiZhTW = formatZhTW({
+    name: 'Microsoft Server Speech Text to Speech Voice (zh-CN-liaoning, XiaobeiNeural)',
+    shortName: 'zh-CN-liaoning-XiaobeiNeural',
+    lang: 'zh-CN-liaoning',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(xiaobeiZhTW, '曉北 Xiaobei (東北話 (遼寧) · 女)', 'Xiaobei should be localized in zh-TW');
+
+  const xiaoniZhTW = formatZhTW({
+    name: 'Microsoft Server Speech Text to Speech Voice (zh-CN-shaanxi, XiaoniNeural)',
+    shortName: 'zh-CN-shaanxi-XiaoniNeural',
+    lang: 'zh-CN-shaanxi',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(xiaoniZhTW, '曉妮 Xiaoni (陝西話 (中原官話) · 女)', 'Xiaoni should be localized in zh-TW');
+
+  // English UI
+  const getMsgEn = (key) => key === 'voice_gender_female' ? 'Female' : 'Male';
+  const formatEn = evalFunc({ language: 'en-US' }, Intl, getMsgEn);
+  const xiaobeiEn = formatEn({
+    name: 'Microsoft Server Speech Text to Speech Voice (zh-CN-liaoning, XiaobeiNeural)',
+    shortName: 'zh-CN-liaoning-XiaobeiNeural',
+    lang: 'zh-CN-liaoning',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(xiaobeiEn, 'Xiaobei (Northeastern Mandarin (Liaoning) · Female)', 'Xiaobei should be formatted in en-US');
+
+  const xiaoniEn = formatEn({
+    name: 'Microsoft Server Speech Text to Speech Voice (zh-CN-shaanxi, XiaoniNeural)',
+    shortName: 'zh-CN-shaanxi-XiaoniNeural',
+    lang: 'zh-CN-shaanxi',
+    gender: 'female',
+    isEdge: true
+  });
+  assert.strictEqual(xiaoniEn, 'Xiaoni (Zhongyuan Mandarin (Shaanxi) · Female)', 'Xiaoni should be formatted in en-US');
+}
+
 console.log('TTS, font review, book deletion, and CSP compliance regression tests passed');
 
 

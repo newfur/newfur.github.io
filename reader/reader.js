@@ -7755,8 +7755,17 @@ function shouldAppendChapterTitles(contentSample, chapterTitles) {
 // 例如 shortName="zh-CN-XiaoxiaoNeural" → 中文顯示 "晓晓 Xiaoxiao (中文(中国) · 女)"
 const VOICE_LOCAL_NAMES = {
   // 中文 (简体)
-  'Xiaoxiao': '晓晓', 'Xiaoyi': '晓伊', 'Yunjian': '云健', 'Yunxi': '云希',
-  'Yunxia': '云夏', 'Yunyang': '云扬', 'Xiaobei': '晓北', 'Xiaoni': '晓妮',
+  'Xiaoxiao': { 'zh-CN': '晓晓', 'zh-TW': '曉曉' },
+  'Xiaoyi': { 'zh-CN': '晓伊', 'zh-TW': '曉伊' },
+  'Yunjian': { 'zh-CN': '云健', 'zh-TW': '雲健' },
+  'Yunxi': { 'zh-CN': '云希', 'zh-TW': '雲希' },
+  'Yunxia': { 'zh-CN': '云夏', 'zh-TW': '雲夏' },
+  'Yunyang': { 'zh-CN': '云扬', 'zh-TW': '雲揚' },
+  'Xiaobei': { 'zh-CN': '晓北', 'zh-TW': '曉北' },
+  'Xiaoni': { 'zh-CN': '晓妮', 'zh-TW': '曉妮' },
+  // 多级短名称 / 方言前缀别名容错
+  'liaoning-Xiaobei': { 'zh-CN': '晓北', 'zh-TW': '曉北' },
+  'shaanxi-Xiaoni': { 'zh-CN': '晓妮', 'zh-TW': '曉妮' },
   // 中文 (繁體)
   'HsiaoChen': '曉臻', 'HsiaoYu': '曉雨', 'YunJhe': '雲哲',
   // 中文 (粵語)
@@ -7767,6 +7776,29 @@ const VOICE_LOCAL_NAMES = {
   'SunHi': '선히', 'InJoon': '인준', 'Hyunsu': '현수'
 };
 
+const SPECIAL_VOICE_LANG_DISPLAYS = {
+  'zh-cn-liaoning': {
+    'zh-CN': '东北话 (辽宁)',
+    'zh-TW': '東北話 (遼寧)',
+    'default': 'Northeastern Mandarin (Liaoning)'
+  },
+  'zh-cn-shaanxi': {
+    'zh-CN': '陕西话 (中原官话)',
+    'zh-TW': '陝西話 (中原官話)',
+    'default': 'Zhongyuan Mandarin (Shaanxi)'
+  },
+  'zh-hk': {
+    'zh-CN': '粤语 (香港)',
+    'zh-TW': '粵語 (香港)',
+    'default': 'Cantonese (Hong Kong)'
+  },
+  'zh-tw': {
+    'zh-CN': '国语 (台湾)',
+    'zh-TW': '國語 (台灣)',
+    'default': 'Taiwanese Mandarin'
+  }
+};
+
 function formatVoiceDisplayName(voice) {
   // 非 Edge 語音或 OpenAI/Local 語音，直接用原名
   if (!voice.shortName && !voice.isEdge) {
@@ -7775,11 +7807,12 @@ function formatVoiceDisplayName(voice) {
   }
 
   const shortName = voice.shortName || '';
-  // 從 shortName 提取人名：zh-CN-XiaoxiaoNeural → Xiaoxiao
+  // 從 shortName 提取人名：末尾段為發音人名，如 zh-CN-XiaoxiaoNeural → Xiaoxiao, zh-CN-liaoning-XiaobeiNeural → Xiaobei
   const parts = shortName.split('-');
   let personName = '';
   if (parts.length >= 3) {
-    personName = parts.slice(2).join('-').replace(/Neural$/i, '').replace(/Multilingual$/i, '');
+    const rawName = parts[parts.length - 1];
+    personName = rawName.replace(/Neural$/i, '').replace(/Multilingual$/i, '');
   }
   if (!personName) {
     // 從 FriendlyName 中提取：Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)
@@ -7787,11 +7820,23 @@ function formatVoiceDisplayName(voice) {
     personName = match ? match[1] : voice.name;
   }
 
-  // 用 Intl.DisplayNames 把語言代碼翻譯成系統語言
+  const uiLang = (typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en');
+  const isTrad = /tw|hk|mo|hant/i.test(uiLang);
+  const langKey = (voice.lang || '').toLowerCase().replace(/_/g, '-');
+
+  // 用 Intl.DisplayNames 把語言代碼翻譯成系統語言，特殊方言優先使用自定義友好名稱
   let langDisplay = voice.lang || '';
-  if (voice.lang && voice.lang !== 'multilingual') {
+  if (SPECIAL_VOICE_LANG_DISPLAYS[langKey]) {
+    const spec = SPECIAL_VOICE_LANG_DISPLAYS[langKey];
+    if (isTrad) {
+      langDisplay = spec['zh-TW'] || spec['default'];
+    } else if (/^zh/i.test(uiLang)) {
+      langDisplay = spec['zh-CN'] || spec['default'];
+    } else {
+      langDisplay = spec['default'];
+    }
+  } else if (voice.lang && voice.lang !== 'multilingual') {
     try {
-      const uiLang = navigator.language || 'en';
       const dn = new Intl.DisplayNames([uiLang], { type: 'language' });
       langDisplay = dn.of(voice.lang) || voice.lang;
     } catch (e) {
@@ -7810,8 +7855,15 @@ function formatVoiceDisplayName(voice) {
 
   const meta = genderStr ? `${langDisplay} · ${genderStr}` : langDisplay;
   // 對於有本地化名稱的語音，CJK 系統語言下顯示 "本地名 拉丁名 (語言 · 性別)"，否則只顯示拉丁名
-  const localName = VOICE_LOCAL_NAMES[personName] || '';
-  const uiLangPrefix = (navigator.language || 'en').toLowerCase().split('-')[0];
+  const rawLocal = VOICE_LOCAL_NAMES[personName] || VOICE_LOCAL_NAMES[shortName] || '';
+  let localName = '';
+  if (typeof rawLocal === 'object' && rawLocal !== null) {
+    localName = isTrad ? (rawLocal['zh-TW'] || rawLocal['zh-CN'] || '') : (rawLocal['zh-CN'] || rawLocal['zh-TW'] || '');
+  } else if (typeof rawLocal === 'string') {
+    localName = rawLocal;
+  }
+
+  const uiLangPrefix = uiLang.toLowerCase().split('-')[0];
   const isCJKUI = ['zh', 'ja', 'ko'].includes(uiLangPrefix);
   const displayName = (localName && isCJKUI) ? `${localName} ${personName}` : personName;
   return `${displayName} (${meta})`;
