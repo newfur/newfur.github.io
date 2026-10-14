@@ -13,27 +13,33 @@ The project is distributed in **5 form factors**: **Browser Extension**, **Singl
 
 ---
 
-## 🌟 Highlights of the Multi-Platform Refactor (v3.4.6x)
+## 🌟 Core Highlights & Architectural Advancements (v3.5.x)
 
-Designed for cross-platform reading, extended immersion listening, and efficient e-book storage, the core architecture features modern engineering innovations:
+Engineered for cross-platform reading, extended immersion listening, comprehensive voice localization, and high-availability streaming resilience:
 
-### 1. 🎧 Adaptive Dual-Engine TTS Architecture
+### 1. 🌐 Next-Gen Official Edge TTS Backend & Smart Failover (Official Endpoint & Resilience)
+- **Official Modern WebSocket Protocol**: Seamlessly migrated to the official `wss://api.msedgeservices.com/consumer/speech/synthesize/readaloud/edge/v1` endpoint with dynamic `Sec-MS-GEC` token generation and timestamp signing, permanently resolving deprecated Bing endpoint dropouts.
+- **Smart Primary/Backup Circuit Breaker**: Multi-tier failover mechanism with a fast 3500ms timeout breaker that automatically switches to alternate backup endpoints, ensuring exceptional connection reliability even in unstable network conditions.
+
+### 2. 🗣️ Full TTS Voice Localization & Regional Dialects (160+ Voices)
+- **Comprehensive Voice Catalog**: Fully localized across all Edge/Azure Mainland Mandarin voices (Xiaoxiao, Yunjian, Xiaoyi, Yunxi, Yunxia, Yunyang, etc.), regional dialects (Northeastern Xiaobei, Shaanxi Xiaoni, Shandong Yunxiang, Henan Yundeng, Guilin Yunqi, Shanghainese Xiaotong, Cantonese XiaoMin), Hong Kong/Taiwan voices (HsiaoChen, HsiaoYu, YunJhe, HiuGaai, HiuMaan, WanLung), native iOS/macOS system voices (Tingting, Sinji, Meijia, Yushu, Lili, etc.), Windows voices (Huihui, Zhiwei, Tracy, etc.), Japanese/Korean voices, international English/European voices, and OpenAI / Local custom engines (alloy, echo, etc.).
+- **Friendly Dialect Labels & Gender Inference**: Automatic gender inference for system voices lacking metadata, and clean localized tags for regional dialects (e.g., "Northeastern Mandarin (Liaoning)", "Cantonese (Hong Kong)").
+
+### 3. 🎧 Adaptive Dual-Engine TTS Architecture & 0ms Gapless Playback
 - **Route A (Standard Web DOM Audio Engine)**: Tailored for desktop browser extensions, single-file offline builds, and Web browsers. Driven by standard HTML5 Audio APIs and in-memory Blob URLs for maximum agility and zero dependencies.
 - **Route B (Native Twin-Player Hardware Buffering Engine)**:
   - **0ms Gapless Sentence Switching**: iOS (`AVAudioPlayer`) and Android (`MediaPlayer`) native twin-player hardware channels operate in a **ping-pong buffering cycle**. While sentence A is playing, sentence B is already synthesized and pre-warmed in the physical hardware buffer (`prepareToPlay`). At the exact millisecond sentence A finishes, playback switches seamlessly with zero delay.
   - **Main-Thread RunLoop Dispatching**: On iOS, all audio player lifecycles, event listeners, and state management are strictly bound to `RunLoop.main`, ensuring instantaneous, precise dispatching of Apple CoreAudio hardware events and delegate callbacks.
   - **Hardware Watchdog Fallback Timer**: The native layer features an authoritative watchdog timer calculated from sentence duration. In edge cases (incoming phone calls, rapid Bluetooth disconnections, audio focus preemptions), the watchdog autonomously detects audio hardware state and recovers playback progression, **guaranteeing that continuous reading never freezes**.
 
-### 2. 🗄️ Decoupled High-Performance Storage Engine
-- **Independent Entity & Metadata Stores**: Book contents, reading progress, bookmarks, and search indices are stored in dedicated IndexedDB object stores, eliminating redundant object nesting and serialization overhead for instantaneous access.
-- **Efficient & Predictable Footprint**: Compact sandbox data management keeps application memory and cache lean even with hundreds of imported books, ensuring snappy read/write performance and optimal storage health.
+### 4. 📱 Lockscreen & System Notification Media Center Integration
+- **Precise Book/Chapter Progress & Duration Sync**: Accurately tracks book-level and chapter-level percentages, sentence-level elapsed time accumulation, dynamically calculated remaining duration, and synchronized playback rate (`playbackRate`), eliminating time jumps upon sentence transitions.
+- **Dynamic 512px Cover Image Downsampling (`compressCoverImage`)**: Compresses book artwork to retina 512×512 format (20KB~40KB) for instantaneous, lag-free lockscreen and notification center rendering with headphone remote control and seeking support.
 
-### 3. 🖼️ Dynamic 512px Cover Image Downsampling & IPC Broadcasting (`compressCoverImage`)
-- **Smart Canvas Optimization Pipeline**: Dynamically downsamples high-resolution book artwork to a crisp 512×512 retina standard (compacted to 20KB~40KB), preserving sharp visual fidelity while minimizing memory and IPC bridge overhead.
-- **Instant Lockscreen Artwork Display**: Lightweight cover payloads render instantaneously across native system media centers and notification panels without latency.
-
-### 4. 🧠 Client-Side Asynchronous RAG & Instant Full-Text Search
-- Engineered with a zero-dependency in-memory inverted index and TF-IDF search algorithm. The entire book is indexed asynchronously within milliseconds after opening, feeding relevant context to on-device models (Gemini Nano) and cloud APIs (OpenAI, DeepSeek, Claude, Ollama) for character relationship mapping and dynamic Mermaid mindmap generation.
+### 5. 🗄️ Decoupled Storage, Lightweight Backup & Client-Side RAG
+- **Lightweight Backup with Reading Records**: Export compact backup archives without massive book binaries while fully preserving reading progress, cumulative reading duration, highlights, and bookmarks.
+- **Independent Entity & Metadata Stores**: Book contents, reading progress, bookmarks, and search indices are stored in dedicated IndexedDB object stores, eliminating redundant object nesting and serialization overhead.
+- **Client-Side Asynchronous RAG & Instant Full-Text Search**: Engineered with a zero-dependency in-memory inverted index and TF-IDF search algorithm, feeding relevant context to on-device models (Gemini Nano) and cloud APIs (OpenAI, DeepSeek, Claude, Ollama) for character relationship mapping and dynamic Mermaid mindmap generation.
 
 ---
 
@@ -202,14 +208,20 @@ npm start
 npm run build:offline
 
 # 4. Compile Web distribution and sync to Android / iOS projects
-npm run build:dist
+node scratch/build_dist.js
 npx cap copy ios
 npx cap copy android
+# Or use convenient shortcut scripts:
+# npm run build:ios       # Build and sync to iOS
+# npm run build:mobile    # Build and sync to Android
 
 # 5. Compile native iOS IPA package (requires macOS + Xcode)
 npm run build:ipa
 
-# 6. Run automated test suite
+# 6. Auto-increment patch version across all config files
+npm run bump
+
+# 7. Run automated test suite
 npm test
 ```
 

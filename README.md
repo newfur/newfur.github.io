@@ -13,27 +13,33 @@ Language: **简体中文** | [繁體中文](README.zh-TW.md) | [English](README.
 
 ---
 
-## 🌟 最新多端重构核心亮点 (v3.4.6x)
+## 🌟 最新核心亮点 (v3.5.x)
 
-针对跨平台移动阅读、长时间沉浸听书与大容量图书存储，全新版本构建了先进的底层核心：
+针对跨平台移动阅读、长时间沉浸听书、全量音色本地化与容灾稳定性，全新版本构建了先进的底层核心：
 
-### 1. 🎧 双引擎自适应 TTS 架构 (Adaptive Dual-Engine Architecture)
+### 1. 🌐 新一代 Edge TTS 官方后端与智能容灾回落 (Official Edge TTS Backend & Resilience)
+- **官方全新 WebSocket 协议接入**：全面平滑迁移至官方 `wss://api.msedgeservices.com/consumer/speech/synthesize/readaloud/edge/v1` 稳定终端，配合全自动计算的 `Sec-MS-GEC` 签名与时间戳鉴权，彻底解决旧版 Bing 节点停用断连问题。
+- **主备节点秒级智能熔断回退**：构建多端冗余容灾链（主节点超时 3500ms 快速熔断并回退至备用节点），无缝重试，在复杂弱网环境下依然保障极高连接成功率。
+
+### 2. 🗣️ 全量 TTS 音色库深度本地化与方言支持 (Full Voice Localization & Dialects)
+- **160+ 款音色全覆盖本地化**：完整收录并本地化微软 Edge / Azure 大陆普通话全系音色（晓晓、云健、晓伊、云希、云夏、云扬等）、特色方言音色（东北话晓北、陕西话晓妮、山东话云翔、河南话云登、桂柳话云奇、上海话晓彤、广东话晓敏）、港台音色（晓臻、晓雨、云哲、晓佳、晓曼、云龙）、系统原生音色（iOS/macOS 婷婷、善知、美佳、玉舒、莉莉等；Windows 慧慧、智伟等）、日韩国际音色以及 OpenAI / 本地引擎自定义音色（alloy, echo 等）。
+- **友好方言标签与智能性别推断**：针对无性别元数据的系统音色全自动推断性别，方言代码自动映射为亲切友好的自然语言标签（如“东北话 (辽宁)”、“粤语 (香港)”）。
+
+### 3. 🎧 双引擎自适应 TTS 架构与 0ms 无缝换句 (Adaptive Dual-Engine Architecture)
 - **Route A（标准 Web DOM 音频流）**：专为桌面浏览器插件、单文件离线版及 Web 网页端设计。基于标准 HTML5 Audio API 与内存 Blob URL，事件驱动，极致轻盈。
 - **Route B（移动端原生硬件双缓冲无缝引擎 - Native Twin-Player Engine）**：
   - **0ms 极速无缝换句 (Gapless Playback)**：iOS (`AVAudioPlayer`) 与 Android (`MediaPlayer`) 原生层均实现了**双底层硬件通道乒乓交叉缓冲（Ping-Pong Buffering）**。当当前句子在通道 A 发声时，下一句音频已在后台完成合成并在通道 B 完成物理硬件预热（`prepareToPlay`）；当前句播放结束瞬间，硬件通道毫秒级无感切换，彻底消灭句间延迟与空隙！
   - **全链路主线程 RunLoop 调度**：iOS 端原生层所有播放器生命周期、事件监听与状态管理严格绑定于主线程 `RunLoop.main`，确保苹果 CoreAudio 底层硬件事件与代理回调即时精准分发。
   - **硬件级看门狗双保险 (Hardware Watchdog Fallback Timer)**：原生底层配备智能看门狗守护定时器，动态计算预期播放时长。在来电挂断、蓝牙耳机频繁切换、音频会话抢占等极端系统异常导致硬件事件未上报时，看门狗自动检测硬件真实状态并自动推进下一句，**保障多小时连续朗读永不假死卡顿**。
 
-### 2. 🗄️ 彻底解耦的轻量高性能存储架构 (Decoupled Storage Engine)
-- **实体与元数据分表独立存储**：书籍正文二进制、阅读进度、高亮书签与检索索引在 IndexedDB 中实行独立分表存储，杜绝大对象嵌套与冗余序列化，支持大部头书籍秒级存取。
-- **存储高效与健康可控**：采用轻量紧凑的沙盒数据管理，即便导入数百本大容量图文图书，应用自身体积与运行缓存也始终保持轻盈，保障极佳的读写性能与设备空间健康。
+### 4. 📱 系统锁屏与通知栏媒体中心深度联动 (Lock Screen & Media Center)
+- **精确全书/章节进度与时间同步**：精准同步书籍整体与当前章节进度百分比，按句精确累加已播时间并动态推算剩余时间，动态保持倍速（`playbackRate`）一致，彻底解决每换一句已播时间跳变与倍速不同步的问题。
+- **全局 512px 动态封面智能压缩广播 (`compressCoverImage`)**：解析图书瞬间自动将封面等比优化至 512×512 视网膜规格（体积仅 20KB~40KB），锁屏媒体控制中心与系统通知栏实现毫秒级呈现，支持物理按键/蓝牙耳机遥控切句与进度拖拽。
 
-### 3. 🖼️ 全局 512px 动态封面智能优化与跨端广播 (`compressCoverImage`)
-- **智能 Canvas 降采样管线**：解析图书瞬间自动将高分辨率封面等比优化至 512×512 视网膜规格（体积压缩至仅 20KB~40KB），既保证了视觉细腻度，又大幅降低了内存与跨进程桥接通信开销。
-- **锁屏与通知栏秒级呈现**：优化后的轻量封面在移动设备锁屏媒体控制中心与系统通知栏实现无感毫秒级即时展示。
-
-### 4. 🧠 客户端全书异步 RAG 与全文秒级检索
-- 纯前端自研轻量倒排索引与 TF-IDF 检索算法，打开书籍后台异步毫秒级完成全书切片索引（总索引构建通常在 1 秒以内），为端侧模型（Gemini Nano）与云端大模型（OpenAI、DeepSeek、Claude、Ollama 等）提供精准的上下文知识库，支持角色脉络梳理与 Mermaid 动态思维导图生成。
+### 5. 🗄️ 解耦存储、轻量备份与客户端全书 RAG (Storage, Backup & RAG)
+- **轻量备份全记录保留**：支持剥离体积庞大的图书正文，仅备份全书阅读进度、累积阅读时长、划线高亮与个人书签，换机导入书籍时秒级对齐。
+- **实体与元数据分表独立存储**：正文二进制、阅读进度、高亮书签与检索索引在 IndexedDB 中独立分表存储，杜绝大对象嵌套与冗余序列化，大部头书籍秒级存取，应用运行缓存始终保持轻盈。
+- **客户端全书异步 RAG 与全文秒级检索**：纯前端自研轻量倒排索引与 TF-IDF 检索算法，打开书籍后台异步毫秒级完成全书切片索引，为端侧模型（Gemini Nano）与云端大模型（OpenAI、DeepSeek、Claude、Ollama 等）提供精准的上下文知识库，支持角色脉络梳理与 Mermaid 动态思维导图生成。
 
 ---
 
@@ -200,15 +206,21 @@ npm start
 # 3. 编译单文件离线版 (生成 reader_offline.html 与 index.html)
 npm run build:offline
 
-# 4. 一键构建 Web 产物并同步至 Android / iOS 工程
-npm run build:dist
+# 4. 构建 Web 产物并同步至移动端工程 (Android / iOS)
+node scratch/build_dist.js
 npx cap copy ios
 npx cap copy android
+# 或直接使用一键同步命令：
+# npm run build:ios       # 构建并同步 iOS
+# npm run build:mobile    # 构建并同步 Android
 
 # 5. 一键编译 iOS 原生 IPA 安装包 (需 macOS + Xcode 环境)
 npm run build:ipa
 
-# 6. 执行全套测试套件
+# 6. 一键自增小版本号并同步各端配置
+npm run bump
+
+# 7. 执行全套测试套件
 npm test
 ```
 
