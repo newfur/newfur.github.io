@@ -1,0 +1,60 @@
+name: Auto Retry Failed Jobs
+
+on:
+  workflow_run:
+    workflows: ["Build & Deploy"]
+    types:
+      - completed
+
+permissions:
+  actions: write
+
+jobs:
+  auto-retry:
+    name: Auto Retry on Runner Acquisition Timeout
+    runs-on: ubuntu-latest
+    # 仅当目标工作流最终执行失败或被取消时执行
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' }}
+    steps:
+      - name: Inspect Jobs and Retry if Runner Acquisition Failed
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const runId = context.payload.workflow_run.id;
+            console.log(`Checking workflow run ${runId} (Conclusion: ${context.payload.workflow_run.conclusion})...`);
+
+            // 限制最多重试 2 次，防止无限循环
+            const runAttempt = context.payload.workflow_run.run_attempt || 1;
+            if (runAttempt > 2) {
+              console.log(`Run ${runId} has already been attempted ${runAttempt} times. Stopping auto-retry to prevent loops.`);
+              return;
+            }
+
+            // 获取该工作流的所有 Jobs
+            const { data: jobsData } = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+
+            // 检查是否存在因为 Runner 算力池未获取到（取消/失败）的 Job
+            const failedJobs = jobsData.jobs.filter(job => job.conclusion === 'failure' || job.conclusion === 'cancelled');
+            console.log(`Found ${failedJobs.length} failed/cancelled jobs:`, failedJobs.map(j => `${j.name} (${j.conclusion})`));
+
+            if (failedJobs.length > 0) {
+              console.log(`Triggering auto-retry for failed jobs in run ${runId}...`);
+              // 延时 20 秒再触发，给 GitHub 云端 macOS 算力池一定的缓冲释放时间
+              await new Promise(r => setTimeout(r, 20000));
+              try {
+                await github.rest.actions.reRunWorkflowFailedJobs({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: runId
+                });
+                console.log(`Successfully requested re-run of failed jobs for run ${runId}!`);
+              } catch (err) {
+                console.error(`Failed to request rerun: ${err.message}`);
+              }
+            } else {
+              console.log('No failed jobs detected that require retry.');
+            }
