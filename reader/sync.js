@@ -35,14 +35,15 @@ export class SyncManager {
   }
 
   // 广播状态更新
-  _setState(state, err = null) {
+  _setState(state, err = null, extra = {}) {
     this.state = state;
     this.lastError = err;
     const info = {
       state: this.state,
       lastError: this.lastError,
       lastSyncTime: this.lastSyncTime,
-      storageMode: this.config.storageMode
+      storageMode: this.config.storageMode,
+      ...extra
     };
     for (const cb of this.listeners) {
       try {
@@ -66,10 +67,24 @@ export class SyncManager {
       }
     } catch (e) {}
 
-    // 若启用了 WebDAV 且开启了启动时自动同步，延时触发静默同步
+    // 若启用了 WebDAV 且开启了启动时自动同步，延时触发静默轻量记录同步
     if (this.isWebDAVEnabled() && this.config.autoSyncOnOpen) {
+      // 防崩溃死循环熔断保护 (Circuit Breaker)：
+      // 如果 45 秒内刚刚发生过未完成的同步尝试（例如系统因 OOM 强杀或异常崩溃刷新），跳过本次自动同步，杜绝无限刷新闪退
+      let lastAttempt = 0;
+      try {
+        lastAttempt = Number(sessionStorage.getItem('edgereader_sync_attempt_time') || 0);
+      } catch (e) {}
+
+      const now = Date.now();
+      if (now - lastAttempt < 45000) {
+        console.warn('[SyncManager] Previous sync attempted less than 45s ago, skipping auto-sync on open to prevent reload loop');
+        return;
+      }
+
       setTimeout(() => {
-        this.syncAll({ silent: true }).catch(err => {
+        // 启动时仅执行轻量级记录与元数据同步（recordsOnly: true），零内存压力，毫秒级完成
+        this.syncAll({ silent: true, recordsOnly: true }).catch(err => {
           console.warn('[SyncManager] Auto sync on open failed:', err);
         });
       }, 1500);
@@ -333,6 +348,8 @@ export class SyncManager {
   }
 
   // 执行全量双向增量同步 (Sync All)
+  // options.silent: 静默运行不弹窗
+  // options.recordsOnly: 仅同步轻量阅读进度与配置，不传输原书大文件 (默认启动自动同步采用此模式)
   async syncAll(options = {}) {
     if (!this.isWebDAVEnabled()) {
       if (!options.silent) {
@@ -345,6 +362,14 @@ export class SyncManager {
       console.log('[SyncManager] Sync is already in progress, skipping...');
       return;
     }
+
+    const recordsOnly = options.recordsOnly === true || this.config.syncMode === 'records_only';
+    let hasLocalChanges = false;
+
+    // 记录同步开始时间戳（用于死循环熔断防护）
+    try {
+      sessionStorage.setItem('edgereader_sync_attempt_time', String(Date.now()));
+    } catch (e) {}
 
     this._syncLock = true;
     this._setState('syncing');
@@ -388,6 +413,7 @@ export class SyncManager {
       for (const deletedId of localDeletedIds) {
         try {
           await this.library.deleteBook(deletedId);
+          hasLocalChanges = true;
         } catch (e) {}
       }
 
@@ -418,8 +444,8 @@ export class SyncManager {
 
           const mergedMeta = { ...remoteMeta, ...(remoteRecord || {}) };
 
-          // 若开启了完整同步模式，尝试拉取书籍文件与封面
-          if (this.config.syncMode === 'all') {
+          // 若非 recordsOnly 且开启了完整同步模式，拉取书籍文件与封面
+          if (!recordsOnly && this.config.syncMode === 'all') {
             let fileBlob = null;
             let coverBlob = null;
             try {
@@ -437,6 +463,7 @@ export class SyncManager {
 
           // 导入本地书库
           await this.library.importBook(mergedMeta);
+          hasLocalChanges = true;
         }
       }
 
@@ -447,16 +474,28 @@ export class SyncManager {
           // 上传轻量阅读记录
           await this.syncSingleBookRecord(localId, localBook);
 
-          // 若处于完整同步模式，上传书籍二进制和封面
-          if (this.config.syncMode === 'all') {
+          // 若非 recordsOnly 且处于完整同步模式，上传书籍二进制和封面
+          if (!recordsOnly && this.config.syncMode === 'all') {
             try {
-              const fullBook = await this.library.getBook(localId);
-              if (fullBook && fullBook.file) {
-                await this.client.putFile(`books/${localId}.bin`, fullBook.file);
+              const alreadyExists = await this.client.exists(`books/${localId}.bin`);
+              if (!alreadyExists) {
+                const fullBook = await this.library.getBook(localId);
+                // 移动端安全内存保护：若单本原书超过 50MB 则避免后台直接上传
+                if (fullBook && fullBook.file && fullBook.file.size <= 50 * 1024 * 1024) {
+                  await this.client.putFile(`books/${localId}.bin`, fullBook.file);
+                } else if (fullBook && fullBook.file && fullBook.file.size > 50 * 1024 * 1024) {
+                  console.warn(`[SyncManager] Book ${localId} file size (${fullBook.file.size} bytes) exceeds 50MB safety limit, skipping binary upload`);
+                }
               }
+
               if (localBook.cover && localBook.cover instanceof Blob) {
-                await this.client.putFile(`covers/${localId}.bin`, localBook.cover);
+                const coverExists = await this.client.exists(`covers/${localId}.bin`);
+                if (!coverExists) {
+                  await this.client.putFile(`covers/${localId}.bin`, localBook.cover);
+                }
               }
+              // 给垃圾回收缓冲时间
+              await new Promise(r => setTimeout(r, 60));
             } catch (upErr) {
               console.warn(`[SyncManager] Failed to upload binary for book ${localId}:`, upErr);
             }
@@ -488,6 +527,7 @@ export class SyncManager {
               ...remoteRecord,
               id
             });
+            hasLocalChanges = true;
           } else if (localLastRead > remoteRecordUpdated) {
             // 本地更新，推送到远端
             await this.syncSingleBookRecord(id, localBook);
@@ -523,14 +563,17 @@ export class SyncManager {
         localStorage.setItem('edgereader_last_sync_time', String(this.lastSyncTime));
       } catch (e) {}
 
-      this._setState('success');
-      return { success: true, count: cleanIndexList.length };
+      this._setState('success', null, { hasLocalChanges });
+      return { success: true, count: cleanIndexList.length, hasLocalChanges };
     } catch (err) {
       console.error('[SyncManager] Sync failed:', err);
       this._setState('error', err.message || String(err));
       if (!options.silent) throw err;
     } finally {
       this._syncLock = false;
+      try {
+        sessionStorage.removeItem('edgereader_sync_attempt_time');
+      } catch (e) {}
     }
   }
 }

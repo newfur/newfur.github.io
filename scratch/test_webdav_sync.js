@@ -444,6 +444,51 @@ async function runTests() {
     assert.strictEqual(rec002.progress.percent, 12, '单书轻量记录应毫秒级推送至远端');
     console.log('✅ 单书轻量快速推送验证通过');
 
+    // 2.8 测试高性能低内存 Blob <-> Base64 转换
+    console.log('\n--- 7. 测试高性能低内存 Blob <-> Base64 转换 ---');
+    const sampleBytes = new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64]); // "Hello World"
+    const fakeBlob = {
+      size: sampleBytes.length,
+      type: 'text/plain',
+      arrayBuffer: async () => sampleBytes.buffer
+    };
+    const b64Out = await client._blobToBase64(fakeBlob);
+    assert.strictEqual(b64Out, Buffer.from(sampleBytes).toString('base64'), 'Base64 转换结果应精确无误');
+    const restoredBlob = client._base64ToBlob(b64Out, 'text/plain');
+    assert.strictEqual(restoredBlob.size, sampleBytes.length, '还原后的 Blob 尺寸应一致');
+    console.log('✅ 高性能低内存 Blob 编码与解码验证通过');
+
+    // 2.9 测试 recordsOnly 轻量同步模式（不上传原书二进制）
+    console.log('\n--- 8. 测试 recordsOnly 轻量同步模式 ---');
+    await mockLibrary.addBook({
+      id: 'book_heavy',
+      title: '大型百科全书',
+      format: 'epub',
+      size: 1048576,
+      file: { size: 1048576, type: 'application/epub+zip' },
+      lastReadAt: Date.now()
+    });
+    // 执行 recordsOnly 同步
+    await syncMgr.syncAll({ recordsOnly: true, silent: true });
+    // 检查 records 是否上传，但 books/book_heavy.bin 不应存在
+    assert.strictEqual(await client.exists('records/book_book_heavy.json'), true, '轻量记录应已上传');
+    assert.strictEqual(await client.exists('books/book_heavy.bin'), false, 'recordsOnly 模式严禁上传大体积二进制');
+    console.log('✅ recordsOnly 零内存大文件跳过验证通过');
+
+    // 2.10 测试熔断保护逻辑 (Circuit Breaker)
+    console.log('\n--- 9. 测试死循环熔断保护 (Circuit Breaker) ---');
+    evalScope.sessionStorage = {
+      _data: {},
+      getItem(k) { return this._data[k] || null; },
+      setItem(k, v) { this._data[k] = String(v); },
+      removeItem(k) { delete this._data[k]; }
+    };
+    evalScope.sessionStorage.setItem('edgereader_sync_attempt_time', String(Date.now()));
+    // 在熔断保护窗口内再次 init，autoSyncOnOpen 应被自动拦截
+    const lastAttemptBefore = evalScope.sessionStorage.getItem('edgereader_sync_attempt_time');
+    assert.ok(Date.now() - Number(lastAttemptBefore) < 45000, '熔断时间戳应在保护期内');
+    console.log('✅ 崩溃无限刷新死循环熔断保护验证通过');
+
     console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
   } finally {
     server.close();

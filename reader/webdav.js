@@ -119,20 +119,58 @@ export class WebDAVClient {
     }
   }
 
+  // 高性能低内存 Blob -> Base64 转换 (避免百万级 JS 字符串拼接导致 iOS WebKit OOM)
+  async _blobToBase64(blob) {
+    if (typeof FileReader !== 'undefined') {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const res = reader.result;
+          if (typeof res === 'string') {
+            const commaIdx = res.indexOf(',');
+            resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
+          } else {
+            resolve('');
+          }
+        };
+        reader.onerror = (e) => reject(reader.error || e);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    // Node.js 或 Worker 降级环境：32KB 分块处理，避免调用栈溢出或内存暴涨
+    const arrayBuf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    const CHUNK_SIZE = 32768;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+      const chunk = bytes.subarray(i, i + CHUNK_SIZE);
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(binary);
+  }
+
+  // 高性能低内存 Base64 -> Blob 转换 (直接使用 Uint8Array，严禁使用 new Array(len))
+  _base64ToBlob(base64Str, mimeType = 'application/octet-stream') {
+    const binary = atob(base64Str);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+
   async _requestCapacitor({ url, method, headers, body, responseType }) {
     const CapHttp = window.Capacitor.Plugins.CapacitorHttp;
 
     let payloadData = body;
-    // 如果是 Blob，转为 Base64 或 ArrayBuffer 供 Capacitor 传输
+    let dataType = undefined;
+
+    // 如果是 Blob，转为 Base64 供 Capacitor 传输并声明 dataType 为 file
     if (body instanceof Blob) {
-      const arrayBuf = await body.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuf);
-      let binary = '';
-      const len = bytes.byteLength;
-      for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      payloadData = btoa(binary);
+      payloadData = await this._blobToBase64(body);
+      dataType = 'file';
       headers['Content-Type'] = headers['Content-Type'] || body.type || 'application/octet-stream';
     }
 
@@ -146,6 +184,10 @@ export class WebDAVClient {
       responseType: (responseType === 'blob' || responseType === 'arraybuffer') ? 'arraybuffer' : 'text'
     };
 
+    if (dataType) {
+      options.dataType = dataType;
+    }
+
     const res = await CapHttp.request(options);
     let resultData = res.data;
 
@@ -155,16 +197,17 @@ export class WebDAVClient {
       } catch (e) {}
     } else if (responseType === 'blob' && (resultData instanceof ArrayBuffer || typeof resultData === 'string')) {
       if (typeof resultData === 'string') {
-        // Base64 还原为 Blob
-        const byteCharacters = atob(resultData);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        resultData = new Blob([new Uint8Array(byteNumbers)]);
+        resultData = this._base64ToBlob(resultData, res.headers?.['content-type'] || 'application/octet-stream');
       } else {
         resultData = new Blob([resultData]);
       }
+    } else if (responseType === 'arraybuffer' && typeof resultData === 'string') {
+      const binary = atob(resultData);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      resultData = bytes.buffer;
     }
 
     return {

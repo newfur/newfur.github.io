@@ -2166,6 +2166,9 @@ function initUIEventBindings() {
         if (syncIconSvg) syncIconSvg.style.animation = '';
         if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_success') || 'Synced';
         if (syncHeaderBtn) syncHeaderBtn.disabled = false;
+        if (status.hasLocalChanges && typeof renderBookshelf === 'function') {
+          renderBookshelf().catch(() => {});
+        }
         setTimeout(() => {
           if (syncBtnText && syncManager.state === 'success') {
             syncBtnText.textContent = getMsg('sync_status_idle') || 'Sync';
@@ -3110,6 +3113,7 @@ async function handleImportFiles(files) {
 
 // 渲染書櫃列表
 async function renderBookshelf(searchQuery = '') {
+  window.renderBookshelf = renderBookshelf;
   const shelf = document.getElementById('bookshelf-grid');
   const emptyState = document.getElementById('empty-library');
   shelf.innerHTML = '';
