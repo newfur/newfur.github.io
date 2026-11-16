@@ -42,9 +42,13 @@ jobs:
             console.log(`Found ${failedJobs.length} failed/cancelled jobs:`, failedJobs.map(j => `${j.name} (${j.conclusion})`));
 
             if (failedJobs.length > 0) {
+              // 采用阶梯式指数退避等待（第 1 次重试等待 2 分钟，第 2 次重试等待 4 分钟）
+              // 避开 macOS 物理机集群的拥堵波峰，给云端留出充分的虚拟机回收与初始化窗口
+              const delaySeconds = runAttempt === 1 ? 120 : 240;
+              console.log(`Waiting ${delaySeconds}s (Run Attempt: ${runAttempt}) before triggering retry to bypass runner capacity peak...`);
+              await new Promise(r => setTimeout(r, delaySeconds * 1000));
+
               console.log(`Triggering auto-retry for failed jobs in run ${runId}...`);
-              // 延时 20 秒再触发，给 GitHub 云端 macOS 算力池一定的缓冲释放时间
-              await new Promise(r => setTimeout(r, 20000));
               try {
                 await github.rest.actions.reRunWorkflowFailedJobs({
                   owner: context.repo.owner,
