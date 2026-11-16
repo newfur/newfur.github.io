@@ -69,6 +69,13 @@
             <span data-i18n="batch_manage">Manage</span>
           </button>
 
+          <button id="sync-header-btn" class="btn btn-secondary" data-i18n-title="sync_btn_tooltip" title="WebDAV Cloud Sync" style="display: none;">
+            <span class="btn-icon">
+              <svg id="sync-icon-svg" class="svg-icon" viewBox="0 0 24 24" style="transition: transform 0.3s ease;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+            </span>
+            <span id="sync-btn-text" data-i18n="sync_status_idle">Sync</span>
+          </button>
+
           <div class="dropdown" id="more-actions-dropdown">
             <button id="more-actions-btn" class="btn btn-secondary" title="More Actions">
               <span class="btn-icon">
@@ -77,6 +84,12 @@
               <span data-i18n="more_actions">More</span>
             </button>
             <div class="dropdown-menu panel-glass">
+              <button id="menu-sync-btn" class="dropdown-item" data-i18n-title="sync_btn_tooltip" title="WebDAV Cloud Sync">
+                <span class="btn-icon">
+                  <svg class="svg-icon" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+                </span>
+                <span data-i18n="sync_btn_tooltip">Cloud Sync</span>
+              </button>
               <button id="backup-btn" class="dropdown-item" data-i18n-title="backup_library_tooltip" title="Export Library Backup">
                 <span class="btn-icon">
                   <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
@@ -971,6 +984,67 @@
         </button>
       </div>
       <div class="dialog-body" style="overflow-y: auto; max-height: 60vh; font-size: 14px; line-height: 1.5; padding: 5px 0; display: flex; flex-direction: column; gap: 15px;">
+        <!-- 存储与云同步设置 (Storage & Cloud Sync) -->
+        <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--primary-color); display: flex; align-items: center; gap: 8px;">
+          <svg class="svg-icon" style="width: 18px; height: 18px;" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+          <span data-i18n="storage_settings_section">Storage & Cloud Sync</span>
+        </h4>
+        <div class="setting-item" style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-weight: 500;" data-i18n="storage_mode_label">Storage Mode</label>
+          <select id="storage-mode-select" style="width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 14px;">
+            <option value="local" data-i18n="storage_mode_local">Local Storage (Default)</option>
+            <option value="webdav" data-i18n="storage_mode_webdav">WebDAV Remote Cloud Sync</option>
+          </select>
+          <div id="storage-mode-desc" style="font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;" data-i18n="storage_mode_local_desc"></div>
+        </div>
+
+        <!-- WebDAV 详细配置卡片 (仅当选择 WebDAV 时展示) -->
+        <div id="webdav-config-container" style="display: none; flex-direction: column; gap: 10px; background: rgba(10, 132, 255, 0.04); border: 1px solid var(--border-color); border-radius: 14px; padding: 12px;">
+          <div class="setting-item" style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 13px; font-weight: 500;" data-i18n="webdav_endpoint_label">WebDAV Server Endpoint</label>
+            <input type="text" id="webdav-endpoint-input" placeholder="https://dav.jianguoyun.com/dav/" style="width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 13px;">
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <div class="setting-item" style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+              <label style="font-size: 13px; font-weight: 500;" data-i18n="webdav_username_label">Username</label>
+              <input type="text" id="webdav-username-input" placeholder="user@example.com" style="width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 13px;">
+            </div>
+            <div class="setting-item" style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+              <label style="font-size: 13px; font-weight: 500;" data-i18n="webdav_password_label">Password / Token</label>
+              <input type="password" id="webdav-password-input" placeholder="App Token" style="width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 13px;">
+            </div>
+          </div>
+          <div class="setting-item" style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 13px; font-weight: 500;" data-i18n="webdav_remotepath_label">Remote Root Folder</label>
+            <input type="text" id="webdav-remotepath-input" value="/EdgeReader" placeholder="/EdgeReader" style="width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 13px;">
+          </div>
+          <div class="setting-item" style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 13px; font-weight: 500;" data-i18n="webdav_sync_mode_label">Sync Scope</label>
+            <select id="webdav-sync-mode-select" style="width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--surface-color); color: var(--text-color); outline: none; font-size: 13px;">
+              <option value="all" data-i18n="webdav_sync_mode_all">Full Sync (Books, Records & Settings)</option>
+              <option value="records_only" data-i18n="webdav_sync_mode_records">Lightweight Records Only</option>
+            </select>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 2px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="webdav-autosync-open-checkbox" checked>
+              <span data-i18n="webdav_autosync_open">Auto-sync on app startup</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="webdav-autosync-progress-checkbox" checked>
+              <span data-i18n="webdav_autosync_progress">Auto-sync reading progress & notes</span>
+            </label>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <button id="webdav-test-btn" type="button" class="btn btn-secondary" style="flex: 1; padding: 8px; border-radius: 8px; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;" data-i18n="webdav_test_btn">Test Connection</button>
+            <button id="webdav-sync-now-btn" type="button" class="btn btn-primary" style="flex: 1; padding: 8px; border-radius: 8px; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;" data-i18n="webdav_sync_now_btn">Sync Now</button>
+          </div>
+          <div id="webdav-test-result" style="display: none; font-size: 12px; text-align: center; padding: 6px; border-radius: 6px;"></div>
+        </div>
+
+        <div style="border-top: 1px dashed var(--border-color); margin: 5px 0;"></div>
+
         <!-- 書庫設定 -->
         <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--primary-color);" data-i18n="library_settings_section">Library Settings</h4>
         <div class="setting-item" style="display: flex; flex-direction: column; gap: 8px;">

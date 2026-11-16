@@ -1042,5 +1042,82 @@
   },
   "btn_start_backup": {
     "message": "开始备份"
+  },
+  "storage_settings_section": {
+    "message": "存储与云同步 (WebDAV)"
+  },
+  "storage_mode_label": {
+    "message": "存储模式"
+  },
+  "storage_mode_local": {
+    "message": "本地离线存储 (默认)"
+  },
+  "storage_mode_local_desc": {
+    "message": "所有图书、阅读记录与笔记仅保存在本机沙盒中，零网络依赖，极速纯净。"
+  },
+  "storage_mode_webdav": {
+    "message": "WebDAV 远程多端同步"
+  },
+  "storage_mode_webdav_desc": {
+    "message": "将数据、图书、阅读记录与配置实时同步至私有 WebDAV 服务器（支持坚果云、Nextcloud、群晖等）。"
+  },
+  "webdav_endpoint_label": {
+    "message": "WebDAV 服务地址 (Endpoint)"
+  },
+  "webdav_endpoint_placeholder": {
+    "message": "例如: https://dav.jianguoyun.com/dav/"
+  },
+  "webdav_username_label": {
+    "message": "用户名 / 账号"
+  },
+  "webdav_password_label": {
+    "message": "密码 / 应用令牌 (App Token)"
+  },
+  "webdav_remotepath_label": {
+    "message": "远程根目录"
+  },
+  "webdav_sync_mode_label": {
+    "message": "同步范围"
+  },
+  "webdav_sync_mode_all": {
+    "message": "完整同步 (电子书原文件 + 阅读记录 + 笔记与配置)"
+  },
+  "webdav_sync_mode_records": {
+    "message": "仅轻量记录与配置 (不传输原书大文件，极速轻巧)"
+  },
+  "webdav_autosync_open": {
+    "message": "打开应用时自动增量同步"
+  },
+  "webdav_autosync_progress": {
+    "message": "阅读翻页与笔记自动静默推送"
+  },
+  "webdav_test_btn": {
+    "message": "测试连接"
+  },
+  "webdav_sync_now_btn": {
+    "message": "立即全量同步"
+  },
+  "sync_status_idle": {
+    "message": "同步就绪"
+  },
+  "sync_status_syncing": {
+    "message": "正在同步中..."
+  },
+  "sync_status_success": {
+    "message": "同步完成"
+  },
+  "sync_status_error": {
+    "message": "同步失败"
+  },
+  "sync_btn_tooltip": {
+    "message": "WebDAV 云同步"
+  },
+  "last_synced_at": {
+    "message": "上次同步: $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1"
+      }
+    }
   }
 }

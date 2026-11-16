@@ -1045,5 +1045,82 @@
   },
   "btn_start_backup": {
     "message": "Start Backup"
+  },
+  "storage_settings_section": {
+    "message": "Storage & Cloud Sync (WebDAV)"
+  },
+  "storage_mode_label": {
+    "message": "Storage Mode"
+  },
+  "storage_mode_local": {
+    "message": "Local Storage (Default)"
+  },
+  "storage_mode_local_desc": {
+    "message": "All books, reading records, and notes are stored strictly in local device sandbox. Zero network reliance, instant and private."
+  },
+  "storage_mode_webdav": {
+    "message": "WebDAV Remote Cloud Sync"
+  },
+  "storage_mode_webdav_desc": {
+    "message": "Sync books, reading progress, highlights, reading time stats, and settings to your private WebDAV server (Jianguoyun, Nextcloud, Synology, etc.)."
+  },
+  "webdav_endpoint_label": {
+    "message": "WebDAV Server Endpoint"
+  },
+  "webdav_endpoint_placeholder": {
+    "message": "e.g. https://dav.jianguoyun.com/dav/"
+  },
+  "webdav_username_label": {
+    "message": "Username / Account"
+  },
+  "webdav_password_label": {
+    "message": "Password / App Token"
+  },
+  "webdav_remotepath_label": {
+    "message": "Remote Root Folder"
+  },
+  "webdav_sync_mode_label": {
+    "message": "Sync Scope"
+  },
+  "webdav_sync_mode_all": {
+    "message": "Full Sync (Source Books + Progress + Notes & Settings)"
+  },
+  "webdav_sync_mode_records": {
+    "message": "Lightweight Records Only (No source book files, ultra-fast)"
+  },
+  "webdav_autosync_open": {
+    "message": "Auto-sync on app startup"
+  },
+  "webdav_autosync_progress": {
+    "message": "Auto-sync reading progress & notes in background"
+  },
+  "webdav_test_btn": {
+    "message": "Test Connection"
+  },
+  "webdav_sync_now_btn": {
+    "message": "Sync Now"
+  },
+  "sync_status_idle": {
+    "message": "Sync Ready"
+  },
+  "sync_status_syncing": {
+    "message": "Syncing..."
+  },
+  "sync_status_success": {
+    "message": "Sync Completed"
+  },
+  "sync_status_error": {
+    "message": "Sync Error"
+  },
+  "sync_btn_tooltip": {
+    "message": "WebDAV Cloud Sync"
+  },
+  "last_synced_at": {
+    "message": "Last synced: $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1"
+      }
+    }
   }
 }

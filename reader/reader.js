@@ -51,6 +51,7 @@ if (typeof mermaid !== 'undefined') {
 import { BookLibrary } from './library.js';
 import { TTSEngine, compressCoverImage } from './tts.js';
 import { AIEngine } from './ai.js';
+import { SyncManager } from './sync.js';
 import { initI18n, applyI18n, getMsg } from './i18n.js';
 
 // 解析器導入
@@ -61,10 +62,12 @@ import { ComicParser } from './parsers/comic-parser.js';
 
 // 全局實例
 const library = new BookLibrary();
+const syncManager = new SyncManager(library);
 const tts = new TTSEngine();
 if (typeof window !== 'undefined') {
   window.tts = tts;
   window.library = library;
+  window.syncManager = syncManager;
 }
 const ai = new AIEngine();
 
@@ -499,6 +502,9 @@ function initUIEventBindings() {
           }
 
           await library.deleteBook(bookId);
+          if (typeof syncManager !== 'undefined') {
+            syncManager.handleDeleteBook(bookId);
+          }
         }
         toggleSelectMode(false);
         await renderBookshelf();
@@ -1258,6 +1264,34 @@ function initUIEventBindings() {
       currentTTSLanguage = ttsLanguage;
       ttsDefaultVoice = ttsVoice;
 
+      // 讀取並保存 WebDAV 同步配置
+      const storageModeSelect = document.getElementById('storage-mode-select');
+      const webdavEndpointInput = document.getElementById('webdav-endpoint-input');
+      const webdavUsernameInput = document.getElementById('webdav-username-input');
+      const webdavPasswordInput = document.getElementById('webdav-password-input');
+      const webdavRemotepathInput = document.getElementById('webdav-remotepath-input');
+      const webdavSyncModeSelect = document.getElementById('webdav-sync-mode-select');
+      const webdavAutosyncOpenCb = document.getElementById('webdav-autosync-open-checkbox');
+      const webdavAutosyncProgressCb = document.getElementById('webdav-autosync-progress-checkbox');
+
+      if (storageModeSelect) {
+        const syncCfg = {
+          storageMode: storageModeSelect.value,
+          endpoint: webdavEndpointInput ? webdavEndpointInput.value.trim() : '',
+          username: webdavUsernameInput ? webdavUsernameInput.value.trim() : '',
+          password: webdavPasswordInput ? webdavPasswordInput.value : '',
+          remotePath: webdavRemotepathInput ? webdavRemotepathInput.value.trim() : '/EdgeReader',
+          syncMode: webdavSyncModeSelect ? webdavSyncModeSelect.value : 'all',
+          autoSyncOnOpen: webdavAutosyncOpenCb ? webdavAutosyncOpenCb.checked : true,
+          autoSyncOnProgress: webdavAutosyncProgressCb ? webdavAutosyncProgressCb.checked : true
+        };
+        syncManager.saveConfig(syncCfg).then(() => {
+          if (syncManager.isWebDAVEnabled()) {
+            syncManager.syncAll({ silent: true }).catch(() => {});
+          }
+        });
+      }
+
       chrome.storage.local.set({ 
         aiProfiles: aiProfilesList,
         activeAIProfileId: activeAIProfileId,
@@ -2007,6 +2041,7 @@ function initUIEventBindings() {
         const savedWidth = localStorage.getItem('coverWidth') || '180';
         if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
         if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
+        if (window.__populateSyncForm) window.__populateSyncForm();
         globalSettingsDialog.showModal();
       });
     }
@@ -2018,6 +2053,7 @@ function initUIEventBindings() {
         const savedWidth = localStorage.getItem('coverWidth') || '180';
         if (globalCoverWidthSlider) globalCoverWidthSlider.value = savedWidth;
         if (globalCoverWidthVal) globalCoverWidthVal.textContent = `${savedWidth}px`;
+        if (window.__populateSyncForm) window.__populateSyncForm();
         globalSettingsDialog.showModal();
       });
     }
@@ -2058,6 +2094,203 @@ function initUIEventBindings() {
         localStorage.setItem('coverWidth', val);
       });
     }
+
+    // 初始化 WebDAV 同步 UI
+    initSyncUI();
+  }
+
+  // ==========================================
+  // WebDAV 存储与云端同步 UI 控制器
+  // ==========================================
+  function initSyncUI() {
+    const syncHeaderBtn = document.getElementById('sync-header-btn');
+    const syncBtnText = document.getElementById('sync-btn-text');
+    const syncIconSvg = document.getElementById('sync-icon-svg');
+    const menuSyncBtn = document.getElementById('menu-sync-btn');
+    const webdavSyncNowBtn = document.getElementById('webdav-sync-now-btn');
+    const storageModeSelect = document.getElementById('storage-mode-select');
+    const storageModeDesc = document.getElementById('storage-mode-desc');
+    const webdavConfigContainer = document.getElementById('webdav-config-container');
+    const webdavEndpointInput = document.getElementById('webdav-endpoint-input');
+    const webdavUsernameInput = document.getElementById('webdav-username-input');
+    const webdavPasswordInput = document.getElementById('webdav-password-input');
+    const webdavRemotepathInput = document.getElementById('webdav-remotepath-input');
+    const webdavSyncModeSelect = document.getElementById('webdav-sync-mode-select');
+    const webdavAutosyncOpenCb = document.getElementById('webdav-autosync-open-checkbox');
+    const webdavAutosyncProgressCb = document.getElementById('webdav-autosync-progress-checkbox');
+    const webdavTestBtn = document.getElementById('webdav-test-btn');
+    const webdavTestResult = document.getElementById('webdav-test-result');
+
+    function populateSyncForm() {
+      const cfg = syncManager.config || {};
+      if (storageModeSelect) storageModeSelect.value = cfg.storageMode || 'local';
+      if (webdavEndpointInput) webdavEndpointInput.value = cfg.endpoint || '';
+      if (webdavUsernameInput) webdavUsernameInput.value = cfg.username || '';
+      if (webdavPasswordInput) webdavPasswordInput.value = cfg.password || '';
+      if (webdavRemotepathInput) webdavRemotepathInput.value = cfg.remotePath || '/EdgeReader';
+      if (webdavSyncModeSelect) webdavSyncModeSelect.value = cfg.syncMode || 'all';
+      if (webdavAutosyncOpenCb) webdavAutosyncOpenCb.checked = cfg.autoSyncOnOpen !== false;
+      if (webdavAutosyncProgressCb) webdavAutosyncProgressCb.checked = cfg.autoSyncOnProgress !== false;
+      updateStorageModeView();
+    }
+
+    function updateStorageModeView() {
+      const mode = storageModeSelect ? storageModeSelect.value : 'local';
+      if (webdavConfigContainer) {
+        webdavConfigContainer.style.display = (mode === 'webdav') ? 'flex' : 'none';
+      }
+      if (storageModeDesc) {
+        storageModeDesc.textContent = (mode === 'webdav')
+          ? (getMsg('storage_mode_webdav_desc') || '')
+          : (getMsg('storage_mode_local_desc') || '');
+      }
+      if (syncHeaderBtn) {
+        syncHeaderBtn.style.display = (mode === 'webdav' && syncManager.config.endpoint) ? 'inline-flex' : 'none';
+      }
+    }
+
+    if (storageModeSelect) {
+      storageModeSelect.addEventListener('change', updateStorageModeView);
+    }
+
+    syncManager.addListener((status) => {
+      if (syncHeaderBtn) {
+        syncHeaderBtn.style.display = (status.storageMode === 'webdav' && syncManager.config.endpoint) ? 'inline-flex' : 'none';
+      }
+
+      if (status.state === 'syncing') {
+        if (syncIconSvg) syncIconSvg.style.animation = 'spin 1s linear infinite';
+        if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_syncing') || 'Syncing...';
+        if (syncHeaderBtn) syncHeaderBtn.disabled = true;
+      } else if (status.state === 'success') {
+        if (syncIconSvg) syncIconSvg.style.animation = '';
+        if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_success') || 'Synced';
+        if (syncHeaderBtn) syncHeaderBtn.disabled = false;
+        setTimeout(() => {
+          if (syncBtnText && syncManager.state === 'success') {
+            syncBtnText.textContent = getMsg('sync_status_idle') || 'Sync';
+          }
+        }, 2500);
+      } else if (status.state === 'error') {
+        if (syncIconSvg) syncIconSvg.style.animation = '';
+        if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_error') || 'Sync Error';
+        if (syncHeaderBtn) {
+          syncHeaderBtn.disabled = false;
+          syncHeaderBtn.title = status.lastError || (getMsg('sync_status_error') || 'Sync Error');
+        }
+      } else {
+        if (syncIconSvg) syncIconSvg.style.animation = '';
+        if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_idle') || 'Sync';
+        if (syncHeaderBtn) syncHeaderBtn.disabled = false;
+      }
+    });
+
+    async function triggerManualSync() {
+      if (!syncManager.isWebDAVEnabled()) {
+        const dialog = document.getElementById('global-settings-dialog');
+        if (dialog) {
+          populateSyncForm();
+          dialog.showModal();
+        }
+        return;
+      }
+      try {
+        await syncManager.syncAll();
+        await renderBookshelf();
+      } catch (err) {
+        alert(`${getMsg('sync_status_error') || 'Sync Error'}: ${err.message || err}`);
+      }
+    }
+
+    if (syncHeaderBtn) syncHeaderBtn.addEventListener('click', triggerManualSync);
+    if (menuSyncBtn) menuSyncBtn.addEventListener('click', triggerManualSync);
+
+    if (webdavSyncNowBtn) {
+      webdavSyncNowBtn.addEventListener('click', async () => {
+        const tempConfig = {
+          storageMode: storageModeSelect ? storageModeSelect.value : 'webdav',
+          endpoint: webdavEndpointInput ? webdavEndpointInput.value.trim() : '',
+          username: webdavUsernameInput ? webdavUsernameInput.value.trim() : '',
+          password: webdavPasswordInput ? webdavPasswordInput.value : '',
+          remotePath: webdavRemotepathInput ? webdavRemotepathInput.value.trim() : '/EdgeReader',
+          syncMode: webdavSyncModeSelect ? webdavSyncModeSelect.value : 'all',
+          autoSyncOnOpen: webdavAutosyncOpenCb ? webdavAutosyncOpenCb.checked : true,
+          autoSyncOnProgress: webdavAutosyncProgressCb ? webdavAutosyncProgressCb.checked : true
+        };
+        await syncManager.saveConfig(tempConfig);
+        try {
+          webdavSyncNowBtn.disabled = true;
+          await syncManager.syncAll();
+          await renderBookshelf();
+          if (webdavTestResult) {
+            webdavTestResult.style.display = 'block';
+            webdavTestResult.style.color = '#34c759';
+            webdavTestResult.style.background = 'rgba(52, 199, 89, 0.1)';
+            webdavTestResult.textContent = getMsg('sync_status_success') || '同步完成！';
+          }
+        } catch (err) {
+          if (webdavTestResult) {
+            webdavTestResult.style.display = 'block';
+            webdavTestResult.style.color = '#ff3b30';
+            webdavTestResult.style.background = 'rgba(255, 59, 48, 0.1)';
+            webdavTestResult.textContent = `${getMsg('sync_status_error')}: ${err.message || err}`;
+          }
+        } finally {
+          webdavSyncNowBtn.disabled = false;
+        }
+      });
+    }
+
+    if (webdavTestBtn) {
+      webdavTestBtn.addEventListener('click', async () => {
+        const testConfig = {
+          endpoint: webdavEndpointInput ? webdavEndpointInput.value.trim() : '',
+          username: webdavUsernameInput ? webdavUsernameInput.value.trim() : '',
+          password: webdavPasswordInput ? webdavPasswordInput.value : '',
+          remotePath: webdavRemotepathInput ? webdavRemotepathInput.value.trim() : '/EdgeReader'
+        };
+
+        if (!testConfig.endpoint) {
+          if (webdavTestResult) {
+            webdavTestResult.style.display = 'block';
+            webdavTestResult.style.color = '#ff3b30';
+            webdavTestResult.style.background = 'rgba(255, 59, 48, 0.1)';
+            webdavTestResult.textContent = '请输入 WebDAV 服务器地址';
+          }
+          return;
+        }
+
+        const originalText = webdavTestBtn.textContent;
+        webdavTestBtn.disabled = true;
+        webdavTestBtn.textContent = getMsg('ai_test_testing') || 'Testing...';
+        if (webdavTestResult) webdavTestResult.style.display = 'none';
+
+        try {
+          const res = await syncManager.testConnection(testConfig);
+          if (webdavTestResult) {
+            webdavTestResult.style.display = 'block';
+            webdavTestResult.style.color = '#34c759';
+            webdavTestResult.style.background = 'rgba(52, 199, 89, 0.1)';
+            webdavTestResult.textContent = res.message || '连接成功！';
+          }
+        } catch (err) {
+          if (webdavTestResult) {
+            webdavTestResult.style.display = 'block';
+            webdavTestResult.style.color = '#ff3b30';
+            webdavTestResult.style.background = 'rgba(255, 59, 48, 0.1)';
+            webdavTestResult.textContent = err.message || String(err);
+          }
+        } finally {
+          webdavTestBtn.disabled = false;
+          webdavTestBtn.textContent = originalText;
+        }
+      });
+    }
+
+    window.__populateSyncForm = populateSyncForm;
+    syncManager.init().then(() => {
+      populateSyncForm();
+    }).catch(e => console.warn('[SyncManager] Init failed:', e));
   }
 
   // 關於對話框
@@ -2870,6 +3103,9 @@ async function handleImportFiles(files) {
 
   // 渲染新書櫃
   await renderBookshelf();
+  if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+    syncManager.syncAll({ silent: true }).catch(() => {});
+  }
 }
 
 // 渲染書櫃列表
@@ -3483,6 +3719,9 @@ async function deleteBookHandler(id) {
 
     // 4. 執行數據庫物理刪除（納入隊列與防幽靈復活）
     await library.deleteBook(id);
+    if (typeof syncManager !== 'undefined') {
+      syncManager.handleDeleteBook(id);
+    }
     await renderBookshelf();
   }
 }
@@ -6102,6 +6341,9 @@ async function flushDebouncedIndexedDBProgress() {
   for (const [bookId, update] of entries) {
     try {
       await library.updateProgress(bookId, update);
+      if (typeof syncManager !== 'undefined') {
+        syncManager.triggerProgressSync(bookId);
+      }
     } catch (e) {
       console.warn('[Progress] flushDebouncedIndexedDBProgress failed for', bookId, e);
     }
@@ -6208,6 +6450,9 @@ async function forceSaveCurrentProgress() {
     saveProgressToLocalStorage(currentBook.id, update);
     await flushDebouncedIndexedDBProgress();
     await library.updateProgress(currentBook.id, update);
+    if (typeof syncManager !== 'undefined') {
+      syncManager.triggerProgressSync(currentBook.id);
+    }
     isSavingProgress = false;
   }
 }

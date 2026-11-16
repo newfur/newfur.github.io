@@ -1,0 +1,456 @@
+// scratch/test_webdav_sync.js
+// 完整自动化测试套件：WebDAV 协议驱动、Mock 服务器、双向增量同步、Smart Merge 冲突仲裁与墓碑机制
+
+const http = require('http');
+const assert = require('assert');
+const path = require('path');
+const fs = require('fs');
+
+// 导入待测模块 (针对 Node.js 环境兼容 export/import)
+const webdavCode = fs.readFileSync(path.join(__dirname, '../reader/webdav.js'), 'utf8')
+  .replace(/export\s+class\s+WebDAVClient/g, 'class WebDAVClient');
+const syncCode = fs.readFileSync(path.join(__dirname, '../reader/sync.js'), 'utf8')
+  .replace(/^import\s+.*?from\s+.*?$/gm, '')
+  .replace(/export\s+class\s+SyncManager/g, 'class SyncManager');
+
+const evalScope = {
+  console,
+  setTimeout,
+  clearTimeout,
+  Buffer,
+  URL,
+  btoa: (str) => Buffer.from(str, 'binary').toString('base64'),
+  atob: (b64) => Buffer.from(b64, 'base64').toString('binary')
+};
+
+const scriptFn = new Function(
+  'scope',
+  `
+  with (scope) {
+    ${webdavCode}
+    ${syncCode}
+    return { WebDAVClient, SyncManager };
+  }
+`
+);
+
+const { WebDAVClient, SyncManager } = scriptFn(evalScope);
+
+// 简易内存 Mock WebDAV 服务器
+function createMockWebDAVServer({ validUser = 'testuser', validPass = 'secret123' } = {}) {
+  const fileStore = new Map(); // path -> { isDir: bool, content: string|Buffer, mtime: number }
+  fileStore.set('/', { isDir: true, content: '', mtime: Date.now() });
+
+  const server = http.createServer((req, res) => {
+    // 检查 Basic 鉴权
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) {
+      res.writeHead(401, {
+        'WWW-Authenticate': 'Basic realm="TestWebDAV"',
+        'Content-Type': 'text/plain'
+      });
+      res.end('Authentication required');
+      return;
+    }
+
+    const b64 = authHeader.replace(/^Basic\s+/i, '');
+    const decoded = Buffer.from(b64, 'base64').toString('utf8');
+    const [u, p] = decoded.split(':');
+    if (u !== validUser || p !== validPass) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden: Invalid credentials');
+      return;
+    }
+
+    let reqPath = decodeURIComponent(req.url.split('?')[0]);
+    if (!reqPath.startsWith('/')) reqPath = '/' + reqPath;
+
+    if (req.method === 'PROPFIND') {
+      const depth = req.headers['depth'] || '1';
+      const cleanPath = reqPath.replace(/\/+$/, '') || '/';
+      const entry = fileStore.get(cleanPath);
+
+      if (!entry) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+        return;
+      }
+
+      let xml = `<?xml version="1.0" encoding="utf-8" ?>\n<D:multistatus xmlns:D="DAV:">\n`;
+
+      const formatResponse = (p, isDir, size, mtime) => {
+        return `  <D:response>
+    <D:href>${p}${isDir && !p.endsWith('/') ? '/' : ''}</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:displayname>${p.split('/').filter(Boolean).pop() || ''}</D:displayname>
+        ${isDir ? '<D:resourcetype><D:collection/></D:resourcetype>' : '<D:resourcetype/>'}
+        <D:getcontentlength>${size}</D:getcontentlength>
+        <D:getlastmodified>${new Date(mtime).toUTCString()}</D:getlastmodified>
+        <D:getetag>"${mtime}"</D:getetag>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>\n`;
+      };
+
+      xml += formatResponse(cleanPath, entry.isDir, entry.content ? entry.content.length : 0, entry.mtime);
+
+      if (depth === '1' && entry.isDir) {
+        for (const [storePath, sEntry] of fileStore.entries()) {
+          if (storePath === cleanPath) continue;
+          const parent = storePath.substring(0, storePath.lastIndexOf('/')) || '/';
+          if (parent === cleanPath) {
+            xml += formatResponse(storePath, sEntry.isDir, sEntry.content ? sEntry.content.length : 0, sEntry.mtime);
+          }
+        }
+      }
+
+      xml += `</D:multistatus>`;
+      res.writeHead(207, { 'Content-Type': 'application/xml; charset=utf-8' });
+      res.end(xml);
+      return;
+    }
+
+    if (req.method === 'MKCOL') {
+      const cleanPath = reqPath.replace(/\/+$/, '') || '/';
+      if (fileStore.has(cleanPath)) {
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
+        res.end('Method Not Allowed: Already exists');
+        return;
+      }
+      fileStore.set(cleanPath, { isDir: true, content: '', mtime: Date.now() });
+      res.writeHead(201, { 'Content-Type': 'text/plain' });
+      res.end('Created');
+      return;
+    }
+
+    if (req.method === 'PUT') {
+      const cleanPath = reqPath.replace(/\/+$/, '');
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        const bodyBuf = Buffer.concat(chunks);
+        fileStore.set(cleanPath, { isDir: false, content: bodyBuf, mtime: Date.now() });
+        res.writeHead(201, { 'Content-Type': 'text/plain' });
+        res.end('Created');
+      });
+      return;
+    }
+
+    if (req.method === 'GET') {
+      const cleanPath = reqPath.replace(/\/+$/, '');
+      const entry = fileStore.get(cleanPath);
+      if (!entry || entry.isDir) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': entry.content.length
+      });
+      res.end(entry.content);
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      const cleanPath = reqPath.replace(/\/+$/, '');
+      let deleted = false;
+      for (const key of Array.from(fileStore.keys())) {
+        if (key === cleanPath || key.startsWith(cleanPath + '/')) {
+          fileStore.delete(key);
+          deleted = true;
+        }
+      }
+      res.writeHead(deleted ? 204 : 404);
+      res.end();
+      return;
+    }
+
+    res.writeHead(405, { 'Content-Type': 'text/plain' });
+    res.end('Method Not Allowed');
+  });
+
+  return { server, fileStore };
+}
+
+// 模拟 BookLibrary
+class MockBookLibrary {
+  constructor() {
+    this.books = new Map();
+    this.bookFiles = new Map();
+    this._deletedBookIds = new Set();
+  }
+
+  async getAllBooks() {
+    return Array.from(this.books.values());
+  }
+
+  async getBookMetadata(id) {
+    return this.books.get(id) || null;
+  }
+
+  async getBook(id) {
+    const meta = this.books.get(id);
+    if (!meta) return null;
+    return { ...meta, file: this.bookFiles.get(id) || null };
+  }
+
+  async addBook(book) {
+    this.books.set(book.id, { ...book });
+    if (book.file) {
+      this.bookFiles.set(book.id, book.file);
+    }
+    return book;
+  }
+
+  async importBook(book) {
+    const existing = this.books.get(book.id);
+    if (existing) {
+      // 模拟智能合并
+      const existingPercent = existing.progress?.percent || 0;
+      const backupPercent = book.progress?.percent || 0;
+      let finalProgress = { ...existing.progress };
+
+      if (existingPercent === 0 && backupPercent > 0) {
+        finalProgress = { ...book.progress };
+      } else if (book.lastReadAt > existing.lastReadAt) {
+        finalProgress = { ...book.progress };
+      }
+
+      // 笔记求并集
+      const mergedNotes = [...(existing.notes || [])];
+      for (const n of book.notes || []) {
+        if (!mergedNotes.some(m => m.noteId === n.noteId)) {
+          mergedNotes.push(n);
+        }
+      }
+
+      this.books.set(book.id, {
+        ...existing,
+        ...book,
+        progress: finalProgress,
+        notes: mergedNotes,
+        lastReadAt: Math.max(existing.lastReadAt || 0, book.lastReadAt || 0)
+      });
+    } else {
+      this.books.set(book.id, { ...book });
+      if (book.file) {
+        this.bookFiles.set(book.id, book.file);
+      }
+    }
+    return true;
+  }
+
+  async deleteBook(id) {
+    this.books.delete(id);
+    this.bookFiles.delete(id);
+    this._deletedBookIds.add(String(id));
+    return true;
+  }
+}
+
+// 运行测试
+async function runTests() {
+  console.log('=== 开始 Edge-Reader WebDAV 与多端同步全面验证测试 ===\n');
+
+  const { server, fileStore } = createMockWebDAVServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const endpoint = `http://127.0.0.1:${port}`;
+  console.log(`[Mock Server] WebDAV Mock 服务启动成功，监听端口: ${port}`);
+
+  try {
+    // -------------------------------------------------------------
+    // 测试组 1: WebDAVClient 底层驱动与连接自检
+    // -------------------------------------------------------------
+    console.log('\n--- 1. 测试 WebDAV 驱动基础方法与连接测试 ---');
+    const client = new WebDAVClient({
+      endpoint,
+      username: 'testuser',
+      password: 'secret123',
+      remotePath: '/EdgeReader'
+    });
+
+    // 1.1 自检 testConnection
+    const testRes = await client.testConnection();
+    assert.strictEqual(testRes.success, true, '自检连接应当返回成功');
+    console.log('✅ client.testConnection() 通过');
+
+    // 1.2 错误凭证应当被拒绝 (401/403)
+    const badClient = new WebDAVClient({
+      endpoint,
+      username: 'wronguser',
+      password: 'badpassword',
+      remotePath: '/EdgeReader'
+    });
+    let authFailed = false;
+    try {
+      await badClient.testConnection();
+    } catch (e) {
+      authFailed = true;
+      assert.ok(e.message.includes('认证失败'), '错误凭证应提示认证失败');
+    }
+    assert.strictEqual(authFailed, true, '错误凭据必须抛出鉴权失败异常');
+    console.log('✅ 鉴权拦截与错误捕获通过');
+
+    // 1.3 递归创建目录与文件操作
+    await client.ensureDir('records/deep/folder');
+    assert.strictEqual(await client.exists('records/deep/folder'), true, '多级递归目录应创建成功');
+    console.log('✅ client.ensureDir() 递归多级建目录通过');
+
+    // 1.4 上传与读取文件
+    await client.putFile('config/test.json', { app: 'EdgeReader', v: 3 });
+    const content = await client.getFile('config/test.json', 'json');
+    assert.deepStrictEqual(content, { app: 'EdgeReader', v: 3 }, '上传的 JSON 读取内容应完全一致');
+    console.log('✅ client.putFile() 与 client.getFile() 通过');
+
+    // 1.5 目录列表解析
+    const list = await client.listDir('config');
+    assert.ok(list.some(item => item.displayName === 'test.json'), '目录列出应包含 test.json');
+    console.log('✅ client.listDir() PROPFIND XML 深度解析通过');
+
+    // 1.6 删除文件
+    await client.deleteFile('config/test.json');
+    assert.strictEqual(await client.exists('config/test.json'), false, '文件删除后 exists 应返回 false');
+    console.log('✅ client.deleteFile() 通过');
+
+    // -------------------------------------------------------------
+    // 测试组 2: SyncManager 核心双向同步与 Smart Merge
+    // -------------------------------------------------------------
+    console.log('\n--- 2. 测试 SyncManager 双向差量同步与 Smart Merge ---');
+
+    // 模拟本地环境 localStorage
+    const localMemoryStorage = new Map();
+    global.localStorage = {
+      getItem: (k) => localMemoryStorage.get(k) || null,
+      setItem: (k, v) => localMemoryStorage.set(k, String(v)),
+      removeItem: (k) => localMemoryStorage.delete(k),
+      clear: () => localMemoryStorage.clear()
+    };
+
+    const mockLibrary = new MockBookLibrary();
+    const syncMgr = new SyncManager(mockLibrary);
+
+    // 2.1 初始本地模式校验
+    assert.strictEqual(syncMgr.isWebDAVEnabled(), false, '默认纯本地模式下 WebDAV 应当处于未启用状态');
+    console.log('✅ 默认本地纯离线模式校验通过');
+
+    // 2.2 配置为 WebDAV 模式
+    await syncMgr.saveConfig({
+      storageMode: 'webdav',
+      endpoint,
+      username: 'testuser',
+      password: 'secret123',
+      remotePath: '/EdgeReader',
+      syncMode: 'all',
+      autoSyncOnOpen: true,
+      autoSyncOnProgress: true
+    });
+    assert.strictEqual(syncMgr.isWebDAVEnabled(), true, '配置有效后 WebDAV 应当处于启用状态');
+    console.log('✅ 动态切换到 WebDAV 模式配置保存通过');
+
+    // 2.3 添加书籍并上传同步 (本地 -> 远端)
+    await mockLibrary.addBook({
+      id: 'book_001',
+      title: '三体',
+      author: '刘慈欣',
+      format: 'epub',
+      size: 10240,
+      addedAt: Date.now() - 10000,
+      lastReadAt: Date.now() - 5000,
+      progress: { percent: 45.5, chapterIndex: 4 },
+      bookmarks: [{ bookmarkId: 'bm1', chapterIndex: 2 }],
+      notes: [{ noteId: 'note1', text: '消灭人类暴政，世界属于三体' }],
+      stats: { totalTime: 120, readingDays: { '2026-11-16': 120 }, hourlyDist: {} }
+    });
+
+    const sync1 = await syncMgr.syncAll();
+    assert.strictEqual(sync1.success, true, '初次全量同步应当成功');
+    assert.strictEqual(await client.exists('records/book_book_001.json'), true, '远端应生成书籍记录');
+    assert.strictEqual(await client.exists('library.json'), true, '远端应生成全库索引');
+    console.log('✅ 本地新书同步至远端通过');
+
+    // 2.4 测试阅读进度防零覆盖与 LWW 冲突合并 (远端 -> 本地)
+    console.log('\n--- 3. 测试阅读进度防零覆盖与冲突合并算法 ---');
+    // 模拟新设备 B 接入：本地有一本刚导入的同名书，但进度为 0%
+    const mockLibraryB = new MockBookLibrary();
+    const syncMgrB = new SyncManager(mockLibraryB);
+    await syncMgrB.saveConfig({
+      storageMode: 'webdav',
+      endpoint,
+      username: 'testuser',
+      password: 'secret123',
+      remotePath: '/EdgeReader'
+    });
+
+    // 设备 B 本地刚导入书，进度为 0
+    await mockLibraryB.addBook({
+      id: 'book_001',
+      title: '三体',
+      author: '刘慈欣',
+      format: 'epub',
+      progress: { percent: 0, chapterIndex: 0 },
+      lastReadAt: 0,
+      notes: []
+    });
+
+    // 执行设备 B 的同步，应拉取远端的 45.5% 进度，而绝不被 0 覆盖
+    await syncMgrB.syncAll();
+    const bookOnB = await mockLibraryB.getBookMetadata('book_001');
+    assert.strictEqual(bookOnB.progress.percent, 45.5, '防零覆盖：新设备空进度应被远端有效进度覆盖');
+    assert.strictEqual(bookOnB.notes.length, 1, '远端笔记应当完整同步到设备 B');
+    console.log('✅ 防零覆盖算法 (Anti-Zero Overwrite) 验证通过');
+
+    // 2.5 测试两端独立加笔记的求并集 (Union & Dedup)
+    console.log('\n--- 4. 测试划线笔记集合求并与无损去重 ---');
+    // 设备 B 上新增笔记 2
+    bookOnB.notes.push({ noteId: 'note2', text: '给岁月以文明，而不是给文明以岁月' });
+    bookOnB.lastReadAt = Date.now() + 1000;
+    bookOnB.progress.percent = 60;
+    await syncMgrB.syncSingleBookRecord('book_001', bookOnB);
+
+    // 设备 A 上同步，应当获取 note2 且保留原有的 note1
+    await syncMgr.syncAll();
+    const bookOnA = await mockLibrary.getBookMetadata('book_001');
+    assert.strictEqual(bookOnA.notes.length, 2, '两端笔记应当合并为 2 条');
+    assert.strictEqual(bookOnA.progress.percent, 60, '设备 B 的最新阅读进度应成功同步至设备 A');
+    console.log('✅ 划线笔记集合求并与进度更新验证通过');
+
+    // 2.6 测试书籍删除墓碑机制 (Tombstone)
+    console.log('\n--- 5. 测试删除书籍墓碑同步 (Tombstone) ---');
+    // 设备 A 删除了书籍 book_001
+    await mockLibrary.deleteBook('book_001');
+    await syncMgr.handleDeleteBook('book_001');
+
+    // 设备 B 执行同步，应该根据墓碑自动清理设备 B 上的该书，防止“僵尸复活”
+    await syncMgrB.syncAll();
+    const deletedOnB = await mockLibraryB.getBookMetadata('book_001');
+    assert.strictEqual(deletedOnB, null, '设备 B 应当根据墓碑自动清除被删除的书籍');
+    console.log('✅ 删除书籍墓碑清理机制验证通过');
+
+    // 2.7 测试高频阅读防抖轻量推送
+    console.log('\n--- 6. 测试阅读翻页单书记录轻量推送 ---');
+    await mockLibrary.addBook({
+      id: 'book_002',
+      title: '百年孤独',
+      format: 'txt',
+      lastReadAt: Date.now(),
+      progress: { percent: 12 }
+    });
+    await syncMgr.syncSingleBookRecord('book_002');
+    const rec002 = await client.getFile('records/book_book_002.json', 'json');
+    assert.strictEqual(rec002.progress.percent, 12, '单书轻量记录应毫秒级推送至远端');
+    console.log('✅ 单书轻量快速推送验证通过');
+
+    console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
+  } finally {
+    server.close();
+  }
+}
+
+runTests().catch(err => {
+  console.error('\n❌ 测试失败:', err);
+  process.exit(1);
+});
