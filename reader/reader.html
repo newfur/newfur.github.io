@@ -665,6 +665,38 @@
     </div>
   </div>
 
+  <!-- ==================== 資料夾快捷操作選單 (Folder Action Sheet) ==================== -->
+  <div id="folder-action-sheet" class="book-action-sheet panel-glass">
+    <div class="action-sheet-handle-bar">
+      <div class="action-sheet-handle"></div>
+    </div>
+    <div class="action-sheet-header">
+      <div class="action-sheet-icon-box" style="width: 44px; height: 44px; border-radius: 12px; background: rgba(10, 132, 255, 0.15); color: #0a84ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg class="svg-icon" style="width: 24px; height: 24px;" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      </div>
+      <div class="action-sheet-info" style="display: flex; flex-direction: column; justify-content: center;">
+        <div class="action-sheet-title" id="folder-action-sheet-title">Folder</div>
+      </div>
+    </div>
+    <div class="action-sheet-items">
+      <button id="folder-action-sheet-rename-btn" class="action-sheet-item" type="button">
+        <div class="action-sheet-icon-box" style="background: rgba(10, 132, 255, 0.15); color: #0a84ff;">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        </div>
+        <span class="action-sheet-label" data-i18n="rename_folder">Rename Folder</span>
+      </button>
+      <button id="folder-action-sheet-delete-btn" class="action-sheet-item danger" type="button">
+        <div class="action-sheet-icon-box delete-icon">
+          <svg class="svg-icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        </div>
+        <span class="action-sheet-label" data-i18n="delete_folder">Delete Folder</span>
+      </button>
+    </div>
+    <div class="action-sheet-footer">
+      <button id="folder-action-sheet-cancel-btn" class="action-sheet-cancel-btn" type="button" data-i18n="btn_cancel">Cancel</button>
+    </div>
+  </div>
+
   <!-- ==================== 閱讀統計對話框 (Statistics Modal) ==================== -->
   <div id="stats-modal-backdrop" class="stats-modal-backdrop"></div>
   <div id="stats-modal" class="stats-modal panel-glass">

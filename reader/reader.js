@@ -612,8 +612,9 @@ function initUIEventBindings() {
     statsBackdrop.addEventListener('click', closeStatsModal);
   }
 
-  // 書籍快捷操作抽屜 (Book Action Sheet)
+  // 書籍與資料夾快捷操作抽屜 (Action Sheets)
   initBookActionSheet();
+  initFolderActionSheet();
 
   // 書庫行為
   const importBtn = document.getElementById('import-btn');
@@ -3397,12 +3398,15 @@ async function renderBookshelf(searchQuery = '') {
         <button class="folder-action-btn folder-rename-btn" title="${getMsg('rename_folder') || '重命名'}">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
-        <button class="folder-action-btn folder-delete-btn" title="${getMsg('delete_folder') || getMsg('delete_book_title') || '刪除'}">
-          <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        <button class="folder-action-btn folder-more-btn" title="${getMsg('action_sheet_more') || '更多'}">
+          <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="2"></circle>
+            <circle cx="19" cy="12" r="2"></circle>
+            <circle cx="5" cy="12" r="2"></circle>
+          </svg>
         </button>
         <div class="folder-icon-container">
           ${coverGridHtml}
-          <span class="folder-count-badge">${count}</span>
         </div>
         <div class="folder-info">
           <h3 class="folder-title" title="${folderName}">${folderName}</h3>
@@ -3418,7 +3422,7 @@ async function renderBookshelf(searchQuery = '') {
         </div>
       `;
 
-      // 觸控長按事件（移動端長按資料夾卡片彈出重命名對話框）
+      // 觸控長按事件（移動端長按資料夾卡片彈出資料夾操作選單）
       let folderLongPressTimer = null;
       let folderTouchStartX = 0;
       let folderTouchStartY = 0;
@@ -3437,7 +3441,7 @@ async function renderBookshelf(searchQuery = '') {
           if (navigator.vibrate) {
             try { navigator.vibrate(40); } catch (_) {}
           }
-          openFolderDialog(folderName);
+          showFolderActionSheet(folderName);
         }, 450);
       }, { passive: true });
 
@@ -3461,11 +3465,11 @@ async function renderBookshelf(searchQuery = '') {
         }
       });
 
-      // 右鍵菜單（桌面端右鍵呼出重命名對話框）
+      // 右鍵菜單（桌面端右鍵呼出資料夾操作選單）
       folderCard.addEventListener('contextmenu', (e) => {
         if (!isSelectMode) {
           e.preventDefault();
-          openFolderDialog(folderName);
+          showFolderActionSheet(folderName);
         }
       });
 
@@ -3486,11 +3490,14 @@ async function renderBookshelf(searchQuery = '') {
         openFolderDialog(folderName);
       });
 
-      // 刪除事件
-      folderCard.querySelector('.folder-delete-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteFolder(folderName);
-      });
+      // 更多操作選單事件
+      const folderMoreBtn = folderCard.querySelector('.folder-more-btn');
+      if (folderMoreBtn) {
+        folderMoreBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showFolderActionSheet(folderName);
+        });
+      }
 
       shelf.appendChild(folderCard);
     } else if (item.type === 'book') {
@@ -3515,13 +3522,6 @@ async function renderBookshelf(searchQuery = '') {
         </button>
         <button class="book-export-btn" title="${getMsg('export_book_title')}">
           <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        </button>
-        <button class="book-stats-btn" title="${getMsg('stats_btn_tooltip')}">
-          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
-            <line x1="18" y1="20" x2="18" y2="10"></line>
-            <line x1="12" y1="20" x2="12" y2="4"></line>
-            <line x1="6" y1="20" x2="6" y2="14"></line>
-          </svg>
         </button>
         <button class="book-more-btn" title="${getMsg('action_sheet_more')}">
           <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
@@ -3607,7 +3607,6 @@ async function renderBookshelf(searchQuery = '') {
             </div>
             <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
           </div>
-          <span class="book-format-badge">${book.format}</span>
         `;
       } else {
         coverContainer.innerHTML = `
@@ -3617,7 +3616,6 @@ async function renderBookshelf(searchQuery = '') {
             </div>
             <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
           </div>
-          <span class="book-format-badge">${book.format}</span>
         `;
 
         // 如果該書籍無封面，但存在源文件且為支援格式（如歷史版本導入時遺留無封面的書籍），異步在後台嘗試重新提取封面並自動修復補全
@@ -3639,15 +3637,6 @@ async function renderBookshelf(searchQuery = '') {
         event.stopPropagation();
         await exportBookHandler(book.id);
       });
-
-      // 動態綁定統計事件
-      const statsCardBtn = card.querySelector('.book-stats-btn');
-      if (statsCardBtn) {
-        statsCardBtn.addEventListener('click', async (event) => {
-          event.stopPropagation();
-          await openSingleBookStatsModal(book.id);
-        });
-      }
 
       // 動態綁定更多操作按鈕事件
       const moreBtn = card.querySelector('.book-more-btn');
@@ -3755,12 +3744,14 @@ function renderBookSyncBadge(card, book) {
   if (typeof syncManager === 'undefined' || !syncManager.isWebDAVEnabled()) {
     const existingBadge = card.querySelector('.book-sync-badge');
     if (existingBadge) existingBadge.remove();
+    card.classList.remove('has-sync-badge');
     return;
   }
   const statusInfo = syncManager.getBookSyncStatus(book.id, book);
   if (!statusInfo) {
     const existingBadge = card.querySelector('.book-sync-badge');
     if (existingBadge) existingBadge.remove();
+    card.classList.remove('has-sync-badge');
     return;
   }
 
@@ -3770,6 +3761,8 @@ function renderBookSyncBadge(card, book) {
   // 避免重复注入
   const existingBadge = coverContainer.querySelector('.book-sync-badge');
   if (existingBadge) existingBadge.remove();
+
+  card.classList.add('has-sync-badge');
 
   const badge = document.createElement('div');
   const badgeCls = statusInfo.status.replace(/_/g, '-');
@@ -4197,6 +4190,7 @@ function initBookActionSheet() {
       e.stopPropagation();
     }
     hideBookActionSheet();
+    hideFolderActionSheet();
   };
 
   if (backdrop) {
@@ -4321,6 +4315,91 @@ function initBookActionSheet() {
 }
 window.showBookActionSheet = showBookActionSheet;
 window.hideBookActionSheet = hideBookActionSheet;
+
+// ==================== 資料夾快捷操作選單 (Folder Action Sheet) 管理 ====================
+let currentActionSheetFolderName = null;
+
+function showFolderActionSheet(folderName) {
+  try {
+    const backdrop = document.getElementById('book-action-sheet-backdrop');
+    const sheet = document.getElementById('folder-action-sheet');
+    if (!backdrop || !sheet) return;
+
+    currentActionSheetFolderName = folderName;
+
+    const titleEl = document.getElementById('folder-action-sheet-title');
+    if (titleEl) titleEl.textContent = folderName || 'Folder';
+
+    backdrop.style.display = 'block';
+    void backdrop.offsetHeight;
+    backdrop.classList.add('active');
+    sheet.classList.add('active');
+  } catch (err) {
+    console.error('Error showing folder action sheet:', err);
+  }
+}
+
+function hideFolderActionSheet() {
+  const backdrop = document.getElementById('book-action-sheet-backdrop');
+  const sheet = document.getElementById('folder-action-sheet');
+  if (backdrop) {
+    backdrop.classList.remove('active');
+    backdrop.style.display = 'none';
+  }
+  if (sheet) {
+    sheet.classList.remove('active');
+  }
+  currentActionSheetFolderName = null;
+}
+
+function initFolderActionSheet() {
+  const backdrop = document.getElementById('book-action-sheet-backdrop');
+  const sheet = document.getElementById('folder-action-sheet');
+  const cancelBtn = document.getElementById('folder-action-sheet-cancel-btn');
+  const renameBtn = document.getElementById('folder-action-sheet-rename-btn');
+  const deleteBtn = document.getElementById('folder-action-sheet-delete-btn');
+  const handleBar = sheet ? sheet.querySelector('.action-sheet-handle-bar') : null;
+
+  const onDismiss = (e) => {
+    if (e) {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+    }
+    hideFolderActionSheet();
+  };
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', onDismiss);
+    cancelBtn.addEventListener('touchend', onDismiss, { passive: false });
+  }
+  if (handleBar) {
+    handleBar.addEventListener('click', onDismiss);
+  }
+
+  if (renameBtn) {
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const folderName = currentActionSheetFolderName;
+      hideFolderActionSheet();
+      if (folderName) {
+        openFolderDialog(folderName);
+      }
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const folderName = currentActionSheetFolderName;
+      hideFolderActionSheet();
+      if (folderName) {
+        await deleteFolder(folderName);
+      }
+    });
+  }
+}
+window.showFolderActionSheet = showFolderActionSheet;
+window.hideFolderActionSheet = hideFolderActionSheet;
 
 // ==================== 閱讀時間統計管理邏輯 ====================
 function startReadingTracker(bookId) {

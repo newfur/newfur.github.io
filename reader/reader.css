@@ -689,19 +689,7 @@ button, select, input {
 }
 
 .book-format-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  background-color: rgba(0, 0, 0, 0.6);
-  color: #ffffff;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  z-index: 4;
+  display: none !important;
 }
 
 /* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中 - 位於封面右下角，避免與左上角「更多操作...」按鈕重疊) */
@@ -825,10 +813,10 @@ button, select, input {
   transition: width 0.3s ease;
 }
 
-/* 刪除按鈕 */
+/* 刪除按鈕 (位於封面左下角) */
 .book-delete-btn {
   position: absolute;
-  top: 10px;
+  bottom: 10px;
   left: 10px;
   width: 28px;
   height: 28px;
@@ -842,7 +830,7 @@ button, select, input {
   justify-content: center;
   font-size: 12px;
   opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -858,10 +846,10 @@ button, select, input {
   background-color: rgba(255, 59, 48, 1);
 }
 
-/* 匯出按鈕 */
+/* 匯出按鈕 (位於封面左下角第二個) */
 .book-export-btn {
   position: absolute;
-  top: 10px;
+  bottom: 10px;
   left: 44px; /* 10 + 28 + 6 = 44px */
   width: 28px;
   height: 28px;
@@ -875,7 +863,7 @@ button, select, input {
   justify-content: center;
   font-size: 12px;
   opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -3764,27 +3752,22 @@ html.transition-none .page-texture-slide {
   font-size: 12px;
   opacity: 0;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+/* 阅读统计图标（按用户需求从卡片封面移除，在···菜单中查看） */
+.book-stats-btn {
+  display: none !important;
 }
 
-@media (hover: hover) {
-  .book-card:hover .book-stats-btn {
-    opacity: 1;
-  }
-}
-
-/* Individual Book More Actions Button on Card */
+/* Individual Book More Actions Button on Card (位于封面右下角) */
 .book-more-btn {
   position: absolute;
-  top: 10px;
-  left: 112px; /* 78 + 28 + 6 = 112px */
+  bottom: 10px;
+  right: 10px;
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: rgba(0, 0, 0, 0.5);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   cursor: pointer;
@@ -3793,46 +3776,62 @@ html.transition-none .page-texture-slide {
   justify-content: center;
   font-size: 12px;
   opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease, right 0.2s ease;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+/* 当封面存在同步徽章时，更多按钮向左偏移避让 */
+.book-card.has-sync-badge .book-more-btn,
+.book-card:has(.book-sync-badge) .book-more-btn {
+  right: 40px;
+}
+
 @media (hover: hover) {
   .book-card:hover .book-more-btn {
-    opacity: 0.9;
+    opacity: 0.95;
   }
 }
 
 .book-more-btn:hover {
   transform: scale(1.1);
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.75);
 }
 
-@media (hover: none) {
-  .book-card .book-stats-btn,
+@media (hover: none), (pointer: coarse) {
   .book-card .book-delete-btn,
+  .book-card .book-export-btn,
+  .book-card .book-more-btn {
+    opacity: 0.88;
+    width: 26px;
+    height: 26px;
+    bottom: 8px;
+  }
+  .book-card .book-delete-btn {
+    left: 8px;
+  }
   .book-card .book-export-btn {
-    display: none !important;
+    left: 38px;
   }
   .book-card .book-more-btn {
-    left: 10px;
-    opacity: 0.85;
+    right: 8px;
   }
-}
-
-.book-stats-btn:hover {
-  transform: scale(1.1);
-  background-color: rgba(48, 209, 88, 1);
-}
-
-.book-stats-btn:hover .svg-icon {
-  animation: svg-pulse 0.6s ease-in-out infinite alternate;
-}
-
-@keyframes svg-pulse {
-  0% { transform: scale(1); }
-  100% { transform: scale(1.2); }
+  .book-card.has-sync-badge .book-more-btn,
+  .book-card:has(.book-sync-badge) .book-more-btn {
+    right: 36px;
+  }
+  .book-sync-badge {
+    bottom: 10px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+  }
+  .book-card .book-delete-btn:active,
+  .book-card .book-export-btn:active,
+  .book-card .book-more-btn:active {
+    transform: scale(0.92);
+    opacity: 1;
+  }
 }
 
 .book-time-badge {
@@ -4298,17 +4297,7 @@ html.transition-none .page-texture-slide {
 }
 
 .folder-count-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background-color: var(--primary-color);
-  color: #ffffff;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(10, 132, 255, 0.3);
-  z-index: 10;
+  display: none !important;
 }
 
 .folder-info {
@@ -4339,10 +4328,10 @@ html.transition-none .page-texture-slide {
   text-overflow: ellipsis;
 }
 
-/* 重命名與刪除按鈕，顯示在 hover 上 */
+/* 重命名與更多按鈕 (位於資料夾封面底部，刪除圖標已移除防誤觸) */
 .folder-card .folder-rename-btn {
   position: absolute;
-  top: 10px;
+  bottom: 10px;
   left: 10px;
   width: 28px;
   height: 28px;
@@ -4355,67 +4344,75 @@ html.transition-none .page-texture-slide {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+  z-index: 20;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.folder-card .folder-more-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 20;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .folder-card .folder-delete-btn {
-  position: absolute;
-  top: 10px;
-  left: 44px; /* 10 + 28 + 6 = 44px */
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background-color: rgba(255, 59, 48, 0.9);
-  color: #ffffff;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  z-index: 20;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  display: none !important;
 }
 
 @media (hover: hover) {
   .folder-card:hover .folder-rename-btn,
-  .folder-card:hover .folder-delete-btn {
-    opacity: 1;
+  .folder-card:hover .folder-more-btn {
+    opacity: 0.95;
   }
 }
 
 @media (hover: none), (pointer: coarse) {
   .folder-card .folder-rename-btn,
-  .folder-card .folder-delete-btn {
+  .folder-card .folder-more-btn {
     opacity: 0.88;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
+    bottom: 8px;
   }
-  .folder-card .folder-delete-btn {
-    left: 46px;
+  .folder-card .folder-rename-btn {
+    left: 8px;
+  }
+  .folder-card .folder-more-btn {
+    right: 8px;
   }
 }
 
 .folder-card .folder-rename-btn:active,
-.folder-card .folder-delete-btn:active {
+.folder-card .folder-more-btn:active {
   transform: scale(0.92);
   opacity: 1;
 }
 
-.folder-card .folder-rename-btn:hover,
-.folder-card .folder-delete-btn:hover {
-  transform: scale(1.1);
-}
-
 .folder-card .folder-rename-btn:hover {
+  transform: scale(1.1);
   background-color: rgba(10, 132, 255, 1);
 }
 
-.folder-card .folder-delete-btn:hover {
-  background-color: rgba(255, 59, 48, 1);
+.folder-card .folder-more-btn:hover {
+  transform: scale(1.1);
+  background-color: rgba(0, 0, 0, 0.75);
 }
 
 /* 批量管理底部操作欄 */
@@ -4464,7 +4461,9 @@ html.transition-none .page-texture-slide {
 .bookshelf-grid.select-mode-active .book-card .book-delete-btn,
 .bookshelf-grid.select-mode-active .book-card .book-export-btn,
 .bookshelf-grid.select-mode-active .book-card .book-stats-btn,
-.bookshelf-grid.select-mode-active .book-card .book-more-btn {
+.bookshelf-grid.select-mode-active .book-card .book-more-btn,
+.bookshelf-grid.select-mode-active .folder-card .folder-rename-btn,
+.bookshelf-grid.select-mode-active .folder-card .folder-more-btn {
   display: none !important;
 }
 
