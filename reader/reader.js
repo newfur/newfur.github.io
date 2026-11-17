@@ -2170,11 +2170,11 @@ function initUIEventBindings() {
       if (status.state === 'syncing') {
         if (syncIconSvg) syncIconSvg.style.animation = 'spin 1s linear infinite';
         if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_syncing') || 'Syncing...';
-        if (syncHeaderBtn) syncHeaderBtn.disabled = true;
+        if (menuSyncBtn) menuSyncBtn.disabled = true;
       } else if (status.state === 'success') {
         if (syncIconSvg) syncIconSvg.style.animation = '';
         if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_success') || 'Synced';
-        if (syncHeaderBtn) syncHeaderBtn.disabled = false;
+        if (menuSyncBtn) menuSyncBtn.disabled = false;
         if (status.hasLocalChanges && typeof renderBookshelf === 'function') {
           renderBookshelf().catch(() => {});
         } else if (typeof updateAllBookshelfSyncBadges === 'function') {
@@ -2182,23 +2182,23 @@ function initUIEventBindings() {
         }
         setTimeout(() => {
           if (syncBtnText && syncManager.state === 'success') {
-            syncBtnText.textContent = getMsg('sync_status_idle') || 'Sync';
+            syncBtnText.textContent = getMsg('sync_btn_tooltip') || 'Cloud Sync';
           }
         }, 2500);
       } else if (status.state === 'error') {
         if (syncIconSvg) syncIconSvg.style.animation = '';
         if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_error') || 'Sync Error';
-        if (syncHeaderBtn) {
-          syncHeaderBtn.disabled = false;
-          syncHeaderBtn.title = status.lastError || (getMsg('sync_status_error') || 'Sync Error');
+        if (menuSyncBtn) {
+          menuSyncBtn.disabled = false;
+          menuSyncBtn.title = status.lastError || (getMsg('sync_status_error') || 'Sync Error');
         }
         if (typeof updateAllBookshelfSyncBadges === 'function') {
           updateAllBookshelfSyncBadges();
         }
       } else {
         if (syncIconSvg) syncIconSvg.style.animation = '';
-        if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_idle') || 'Sync';
-        if (syncHeaderBtn) syncHeaderBtn.disabled = false;
+        if (syncBtnText) syncBtnText.textContent = getMsg('sync_btn_tooltip') || 'Cloud Sync';
+        if (menuSyncBtn) menuSyncBtn.disabled = false;
         if (typeof updateAllBookshelfSyncBadges === 'function') {
           updateAllBookshelfSyncBadges();
         }

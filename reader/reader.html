@@ -69,13 +69,6 @@
             <span data-i18n="batch_manage">Manage</span>
           </button>
 
-          <button id="sync-header-btn" class="btn btn-secondary" data-i18n-title="sync_btn_tooltip" title="WebDAV Cloud Sync" style="display: none;">
-            <span class="btn-icon">
-              <svg id="sync-icon-svg" class="svg-icon" viewBox="0 0 24 24" style="transition: transform 0.3s ease;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
-            </span>
-            <span id="sync-btn-text" data-i18n="sync_status_idle">Sync</span>
-          </button>
-
           <div class="dropdown" id="more-actions-dropdown">
             <button id="more-actions-btn" class="btn btn-secondary" title="More Actions">
               <span class="btn-icon">
@@ -86,9 +79,9 @@
             <div class="dropdown-menu panel-glass">
               <button id="menu-sync-btn" class="dropdown-item" data-i18n-title="sync_btn_tooltip" title="WebDAV Cloud Sync">
                 <span class="btn-icon">
-                  <svg class="svg-icon" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+                  <svg id="sync-icon-svg" class="svg-icon" viewBox="0 0 24 24" style="transition: transform 0.3s ease;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
                 </span>
-                <span data-i18n="sync_btn_tooltip">Cloud Sync</span>
+                <span id="sync-btn-text" data-i18n="sync_btn_tooltip">Cloud Sync</span>
               </button>
               <button id="backup-btn" class="dropdown-item" data-i18n-title="backup_library_tooltip" title="Export Library Backup">
                 <span class="btn-icon">

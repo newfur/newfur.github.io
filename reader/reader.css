@@ -4118,12 +4118,13 @@ html.transition-none .page-texture-slide {
   display: flex;
   align-items: center;
   overflow: hidden;
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-width: 0;
 }
 
 @media (min-width: 769px) {
   .library-title-container {
+    flex-shrink: 0;
     max-width: 45%;
   }
 }
