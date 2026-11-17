@@ -512,7 +512,7 @@
     "message": "移動到分類"
   },
   "action_sheet_export_share": {
-    "message": "匯出 / 分享書籍"
+    "message": "下載 / 匯出書籍"
   },
   "cover_size_tooltip": {
     "message": "調整封面大小"

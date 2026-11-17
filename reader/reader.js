@@ -3395,18 +3395,20 @@ async function renderBookshelf(searchQuery = '') {
       }
       
       folderCard.innerHTML = `
-        <button class="folder-action-btn folder-rename-btn" title="${getMsg('rename_folder') || '重命名'}">
-          <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-        </button>
-        <button class="folder-action-btn folder-more-btn" title="${getMsg('action_sheet_more') || '更多'}">
-          <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="2"></circle>
-            <circle cx="19" cy="12" r="2"></circle>
-            <circle cx="5" cy="12" r="2"></circle>
-          </svg>
-        </button>
         <div class="folder-icon-container">
           ${coverGridHtml}
+          <div class="folder-cover-bottom-bar">
+            <button class="folder-action-btn folder-rename-btn" title="${getMsg('rename_folder') || '重命名'}">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </button>
+            <button class="folder-action-btn folder-more-btn" title="${getMsg('action_sheet_more') || '更多'}">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="2"></circle>
+                <circle cx="19" cy="12" r="2"></circle>
+                <circle cx="5" cy="12" r="2"></circle>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="folder-info">
           <h3 class="folder-title" title="${folderName}">${folderName}</h3>
@@ -3517,19 +3519,6 @@ async function renderBookshelf(searchQuery = '') {
         <div class="book-card-checkbox-overlay">
           <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </div>
-        <button class="book-delete-btn" title="${getMsg('delete_book_title')}">
-          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        </button>
-        <button class="book-export-btn" title="${getMsg('export_book_title')}">
-          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        </button>
-        <button class="book-more-btn" title="${getMsg('action_sheet_more')}">
-          <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="2"></circle>
-            <circle cx="19" cy="12" r="2"></circle>
-            <circle cx="5" cy="12" r="2"></circle>
-          </svg>
-        </button>
         <div class="book-cover-container">
           <!-- 封面將在此動態注入 -->
         </div>
@@ -3548,7 +3537,7 @@ async function renderBookshelf(searchQuery = '') {
         </div>
       `;
 
-      // 拖曳事件綁定
+      // 拖拽事件綁定
       card.setAttribute('draggable', 'true');
       card.addEventListener('dragstart', (e) => {
         if (isSelectMode) {
@@ -3598,6 +3587,21 @@ async function renderBookshelf(searchQuery = '') {
         }
       }
 
+      const bottomBarHtml = `
+        <div class="book-cover-bottom-bar">
+          <button class="book-delete-btn" title="${getMsg('delete_book_title') || '删除书籍'}">
+            <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          </button>
+          <button class="book-more-btn" title="${getMsg('action_sheet_more') || '更多'}">
+            <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="2"></circle>
+              <circle cx="19" cy="12" r="2"></circle>
+              <circle cx="5" cy="12" r="2"></circle>
+            </svg>
+          </button>
+        </div>
+      `;
+
       if (coverUrl) {
         coverContainer.innerHTML = `
           <img class="book-cover" src="${coverUrl}" alt="${book.title}">
@@ -3607,6 +3611,7 @@ async function renderBookshelf(searchQuery = '') {
             </div>
             <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
           </div>
+          ${bottomBarHtml}
         `;
       } else {
         coverContainer.innerHTML = `
@@ -3616,6 +3621,7 @@ async function renderBookshelf(searchQuery = '') {
             </div>
             <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
           </div>
+          ${bottomBarHtml}
         `;
 
         // 如果該書籍無封面，但存在源文件且為支援格式（如歷史版本導入時遺留無封面的書籍），異步在後台嘗試重新提取封面並自動修復補全
@@ -3626,17 +3632,21 @@ async function renderBookshelf(searchQuery = '') {
 
       // 動態綁定刪除事件
       const deleteBtn = card.querySelector('.book-delete-btn');
-      deleteBtn.addEventListener('click', async (event) => {
-        event.stopPropagation();
-        await deleteBookHandler(book.id);
-      });
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (event) => {
+          event.stopPropagation();
+          await deleteBookHandler(book.id);
+        });
+      }
 
-      // 動態綁定匯出事件
+      // 動態綁定匯出事件（若卡片上有則綁定，主要收納在更多選單中）
       const exportBtn = card.querySelector('.book-export-btn');
-      exportBtn.addEventListener('click', async (event) => {
-        event.stopPropagation();
-        await exportBookHandler(book.id);
-      });
+      if (exportBtn) {
+        exportBtn.addEventListener('click', async (event) => {
+          event.stopPropagation();
+          await exportBookHandler(book.id);
+        });
+      }
 
       // 動態綁定更多操作按鈕事件
       const moreBtn = card.querySelector('.book-more-btn');
@@ -3739,7 +3749,7 @@ async function renderBookshelf(searchQuery = '') {
   });
 }
 
-// 渲染单个书籍卡片上的云端同步状态徽章
+// // 渲染单个书籍卡片上的云端同步状态徽章
 function renderBookSyncBadge(card, book) {
   if (typeof syncManager === 'undefined' || !syncManager.isWebDAVEnabled()) {
     const existingBadge = card.querySelector('.book-sync-badge');
@@ -3758,8 +3768,11 @@ function renderBookSyncBadge(card, book) {
   const coverContainer = card.querySelector('.book-cover-container');
   if (!coverContainer) return;
 
+  const bottomBar = card.querySelector('.book-cover-bottom-bar');
+  const targetContainer = bottomBar || coverContainer;
+
   // 避免重复注入
-  const existingBadge = coverContainer.querySelector('.book-sync-badge');
+  const existingBadge = card.querySelector('.book-sync-badge');
   if (existingBadge) existingBadge.remove();
 
   card.classList.add('has-sync-badge');
@@ -3840,7 +3853,7 @@ function renderBookSyncBadge(card, book) {
     }
   });
 
-  coverContainer.appendChild(badge);
+  targetContainer.appendChild(badge);
 }
 
 // 批量刷新书架所有书籍卡片的云端同步徽章
@@ -3889,22 +3902,22 @@ async function repairMissingBookCover(book, coverContainer) {
         if (library._deletedBookIds && library._deletedBookIds.has(String(book.id))) return;
         book.cover = dataUrl;
         bookCoverCache.set(book.id, dataUrl);
-        coverContainer.innerHTML = `
-          <img class="book-cover" src="${dataUrl}" alt="${book.title}">
-          <div class="book-cover-placeholder" style="display: none;">
-            <div class="book-cover-placeholder-icon">
-              <svg class="svg-icon svg-icon-lg" style="color: var(--text-muted);" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-            </div>
-            <div style="font-size:10px; font-weight:600;">${book.format.toUpperCase()}</div>
-          </div>
-          <span class="book-format-badge">${book.format}</span>
-        `;
+        let img = coverContainer.querySelector('.book-cover');
+        if (!img) {
+          img = document.createElement('img');
+          img.className = 'book-cover';
+          img.alt = book.title;
+          coverContainer.insertBefore(img, coverContainer.firstChild);
+        }
+        img.src = dataUrl;
+        const placeholder = coverContainer.querySelector('.book-cover-placeholder');
+        if (placeholder) placeholder.style.display = 'none';
         await library.updateBookCover(book.id, dataUrl);
         console.log(`[Bookshelf] Automatically repaired and saved cover for book: "${book.title}"`);
       }
     }
   } catch (e) {
-    // 忽略自動修復中的異常（如臨時文件失效等），保持現有占位符
+    // 忽略自動修復中的異常（如臨時文件失效等），保持現有佔位符
   }
 }
 

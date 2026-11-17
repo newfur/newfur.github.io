@@ -512,7 +512,7 @@
     "message": "Move to Folder"
   },
   "action_sheet_export_share": {
-    "message": "Export / Share Book"
+    "message": "Download / Export Book"
   },
   "cover_size_tooltip": {
     "message": "Adjust Cover Size"
