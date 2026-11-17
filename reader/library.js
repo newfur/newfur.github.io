@@ -418,11 +418,35 @@ export class BookLibrary {
         };
       }
 
+      // 智慧合併資料夾歸屬 (如果遠端或備份包含 folder 變更，同步更新)
+      let mergedFolder = existingBook.folder;
+      if (backupBook.folder !== undefined) {
+        if (!existingBook.folder || backupLastRead >= existingLastRead) {
+          mergedFolder = backupBook.folder;
+        } else if (backupBook.folder !== null && existingBook.folder === null) {
+          mergedFolder = backupBook.folder;
+        }
+      }
+
+      // 若存在資料夾，自動確保該資料夾已記錄至自定義資料夾列表，確保書架能即刻呈現資料夾卡片
+      if (mergedFolder && typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('edgereader_custom_folders') || localStorage.getItem('custom_folders');
+          const list = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(list) && !list.includes(mergedFolder)) {
+            list.push(mergedFolder);
+            localStorage.setItem('edgereader_custom_folders', JSON.stringify(list));
+            localStorage.setItem('custom_folders', JSON.stringify(list));
+          }
+        } catch (_) {}
+      }
+
       mergedBook = {
         ...existingBook,
         file: backupBook.file || existingBook.file,
         cover: backupBook.cover || existingBook.cover,
         size: backupBook.size || existingBook.size,
+        folder: mergedFolder,
         progress: mergedProgress,
         bookmarks: mergedBookmarks,
         notes: mergedNotes,
@@ -434,6 +458,17 @@ export class BookLibrary {
       };
     } else {
       mergedBook = backupBook;
+      if (mergedBook.folder && typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('edgereader_custom_folders') || localStorage.getItem('custom_folders');
+          const list = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(list) && !list.includes(mergedBook.folder)) {
+            list.push(mergedBook.folder);
+            localStorage.setItem('edgereader_custom_folders', JSON.stringify(list));
+            localStorage.setItem('custom_folders', JSON.stringify(list));
+          }
+        } catch (_) {}
+      }
     }
 
     let cleanFile = mergedBook.file;

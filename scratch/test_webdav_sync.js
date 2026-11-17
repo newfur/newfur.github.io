@@ -226,6 +226,16 @@ class MockBookLibrary {
     return book;
   }
 
+  async updateBookFolder(id, folder) {
+    const book = this.books.get(id);
+    if (book) {
+      book.folder = folder;
+      book.lastReadAt = Date.now();
+      this.books.set(id, book);
+    }
+    return book;
+  }
+
   async addBook(book) {
     this.books.set(book.id, { ...book });
     if (book.file) {
@@ -677,6 +687,48 @@ async function runTests() {
     assert.ok(errorMsg401.includes('401 Unauthorized'), '应包含 401 Unauthorized 标识');
     assert.ok(errorMsg401.includes('排查建议'), '应包含详细排查建议');
     console.log('✅ 凭据自动清洗与 401 友好错误提示验证通过');
+
+    // 2.16 测试书籍文件夹移动与自定义文件夹双向同步
+    console.log('\n--- 15. 测试书籍移动至文件夹与自定义文件夹多端双向同步 ---');
+    await mockLibrary.addBook({
+      id: 'book_folder_test',
+      title: '流浪地球',
+      format: 'epub',
+      folder: null,
+      lastReadAt: Date.now() - 5000
+    });
+    await mockLibrary.updateBookFolder('book_folder_test', '科幻小说');
+    global.localStorage.setItem('edgereader_custom_folders', JSON.stringify(['科幻小说', '文学历史']));
+    global.localStorage.setItem('edgereader_settings_updated_at', String(Date.now()));
+    await syncMgr.syncSettings();
+    await syncMgr.syncAll({ silent: true, recordsOnly: true });
+
+    // 模拟客户端 F 同步 (原本处于根目录)
+    const mockLibraryFolder = new MockBookLibrary();
+    await mockLibraryFolder.addBook({
+      id: 'book_folder_test',
+      title: '流浪地球',
+      format: 'epub',
+      folder: null,
+      lastReadAt: 1000
+    });
+    const syncMgrFolder = new SyncManager(mockLibraryFolder);
+    await syncMgrFolder.saveConfig({
+      storageMode: 'webdav',
+      endpoint: `http://127.0.0.1:${port}`,
+      username: 'testuser',
+      password: 'secret123',
+      remotePath: '/EdgeReader'
+    });
+
+    await syncMgrFolder.syncSettings();
+    await syncMgrFolder.syncAll({ silent: true, recordsOnly: true });
+
+    const syncedBookB = await mockLibraryFolder.getBookMetadata('book_folder_test');
+    assert.strictEqual(syncedBookB.folder, '科幻小说', '客户端 F 上的图书应成功移动至“科幻小说”文件夹');
+    const bFolders = JSON.parse(global.localStorage.getItem('edgereader_custom_folders') || '[]');
+    assert.ok(bFolders.includes('科幻小说'), '客户端 F 的自定义文件夹列表应包含“科幻小说”');
+    console.log('✅ 书籍移动至文件夹与文件夹多端同步验证通过');
 
     console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
   } finally {

@@ -481,6 +481,9 @@ function initUIEventBindings() {
         }
         toggleSelectMode(false);
         await renderBookshelf();
+        if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+          syncManager.syncAll({ silent: true, recordsOnly: true }).catch(() => {});
+        }
       });
     });
   }
@@ -541,6 +544,9 @@ function initUIEventBindings() {
       if (bookId) {
         await library.updateBookFolder(bookId, null);
         await renderBookshelf();
+        if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+          syncManager.syncAll({ silent: true, recordsOnly: true }).catch(() => {});
+        }
       }
     });
   }
@@ -3296,6 +3302,9 @@ async function renderBookshelf(searchQuery = '') {
         if (bookId) {
           await library.updateBookFolder(bookId, folderName);
           await renderBookshelf();
+          if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+            syncManager.syncAll({ silent: true, recordsOnly: true }).catch(() => {});
+          }
         }
       });
 
@@ -4218,6 +4227,9 @@ function initBookActionSheet() {
         openFolderSelectDialog(async (folderName) => {
           await library.updateBookFolder(bookId, folderName);
           await renderBookshelf();
+          if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+            syncManager.syncAll({ silent: true, recordsOnly: true }).catch(() => {});
+          }
         });
       }
     });
@@ -13044,13 +13056,18 @@ window.openSingleBookStatsModal = openSingleBookStatsModal;
 
 // 獲取自定義資料夾列表
 function getCustomFolders() {
-  const foldersJson = localStorage.getItem('edgereader_custom_folders');
+  const foldersJson = localStorage.getItem('edgereader_custom_folders') || localStorage.getItem('custom_folders');
   return foldersJson ? JSON.parse(foldersJson) : [];
 }
 
 // 保存自定義資料夾列表
 function saveCustomFolders(folders) {
   localStorage.setItem('edgereader_custom_folders', JSON.stringify(folders));
+  localStorage.setItem('custom_folders', JSON.stringify(folders));
+  localStorage.setItem('edgereader_settings_updated_at', String(Date.now()));
+  if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+    syncManager.syncSettings().catch(() => {});
+  }
 }
 
 // 創建新資料夾
@@ -13095,6 +13112,9 @@ async function renameFolder(oldName, newName) {
   
   document.getElementById('folder-dialog').close();
   await renderBookshelf();
+  if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+    syncManager.syncAll({ silent: true, recordsOnly: true }).catch(() => {});
+  }
 }
 
 // 刪除資料夾
@@ -13121,6 +13141,9 @@ async function deleteFolder(folderName) {
     }
 
     await renderBookshelf();
+    if (typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled()) {
+      syncManager.syncAll({ silent: true, recordsOnly: true }).catch(() => {});
+    }
   }
 }
 

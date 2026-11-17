@@ -369,8 +369,14 @@ export class SyncManager {
   async syncSettings() {
     if (!this.client) return;
 
+    let localUpdatedAt = 0;
+    try {
+      localUpdatedAt = parseInt(localStorage.getItem('edgereader_settings_updated_at') || '0', 10);
+    } catch (_) {}
+
     const localSettings = {
-      updatedAt: Date.now(),
+      version: '1.0',
+      updatedAt: localUpdatedAt || Date.now(),
       theme: null,
       customFolders: null,
       aiPromptsTemplates: null,
@@ -384,7 +390,7 @@ export class SyncManager {
     } catch (e) {}
 
     try {
-      const rawFolders = localStorage.getItem('custom_folders');
+      const rawFolders = localStorage.getItem('edgereader_custom_folders') || localStorage.getItem('custom_folders');
       if (rawFolders) localSettings.customFolders = JSON.parse(rawFolders);
     } catch (e) {}
 
@@ -394,19 +400,38 @@ export class SyncManager {
       remoteSettings = await this.client.getFile('config/settings.json', 'json');
     } catch (e) {}
 
-    if (remoteSettings && remoteSettings.updatedAt > localSettings.updatedAt) {
-      // 远端更新，应用到本地
-      if (remoteSettings.theme && typeof remoteSettings.theme === 'object') {
-        localStorage.setItem('theme', JSON.stringify(remoteSettings.theme));
-      }
-      if (Array.isArray(remoteSettings.customFolders)) {
-        localStorage.setItem('custom_folders', JSON.stringify(remoteSettings.customFolders));
-      }
-      if (remoteSettings.coverWidth) {
-        localStorage.setItem('coverWidth', remoteSettings.coverWidth);
+    if (remoteSettings && typeof remoteSettings === 'object') {
+      const remoteUpdatedAt = Number(remoteSettings.updatedAt) || 0;
+
+      // 双向合并自定义文件夹列表，确保多端创建与重命名的文件夹都不丢失
+      const localFolders = Array.isArray(localSettings.customFolders) ? localSettings.customFolders : [];
+      const remoteFolders = Array.isArray(remoteSettings.customFolders) ? remoteSettings.customFolders : [];
+      const mergedFolders = Array.from(new Set([...localFolders, ...remoteFolders]));
+
+      if (remoteUpdatedAt > localUpdatedAt) {
+        // 远端更新，应用到本地
+        if (remoteSettings.theme && typeof remoteSettings.theme === 'object') {
+          localStorage.setItem('theme', JSON.stringify(remoteSettings.theme));
+        }
+        if (mergedFolders.length > 0) {
+          localStorage.setItem('edgereader_custom_folders', JSON.stringify(mergedFolders));
+          localStorage.setItem('custom_folders', JSON.stringify(mergedFolders));
+        }
+        if (remoteSettings.coverWidth) {
+          localStorage.setItem('coverWidth', remoteSettings.coverWidth);
+        }
+        localStorage.setItem('edgereader_settings_updated_at', String(remoteUpdatedAt));
+      } else {
+        // 本地更新或合并最新文件夹列表，推送到远端
+        localSettings.customFolders = mergedFolders;
+        if (mergedFolders.length > 0) {
+          localStorage.setItem('edgereader_custom_folders', JSON.stringify(mergedFolders));
+          localStorage.setItem('custom_folders', JSON.stringify(mergedFolders));
+        }
+        await this.client.putFile('config/settings.json', localSettings);
       }
     } else {
-      // 本地推送至远端
+      // 远端不存在，直接上传本地设置
       await this.client.putFile('config/settings.json', localSettings);
     }
   }
@@ -884,16 +909,18 @@ export class SyncManager {
           const remoteLastRead = Number(remoteRecord.lastReadAt) || 0;
           const remoteRecordUpdated = Number(remoteRecord.recordUpdatedAt) || remoteLastRead;
 
-          // 若远端更新，拉取并合并至本地
-          if (remoteRecordUpdated > localLastRead) {
+          const isRemoteNewer = remoteRecordUpdated > localLastRead;
+          const isLocalNewer = localLastRead > remoteRecordUpdated;
+
+          // 若远端更新或远端有新分类，拉取合并至本地；若本地更新或本地有新分类，推送到远端
+          if (isRemoteNewer || (remoteRecord.folder && !localBook.folder && !isLocalNewer)) {
             await this.library.importBook({
               ...localBook,
               ...remoteRecord,
               id
             });
             hasLocalChanges = true;
-          } else if (localLastRead > remoteRecordUpdated) {
-            // 本地更新，推送到远端
+          } else if (isLocalNewer || (localBook.folder && !remoteRecord.folder) || remoteRecord.folder !== localBook.folder) {
             await this.syncSingleBookRecord(id, localBook);
           }
         }
