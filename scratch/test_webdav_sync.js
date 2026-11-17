@@ -489,6 +489,39 @@ async function runTests() {
     assert.ok(Date.now() - Number(lastAttemptBefore) < 45000, '熔断时间戳应在保护期内');
     console.log('✅ 崩溃无限刷新死循环熔断保护验证通过');
 
+    // 2.11 测试单本 80MB~100MB+ 大书独立同步与状态查询
+    console.log('\n--- 10. 测试单本大书独立同步 (syncSingleBook) 与状态查询 (getBookSyncStatus) ---');
+    await mockLibrary.addBook({
+      id: 'book_giant',
+      title: '百兆高清插画全集',
+      format: 'pdf',
+      size: 95000000,
+      file: { size: 95000000, type: 'application/pdf' },
+      lastReadAt: Date.now()
+    });
+
+    // 查询同步前状态，应为未上传云端 (local_only)
+    const beforeStatus = syncMgr.getBookSyncStatus('book_giant');
+    assert.strictEqual(beforeStatus.status, 'local_only', '未同步前状态应为 local_only');
+
+    // 单本手动触发上传
+    await syncMgr.syncSingleBook('book_giant');
+    assert.strictEqual(await client.exists('books/book_giant.bin'), true, '大书二进制应成功上传');
+
+    // 查询同步后状态，应为已同步云端 (synced)
+    const afterStatus = syncMgr.getBookSyncStatus('book_giant');
+    assert.strictEqual(afterStatus.status, 'synced', '同步完成后状态应为 synced');
+    console.log('✅ 单本 80MB~100MB+ 大书独立上传与状态查询验证通过');
+
+    // 2.12 测试缺失二进制书籍在全量同步时自动补传
+    console.log('\n--- 11. 测试缺失二进制书籍在全量同步时自动补传 ---');
+    // 模拟仅有 records 但缺失 books/book_heavy.bin 的书籍
+    syncMgr.remoteBookCache.books['book_heavy'] = { id: 'book_heavy', hasRecord: true, hasBinary: false };
+    await syncMgr.syncAll({ recordsOnly: false, silent: true });
+    assert.strictEqual(await client.exists('books/book_heavy.bin'), true, '全量同步应自动补传远端缺失的大书二进制');
+    assert.strictEqual(syncMgr.getBookSyncStatus('book_heavy').status, 'synced', '补传后状态应为 synced');
+    console.log('✅ 缺失二进制大书自动补传验证通过');
+
     console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
   } finally {
     server.close();

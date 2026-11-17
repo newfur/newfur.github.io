@@ -2168,6 +2168,8 @@ function initUIEventBindings() {
         if (syncHeaderBtn) syncHeaderBtn.disabled = false;
         if (status.hasLocalChanges && typeof renderBookshelf === 'function') {
           renderBookshelf().catch(() => {});
+        } else if (typeof updateAllBookshelfSyncBadges === 'function') {
+          updateAllBookshelfSyncBadges();
         }
         setTimeout(() => {
           if (syncBtnText && syncManager.state === 'success') {
@@ -3637,7 +3639,100 @@ async function renderBookshelf(searchQuery = '') {
         }
       });
       
+      // 渲染 WebDAV 云端同步状态徽章 (已同步 / 待上传 / 同步中)
+      renderBookSyncBadge(card, book);
+
       shelf.appendChild(card);
+    }
+  });
+}
+
+// 渲染单个书籍卡片上的云端同步状态徽章
+function renderBookSyncBadge(card, book) {
+  if (typeof syncManager === 'undefined' || !syncManager.isWebDAVEnabled()) return;
+  const statusInfo = syncManager.getBookSyncStatus(book.id, book);
+  if (!statusInfo) return;
+
+  const coverContainer = card.querySelector('.book-cover-container');
+  if (!coverContainer) return;
+
+  // 避免重复注入
+  const existingBadge = coverContainer.querySelector('.book-sync-badge');
+  if (existingBadge) existingBadge.remove();
+
+  const badge = document.createElement('div');
+  const badgeCls = statusInfo.status.replace(/_/g, '-');
+  badge.className = `book-sync-badge ${badgeCls}`;
+  badge.title = statusInfo.label;
+  badge.setAttribute('data-book-id', book.id);
+
+  let iconSvg = '';
+  if (statusInfo.status === 'synced') {
+    // ☁️ 已同步：云朵 + 对勾
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path><polyline points="9 13 11 15 15 11"></polyline></svg>`;
+  } else if (statusInfo.status === 'local_only') {
+    // ☁️↑ 仅本地 / 待上传：云朵 + 向上箭头
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path><polyline points="12 11 12 16"></polyline><polyline points="9 13 12 10 15 13"></polyline></svg>`;
+  } else if (statusInfo.status === 'syncing') {
+    // 正在同步：旋转动画
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>`;
+  } else if (statusInfo.status === 'cloud_only') {
+    // ☁️↓ 云端书籍待下载：云朵 + 向下箭头
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path><polyline points="12 10 12 15"></polyline><polyline points="9 13 12 16 15 13"></polyline></svg>`;
+  }
+
+  badge.innerHTML = iconSvg;
+
+  badge.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (statusInfo.status === 'local_only') {
+      const sizeMb = book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+      const confirmMsg = `是否将《${book.title}》${sizeMb}上传同步至 WebDAV 云端？`;
+      if (confirm(confirmMsg)) {
+        try {
+          badge.className = 'book-sync-badge syncing';
+          badge.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>`;
+          badge.title = '正在上传同步中...';
+          await syncManager.syncSingleBook(book.id, { uploadBinary: true });
+          renderBookSyncBadge(card, book);
+          alert(`《${book.title}》已成功上传至 WebDAV 云端！`);
+        } catch (err) {
+          alert(`同步上传失败: ${err.message || err}`);
+          renderBookSyncBadge(card, book);
+        }
+      }
+    } else if (statusInfo.status === 'synced') {
+      const sizeMb = book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+      if (confirm(`《${book.title}》${sizeMb}已与 WebDAV 云端保持同步。\n\n是否需要重新上传完整图书文件？`)) {
+        try {
+          badge.className = 'book-sync-badge syncing';
+          badge.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>`;
+          await syncManager.syncSingleBook(book.id, { uploadBinary: true });
+          renderBookSyncBadge(card, book);
+          alert(`《${book.title}》重新同步完成！`);
+        } catch (err) {
+          alert(`重新同步失败: ${err.message || err}`);
+          renderBookSyncBadge(card, book);
+        }
+      }
+    } else if (statusInfo.status === 'syncing') {
+      alert(`《${book.title}》正在同步中，请稍候...`);
+    }
+  });
+
+  coverContainer.appendChild(badge);
+}
+
+// 批量刷新书架所有书籍卡片的云端同步徽章
+function updateAllBookshelfSyncBadges() {
+  const cards = document.querySelectorAll('.book-card[data-id]');
+  cards.forEach(card => {
+    const bookId = card.getAttribute('data-id');
+    if (!bookId) return;
+    if (typeof library !== 'undefined') {
+      library.getBookMetadata(bookId).then(meta => {
+        if (meta) renderBookSyncBadge(card, meta);
+      }).catch(() => {});
     }
   });
 }
@@ -3912,6 +4007,26 @@ function showBookActionSheet(bookId, bookData = null) {
             </div>`;
         }
       }
+
+      // 更新 WebDAV 同步快捷选项状态
+      const syncBtn = document.getElementById('action-sheet-sync-btn');
+      const syncLabel = document.getElementById('action-sheet-sync-label');
+      if (syncBtn && typeof syncManager !== 'undefined') {
+        if (syncManager.isWebDAVEnabled()) {
+          syncBtn.style.display = 'flex';
+          const syncStatus = syncManager.getBookSyncStatus(book.id, book);
+          const sizeMb = book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+          if (syncStatus?.status === 'synced') {
+            if (syncLabel) syncLabel.textContent = `已同步至 WebDAV (重新同步)`;
+          } else if (syncStatus?.status === 'syncing') {
+            if (syncLabel) syncLabel.textContent = `WebDAV 同步进行中...`;
+          } else {
+            if (syncLabel) syncLabel.textContent = `上传原书至 WebDAV 云端${sizeMb}`;
+          }
+        } else {
+          syncBtn.style.display = 'none';
+        }
+      }
     };
 
     if (bookData) {
@@ -3940,6 +4055,7 @@ function hideBookActionSheet() {
 function initBookActionSheet() {
   const backdrop = document.getElementById('book-action-sheet-backdrop');
   const cancelBtn = document.getElementById('action-sheet-cancel-btn');
+  const syncBtn = document.getElementById('action-sheet-sync-btn');
   const statsBtn = document.getElementById('action-sheet-stats-btn');
   const exportBtn = document.getElementById('action-sheet-export-btn');
   const moveBtn = document.getElementById('action-sheet-move-btn');
@@ -3964,6 +4080,41 @@ function initBookActionSheet() {
   }
   if (handleBar) {
     handleBar.addEventListener('click', onDismiss);
+  }
+
+  // 绑定 WebDAV 单本同步按钮点击
+  if (syncBtn) {
+    syncBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const bookId = currentActionSheetBookId;
+      hideBookActionSheet();
+      if (!bookId || typeof syncManager === 'undefined') return;
+      try {
+        const book = await library.getBook(bookId);
+        const title = book ? book.title : '书籍';
+        const sizeMb = book && book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+        const confirmSync = confirm(`开始上传同步《${title}》${sizeMb}至 WebDAV 云端？`);
+        if (!confirmSync) return;
+
+        // 若书架卡片可见，将徽章置为同步中
+        const card = document.querySelector(`.book-card[data-id="${bookId}"]`);
+        if (card) {
+          const badge = card.querySelector('.book-sync-badge');
+          if (badge) {
+            badge.className = 'book-sync-badge syncing';
+            badge.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>`;
+          }
+        }
+
+        await syncManager.syncSingleBook(bookId, { uploadBinary: true });
+        alert(`《${title}》已成功同步至 WebDAV 云端！`);
+        if (typeof renderBookshelf === 'function') {
+          await renderBookshelf();
+        }
+      } catch (err) {
+        alert(`同步失败: ${err.message || err}`);
+      }
+    });
   }
 
   if (statsBtn) {

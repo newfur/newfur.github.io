@@ -15,6 +15,12 @@ export class SyncManager {
     this._syncLock = false;
     this._progressDebounceTimers = new Map();
 
+    this.remoteBookCache = {
+      updatedAt: 0,
+      books: {}
+    };
+    this._currentlySyncingBookId = null;
+
     // 默认配置
     this.config = {
       storageMode: 'local', // 'local' | 'webdav'
@@ -64,6 +70,17 @@ export class SyncManager {
       const savedTime = localStorage.getItem('edgereader_last_sync_time');
       if (savedTime) {
         this.lastSyncTime = parseInt(savedTime, 10) || 0;
+      }
+    } catch (e) {}
+
+    // 加载远端图书同步状态缓存
+    try {
+      const savedCache = localStorage.getItem('edgereader_remote_books_cache');
+      if (savedCache) {
+        const parsed = JSON.parse(savedCache);
+        if (parsed && typeof parsed.books === 'object') {
+          this.remoteBookCache = parsed;
+        }
       }
     } catch (e) {}
 
@@ -347,6 +364,139 @@ export class SyncManager {
     }
   }
 
+  // 保存远端图书状态缓存
+  _saveRemoteBookCache() {
+    try {
+      this.remoteBookCache.updatedAt = Date.now();
+      localStorage.setItem('edgereader_remote_books_cache', JSON.stringify(this.remoteBookCache));
+    } catch (e) {}
+  }
+
+  // 更新某本书在远端缓存中的状态
+  _updateRemoteBookCache(bookId, partialData) {
+    const id = String(bookId);
+    if (!this.remoteBookCache.books) this.remoteBookCache.books = {};
+    const existing = this.remoteBookCache.books[id] || { id, hasRecord: false, hasBinary: false, size: 0 };
+    this.remoteBookCache.books[id] = { ...existing, ...partialData, updatedAt: Date.now() };
+    this._saveRemoteBookCache();
+  }
+
+  // 获取单本书的同步状态
+  // 返回: null (未启用 WebDAV) | { status: 'syncing' | 'synced' | 'local_only' | 'cloud_only', label: string }
+  getBookSyncStatus(bookId, localBook = null) {
+    if (!this.isWebDAVEnabled()) return null;
+    const id = String(bookId);
+
+    // 正在同步中
+    if (this._currentlySyncingBookId === id) {
+      return { status: 'syncing', label: '正在同步...' };
+    }
+
+    const remoteInfo = this.remoteBookCache?.books?.[id];
+    const hasLocal = Boolean(localBook || (this.library && !this.library._deletedBookIds?.has(id)));
+
+    if (remoteInfo) {
+      if (remoteInfo.hasBinary) {
+        return { status: 'synced', label: '已同步云端' };
+      }
+      if (hasLocal) {
+        return { status: 'local_only', label: '未上传云端 (仅本地)' };
+      }
+      return { status: 'cloud_only', label: '云端书籍 (待下载)' };
+    }
+
+    if (hasLocal) {
+      return { status: 'local_only', label: '未上传云端 (仅本地)' };
+    }
+
+    return null;
+  }
+
+  // 单本书籍完整双向同步 / 上传 (可独立上传 70MB~100MB+ 大书)
+  async syncSingleBook(bookId, options = {}) {
+    if (!this.isWebDAVEnabled()) {
+      throw new Error('未配置或未启用 WebDAV 远程存储模式');
+    }
+
+    const id = String(bookId);
+    if (this._syncLock) {
+      throw new Error('当前正在进行全局同步，请稍候');
+    }
+
+    this._currentlySyncingBookId = id;
+    this._setState('syncing', null, { syncingBookId: id });
+
+    try {
+      await this._ensureRemoteDirectories();
+      const book = await this.library.getBook(id);
+      if (!book) throw new Error('本地未找到该书籍');
+
+      // 1. 同步轻量阅读记录
+      await this.syncSingleBookRecord(id, book);
+
+      // 2. 上传封面（若有且为 Blob）
+      if (book.cover && book.cover instanceof Blob) {
+        try {
+          await this.client.putFile(`covers/${id}.bin`, book.cover);
+        } catch (cErr) {
+          console.warn(`[SyncManager] Cover upload for book ${id} warning:`, cErr);
+        }
+      }
+
+      // 3. 上传原书文件（支持任意大体积文件：70MB~100MB+）
+      let binaryUploaded = false;
+      if (options.uploadBinary !== false && book.file) {
+        await this.client.putFile(`books/${id}.bin`, book.file);
+        binaryUploaded = true;
+      }
+
+      // 4. 更新远端 library.json 索引
+      let remoteLibrary = null;
+      try {
+        remoteLibrary = await this.client.getFile('library.json', 'json');
+      } catch (e) {}
+      if (!remoteLibrary || !Array.isArray(remoteLibrary.books)) {
+        remoteLibrary = { version: '1.0', updatedAt: 0, books: [] };
+      }
+
+      const existingIdx = remoteLibrary.books.findIndex(b => String(b.id) === id);
+      const bookMeta = {
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        format: book.format,
+        size: book.size || (book.file ? book.file.size : 0),
+        addedAt: book.addedAt,
+        lastReadAt: book.lastReadAt,
+        folder: book.folder || null
+      };
+
+      if (existingIdx >= 0) {
+        remoteLibrary.books[existingIdx] = { ...remoteLibrary.books[existingIdx], ...bookMeta };
+      } else {
+        remoteLibrary.books.push(bookMeta);
+      }
+      remoteLibrary.updatedAt = Date.now();
+      await this.client.putFile('library.json', remoteLibrary);
+
+      // 5. 更新本地状态缓存
+      this._updateRemoteBookCache(id, {
+        hasRecord: true,
+        hasBinary: binaryUploaded || Boolean(this.remoteBookCache.books?.[id]?.hasBinary),
+        size: bookMeta.size
+      });
+
+      this._setState('success', null, { syncedBookId: id, hasLocalChanges: false });
+      return { success: true };
+    } catch (err) {
+      console.error(`[SyncManager] Single book ${id} sync failed:`, err);
+      this._setState('error', err.message || String(err), { failedBookId: id });
+      throw err;
+    } finally {
+      this._currentlySyncingBookId = null;
+    }
+  }
+
   // 执行全量双向增量同步 (Sync All)
   // options.silent: 静默运行不弹窗
   // options.recordsOnly: 仅同步轻量阅读进度与配置，不传输原书大文件 (默认启动自动同步采用此模式)
@@ -414,6 +564,9 @@ export class SyncManager {
         try {
           await this.library.deleteBook(deletedId);
           hasLocalChanges = true;
+          if (this.remoteBookCache.books?.[deletedId]) {
+            delete this.remoteBookCache.books[deletedId];
+          }
         } catch (e) {}
       }
 
@@ -432,6 +585,19 @@ export class SyncManager {
       }
       const remoteBookMap = new Map(remoteLibrary.books.map(b => [String(b.id), b]));
 
+      // 预先初始化远端书籍缓存
+      for (const rb of remoteLibrary.books) {
+        const rId = String(rb.id);
+        const prev = this.remoteBookCache.books?.[rId] || {};
+        this.remoteBookCache.books[rId] = {
+          id: rId,
+          hasRecord: true,
+          hasBinary: prev.hasBinary || false,
+          size: rb.size || 0,
+          updatedAt: Date.now()
+        };
+      }
+
       // 7. 处理远端有、本地没有的书籍 (远端 -> 本地)
       for (const [remoteId, remoteMeta] of remoteBookMap.entries()) {
         if (localDeletedIds.has(remoteId)) continue;
@@ -445,9 +611,9 @@ export class SyncManager {
           const mergedMeta = { ...remoteMeta, ...(remoteRecord || {}) };
 
           // 若非 recordsOnly 且开启了完整同步模式，拉取书籍文件与封面
+          let fileBlob = null;
+          let coverBlob = null;
           if (!recordsOnly && this.config.syncMode === 'all') {
-            let fileBlob = null;
-            let coverBlob = null;
             try {
               fileBlob = await this.client.getFile(`books/${remoteId}.bin`, 'blob');
             } catch (fErr) {
@@ -464,6 +630,12 @@ export class SyncManager {
           // 导入本地书库
           await this.library.importBook(mergedMeta);
           hasLocalChanges = true;
+
+          this._updateRemoteBookCache(remoteId, {
+            hasRecord: true,
+            hasBinary: Boolean(fileBlob || this.remoteBookCache.books?.[remoteId]?.hasBinary),
+            size: remoteMeta.size
+          });
         }
       }
 
@@ -474,18 +646,20 @@ export class SyncManager {
           // 上传轻量阅读记录
           await this.syncSingleBookRecord(localId, localBook);
 
-          // 若非 recordsOnly 且处于完整同步模式，上传书籍二进制和封面
+          let hasBinary = false;
+          // 若非 recordsOnly 且处于完整同步模式，上传书籍二进制和封面（彻底解除 50MB 限制）
           if (!recordsOnly && this.config.syncMode === 'all') {
             try {
               const alreadyExists = await this.client.exists(`books/${localId}.bin`);
               if (!alreadyExists) {
                 const fullBook = await this.library.getBook(localId);
-                // 移动端安全内存保护：若单本原书超过 50MB 则避免后台直接上传
-                if (fullBook && fullBook.file && fullBook.file.size <= 50 * 1024 * 1024) {
+                if (fullBook && fullBook.file) {
+                  // 无体积封锁，支持 70MB~100MB+ 大书全量上传
                   await this.client.putFile(`books/${localId}.bin`, fullBook.file);
-                } else if (fullBook && fullBook.file && fullBook.file.size > 50 * 1024 * 1024) {
-                  console.warn(`[SyncManager] Book ${localId} file size (${fullBook.file.size} bytes) exceeds 50MB safety limit, skipping binary upload`);
+                  hasBinary = true;
                 }
+              } else {
+                hasBinary = true;
               }
 
               if (localBook.cover && localBook.cover instanceof Blob) {
@@ -500,10 +674,16 @@ export class SyncManager {
               console.warn(`[SyncManager] Failed to upload binary for book ${localId}:`, upErr);
             }
           }
+
+          this._updateRemoteBookCache(localId, {
+            hasRecord: true,
+            hasBinary,
+            size: localBook.size
+          });
         }
       }
 
-      // 9. 处理两端皆有的书籍 (双向差量 Smart Merge)
+      // 9. 处理两端皆有的书籍 (双向差量 Smart Merge & 缺失原书二进制自动补传)
       for (const [id, localBook] of localBookMap.entries()) {
         if (localDeletedIds.has(id)) continue;
         const remoteMeta = remoteBookMap.get(id);
@@ -533,6 +713,26 @@ export class SyncManager {
             await this.syncSingleBookRecord(id, localBook);
           }
         }
+
+        // 检查远端是否缺失原书二进制（例如之前被跳过或未上传的大书，自动补传）
+        if (!recordsOnly && this.config.syncMode === 'all') {
+          const cachedRemote = this.remoteBookCache?.books?.[id];
+          if (!cachedRemote || !cachedRemote.hasBinary) {
+            try {
+              const binExists = await this.client.exists(`books/${id}.bin`);
+              if (!binExists) {
+                const fullBook = await this.library.getBook(id);
+                if (fullBook && fullBook.file) {
+                  await this.client.putFile(`books/${id}.bin`, fullBook.file);
+                }
+              }
+              this._updateRemoteBookCache(id, { hasBinary: true });
+              await new Promise(r => setTimeout(r, 60));
+            } catch (binErr) {
+              console.warn(`[SyncManager] Failed to backfill binary for book ${id}:`, binErr);
+            }
+          }
+        }
       }
 
       // 10. 更新最新的远端书库索引与清单
@@ -557,11 +757,12 @@ export class SyncManager {
       manifest.updatedAt = Date.now();
       await this.client.putFile('records/sync_manifest.json', manifest);
 
-      // 11. 记录同步成功状态
+      // 11. 记录同步成功状态与持久化缓存
       this.lastSyncTime = Date.now();
       try {
         localStorage.setItem('edgereader_last_sync_time', String(this.lastSyncTime));
       } catch (e) {}
+      this._saveRemoteBookCache();
 
       this._setState('success', null, { hasLocalChanges });
       return { success: true, count: cleanIndexList.length, hasLocalChanges };

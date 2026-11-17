@@ -58,25 +58,53 @@ export class WebDAVClient {
   }
 
   // 统一底层 HTTP 发送请求
-  async request({ url, method = 'GET', headers = {}, body = null, responseType = 'text' }) {
+  async request({ url, method = 'GET', headers = {}, body = null, responseType = 'text', timeout = null }) {
     const finalHeaders = { ...headers };
     const auth = this._getAuthHeader();
     if (auth && !finalHeaders['Authorization']) {
       finalHeaders['Authorization'] = auth;
     }
 
+    const effectiveTimeout = timeout || this.timeout;
+
+    // 在 Capacitor 原生环境下，如果上传的是大体积 Blob（> 5MB），优先尝试 WebKit 原生流式 fetch
+    // 因为原生 fetch 支持底层零内存流式传输，避免将 100MB 二进制转为 Base64 造成 WebKit IPC 压力
+    if (this._isCapacitorNative() && body instanceof Blob && body.size > 5 * 1024 * 1024 && typeof window.CapacitorWebFetch === 'function') {
+      try {
+        const streamRes = await this._requestFetch({
+          url,
+          method,
+          headers: finalHeaders,
+          body,
+          responseType,
+          timeout: effectiveTimeout,
+          fetchFn: window.CapacitorWebFetch
+        });
+        if (streamRes && streamRes.ok) {
+          return streamRes;
+        }
+      } catch (streamErr) {
+        // 若遇到 CORS 等限制，安全自动降级到 Capacitor 原生网络插件
+        console.warn('[WebDAV] Native streaming fetch failed or restricted, falling back to CapacitorHttp:', streamErr.message);
+      }
+    }
+
     // 优先使用 Capacitor 原生 HTTP（iOS / Android 原生发包，免受任何同源策略拦截）
     if (this._isCapacitorNative()) {
-      return this._requestCapacitor({ url, method, headers: finalHeaders, body, responseType });
+      return this._requestCapacitor({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
     }
 
     // 默认使用浏览器 fetch
-    return this._requestFetch({ url, method, headers: finalHeaders, body, responseType });
+    return this._requestFetch({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
   }
 
-  async _requestFetch({ url, method, headers, body, responseType }) {
+  async _requestFetch({ url, method, headers, body, responseType, timeout = null, fetchFn = null }) {
+    const activeFetch = fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!activeFetch) throw new Error('No fetch implementation available');
+
+    const effectiveTimeout = timeout || this.timeout;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
+    const timer = controller ? setTimeout(() => controller.abort(), effectiveTimeout) : null;
 
     try {
       const fetchOptions = {
@@ -89,7 +117,7 @@ export class WebDAVClient {
         fetchOptions.body = body;
       }
 
-      const res = await fetch(url, fetchOptions);
+      const res = await activeFetch(url, fetchOptions);
       if (timer) clearTimeout(timer);
 
       let data;
@@ -113,7 +141,7 @@ export class WebDAVClient {
     } catch (err) {
       if (timer) clearTimeout(timer);
       if (err.name === 'AbortError') {
-        throw new Error(`WebDAV request timeout (${this.timeout}ms) for ${method} ${url}`);
+        throw new Error(`WebDAV request timeout (${effectiveTimeout}ms) for ${method} ${url}`);
       }
       throw err;
     }
@@ -161,8 +189,9 @@ export class WebDAVClient {
     return new Blob([bytes], { type: mimeType });
   }
 
-  async _requestCapacitor({ url, method, headers, body, responseType }) {
+  async _requestCapacitor({ url, method, headers, body, responseType, timeout = null }) {
     const CapHttp = window.Capacitor.Plugins.CapacitorHttp;
+    const effectiveTimeout = timeout || this.timeout;
 
     let payloadData = body;
     let dataType = undefined;
@@ -179,8 +208,8 @@ export class WebDAVClient {
       method,
       headers,
       data: payloadData,
-      connectTimeout: this.timeout,
-      readTimeout: this.timeout,
+      connectTimeout: effectiveTimeout,
+      readTimeout: effectiveTimeout,
       responseType: (responseType === 'blob' || responseType === 'arraybuffer') ? 'arraybuffer' : 'text'
     };
 
@@ -188,7 +217,14 @@ export class WebDAVClient {
       options.dataType = dataType;
     }
 
-    const res = await CapHttp.request(options);
+    let res;
+    try {
+      res = await CapHttp.request(options);
+    } finally {
+      // 显式清理大数据引用，协助 iOS 垃圾回收
+      payloadData = null;
+      options.data = null;
+    }
     let resultData = res.data;
 
     if (responseType === 'json' && typeof resultData === 'string') {
@@ -382,7 +418,7 @@ export class WebDAVClient {
   }
 
   // 上传文件 (PUT)
-  async putFile(relativePath, data, contentType = 'application/octet-stream') {
+  async putFile(relativePath, data, contentType = 'application/octet-stream', options = {}) {
     // 自动确保父级目录存在
     const cleanRel = relativePath.trim().replace(/\\/g, '/').replace(/^\/+/, '');
     const lastSlash = cleanRel.lastIndexOf('/');
@@ -393,7 +429,8 @@ export class WebDAVClient {
 
     const url = this.buildUrl(relativePath);
     const headers = {
-      'Content-Type': contentType
+      'Content-Type': contentType,
+      ...(options.headers || {})
     };
 
     let bodyData = data;
@@ -402,12 +439,19 @@ export class WebDAVClient {
       headers['Content-Type'] = 'application/json; charset=utf-8';
     }
 
+    // 自适应超时：对于超过 10MB 的大文件（如 70MB~100MB+），自动延长超时到 300 秒 (5分钟)
+    let timeout = options.timeout;
+    if (!timeout && data instanceof Blob && data.size > 10 * 1024 * 1024) {
+      timeout = 300000;
+    }
+
     const res = await this.request({
       url,
       method: 'PUT',
       headers,
       body: bodyData,
-      responseType: 'text'
+      responseType: 'text',
+      timeout
     });
 
     if (res.status === 200 || res.status === 201 || res.status === 204) {
@@ -417,12 +461,18 @@ export class WebDAVClient {
   }
 
   // 获取文件内容 (GET)
-  async getFile(relativePath, responseType = 'text') {
+  async getFile(relativePath, responseType = 'text', options = {}) {
     const url = this.buildUrl(relativePath);
+    let timeout = options.timeout;
+    if (!timeout && (responseType === 'blob' || responseType === 'arraybuffer')) {
+      timeout = 300000; // 二进制拉取默认放宽超时到 5 分钟
+    }
+
     const res = await this.request({
       url,
       method: 'GET',
-      responseType
+      responseType,
+      timeout
     });
 
     if (res.status === 200) {
