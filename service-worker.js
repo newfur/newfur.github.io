@@ -164,6 +164,72 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     return true; // 保持異步通道開啟
   }
+
+  // 代理 WebDAV 請求（利用 Service Worker 与 host_permissions 徹底繞過瀏覽器前端渲染進程的 CORS OPTIONS 預檢與 Cookie 干擾）
+  if (request.action === 'webdavRequest') {
+    (async () => {
+      try {
+        const { url, method, headers, bodyBase64, responseType } = request;
+        const fetchOptions = {
+          method: method || 'GET',
+          headers: headers || {},
+          credentials: 'omit' // 絕不附帶網頁 Cookie，防止觸發 WebDAV 服務端的 CSRF 401 拒絕
+        };
+
+        if (bodyBase64 && method !== 'GET' && method !== 'HEAD') {
+          const binary = atob(bodyBase64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          fetchOptions.body = bytes;
+        }
+
+        const res = await fetch(url, fetchOptions);
+        const resHeaders = {};
+        res.headers.forEach((v, k) => {
+          resHeaders[k.toLowerCase()] = v;
+        });
+
+        let data = null;
+        let dataBase64 = null;
+        if (responseType === 'json') {
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = null;
+          }
+        } else if (responseType === 'blob' || responseType === 'arraybuffer') {
+          const ab = await res.arrayBuffer();
+          const bytes = new Uint8Array(ab);
+          let bin = '';
+          const CHUNK = 32768;
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+          }
+          dataBase64 = btoa(bin);
+        } else {
+          data = await res.text();
+        }
+
+        sendResponse({
+          success: true,
+          status: res.status,
+          statusText: res.statusText,
+          headers: resHeaders,
+          data,
+          dataBase64,
+          ok: res.ok
+        });
+      } catch (err) {
+        sendResponse({
+          success: false,
+          error: err.message || String(err)
+        });
+      }
+    })();
+    return true; // 保持異步通道開啟
+  }
 });
 
 // 監聽來自前台的長連接，用於流式傳輸 AI 回答 (繞過 CORS 限制)

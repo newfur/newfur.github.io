@@ -32,18 +32,16 @@ export class WebDAVClient {
     }
   }
 
-  // 人性化格式化 HTTP 错误提示，精准定位 401 认证与权限问题
+  // 人性化格式化 HTTP 错误提示，精准定位 401/403 认证与权限问题
   _formatHttpError(action, relativePath, status, statusText = '') {
-    if (status === 401) {
-      return `WebDAV 认证失败 (HTTP 401 Unauthorized): 无法执行 ${action} ${relativePath}。\n` +
+    if (status === 401 || status === 403) {
+      const typeStr = status === 401 ? '401 Unauthorized' : '403 Forbidden';
+      return `WebDAV 认证失败或访问受限 (HTTP ${typeStr}): 无法执行 ${action} ${relativePath}。\n` +
         `【排查建议】\n` +
         `1. 请检查 WebDAV 用户名与密码是否正确（注意区分大小写，避免前后多出空格）；\n` +
         `2. 若您的云盘服务（如 Nextcloud、坚果云、群晖等）开启了双因素认证(2FA)，必须使用专属「应用令牌 / App Password」代替网页登录密码；\n` +
-        `3. 若使用的是公共只读分享或访客账户，由于只读权限允许下载却禁止上传，写入时会触发 401，请更换为具有完整读写权限的账号；\n` +
+        `3. 若使用的是公共只读分享或访客账户，由于只读权限允许下载却禁止上传，写入时会触发 401/403，请更换为具有完整读写权限的账号；\n` +
         `4. 若服务器配置了 HTTP 强制跳转 HTTPS，请直接将服务地址协议修改为 https://。`;
-    }
-    if (status === 403) {
-      return `WebDAV 访问被拒绝 (HTTP 403 Forbidden): 无法执行 ${action} ${relativePath}。当前账号可能缺少写入权限，或路径受服务器安全策略保护。`;
     }
     if (status === 404) {
       return `WebDAV 路径不存在 (HTTP 404 Not Found): ${relativePath}`;
@@ -59,11 +57,20 @@ export class WebDAVClient {
     return clean.replace(/\/+$/, '');
   }
 
-  // 构造 HTTP Authorization 请求头
+  // 构造 HTTP Authorization 请求头（安全 UTF-8 编码，防止特殊字符或密码损坏）
   _getAuthHeader() {
     if (!this.username && !this.password) return null;
     const cred = `${this.username}:${this.password}`;
     try {
+      if (typeof TextEncoder !== 'undefined') {
+        const utf8Bytes = new TextEncoder().encode(cred);
+        let binaryStr = '';
+        const CHUNK = 32768;
+        for (let i = 0; i < utf8Bytes.length; i += CHUNK) {
+          binaryStr += String.fromCharCode.apply(null, utf8Bytes.subarray(i, i + CHUNK));
+        }
+        return `Basic ${btoa(binaryStr)}`;
+      }
       const b64 = (typeof btoa === 'function')
         ? btoa(unescape(encodeURIComponent(cred)))
         : Buffer.from(cred).toString('base64');
@@ -97,6 +104,11 @@ export class WebDAVClient {
     return false;
   }
 
+  // 判断是否处于 Chrome Extension 环境（可使用 Service Worker 彻底规避 CORS OPTIONS 预检与 Cookie 干扰）
+  _isExtensionEnv() {
+    return typeof chrome !== 'undefined' && Boolean(chrome.runtime && chrome.runtime.sendMessage && chrome.runtime.id);
+  }
+
   // 统一底层 HTTP 发送请求
   async request({ url, method = 'GET', headers = {}, body = null, responseType = 'text', timeout = null }) {
     const finalHeaders = { ...headers };
@@ -107,35 +119,111 @@ export class WebDAVClient {
 
     const effectiveTimeout = timeout || this.timeout;
 
-    // 在 Capacitor 原生环境下，如果上传的是大体积 Blob（> 5MB），优先尝试 WebKit 原生流式 fetch
-    // 因为原生 fetch 支持底层零内存流式传输，避免将 100MB 二进制转为 Base64 造成 WebKit IPC 压力
-    if (this._isCapacitorNative() && body instanceof Blob && body.size > 5 * 1024 * 1024 && typeof window.CapacitorWebFetch === 'function') {
-      try {
-        const streamRes = await this._requestFetch({
-          url,
-          method,
-          headers: finalHeaders,
-          body,
-          responseType,
-          timeout: effectiveTimeout,
-          fetchFn: window.CapacitorWebFetch
-        });
-        if (streamRes && streamRes.ok) {
-          return streamRes;
-        }
-      } catch (streamErr) {
-        // 若遇到 CORS 等限制，安全自动降级到 Capacitor 原生网络插件
-        console.warn('[WebDAV] Native streaming fetch failed or restricted, falling back to CapacitorHttp:', streamErr.message);
-      }
-    }
-
-    // 优先使用 Capacitor 原生 HTTP（iOS / Android 原生发包，免受任何同源策略拦截）
+    // 1. 在 Capacitor 原生环境下（iOS / Android 原生发包，免受任何同源策略与 CORS 限制）
     if (this._isCapacitorNative()) {
+      if (body instanceof Blob && body.size > 5 * 1024 * 1024 && typeof window.CapacitorWebFetch === 'function') {
+        try {
+          const streamRes = await this._requestFetch({
+            url,
+            method,
+            headers: finalHeaders,
+            body,
+            responseType,
+            timeout: effectiveTimeout,
+            fetchFn: window.CapacitorWebFetch
+          });
+          if (streamRes && streamRes.ok) {
+            return streamRes;
+          }
+        } catch (streamErr) {
+          console.warn('[WebDAV] Native streaming fetch failed, falling back to CapacitorHttp:', streamErr.message);
+        }
+      }
       return this._requestCapacitor({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
     }
 
-    // 默认使用浏览器 fetch
+    // 2. 在 Chrome / Edge 扩展插件环境下，优先通过 Service Worker 发送（利用 host_permissions 免除 CORS OPTIONS 预检与浏览器 Cookie 污染）
+    if (this._isExtensionEnv()) {
+      try {
+        return await this._requestExtension({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
+      } catch (extErr) {
+        console.warn('[WebDAV] Extension proxy request warning, fallback to direct fetch:', extErr.message);
+      }
+    }
+
+    // 3. 降级使用浏览器标准 fetch
     return this._requestFetch({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
+  }
+
+  // Chrome 扩展 Service Worker 代理通道（绕过浏览器预检 OPTIONS 与 Cookie 认证干扰）
+  async _requestExtension({ url, method, headers, body, responseType, timeout = null }) {
+    let bodyBase64 = null;
+    if (body !== null && method !== 'GET' && method !== 'HEAD') {
+      if (body instanceof Blob) {
+        bodyBase64 = await this._blobToBase64(body);
+      } else if (typeof body === 'string') {
+        const utf8Bytes = new TextEncoder().encode(body);
+        let bin = '';
+        const CHUNK = 32768;
+        for (let i = 0; i < utf8Bytes.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, utf8Bytes.subarray(i, i + CHUNK));
+        }
+        bodyBase64 = btoa(bin);
+      } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+        const bytes = new Uint8Array(body.buffer || body);
+        let bin = '';
+        const CHUNK = 32768;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+        }
+        bodyBase64 = btoa(bin);
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`WebDAV request timeout (${timeout || this.timeout}ms) for ${method} ${url}`));
+      }, timeout || this.timeout);
+
+      try {
+        chrome.runtime.sendMessage({
+          action: 'webdavRequest',
+          url,
+          method,
+          headers,
+          bodyBase64,
+          responseType
+        }, (res) => {
+          clearTimeout(timer);
+          if (chrome.runtime.lastError) {
+            console.warn('[WebDAV] Extension messaging failed, fallback to fetch:', chrome.runtime.lastError.message);
+            this._requestFetch({ url, method, headers, body, responseType, timeout }).then(resolve).catch(reject);
+            return;
+          }
+          if (!res || !res.success) {
+            reject(new Error(res ? res.error : 'Extension service worker response empty'));
+            return;
+          }
+
+          let resultData = res.data;
+          if ((responseType === 'blob' || responseType === 'arraybuffer') && res.dataBase64) {
+            const blob = this._base64ToBlob(res.dataBase64);
+            resultData = (responseType === 'blob') ? blob : blob.arrayBuffer();
+          }
+
+          resolve({
+            status: res.status,
+            statusText: res.statusText || String(res.status),
+            headers: res.headers || {},
+            data: resultData,
+            ok: res.ok
+          });
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        this._requestFetch({ url, method, headers, body, responseType, timeout }).then(resolve).catch(reject);
+      }
+    });
   }
 
   async _requestFetch({ url, method, headers, body, responseType, timeout = null, fetchFn = null }) {
@@ -150,6 +238,7 @@ export class WebDAVClient {
       const fetchOptions = {
         method,
         headers,
+        credentials: 'omit', // 绝不发送浏览器已有 Cookie，防止触发 WebDAV 服务端的 CSRF 401 拒绝
         signal: controller ? controller.signal : undefined
       };
 
@@ -558,21 +647,29 @@ export class WebDAVClient {
 
     const startTime = Date.now();
 
-    // 1. 测试根路径连通性与账号密码鉴权
-    const rootUrl = this.endpoint + '/';
+    // 1. 优先测试配置的远程目录，若失败再探测根域名（避免直接打 / 根路径遇到 401 假报警）
+    const targetUrl = this.buildUrl('');
     let rootRes;
     try {
       rootRes = await this.request({
-        url: rootUrl,
+        url: targetUrl.endsWith('/') ? targetUrl : targetUrl + '/',
         method: 'PROPFIND',
         headers: { 'Depth': '0' }
       });
     } catch (netErr) {
-      throw new Error(`网络连接失败或跨域受限 (CORS): ${netErr.message || netErr}`);
+      try {
+        rootRes = await this.request({
+          url: this.endpoint + '/',
+          method: 'PROPFIND',
+          headers: { 'Depth': '0' }
+        });
+      } catch (_) {
+        throw new Error(`网络连接失败或跨域受限 (CORS): ${netErr.message || netErr}`);
+      }
     }
 
-    if (rootRes.status === 401 || rootRes.status === 403) {
-      throw new Error(`WebDAV 认证失败 (${rootRes.status}): 请检查用户名与密码/应用令牌`);
+    if (rootRes && (rootRes.status === 401 || rootRes.status === 403)) {
+      throw new Error(this._formatHttpError('PROPFIND', this.remotePath, rootRes.status, rootRes.statusText));
     }
 
     // 2. 测试远端应用根目录创建与读写
