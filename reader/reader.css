@@ -704,11 +704,11 @@ button, select, input {
   z-index: 4;
 }
 
-/* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中) */
+/* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中 - 位於封面右下角，避免與左上角「更多操作...」按鈕重疊) */
 .book-sync-badge {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  bottom: 10px;
+  right: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4399,6 +4399,10 @@ html.transition-none .page-texture-slide {
 .bookshelf-grid.select-mode-active .book-card .book-stats-btn,
 .bookshelf-grid.select-mode-active .book-card .book-more-btn {
   display: none !important;
+}
+
+.bookshelf-grid.select-mode-active .book-card .book-sync-badge {
+  pointer-events: none;
 }
 
 .book-card-checkbox-overlay {
