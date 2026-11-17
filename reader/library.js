@@ -546,12 +546,46 @@ export class BookLibrary {
   async getBookMetadata(id) {
     await this._ensureOpen();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['books'], 'readonly');
+      const hasFileStore = this.db.objectStoreNames.contains('book_files');
+      const transaction = hasFileStore
+        ? this.db.transaction(['books', 'book_files'], 'readonly')
+        : this.db.transaction(['books'], 'readonly');
       const store = transaction.objectStore('books');
       const request = store.get(id);
 
-      request.onsuccess = () => resolve(request.result);
+      let meta = null;
+      let metaDone = false;
+      let fileDone = !hasFileStore;
+      let hasFile = false;
+
+      const tryComplete = () => {
+        if (!metaDone || !fileDone) return;
+        if (meta) {
+          meta.hasLocalFile = hasFileStore ? hasFile : Boolean(meta.file);
+        }
+        resolve(meta);
+      };
+
+      request.onsuccess = () => {
+        meta = request.result || null;
+        metaDone = true;
+        tryComplete();
+      };
       request.onerror = () => reject(request.error);
+
+      if (hasFileStore) {
+        const fileKeyReq = transaction.objectStore('book_files').getKey(id);
+        fileKeyReq.onsuccess = () => {
+          hasFile = fileKeyReq.result !== undefined;
+          fileDone = true;
+          tryComplete();
+        };
+        fileKeyReq.onerror = () => {
+          hasFile = false;
+          fileDone = true;
+          tryComplete();
+        };
+      }
     });
   }
 

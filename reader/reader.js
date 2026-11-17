@@ -379,6 +379,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initI18n();
   initAISuggestions();
 
+  // 1.1 提前初始化並就緒同步配置與雲端快取（確保書架首次渲染時徽章立即呈現，避免刷新後徽章丟失）
+  try {
+    if (typeof syncManager !== 'undefined') {
+      await syncManager.loadConfig();
+    }
+  } catch (e) {
+    console.warn('[SyncManager] Early loadConfig failed:', e);
+  }
+
   // 2. 開啟資料庫並載入書架
   try {
     await library.open();
@@ -2183,10 +2192,16 @@ function initUIEventBindings() {
           syncHeaderBtn.disabled = false;
           syncHeaderBtn.title = status.lastError || (getMsg('sync_status_error') || 'Sync Error');
         }
+        if (typeof updateAllBookshelfSyncBadges === 'function') {
+          updateAllBookshelfSyncBadges();
+        }
       } else {
         if (syncIconSvg) syncIconSvg.style.animation = '';
         if (syncBtnText) syncBtnText.textContent = getMsg('sync_status_idle') || 'Sync';
         if (syncHeaderBtn) syncHeaderBtn.disabled = false;
+        if (typeof updateAllBookshelfSyncBadges === 'function') {
+          updateAllBookshelfSyncBadges();
+        }
       }
     });
 
@@ -2293,8 +2308,14 @@ function initUIEventBindings() {
     }
 
     window.__populateSyncForm = populateSyncForm;
+    // 基于已同步预加载的配置优先初始化一次 UI 状态（如顶部同步按钮等）
+    populateSyncForm();
+
     syncManager.init().then(() => {
       populateSyncForm();
+      if (typeof updateAllBookshelfSyncBadges === 'function') {
+        updateAllBookshelfSyncBadges();
+      }
     }).catch(e => console.warn('[SyncManager] Init failed:', e));
   }
 
@@ -3649,9 +3670,17 @@ async function renderBookshelf(searchQuery = '') {
 
 // 渲染单个书籍卡片上的云端同步状态徽章
 function renderBookSyncBadge(card, book) {
-  if (typeof syncManager === 'undefined' || !syncManager.isWebDAVEnabled()) return;
+  if (typeof syncManager === 'undefined' || !syncManager.isWebDAVEnabled()) {
+    const existingBadge = card.querySelector('.book-sync-badge');
+    if (existingBadge) existingBadge.remove();
+    return;
+  }
   const statusInfo = syncManager.getBookSyncStatus(book.id, book);
-  if (!statusInfo) return;
+  if (!statusInfo) {
+    const existingBadge = card.querySelector('.book-sync-badge');
+    if (existingBadge) existingBadge.remove();
+    return;
+  }
 
   const coverContainer = card.querySelector('.book-cover-container');
   if (!coverContainer) return;

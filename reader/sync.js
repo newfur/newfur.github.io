@@ -32,6 +32,33 @@ export class SyncManager {
       autoSyncOnOpen: true,
       autoSyncOnProgress: true
     };
+
+    // 立即从 localStorage 同步预加载配置与缓存（规避页面初始化/刷新时的异步竞态时序差，确保卡片初次渲染即刻显示徽章）
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rawCfg = localStorage.getItem('edgereader_sync_config');
+        if (rawCfg) {
+          const parsed = JSON.parse(rawCfg);
+          if (parsed && typeof parsed === 'object') {
+            this.config = { ...this.config, ...parsed };
+            this._initClient();
+          }
+        }
+
+        const savedCache = localStorage.getItem('edgereader_remote_books_cache');
+        if (savedCache) {
+          const parsed = JSON.parse(savedCache);
+          if (parsed && typeof parsed.books === 'object') {
+            this.remoteBookCache = parsed;
+          }
+        }
+
+        const savedTime = localStorage.getItem('edgereader_last_sync_time');
+        if (savedTime) {
+          this.lastSyncTime = parseInt(savedTime, 10) || 0;
+        }
+      }
+    } catch (e) {}
   }
 
   // 注册状态监听器（UI 组件响应）
@@ -84,6 +111,9 @@ export class SyncManager {
       }
     } catch (e) {}
 
+    // 状态广播，通知各监听器（如顶部同步按钮可见性、书架徽章等）当前存储模式与状态就绪
+    this._setState(this.state);
+
     // 若启用了 WebDAV 且开启了启动时自动同步，延时触发静默轻量记录同步
     if (this.isWebDAVEnabled() && this.config.autoSyncOnOpen) {
       // 防崩溃死循环熔断保护 (Circuit Breaker)：
@@ -122,7 +152,7 @@ export class SyncManager {
         password: this.config.password,
         remotePath: this.config.remotePath || '/EdgeReader'
       });
-      // 将清洗后的规范化配置回写，防止凭据中含非法空白字符或 URL 嵌入式密码
+      // 将清洗后的规范化配置回写，防止凭据中含有非法空白字符或 URL 嵌入式密码
       if (this.client.endpoint) this.config.endpoint = this.client.endpoint;
       if (this.client.username) this.config.username = this.client.username;
       if (this.client.password) this.config.password = this.client.password;
@@ -137,10 +167,12 @@ export class SyncManager {
       // 优先从 chrome.storage.local 读取，降级从 localStorage 读取
       const fallbackLoad = () => {
         try {
-          const raw = localStorage.getItem('edgereader_sync_config');
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            this.config = { ...this.config, ...parsed };
+          if (typeof localStorage !== 'undefined') {
+            const raw = localStorage.getItem('edgereader_sync_config');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              this.config = { ...this.config, ...parsed };
+            }
           }
         } catch (e) {}
         this._initClient();
@@ -152,6 +184,11 @@ export class SyncManager {
           if (res && res.syncConfig) {
             this.config = { ...this.config, ...res.syncConfig };
             this._initClient();
+            try {
+              if (typeof localStorage !== 'undefined') {
+                localStorage.setItem('edgereader_sync_config', JSON.stringify(this.config));
+              }
+            } catch (e) {}
             resolve(this.config);
           } else {
             fallbackLoad();
