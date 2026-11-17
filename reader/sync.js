@@ -122,6 +122,10 @@ export class SyncManager {
         password: this.config.password,
         remotePath: this.config.remotePath || '/EdgeReader'
       });
+      // 将清洗后的规范化配置回写，防止凭据中含非法空白字符或 URL 嵌入式密码
+      if (this.client.endpoint) this.config.endpoint = this.client.endpoint;
+      if (this.client.username) this.config.username = this.client.username;
+      if (this.client.password) this.config.password = this.client.password;
     } else {
       this.client = null;
     }
@@ -159,9 +163,15 @@ export class SyncManager {
     });
   }
 
-  // 保存配置
+  // 保存配置（自动清洗首尾空白与特殊字符）
   async saveConfig(newConfig) {
-    this.config = { ...this.config, ...newConfig };
+    const cleanConfig = { ...newConfig };
+    if (typeof cleanConfig.endpoint === 'string') cleanConfig.endpoint = cleanConfig.endpoint.trim();
+    if (typeof cleanConfig.username === 'string') cleanConfig.username = cleanConfig.username.trim();
+    if (typeof cleanConfig.password === 'string') cleanConfig.password = cleanConfig.password.trim();
+    if (typeof cleanConfig.remotePath === 'string') cleanConfig.remotePath = cleanConfig.remotePath.trim();
+
+    this.config = { ...this.config, ...cleanConfig };
     this._initClient();
 
     try {

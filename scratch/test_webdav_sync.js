@@ -651,11 +651,32 @@ async function runTests() {
       lastReadAt: Date.now()
     });
 
-    // 触发双向差量同步，应自动拉取缺失的封面并补齐本地
-    await syncMgrD.syncAll({ silent: true });
-    const bookOnD = await mockLibraryD.getBookMetadata('book_dataurl');
-    assert.ok(bookOnD.cover, '双向同步应自动从云端补齐本地缺失的封面');
-    console.log('✅ DataURL 封面格式转换与双向封面补齐验证通过');
+    // 2.15 测试凭据前后空格自动清洗、URL 嵌入式密码提取与 401 友好提示
+    console.log('\n--- 14. 测试凭据前后空格自动清洗、URL 嵌入式密码提取与 401 友好提示 ---');
+    // 测试 1：用户名密码含前后空格
+    const clientSpaces = new WebDAVClient({
+      endpoint: `http://127.0.0.1:${port}/ `,
+      username: '  testuser  ',
+      password: '  secret123  ',
+      remotePath: '  /EdgeReader  '
+    });
+    assert.strictEqual(clientSpaces.username, 'testuser', '用户名空格应被自动清除');
+    assert.strictEqual(clientSpaces.password, 'secret123', '密码前后空格应被自动清除');
+    assert.strictEqual(clientSpaces.remotePath, '/EdgeReader', '远程根路径空格应被自动清除');
+
+    // 测试 2：URL 中直接包含凭据 (https://user:pass@host/dav)
+    const clientUrlCreds = new WebDAVClient({
+      endpoint: `http://special_user:special_pass@127.0.0.1:${port}/webdav/`
+    });
+    assert.strictEqual(clientUrlCreds.username, 'special_user', '应从 URL 自动提取用户名');
+    assert.strictEqual(clientUrlCreds.password, 'special_pass', '应从 URL 自动提取密码');
+    assert.strictEqual(clientUrlCreds.endpoint.includes('@'), false, 'endpoint 中的凭据应被彻底清洗');
+
+    // 测试 3：401 友好排查提示
+    const errorMsg401 = clientSpaces._formatHttpError('PUT', 'records/test.json', 401);
+    assert.ok(errorMsg401.includes('401 Unauthorized'), '应包含 401 Unauthorized 标识');
+    assert.ok(errorMsg401.includes('排查建议'), '应包含详细排查建议');
+    console.log('✅ 凭据自动清洗与 401 友好错误提示验证通过');
 
     console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
   } finally {

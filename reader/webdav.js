@@ -4,11 +4,51 @@
 
 export class WebDAVClient {
   constructor(options = {}) {
-    this.endpoint = (options.endpoint || '').trim().replace(/\/+$/, '');
-    this.username = (options.username || '').trim();
-    this.password = options.password || '';
+    let rawEndpoint = (options.endpoint || '').trim().replace(/\/+$/, '');
+    let username = (options.username || '').trim();
+    let password = (options.password || '').trim();
+
+    // 智能提取：若用户在 endpoint 中直接输入了凭据 (如 https://user:pass@example.com/dav)
+    if (rawEndpoint.includes('@')) {
+      try {
+        const u = new URL(rawEndpoint);
+        if (u.username && !username) username = decodeURIComponent(u.username);
+        if (u.password && !password) password = decodeURIComponent(u.password);
+        u.username = '';
+        u.password = '';
+        rawEndpoint = u.toString().replace(/\/+$/, '');
+      } catch (_) {}
+    }
+
+    this.endpoint = rawEndpoint;
+    this.username = username;
+    this.password = password;
     this.remotePath = this._normalizeRemotePath(options.remotePath || '/EdgeReader');
     this.timeout = options.timeout || 30000;
+
+    // 智能去重：若 endpoint 末尾已经包含了 remotePath，防止形成 /EdgeReader/EdgeReader 双重路径
+    if (this.remotePath && this.remotePath !== '/' && this.endpoint.endsWith(this.remotePath)) {
+      this.endpoint = this.endpoint.slice(0, -this.remotePath.length).replace(/\/+$/, '');
+    }
+  }
+
+  // 人性化格式化 HTTP 错误提示，精准定位 401 认证与权限问题
+  _formatHttpError(action, relativePath, status, statusText = '') {
+    if (status === 401) {
+      return `WebDAV 认证失败 (HTTP 401 Unauthorized): 无法执行 ${action} ${relativePath}。\n` +
+        `【排查建议】\n` +
+        `1. 请检查 WebDAV 用户名与密码是否正确（注意区分大小写，避免前后多出空格）；\n` +
+        `2. 若您的云盘服务（如 Nextcloud、坚果云、群晖等）开启了双因素认证(2FA)，必须使用专属「应用令牌 / App Password」代替网页登录密码；\n` +
+        `3. 若使用的是公共只读分享或访客账户，由于只读权限允许下载却禁止上传，写入时会触发 401，请更换为具有完整读写权限的账号；\n` +
+        `4. 若服务器配置了 HTTP 强制跳转 HTTPS，请直接将服务地址协议修改为 https://。`;
+    }
+    if (status === 403) {
+      return `WebDAV 访问被拒绝 (HTTP 403 Forbidden): 无法执行 ${action} ${relativePath}。当前账号可能缺少写入权限，或路径受服务器安全策略保护。`;
+    }
+    if (status === 404) {
+      return `WebDAV 路径不存在 (HTTP 404 Not Found): ${relativePath}`;
+    }
+    return `WebDAV ${action} ${relativePath} failed with status ${status}: ${statusText || ''}`;
   }
 
   // 规范化远端根路径，确保以 / 开头，无末尾 /
@@ -117,7 +157,22 @@ export class WebDAVClient {
         fetchOptions.body = body;
       }
 
-      const res = await activeFetch(url, fetchOptions);
+      let res = await activeFetch(url, fetchOptions);
+
+      // 若使用 HTTP 遇到 401，且目标服务器可能为强制 HTTPS 跳转（浏览器重定向会根据规范丢弃 Authorization 头）
+      if (res.status === 401 && url.startsWith('http://')) {
+        const httpsUrl = 'https://' + url.slice(7);
+        try {
+          const retryRes = await activeFetch(httpsUrl, fetchOptions);
+          if (retryRes && (retryRes.ok || retryRes.status !== 401)) {
+            res = retryRes;
+            if (this.endpoint.startsWith('http://')) {
+              this.endpoint = 'https://' + this.endpoint.slice(7);
+            }
+          }
+        } catch (_) {}
+      }
+
       if (timer) clearTimeout(timer);
 
       let data;
@@ -284,7 +339,7 @@ export class WebDAVClient {
     if (res.status === 201 || res.status === 405) {
       return true;
     }
-    throw new Error(`WebDAV MKCOL failed with status ${res.status}: ${res.statusText}`);
+    throw new Error(this._formatHttpError('MKCOL', relativePath, res.status, res.statusText));
   }
 
   // 递归逐级创建远端目录 (例如 /EdgeReader/records/subdir)
@@ -457,7 +512,7 @@ export class WebDAVClient {
     if (res.status === 200 || res.status === 201 || res.status === 204) {
       return true;
     }
-    throw new Error(`WebDAV PUT ${relativePath} failed with status ${res.status}: ${res.statusText}`);
+    throw new Error(this._formatHttpError('PUT', relativePath, res.status, res.statusText));
   }
 
   // 获取文件内容 (GET)
@@ -481,7 +536,7 @@ export class WebDAVClient {
     if (res.status === 404) {
       return null;
     }
-    throw new Error(`WebDAV GET ${relativePath} failed with status ${res.status}: ${res.statusText}`);
+    throw new Error(this._formatHttpError('GET', relativePath, res.status, res.statusText));
   }
 
   // 删除文件或目录 (DELETE)
