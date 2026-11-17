@@ -125,14 +125,14 @@ export class SyncManager {
 
       const now = Date.now();
       if (now - lastAttempt < 45000) {
-        console.warn('[SyncManager] Previous sync attempted less than 45s ago, skipping auto-sync on open to prevent reload loop');
+        console.log('[SyncManager] Previous sync attempted less than 45s ago, skipping auto-sync on open to prevent reload loop');
         return;
       }
 
       setTimeout(() => {
         // 启动时仅执行轻量级记录与元数据同步（recordsOnly: true），零内存压力，毫秒级完成
         this.syncAll({ silent: true, recordsOnly: true }).catch(err => {
-          console.warn('[SyncManager] Auto sync on open failed:', err);
+          console.log('[SyncManager] Auto sync on open note:', err?.message || err);
         });
       }, 1500);
     }
