@@ -463,37 +463,65 @@ export class BookLibrary {
     const includeFiles = options && options.includeFiles === true;
 
     return new Promise((resolve, reject) => {
-      const transaction = includeFiles 
+      const hasFileStore = this.db.objectStoreNames.contains('book_files');
+      const transaction = hasFileStore
         ? this.db.transaction(['books', 'book_files'], 'readonly')
         : this.db.transaction(['books'], 'readonly');
       const store = transaction.objectStore('books');
       const request = store.getAll();
+      const fileKeysReq = hasFileStore ? transaction.objectStore('book_files').getAllKeys() : null;
 
-      request.onsuccess = async () => {
-        const books = request.result || [];
-        books.sort((a, b) => {
+      let booksResult = null;
+      let fileKeysSet = null;
+
+      const tryComplete = async () => {
+        if (!booksResult || (hasFileStore && !fileKeysSet)) return;
+
+        booksResult.sort((a, b) => {
           if (b.lastReadAt !== a.lastReadAt) {
             return b.lastReadAt - a.lastReadAt;
           }
           return b.addedAt - a.addedAt;
         });
 
-        if (includeFiles) {
+        for (const b of booksResult) {
+          b.hasLocalFile = fileKeysSet ? fileKeysSet.has(String(b.id)) : false;
+        }
+
+        if (includeFiles && hasFileStore) {
           const fileStore = transaction.objectStore('book_files');
           const fileRecords = await new Promise(res => {
             const fReq = fileStore.getAll();
             fReq.onsuccess = () => res(fReq.result || []);
             fReq.onerror = () => res([]);
           });
-          const fileMap = new Map(fileRecords.map(f => [f.id, f.file]));
-          books.forEach(b => {
-            b.file = fileMap.get(b.id) || null;
+          const fileMap = new Map(fileRecords.map(f => [String(f.id), f.file]));
+          booksResult.forEach(b => {
+            b.file = fileMap.get(String(b.id)) || null;
           });
         }
 
-        resolve(books);
+        resolve(booksResult);
+      };
+
+      request.onsuccess = () => {
+        booksResult = request.result || [];
+        tryComplete();
       };
       request.onerror = () => reject(request.error);
+
+      if (fileKeysReq) {
+        fileKeysReq.onsuccess = () => {
+          fileKeysSet = new Set(fileKeysReq.result ? fileKeysReq.result.map(String) : []);
+          tryComplete();
+        };
+        fileKeysReq.onerror = () => {
+          fileKeysSet = new Set();
+          tryComplete();
+        };
+      } else {
+        fileKeysSet = new Set();
+      }
     });
   }
 

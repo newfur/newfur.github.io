@@ -184,7 +184,10 @@ class MockBookLibrary {
   }
 
   async getAllBooks() {
-    return Array.from(this.books.values());
+    return Array.from(this.books.values()).map(b => ({
+      ...b,
+      hasLocalFile: this.bookFiles.has(b.id)
+    }));
   }
 
   async getBookMetadata(id) {
@@ -194,7 +197,33 @@ class MockBookLibrary {
   async getBook(id) {
     const meta = this.books.get(id);
     if (!meta) return null;
-    return { ...meta, file: this.bookFiles.get(id) || null };
+    const file = this.bookFiles.get(id) || null;
+    if (!file) return null;
+    return { ...meta, hasLocalFile: true, file };
+  }
+
+  async updateBookCover(id, cover) {
+    const book = this.books.get(id);
+    if (book) {
+      book.cover = cover;
+      this.books.set(id, book);
+    }
+    return book;
+  }
+
+  async replaceBookContent(id, { title, author, format, file, cover, size, fileHash }) {
+    const book = this.books.get(id) || { id };
+    if (title) book.title = title;
+    if (author) book.author = author;
+    if (format) book.format = format;
+    if (cover) book.cover = cover;
+    if (size) book.size = size;
+    if (fileHash) book.fileHash = fileHash;
+    this.books.set(id, book);
+    if (file) {
+      this.bookFiles.set(id, file);
+    }
+    return book;
   }
 
   async addBook(book) {
@@ -521,6 +550,112 @@ async function runTests() {
     assert.strictEqual(await client.exists('books/book_heavy.bin'), true, '全量同步应自动补传远端缺失的大书二进制');
     assert.strictEqual(syncMgr.getBookSyncStatus('book_heavy').status, 'synced', '补传后状态应为 synced');
     console.log('✅ 缺失二进制大书自动补传验证通过');
+
+    // 2.13 测试远端未下载书籍的封面全量同步与按需拉取原书 (Full Cover Sync & On-Demand Download)
+    console.log('\n--- 12. 测试未下载原书的封面全量同步与状态切换 ---');
+    // 在云端准备一本云端图书，包含封面和原书大文件
+    const mockCoverBinary = Buffer.from('MOCK_JPEG_COVER_BINARY_DATA');
+    const mockBookBinary = Buffer.from('MOCK_EPUB_BINARY_CONTENT');
+    await client.putFile('covers/book_remote_cover.bin', mockCoverBinary);
+    await client.putFile('books/book_remote_cover.bin', mockBookBinary);
+    await client.putFile('records/book_remote_cover.json', {
+      id: 'book_remote_cover',
+      title: '云端封面全量同步书籍',
+      author: '云端作者',
+      format: 'epub',
+      size: mockBookBinary.length,
+      lastReadAt: Date.now()
+    });
+
+    const currentLib = await client.getFile('library.json', 'json') || { books: [] };
+    currentLib.books.push({
+      id: 'book_remote_cover',
+      title: '云端封面全量同步书籍',
+      author: '云端作者',
+      format: 'epub',
+      size: mockBookBinary.length,
+      lastReadAt: Date.now()
+    });
+    await client.putFile('library.json', currentLib);
+
+    // 新客户端 C 模拟移动端首次启动（轻量级 recordsOnly 同步）
+    const mockLibraryC = new MockBookLibrary();
+    const syncMgrC = new SyncManager(mockLibraryC);
+    await syncMgrC.saveConfig({
+      storageMode: 'webdav',
+      endpoint: `http://127.0.0.1:${port}`,
+      username: 'testuser',
+      password: 'secret123',
+      remotePath: '/EdgeReader',
+      syncMode: 'records_only'
+    });
+
+    // 启动 recordsOnly 同步
+    await syncMgrC.syncAll({ recordsOnly: true, silent: true });
+
+    // 验证：书籍已导入本地元数据
+    const bookC = await mockLibraryC.getBookMetadata('book_remote_cover');
+    assert.ok(bookC, '云端书籍元数据应已导入本地');
+    // 关键断言 1：本地尚未下载实体文件
+    assert.strictEqual(mockLibraryC.bookFiles.has('book_remote_cover'), false, 'recordsOnly 模式下原书大文件不应下载到本地');
+    // 关键断言 2：但封面必须全量同步下载完成！
+    assert.ok(bookC.cover, '即便书籍未下载到本地，封面也必须全量同步');
+
+    // 关键断言 3：同步状态徽章应正确指示为待下载 (cloud_only)
+    const booksAfterSyncC = await mockLibraryC.getAllBooks();
+    const targetBookC = booksAfterSyncC.find(b => b.id === 'book_remote_cover');
+    const statusC = syncMgrC.getBookSyncStatus('book_remote_cover', targetBookC);
+    assert.strictEqual(statusC.status, 'cloud_only', '未下载实体书籍应标记为 cloud_only');
+
+    // 关键断言 4：按需触发 downloadBookBinary
+    await syncMgrC.downloadBookBinary('book_remote_cover');
+    assert.strictEqual(mockLibraryC.bookFiles.has('book_remote_cover'), true, '按需下载后本地应具备实体文件');
+    const booksAfterDl = await mockLibraryC.getAllBooks();
+    const targetAfterDl = booksAfterDl.find(b => b.id === 'book_remote_cover');
+    const statusAfterDl = syncMgrC.getBookSyncStatus('book_remote_cover', targetAfterDl);
+    assert.strictEqual(statusAfterDl.status, 'synced', '实体文件下载后状态应转为已同步 (synced)');
+    console.log('✅ 未下载书籍封面全量同步与按需下载验证通过');
+
+    // 2.14 测试 DataURL 封面格式转换与双向封面补齐
+    console.log('\n--- 13. 测试 DataURL 封面格式转换与双向封面补齐 ---');
+    const sampleDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    await mockLibrary.addBook({
+      id: 'book_dataurl',
+      title: 'DataURL 封面测试书籍',
+      format: 'epub',
+      cover: sampleDataUrl,
+      size: 5000,
+      file: { size: 5000 },
+      lastReadAt: Date.now()
+    });
+
+    await syncMgr.syncSingleBook('book_dataurl');
+    assert.strictEqual(await client.exists('covers/book_dataurl.bin'), true, 'DataURL 封面应被转换并成功上传至 WebDAV covers/ 目录');
+
+    // 模拟另一客户端 D 拥有该书但缺少封面
+    const mockLibraryD = new MockBookLibrary();
+    const syncMgrD = new SyncManager(mockLibraryD);
+    await syncMgrD.saveConfig({
+      storageMode: 'webdav',
+      endpoint: `http://127.0.0.1:${port}`,
+      username: 'testuser',
+      password: 'secret123',
+      remotePath: '/EdgeReader'
+    });
+
+    await mockLibraryD.addBook({
+      id: 'book_dataurl',
+      title: 'DataURL 封面测试书籍',
+      format: 'epub',
+      cover: null, // 本地缺少封面
+      lastReadAt: Date.now()
+    });
+
+    // 触发双向差量同步，应自动拉取缺失的封面并补齐本地
+    await syncMgrD.syncAll({ silent: true });
+    const bookOnD = await mockLibraryD.getBookMetadata('book_dataurl');
+    assert.ok(bookOnD.cover, '双向同步应自动从云端补齐本地缺失的封面');
+    console.log('✅ DataURL 封面格式转换与双向封面补齐验证通过');
 
     console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
   } finally {

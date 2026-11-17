@@ -3701,6 +3701,22 @@ function renderBookSyncBadge(card, book) {
           renderBookSyncBadge(card, book);
         }
       }
+    } else if (statusInfo.status === 'cloud_only') {
+      const sizeMb = book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+      if (confirm(`《${book.title}》${sizeMb}已在 WebDAV 云端备份，本机尚未下载实体图书。\n\n是否立即从云端下载原书？`)) {
+        try {
+          badge.className = 'book-sync-badge syncing';
+          badge.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>`;
+          badge.title = '正在从云端下载原书...';
+          await syncManager.downloadBookBinary(book.id);
+          const fullBook = await library.getBook(book.id);
+          renderBookSyncBadge(card, fullBook || book);
+          alert(`《${book.title}》已成功从 WebDAV 下载至本机！`);
+        } catch (err) {
+          alert(`下载失败: ${err.message || err}`);
+          renderBookSyncBadge(card, book);
+        }
+      }
     } else if (statusInfo.status === 'synced') {
       const sizeMb = book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
       if (confirm(`《${book.title}》${sizeMb}已与 WebDAV 云端保持同步。\n\n是否需要重新上传完整图书文件？`)) {
@@ -4020,6 +4036,8 @@ function showBookActionSheet(bookId, bookData = null) {
             if (syncLabel) syncLabel.textContent = `已同步至 WebDAV (重新同步)`;
           } else if (syncStatus?.status === 'syncing') {
             if (syncLabel) syncLabel.textContent = `WebDAV 同步进行中...`;
+          } else if (syncStatus?.status === 'cloud_only') {
+            if (syncLabel) syncLabel.textContent = `从 WebDAV 下载原书至本机${sizeMb}`;
           } else {
             if (syncLabel) syncLabel.textContent = `上传原书至 WebDAV 云端${sizeMb}`;
           }
@@ -4090,14 +4108,37 @@ function initBookActionSheet() {
       hideBookActionSheet();
       if (!bookId || typeof syncManager === 'undefined') return;
       try {
+        const meta = await library.getBookMetadata(bookId);
         const book = await library.getBook(bookId);
-        const title = book ? book.title : '书籍';
-        const sizeMb = book && book.size ? ` (${(book.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+        const effectiveBook = book || meta;
+        const title = effectiveBook ? effectiveBook.title : '书籍';
+        const sizeMb = effectiveBook && effectiveBook.size ? ` (${(effectiveBook.size / (1024 * 1024)).toFixed(1)} MB)` : '';
+        const syncStatus = syncManager.getBookSyncStatus(bookId, effectiveBook);
+
+        const card = document.querySelector(`.book-card[data-id="${bookId}"]`);
+
+        if (syncStatus?.status === 'cloud_only') {
+          const confirmDl = confirm(`开始从 WebDAV 云端下载《${title}》${sizeMb}至本机？`);
+          if (!confirmDl) return;
+          if (card) {
+            const badge = card.querySelector('.book-sync-badge');
+            if (badge) {
+              badge.className = 'book-sync-badge syncing';
+              badge.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>`;
+            }
+          }
+          await syncManager.downloadBookBinary(bookId);
+          alert(`《${title}》已成功从 WebDAV 下载至本机！`);
+          if (typeof renderBookshelf === 'function') {
+            await renderBookshelf();
+          }
+          return;
+        }
+
         const confirmSync = confirm(`开始上传同步《${title}》${sizeMb}至 WebDAV 云端？`);
         if (!confirmSync) return;
 
         // 若书架卡片可见，将徽章置为同步中
-        const card = document.querySelector(`.book-card[data-id="${bookId}"]`);
         if (card) {
           const badge = card.querySelector('.book-sync-badge');
           if (badge) {
@@ -4354,6 +4395,34 @@ async function openBook(id) {
         // 書籍元數據存在（如輕量備份還原或檔案未關聯），絕不可刪除用戶的閱讀統計、進度與筆記
         const title = meta.title || 'Unknown';
         const format = meta.format ? `.${meta.format}` : '';
+
+        // 若 WebDAV 已啟用且雲端已存在該書（快取顯示有實體檔案或遠端存在）
+        const isCloudAvailable = typeof syncManager !== 'undefined' && syncManager.isWebDAVEnabled() && (
+          Boolean(syncManager.remoteBookCache?.books?.[id]?.hasBinary) ||
+          (await syncManager.client?.exists(`books/${id}.bin`).catch(() => false))
+        );
+
+        if (isCloudAvailable) {
+          const downloadNow = confirm(
+            getMsg('cloud_book_download_prompt', [title]) ||
+            `《${title}》已在 WebDAV 雲端備份，本機尚未下載實體檔案。\n是否立即從雲端下載原書並開啟閱讀？`
+          );
+          if (downloadNow) {
+            try {
+              showToast(getMsg('downloading_from_cloud') || `正在從雲端下載《${title}》...`, 30000);
+              await syncManager.downloadBookBinary(id);
+              showToast(getMsg('download_success') || '下載完成，正在載入書籍...', 2000);
+              await renderBookshelf();
+              await openBook(id);
+              return;
+            } catch (err) {
+              console.error('[openBook] Failed to download book from WebDAV:', err);
+              alert((getMsg('cloud_download_failed') || '雲端下載失敗：') + (err.message || err));
+            }
+          }
+          return;
+        }
+
         const shouldAttach = confirm(
           getMsg('lightweight_book_file_prompt', [title, format]) ||
           `《${title}》為輕量備份記錄（本機尚未載入實體檔案）。\n是否立即選取本機電子書檔案（${title}${format}）載入並繼續閱讀？\n（您的閱讀記錄、進度與筆記已完好保留）`
