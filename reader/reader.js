@@ -3853,7 +3853,12 @@ function renderBookSyncBadge(card, book) {
     }
   });
 
-  targetContainer.appendChild(badge);
+  const moreBtn = bottomBar ? bottomBar.querySelector('.book-more-btn') : null;
+  if (bottomBar && moreBtn) {
+    bottomBar.insertBefore(badge, moreBtn);
+  } else {
+    targetContainer.appendChild(badge);
+  }
 }
 
 // 批量刷新书架所有书籍卡片的云端同步徽章

@@ -692,7 +692,7 @@ button, select, input {
   display: none !important;
 }
 
-/* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中 - 位於封面底部右側，與刪除、更多按鈕同排均勻分布) */
+/* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中 - 位於封面底部中間，與刪除、更多按鈕同排均勻分布) */
 .book-sync-badge {
   position: relative;
   display: inline-flex;
@@ -709,6 +709,7 @@ button, select, input {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.2);
   flex-shrink: 0;
+  order: 2;
 }
 
 .book-sync-badge:hover {
@@ -857,6 +858,7 @@ button, select, input {
   transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  order: 1;
 }
 
 @media (hover: hover) {
@@ -3726,7 +3728,7 @@ html.transition-none .page-texture-slide {
   display: none !important;
 }
 
-/* Individual Book More Actions Button on Card (位於封面底部中間) */
+/* Individual Book More Actions Button on Card (位於封面底部右側，與資料夾風格統一) */
 .book-more-btn {
   width: 28px;
   height: 28px;
@@ -3745,6 +3747,7 @@ html.transition-none .page-texture-slide {
   transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  order: 3;
 }
 
 @media (hover: hover) {
@@ -4292,6 +4295,7 @@ html.transition-none .page-texture-slide {
   transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 20;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  order: 1;
 }
 
 .folder-card .folder-more-btn {
@@ -4312,6 +4316,7 @@ html.transition-none .page-texture-slide {
   transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
   z-index: 20;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  order: 3;
 }
 
 .folder-card .folder-delete-btn {
