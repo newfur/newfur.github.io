@@ -29,6 +29,9 @@
   "rename_folder": {
     "message": "重命名資料夾"
   },
+  "delete_folder": {
+    "message": "刪除資料夾"
+  },
   "confirm_delete_folder": {
     "message": "確定要刪除這個資料夾嗎？其中的書籍不會被刪除。"
   },

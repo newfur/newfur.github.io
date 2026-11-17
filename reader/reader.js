@@ -551,6 +551,24 @@ function initUIEventBindings() {
     });
   }
 
+  const breadcrumbRename = document.getElementById('breadcrumb-rename-folder-btn');
+  if (breadcrumbRename) {
+    breadcrumbRename.addEventListener('click', () => {
+      if (currentFolder) {
+        openFolderDialog(currentFolder);
+      }
+    });
+  }
+
+  const breadcrumbDelete = document.getElementById('breadcrumb-delete-folder-btn');
+  if (breadcrumbDelete) {
+    breadcrumbDelete.addEventListener('click', async () => {
+      if (currentFolder) {
+        await deleteFolder(currentFolder);
+      }
+    });
+  }
+
   // 註冊新建/重命名資料夾對話框事件
   const folderDialogCancel = document.getElementById('folder-dialog-cancel');
   if (folderDialogCancel) {
@@ -3379,7 +3397,7 @@ async function renderBookshelf(searchQuery = '') {
         <button class="folder-action-btn folder-rename-btn" title="${getMsg('rename_folder') || '重命名'}">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </button>
-        <button class="folder-action-btn folder-delete-btn" title="${getMsg('delete_book_title') || '刪除'}">
+        <button class="folder-action-btn folder-delete-btn" title="${getMsg('delete_folder') || getMsg('delete_book_title') || '刪除'}">
           <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
         <div class="folder-icon-container">
@@ -3400,8 +3418,63 @@ async function renderBookshelf(searchQuery = '') {
         </div>
       `;
 
+      // 觸控長按事件（移動端長按資料夾卡片彈出重命名對話框）
+      let folderLongPressTimer = null;
+      let folderTouchStartX = 0;
+      let folderTouchStartY = 0;
+      let isFolderLongPressTriggered = false;
+
+      folderCard.addEventListener('touchstart', (e) => {
+        if (isSelectMode) return;
+        if (e.target.closest('.folder-action-btn')) return;
+        if (e.touches.length !== 1) return;
+        folderTouchStartX = e.touches[0].clientX;
+        folderTouchStartY = e.touches[0].clientY;
+        isFolderLongPressTriggered = false;
+
+        folderLongPressTimer = setTimeout(() => {
+          isFolderLongPressTriggered = true;
+          if (navigator.vibrate) {
+            try { navigator.vibrate(40); } catch (_) {}
+          }
+          openFolderDialog(folderName);
+        }, 450);
+      }, { passive: true });
+
+      folderCard.addEventListener('touchmove', (e) => {
+        if (!folderLongPressTimer) return;
+        const deltaX = Math.abs(e.touches[0].clientX - folderTouchStartX);
+        const deltaY = Math.abs(e.touches[0].clientY - folderTouchStartY);
+        if (deltaX > 10 || deltaY > 10) {
+          clearTimeout(folderLongPressTimer);
+          folderLongPressTimer = null;
+        }
+      }, { passive: true });
+
+      folderCard.addEventListener('touchend', (e) => {
+        if (folderLongPressTimer) {
+          clearTimeout(folderLongPressTimer);
+          folderLongPressTimer = null;
+        }
+        if (isFolderLongPressTriggered) {
+          if (e.cancelable) e.preventDefault();
+        }
+      });
+
+      // 右鍵菜單（桌面端右鍵呼出重命名對話框）
+      folderCard.addEventListener('contextmenu', (e) => {
+        if (!isSelectMode) {
+          e.preventDefault();
+          openFolderDialog(folderName);
+        }
+      });
+
       // 點擊進入資料夾
       folderCard.addEventListener('click', async (e) => {
+        if (isFolderLongPressTriggered) {
+          isFolderLongPressTriggered = false;
+          return;
+        }
         if (e.target.closest('.folder-action-btn')) return;
         currentFolder = folderName;
         await renderBookshelf();
@@ -13090,11 +13163,18 @@ async function renameFolder(oldName, newName) {
   const folders = getCustomFolders();
   
   // 更新 localStorage 列表
-  const idx = folders.indexOf(oldName);
-  if (idx > -1) {
-    folders[idx] = newName;
+  const oldIdx = folders.indexOf(oldName);
+  const newIdx = folders.indexOf(newName);
+  if (newIdx > -1) {
+    if (oldIdx > -1) {
+      folders.splice(oldIdx, 1);
+    }
   } else {
-    folders.push(newName);
+    if (oldIdx > -1) {
+      folders[oldIdx] = newName;
+    } else {
+      folders.push(newName);
+    }
   }
   saveCustomFolders(folders);
 
@@ -13220,7 +13300,15 @@ function openFolderDialog(editingFolder = null) {
     folderDialogCallback = (newName) => createFolder(newName);
   }
 
-  if (dialog) dialog.showModal();
+  if (dialog) {
+    dialog.showModal();
+    setTimeout(() => {
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 50);
+  }
 }
 
 // 打開資料夾選擇對話框 (用於批量移動)

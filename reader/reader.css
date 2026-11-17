@@ -3204,6 +3204,16 @@ html.transition-none .page-texture-slide {
     vertical-align: middle;
   }
 
+  .library-breadcrumb .breadcrumb-action-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .library-breadcrumb .breadcrumb-action-btn .svg-icon {
+    width: 13px;
+    height: 13px;
+  }
+
   .header-actions {
     grid-area: actions;
     width: auto;
@@ -4191,6 +4201,44 @@ html.transition-none .page-texture-slide {
   color: var(--text-muted);
 }
 
+.breadcrumb-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.breadcrumb-action-btn:hover {
+  background-color: var(--border-color);
+  color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+.breadcrumb-action-btn.breadcrumb-delete-btn:hover {
+  color: #ff3b30;
+}
+
+.breadcrumb-action-btn:active {
+  transform: scale(0.92);
+}
+
+.breadcrumb-action-btn .svg-icon {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
 /* 資料夾卡片樣式 - 保持與單本書 card 一致 */
 .folder-card {
   position: relative;
@@ -4337,6 +4385,24 @@ html.transition-none .page-texture-slide {
   .folder-card:hover .folder-delete-btn {
     opacity: 1;
   }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .folder-card .folder-rename-btn,
+  .folder-card .folder-delete-btn {
+    opacity: 0.88;
+    width: 30px;
+    height: 30px;
+  }
+  .folder-card .folder-delete-btn {
+    left: 46px;
+  }
+}
+
+.folder-card .folder-rename-btn:active,
+.folder-card .folder-delete-btn:active {
+  transform: scale(0.92);
+  opacity: 1;
 }
 
 .folder-card .folder-rename-btn:hover,

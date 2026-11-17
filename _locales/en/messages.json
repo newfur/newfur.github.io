@@ -29,6 +29,9 @@
   "rename_folder": {
     "message": "Rename Folder"
   },
+  "delete_folder": {
+    "message": "Delete Folder"
+  },
   "confirm_delete_folder": {
     "message": "Are you sure you want to delete this folder? The books inside will not be deleted."
   },
