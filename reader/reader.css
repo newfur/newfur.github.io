@@ -692,7 +692,7 @@ button, select, input {
   display: none !important;
 }
 
-/* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中 - 位於封面底部中間，與刪除、更多按鈕同排均勻分布) */
+/* 雲端同步狀態徽章 (展示已同步 / 待上傳 / 同步中 - 位於封面底部左側，取代原刪除按鈕位置) */
 .book-sync-badge {
   position: relative;
   display: inline-flex;
@@ -709,7 +709,7 @@ button, select, input {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.2);
   flex-shrink: 0;
-  order: 2;
+  order: 1;
 }
 
 .book-sync-badge:hover {
@@ -841,35 +841,9 @@ button, select, input {
   flex-shrink: 0;
 }
 
-/* 刪除按鈕 (位於封面底部左側) */
+/* 刪除按鈕：已從封面移除，功能完整收納至「更多操作」菜單中 */
 .book-delete-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background-color: rgba(255, 59, 48, 0.9);
-  color: #ffffff;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
-  z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  order: 1;
-}
-
-@media (hover: hover) {
-  .book-card:hover .book-delete-btn {
-    opacity: 0.95;
-  }
-}
-
-.book-delete-btn:hover {
-  transform: scale(1.1);
-  background-color: rgba(255, 59, 48, 1);
+  display: none !important;
 }
 
 /* 匯出按鈕：已收納至「··· 更多操作選單」中 */
@@ -3748,6 +3722,7 @@ html.transition-none .page-texture-slide {
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   order: 3;
+  margin-left: auto !important;
 }
 
 @media (hover: hover) {
@@ -4317,6 +4292,7 @@ html.transition-none .page-texture-slide {
   z-index: 20;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   order: 3;
+  margin-left: auto !important;
 }
 
 .folder-card .folder-delete-btn {

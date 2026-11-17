@@ -3589,9 +3589,6 @@ async function renderBookshelf(searchQuery = '') {
 
       const bottomBarHtml = `
         <div class="book-cover-bottom-bar">
-          <button class="book-delete-btn" title="${getMsg('delete_book_title') || '删除书籍'}">
-            <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-          </button>
           <button class="book-more-btn" title="${getMsg('action_sheet_more') || '更多'}">
             <svg class="svg-icon svg-icon-sm" style="color: white;" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="2"></circle>
@@ -3628,15 +3625,6 @@ async function renderBookshelf(searchQuery = '') {
         if (book.file && ['epub', 'azw3', 'mobi', 'cbz'].includes(book.format)) {
           repairMissingBookCover(book, coverContainer);
         }
-      }
-
-      // 動態綁定刪除事件
-      const deleteBtn = card.querySelector('.book-delete-btn');
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', async (event) => {
-          event.stopPropagation();
-          await deleteBookHandler(book.id);
-        });
       }
 
       // 動態綁定匯出事件（若卡片上有則綁定，主要收納在更多選單中）
