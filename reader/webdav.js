@@ -76,7 +76,7 @@ export class WebDAVClient {
         : Buffer.from(cred).toString('base64');
       return `Basic ${b64}`;
     } catch (e) {
-      console.warn('[WebDAV] Failed to encode credentials:', e);
+      console.log('[WebDAV] Failed to encode credentials:', e);
       return null;
     }
   }
@@ -136,22 +136,27 @@ export class WebDAVClient {
             return streamRes;
           }
         } catch (streamErr) {
-          console.warn('[WebDAV] Native streaming fetch failed, falling back to CapacitorHttp:', streamErr.message);
+          // Native streaming fetch fallback to CapacitorHttp
         }
       }
       return this._requestCapacitor({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
     }
 
-    // 2. 在 Chrome / Edge 扩展插件环境下，优先通过 Service Worker 发送（利用 host_permissions 免除 CORS OPTIONS 预检与浏览器 Cookie 污染）
+    // 2. 在 Chrome / Edge 扩展环境下，优先通过 Service Worker 发送（利用 host_permissions 免除 CORS OPTIONS 预检与浏览器 Cookie 污染）
     if (this._isExtensionEnv()) {
       try {
         return await this._requestExtension({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
       } catch (extErr) {
-        console.warn('[WebDAV] Extension proxy request warning, fallback to direct fetch:', extErr.message);
+        // 仅当扩展底层消息通道发生故障（如 Service Worker 未启动）时才静默降级到标准 fetch
+        // 若为目标 WebDAV 服务器网络连接失败（如 Failed to fetch / 离线 / 401 / 404 等），直接抛出给业务层处理
+        if (extErr && extErr.isChannelError) {
+          return this._requestFetch({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
+        }
+        throw extErr;
       }
     }
 
-    // 3. 降级使用浏览器标准 fetch
+    // 3. 降级使用浏览器标准 fetch（纯 Web 端 / PWA 端）
     return this._requestFetch({ url, method, headers: finalHeaders, body, responseType, timeout: effectiveTimeout });
   }
 
@@ -182,7 +187,9 @@ export class WebDAVClient {
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error(`WebDAV request timeout (${timeout || this.timeout}ms) for ${method} ${url}`));
+        const timeoutErr = new Error(`WebDAV request timeout (${timeout || this.timeout}ms) for ${method} ${url}`);
+        timeoutErr.isChannelError = false;
+        reject(timeoutErr);
       }, timeout || this.timeout);
 
       try {
@@ -196,12 +203,17 @@ export class WebDAVClient {
         }, (res) => {
           clearTimeout(timer);
           if (chrome.runtime.lastError) {
-            console.warn('[WebDAV] Extension messaging failed, fallback to fetch:', chrome.runtime.lastError.message);
-            this._requestFetch({ url, method, headers, body, responseType, timeout }).then(resolve).catch(reject);
+            // 扩展底层消息通道异常（例如 Service Worker 尚未就绪）
+            const channelErr = new Error(chrome.runtime.lastError.message || 'Extension messaging channel error');
+            channelErr.isChannelError = true;
+            reject(channelErr);
             return;
           }
           if (!res || !res.success) {
-            reject(new Error(res ? res.error : 'Extension service worker response empty'));
+            // Service Worker 代理通道正常响应，但远端 WebDAV 服务器连接或请求报错（如断网、401、404、Failed to fetch）
+            const reqError = new Error(res ? res.error : 'WebDAV network request failed');
+            reqError.isChannelError = false;
+            reject(reqError);
             return;
           }
 
@@ -221,7 +233,8 @@ export class WebDAVClient {
         });
       } catch (err) {
         clearTimeout(timer);
-        this._requestFetch({ url, method, headers, body, responseType, timeout }).then(resolve).catch(reject);
+        err.isChannelError = true;
+        reject(err);
       }
     });
   }
@@ -465,10 +478,10 @@ export class WebDAVClient {
           method: 'MKCOL'
         });
         if (mkRes.status !== 201 && mkRes.status !== 405) {
-          console.warn(`[WebDAV] MKCOL on ${dirUrl} returned ${mkRes.status}`);
+          console.log(`[WebDAV] MKCOL on ${dirUrl} returned ${mkRes.status}`);
         }
       } catch (err) {
-        console.warn(`[WebDAV] Failed to create folder ${dirUrl}:`, err);
+        console.log(`[WebDAV] Failed to create folder ${dirUrl}:`, err);
       }
     }
     return true;

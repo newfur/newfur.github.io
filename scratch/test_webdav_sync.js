@@ -730,6 +730,67 @@ async function runTests() {
     assert.ok(bFolders.includes('科幻小说'), '客户端 F 的自定义文件夹列表应包含“科幻小说”');
     console.log('✅ 书籍移动至文件夹与文件夹多端同步验证通过');
 
+    // 测试：删除空文件夹“文学历史”，随后执行同步，断言“文学历史”彻底删除，绝不从远端旧数据中复活
+    const currentFolders = JSON.parse(global.localStorage.getItem('edgereader_custom_folders') || '[]');
+    const filteredFolders = currentFolders.filter(f => f !== '文学历史');
+    global.localStorage.setItem('edgereader_custom_folders', JSON.stringify(filteredFolders));
+    global.localStorage.setItem('edgereader_deleted_folders', JSON.stringify(['文学历史']));
+    global.localStorage.setItem('edgereader_settings_updated_at', String(Date.now() + 100));
+
+    await syncMgr.syncSettings();
+
+    const afterDelFolders = JSON.parse(global.localStorage.getItem('edgereader_custom_folders') || '[]');
+    assert.strictEqual(afterDelFolders.includes('文学历史'), false, '删除空文件夹后，同步绝不能从远端将已删除文件夹并集合并复活');
+
+    // 远端 config/settings.json 中也必须被清除
+    const remoteCfg = await client.getFile('config/settings.json', 'json');
+    assert.strictEqual(remoteCfg.customFolders.includes('文学历史'), false, '远端 config/settings.json 也必须彻底移除该文件夹');
+    assert.ok(remoteCfg.deletedFolders.includes('文学历史'), '远端 config/settings.json 必须记录已删除文件夹墓碑');
+    console.log('✅ 空文件夹删除与墓碑同步防护（彻底防止删除后自动复活）验证通过');
+
+    // 2.17 测试扩展环境下 Service Worker 报错时不触发 console.warn 且绝不错误二次请求
+    console.log('\n--- 16. 测试扩展环境下 Service Worker 代理通道与零 console.warn 警告机制 ---');
+    let warnCount = 0;
+    const origWarn = console.warn;
+    console.warn = (...args) => {
+      warnCount++;
+      origWarn(...args);
+    };
+
+    try {
+      // 模拟 chrome extension 环境
+      global.chrome = {
+        runtime: {
+          id: 'mock-extension-id',
+          sendMessage: (payload, cb) => {
+            // 模拟远端网络失败 (如 Failed to fetch)
+            setTimeout(() => {
+              cb({ success: false, error: 'Failed to fetch' });
+            }, 10);
+          }
+        }
+      };
+
+      const extClient = new WebDAVClient({
+        endpoint: 'http://127.0.0.1:99999/unreachable'
+      });
+
+      let errThrown = null;
+      try {
+        await extClient.request({ url: 'http://127.0.0.1:99999/unreachable/test', method: 'GET' });
+      } catch (e) {
+        errThrown = e;
+      }
+
+      assert.ok(errThrown, '远端网络不可达时应抛出错误');
+      assert.strictEqual(errThrown.message, 'Failed to fetch');
+      assert.strictEqual(warnCount, 0, '扩展环境网络错误绝不能调用 console.warn 污染插件面板');
+      console.log('✅ 扩展环境下 WebDAV 远端网络错误零 console.warn 验证通过');
+    } finally {
+      console.warn = origWarn;
+      delete global.chrome;
+    }
+
     console.log('\n🎉 所有 WebDAV 驱动、多端同步逻辑与冲突仲裁测试均 100% 通过！');
   } finally {
     server.close();

@@ -3213,7 +3213,15 @@ async function renderBookshelf(searchQuery = '') {
 
   // 2. 獲取所有有效的自定義與包含書籍的資料夾，並按最近閱讀/添加時間排序
   const customFolders = getCustomFolders();
-  const activeFolders = Array.from(new Set([...customFolders, ...Object.keys(folderCounts)]));
+  let deletedFoldersSet = new Set();
+  try {
+    const rawDel = localStorage.getItem('edgereader_deleted_folders');
+    if (rawDel) deletedFoldersSet = new Set(JSON.parse(rawDel));
+  } catch (_) {}
+
+  // 過濾掉處於已刪除墓碑中的空資料夾（若資料夾內仍包含真實書籍，則保留顯示）
+  const validCustomFolders = customFolders.filter(f => !deletedFoldersSet.has(f) || Boolean(folderCounts[f]));
+  const activeFolders = Array.from(new Set([...validCustomFolders, ...Object.keys(folderCounts)]));
   
   activeFolders.sort((a, b) => {
     const readA = folderMaxRead[a] || 0;
@@ -13237,6 +13245,18 @@ async function createFolder(folderName) {
     return;
   }
   folders.push(folderName);
+
+  // 若曾被刪除過，從已刪除墓碑中移除
+  try {
+    const rawDel = localStorage.getItem('edgereader_deleted_folders');
+    const delList = rawDel ? JSON.parse(rawDel) : [];
+    const delIdx = delList.indexOf(folderName);
+    if (delIdx > -1) {
+      delList.splice(delIdx, 1);
+      localStorage.setItem('edgereader_deleted_folders', JSON.stringify(delList));
+    }
+  } catch (_) {}
+
   saveCustomFolders(folders);
   document.getElementById('folder-dialog').close();
   await renderBookshelf();
@@ -13261,6 +13281,17 @@ async function renameFolder(oldName, newName) {
       folders.push(newName);
     }
   }
+
+  // oldName 寫入已刪除墓碑，newName 從墓碑中清除
+  try {
+    const rawDel = localStorage.getItem('edgereader_deleted_folders');
+    const delList = rawDel ? JSON.parse(rawDel) : [];
+    if (!delList.includes(oldName)) delList.push(oldName);
+    const newIdxInDel = delList.indexOf(newName);
+    if (newIdxInDel > -1) delList.splice(newIdxInDel, 1);
+    localStorage.setItem('edgereader_deleted_folders', JSON.stringify(delList));
+  } catch (_) {}
+
   saveCustomFolders(folders);
 
   // 更新所有屬於該資料夾的書籍
@@ -13290,8 +13321,19 @@ async function deleteFolder(folderName) {
     const idx = folders.indexOf(folderName);
     if (idx > -1) {
       folders.splice(idx, 1);
-      saveCustomFolders(folders);
     }
+
+    // 寫入已刪除資料夾墓碑，徹底阻斷多端 WebDAV 同步時從遠端舊數據被「并集復活」
+    try {
+      const rawDel = localStorage.getItem('edgereader_deleted_folders');
+      const delList = rawDel ? JSON.parse(rawDel) : [];
+      if (!delList.includes(folderName)) {
+        delList.push(folderName);
+        localStorage.setItem('edgereader_deleted_folders', JSON.stringify(delList));
+      }
+    } catch (_) {}
+
+    saveCustomFolders(folders);
 
     // 將資料夾內的所有書籍移至根目錄 (null)
     const books = await library.getAllBooks();

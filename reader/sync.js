@@ -82,7 +82,7 @@ export class SyncManager {
       try {
         cb(info);
       } catch (e) {
-        console.warn('[SyncManager] Listener error:', e);
+        console.log('[SyncManager] Listener error:', e);
       }
     }
   }
@@ -300,7 +300,7 @@ export class SyncManager {
         await this.client.putFile('records/sync_manifest.json', manifest);
       }
     } catch (e) {
-      console.warn('[SyncManager] Failed to sync deleted book to WebDAV:', e);
+      console.log('[SyncManager] Failed to sync deleted book to WebDAV:', e);
     }
   }
 
@@ -318,7 +318,7 @@ export class SyncManager {
       try {
         await this.syncSingleBookRecord(bookId, bookData);
       } catch (err) {
-        console.warn(`[SyncManager] Background sync for book ${bookId} failed:`, err);
+        console.log(`[SyncManager] Background sync for book ${bookId} failed:`, err);
       }
     }, 2500); // 2.5 秒防抖
 
@@ -379,6 +379,7 @@ export class SyncManager {
       updatedAt: localUpdatedAt || Date.now(),
       theme: null,
       customFolders: null,
+      deletedFolders: [],
       aiPromptsTemplates: null,
       coverWidth: localStorage.getItem('coverWidth') || '180',
       ttsProvider: localStorage.getItem('ttsProvider') || 'edge'
@@ -394,6 +395,12 @@ export class SyncManager {
       if (rawFolders) localSettings.customFolders = JSON.parse(rawFolders);
     } catch (e) {}
 
+    try {
+      const rawDeleted = localStorage.getItem('edgereader_deleted_folders');
+      if (rawDeleted) localSettings.deletedFolders = JSON.parse(rawDeleted);
+    } catch (e) {}
+    if (!Array.isArray(localSettings.deletedFolders)) localSettings.deletedFolders = [];
+
     // 读取远端设置
     let remoteSettings = null;
     try {
@@ -402,32 +409,36 @@ export class SyncManager {
 
     if (remoteSettings && typeof remoteSettings === 'object') {
       const remoteUpdatedAt = Number(remoteSettings.updatedAt) || 0;
+      const remoteDeletedFolders = Array.isArray(remoteSettings.deletedFolders) ? remoteSettings.deletedFolders : [];
 
-      // 双向合并自定义文件夹列表，确保多端创建与重命名的文件夹都不丢失
-      const localFolders = Array.isArray(localSettings.customFolders) ? localSettings.customFolders : [];
-      const remoteFolders = Array.isArray(remoteSettings.customFolders) ? remoteSettings.customFolders : [];
-      const mergedFolders = Array.from(new Set([...localFolders, ...remoteFolders]));
+      // 1. 双向合并已删除文件夹墓碑列表，确保任意设备删除的文件夹在所有设备上都不会被复活
+      const mergedDeletedFolders = Array.from(new Set([...localSettings.deletedFolders, ...remoteDeletedFolders]));
+      localStorage.setItem('edgereader_deleted_folders', JSON.stringify(mergedDeletedFolders));
+      localSettings.deletedFolders = mergedDeletedFolders;
 
+      // 2. 根据时间戳权威裁决
       if (remoteUpdatedAt > localUpdatedAt) {
         // 远端更新，应用到本地
         if (remoteSettings.theme && typeof remoteSettings.theme === 'object') {
           localStorage.setItem('theme', JSON.stringify(remoteSettings.theme));
         }
-        if (mergedFolders.length > 0) {
-          localStorage.setItem('edgereader_custom_folders', JSON.stringify(mergedFolders));
-          localStorage.setItem('custom_folders', JSON.stringify(mergedFolders));
+        if (Array.isArray(remoteSettings.customFolders)) {
+          // 过滤掉墓碑中的已删除文件夹
+          const cleanRemoteFolders = remoteSettings.customFolders.filter(f => !mergedDeletedFolders.includes(f));
+          localStorage.setItem('edgereader_custom_folders', JSON.stringify(cleanRemoteFolders));
+          localStorage.setItem('custom_folders', JSON.stringify(cleanRemoteFolders));
         }
         if (remoteSettings.coverWidth) {
           localStorage.setItem('coverWidth', remoteSettings.coverWidth);
         }
         localStorage.setItem('edgereader_settings_updated_at', String(remoteUpdatedAt));
       } else {
-        // 本地更新或合并最新文件夹列表，推送到远端
-        localSettings.customFolders = mergedFolders;
-        if (mergedFolders.length > 0) {
-          localStorage.setItem('edgereader_custom_folders', JSON.stringify(mergedFolders));
-          localStorage.setItem('custom_folders', JSON.stringify(mergedFolders));
-        }
+        // 本地更新（本地创建、重命名或删除文件夹后更新了时间戳，本地为最新权威状态）
+        const localFoldersList = Array.isArray(localSettings.customFolders) ? localSettings.customFolders : [];
+        const cleanLocalFolders = localFoldersList.filter(f => !mergedDeletedFolders.includes(f));
+        localSettings.customFolders = cleanLocalFolders;
+        localStorage.setItem('edgereader_custom_folders', JSON.stringify(cleanLocalFolders));
+        localStorage.setItem('custom_folders', JSON.stringify(cleanLocalFolders));
         await this.client.putFile('config/settings.json', localSettings);
       }
     } else {
@@ -486,7 +497,7 @@ export class SyncManager {
         }
         return bytes;
       } catch (e) {
-        console.warn('[SyncManager] Failed to convert cover DataURL to Blob:', e);
+        console.log('[SyncManager] Failed to convert cover DataURL to Blob:', e);
         return null;
       }
     }
@@ -636,7 +647,7 @@ export class SyncManager {
           try {
             await this.client.putFile(`covers/${id}.bin`, coverBlob);
           } catch (cErr) {
-            console.warn(`[SyncManager] Cover upload for book ${id} warning:`, cErr);
+            console.log(`[SyncManager] Cover upload for book ${id} warning:`, cErr);
           }
         }
       }
@@ -730,7 +741,7 @@ export class SyncManager {
       try {
         await this.syncSettings();
       } catch (cfgErr) {
-        console.warn('[SyncManager] Settings sync failed, continuing:', cfgErr);
+        console.log('[SyncManager] Settings sync failed, continuing:', cfgErr);
       }
 
       // 3. 读取远端清单与墓碑合并
@@ -823,7 +834,7 @@ export class SyncManager {
             try {
               fileBlob = await this.client.getFile(`books/${remoteId}.bin`, 'blob');
             } catch (fErr) {
-              console.warn(`[SyncManager] Failed to fetch book binary for ${remoteId}:`, fErr);
+              console.log(`[SyncManager] Failed to fetch book binary for ${remoteId}:`, fErr);
             }
             mergedMeta.file = fileBlob;
           }
@@ -858,7 +869,7 @@ export class SyncManager {
                 }
               }
             } catch (covErr) {
-              console.warn(`[SyncManager] Failed to upload cover for book ${localId}:`, covErr);
+              console.log(`[SyncManager] Failed to upload cover for book ${localId}:`, covErr);
             }
           }
 
@@ -880,7 +891,7 @@ export class SyncManager {
               // 给垃圾回收缓冲时间
               await new Promise(r => setTimeout(r, 60));
             } catch (upErr) {
-              console.warn(`[SyncManager] Failed to upload binary for book ${localId}:`, upErr);
+              console.log(`[SyncManager] Failed to upload binary for book ${localId}:`, upErr);
             }
           }
 
@@ -966,7 +977,7 @@ export class SyncManager {
               this._updateRemoteBookCache(id, { hasBinary: true });
               await new Promise(r => setTimeout(r, 60));
             } catch (binErr) {
-              console.warn(`[SyncManager] Failed to backfill binary for book ${id}:`, binErr);
+              console.log(`[SyncManager] Failed to backfill binary for book ${id}:`, binErr);
             }
           }
         }
